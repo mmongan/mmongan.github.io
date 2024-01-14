@@ -718,13 +718,13 @@
 			"name":"Steel",
 			"pbrMetallicRoughness":{
 				"baseColorFactor":[
-					0,
+					1,
 					1,
 					1,
 					1
 				],
-				"metallicFactor":1,
-				"roughnessFactor":0.4000000059604645
+				"metallicFactor":0,
+				"roughnessFactor":0
 			}
 		}
 	],
