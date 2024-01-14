@@ -751,8 +751,16 @@
 	"materials":[
 		{
 			"doubleSided":true,
-			"name":"Damascus Gold",
-			"pbrMetallicRoughness":{}
+			"name":"Material.001",
+			"pbrMetallicRoughness":{
+				"baseColorFactor":[
+					0,
+					0,
+					1,
+					1
+				],
+				"roughnessFactor":0.5
+			}
 		}
 	],
 	"meshes":[
