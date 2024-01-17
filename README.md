@@ -1,2 +1,0 @@
-# mmongan.github.io
- threed
