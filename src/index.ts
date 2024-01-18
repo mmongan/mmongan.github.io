@@ -1,89 +1,89 @@
 import * as BABYLON from '@babylonjs/core';
 
 // Identify canvas element to script.
-      const canvas = document.getElementById('render-canvas') as HTMLCanvasElement;
+const canvas = document.getElementById('render-canvas') as HTMLCanvasElement;
 
-      // Initialize Babylon.js variables.
-      let engine: BABYLON.Engine;
-          
-      
-      const createDefaultEngine = function () {
-        return new BABYLON.Engine(canvas, true, {
-          preserveDrawingBuffer: true,
-          stencil: true
-        });
-      };
+// Initialize Babylon.js variables.
+let engine: BABYLON.Engine;
+    
 
-      
-      // Create scene and create XR experience.
-      const createScene = async function () : Promise<BABYLON.Scene> {
+const createDefaultEngine = function () {
+  return new BABYLON.Engine(canvas, true, {
+    preserveDrawingBuffer: true,
+    stencil: true
+  });
+};
 
-        // Create a basic Babylon Scene object.
-        let scene = new BABYLON.Scene(engine);
+  
+// Create scene and create XR experience.
+const createScene = async function () : Promise<BABYLON.Scene> {
 
-        // Create and position a free camera.
-        let camera = new BABYLON.FreeCamera('camera-1', new BABYLON.Vector3(0, 5, -10), scene);
+  // Create a basic Babylon Scene object.
+  let scene = new BABYLON.Scene(engine);
 
-        // Point the camera at scene origin.
-        camera.setTarget(BABYLON.Vector3.Zero());
+  // Create and position a free camera.
+  let camera = new BABYLON.FreeCamera('camera-1', new BABYLON.Vector3(0, 5, -10), scene);
 
-        // Attach camera to canvas.
-        camera.attachControl(canvas, true);
+  // Point the camera at scene origin.
+  camera.setTarget(BABYLON.Vector3.Zero());
 
-        // Create a light and aim it vertically to the sky (0, 1, 0).
-        let light = new BABYLON.HemisphericLight('light-1', new BABYLON.Vector3(0, 1, 0), scene);
+  // Attach camera to canvas.
+  camera.attachControl(canvas, true);
 
-        // Set light intensity to a lower value (default is 1).
-        light.intensity = 0.5;
+  // Create a light and aim it vertically to the sky (0, 1, 0).
+  let light = new BABYLON.HemisphericLight('light-1', new BABYLON.Vector3(0, 1, 0), scene);
 
-        // Add one of Babylon's built-in sphere shapes.
-        let sphere = BABYLON.MeshBuilder.CreateSphere('sphere-1', {
-          diameter: 2,
-          segments: 32
-        }, scene);
+  // Set light intensity to a lower value (default is 1).
+  light.intensity = 0.5;
 
-        // Position the sphere up by half of its height.
-        sphere.position.y = 1;
+  // Add one of Babylon's built-in sphere shapes.
+  let sphere = BABYLON.MeshBuilder.CreateSphere('sphere-1', {
+    diameter: 2,
+    segments: 32
+  }, scene);
 
-        // Create a default environment for the scene.
-        scene.createDefaultEnvironment();
+  // Position the sphere up by half of its height.
+  sphere.position.y = 1;
 
-        // Initialize XR experience with default experience helper.
-        const xrHelper = await scene.createDefaultXRExperienceAsync();
-        if (!xrHelper.baseExperience) {
-          // XR support is unavailable.
-          console.log('WebXR support is unavailable');          
-        } else {
-          // XR support is available.
-          console.log('XR support is available; proceed.');          
-        }
+  // Create a default environment for the scene.
+  scene.createDefaultEnvironment();
 
-        return scene;
+  // Initialize XR experience with default experience helper.
+  const xrHelper = await scene.createDefaultXRExperienceAsync();
+  if (!xrHelper.baseExperience) {
+    // XR support is unavailable.
+    console.log('WebXR support is unavailable');          
+  } else {
+    // XR support is available.
+    console.log('XR support is available; proceed.');          
+  }
 
-      };
+  return scene;
 
-      // Create engine.
-      engine = createDefaultEngine();
-      if (!engine) {
-        throw 'Engine should not be null';
-      }
+};
 
-      (async () => {
-        const scene = await createScene();
-        
-      // Run render loop to render future frames.
-      engine.runRenderLoop(function () {
-        if (scene) {
-          scene.render();
-        }
-      });
+  // Create engine.
+  engine = createDefaultEngine();
+  if (!engine) {
+    throw 'Engine should not be null';
+  }
 
-      // Handle browser resize.
-      window.addEventListener('resize', function () {
-        engine.resize();
-      });
+(async () => {
+  const scene = await createScene();
+  
+  // Run render loop to render future frames.
+  engine.runRenderLoop(function () {
+    if (scene) {
+      scene.render();
+    }
+  });
 
-    })().catch(e => {
-      // Deal with the fact the chain failed
-  });      
+  // Handle browser resize.
+  window.addEventListener('resize', function () {
+    engine.resize();
+  });
+
+})().catch(e => {
+  // Deal with the fact the chain failed
+});      
 
