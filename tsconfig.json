@@ -6,8 +6,15 @@
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
     "skipLibCheck": true,
 
+    "types": [
+      "babylonjs",
+      "babylonjs-gui",
+      "babylonjs-materials",
+      "node"
+    ],
+
     /* Bundler mode */
-    "moduleResolution": "bundler",
+    "moduleResolution": "Node10",
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
