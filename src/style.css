@@ -42,7 +42,7 @@ h1 {
   text-align: center;
 }
 
-body,#renderCanvas { width: 100%; height: 100%;}
+body,#render-canvas { width: 100%; height: 100%;}
 
 .logo {
   height: 6em;

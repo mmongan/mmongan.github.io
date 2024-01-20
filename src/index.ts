@@ -51,7 +51,7 @@ const createScene = async function () : Promise<BABYLON.Scene> {
   }, scene);
 
   // Position the sphere up by half of its height.
-  box.position.y = 1;
+  box.position.y = 2;
   
 
 

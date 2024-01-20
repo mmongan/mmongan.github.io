@@ -71,7 +71,7 @@ var createScene = function () {
                         depth: 2
                     }, scene);
                     // Position the sphere up by half of its height.
-                    box.position.y = 1;
+                    box.position.y = 2;
                     // Create a default environment for the scene.
                     scene.createDefaultEnvironment();
                     return [4 /*yield*/, scene.createDefaultXRExperienceAsync()];
