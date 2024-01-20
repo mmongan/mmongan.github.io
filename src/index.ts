@@ -1,11 +1,8 @@
 import * as BABYLON from '@babylonjs/core';
 
-// Identify canvas element to script.
 const canvas = document.getElementById('render-canvas') as HTMLCanvasElement;
 
-// Initialize Babylon.js variables.
 let engine: BABYLON.Engine;
-    
 
 const createDefaultEngine = function () {
   return new BABYLON.Engine(canvas, true, {
@@ -13,7 +10,6 @@ const createDefaultEngine = function () {
     stencil: true
   });
 };
-
   
 // Create scene and create XR experience.
 const createScene = async function () : Promise<BABYLON.Scene> {
@@ -86,4 +82,3 @@ const createScene = async function () : Promise<BABYLON.Scene> {
 })().catch(e => {
   // Deal with the fact the chain failed
 });      
-
