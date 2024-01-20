@@ -35,8 +35,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
     }
 };
 import * as BABYLON from '@babylonjs/core';
-var canvas;
-canvas = document.getElementById('render-canvas');
+var canvas = document.getElementById('render-canvas');
 var engine;
 var createDefaultEngine = function () {
     return new BABYLON.Engine(canvas, true, {
@@ -47,7 +46,7 @@ var createDefaultEngine = function () {
 // Create scene and create XR experience.
 var createScene = function () {
     return __awaiter(this, void 0, void 0, function () {
-        var scene, camera, light, sphere, xrHelper;
+        var scene, camera, light, sphere, box, xrHelper;
         return __generator(this, function (_a) {
             switch (_a.label) {
                 case 0:
@@ -66,6 +65,13 @@ var createScene = function () {
                     }, scene);
                     // Position the sphere up by half of its height.
                     sphere.position.y = 1;
+                    box = BABYLON.MeshBuilder.CreateBox('box-1', {
+                        width: 2,
+                        height: 2,
+                        depth: 2
+                    }, scene);
+                    // Position the sphere up by half of its height.
+                    box.position.y = 1;
                     // Create a default environment for the scene.
                     scene.createDefaultEnvironment();
                     return [4 /*yield*/, scene.createDefaultXRExperienceAsync()];

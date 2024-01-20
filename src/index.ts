@@ -41,6 +41,20 @@ const createScene = async function () : Promise<BABYLON.Scene> {
   // Position the sphere up by half of its height.
   sphere.position.y = 1;
 
+
+
+  // Add one of Babylon's built-in sphere shapes.
+  let box = BABYLON.MeshBuilder.CreateBox('box-1', {    
+    width: 2,
+    height: 2,
+    depth: 2    
+  }, scene);
+
+  // Position the sphere up by half of its height.
+  box.position.y = 1;
+  
+
+
   // Create a default environment for the scene.
   scene.createDefaultEnvironment();
 
