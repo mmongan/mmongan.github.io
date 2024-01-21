@@ -43,7 +43,7 @@ import { SceneLoader } from "@babylonjs/core";
 import { GridMaterial } from '@babylonjs/materials/grid/gridMaterial';
 import '@babylonjs/loaders';
 (function () { return __awaiter(void 0, void 0, void 0, function () {
-    var canvas, engine, scene, camera, light, material, yaxis, trumpetmesh, importResult, r;
+    var canvas, engine, scene, camera, light, material, yaxis, trumpetmesh, importResult, xr, r;
     return __generator(this, function (_a) {
         switch (_a.label) {
             case 0:
@@ -74,6 +74,9 @@ import '@babylonjs/loaders';
                     })];
             case 1:
                 importResult = _a.sent();
+                return [4 /*yield*/, scene.createDefaultXRExperienceAsync({ /* configuration options, as needed */})];
+            case 2:
+                xr = _a.sent();
                 r = 3.1415926 / 180.0;
                 // Render every frame
                 engine.runRenderLoop(function () {
