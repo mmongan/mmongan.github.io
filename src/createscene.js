@@ -34,49 +34,33 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
         if (op[0] & 5) throw op[1]; return { value: op[0] ? op[1] : void 0, done: true };
     }
 };
-import * as BABYLON from '@babylonjs/core';
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Scene } from "@babylonjs/core/scene";
+import { SceneLoader } from "@babylonjs/core";
+import "@babylonjs/loaders";
 // Create scene and create XR experience.
 export var createScene = function (engine, canvas) {
     return __awaiter(this, void 0, void 0, function () {
-        var scene, camera, light, sphere, box, xrHelper;
+        var scene, camera, light, importResult;
         return __generator(this, function (_a) {
             switch (_a.label) {
                 case 0:
-                    scene = new BABYLON.Scene(engine);
-                    camera = new BABYLON.FreeCamera('camera-1', new BABYLON.Vector3(0, 5, -10), scene);
+                    scene = new Scene(engine);
+                    camera = new FreeCamera('camera-1', new Vector3(0, 0, 5), scene);
                     // Point the camera at scene origin.
-                    camera.setTarget(BABYLON.Vector3.Zero());
+                    camera.setTarget(Vector3.Zero());
                     // Attach camera to canvas.
                     camera.attachControl(canvas, true);
-                    light = new BABYLON.HemisphericLight('light-1', new BABYLON.Vector3(0, 1, 0), scene);
+                    light = new HemisphericLight('light-1', new Vector3(0, 1, 0), scene);
                     // Set light intensity to a lower value (default is 1).
                     light.intensity = 0.5;
-                    sphere = BABYLON.MeshBuilder.CreateSphere('sphere-1', {
-                        diameter: 2,
-                        segments: 32
-                    }, scene);
-                    // Position the sphere up by half of its height.
-                    sphere.position.y = 1;
-                    box = BABYLON.MeshBuilder.CreateBox('box-1', {
-                        width: 2,
-                        height: 2,
-                        depth: 2
-                    }, scene);
-                    // Position the sphere up by half of its height.
-                    box.position.y = 2;
+                    return [4 /*yield*/, SceneLoader.ImportMeshAsync("", "", "../assets/models/trumpet.glb", scene, undefined, ".glb")];
+                case 1:
+                    importResult = _a.sent();
                     // Create a default environment for the scene.
                     scene.createDefaultEnvironment();
-                    return [4 /*yield*/, scene.createDefaultXRExperienceAsync()];
-                case 1:
-                    xrHelper = _a.sent();
-                    if (!xrHelper.baseExperience) {
-                        // XR support is unavailable.
-                        console.log('WebXR support is unavailable');
-                    }
-                    else {
-                        // XR support is available.
-                        console.log('XR support is available; proceed.');
-                    }
                     return [2 /*return*/, scene];
             }
         });

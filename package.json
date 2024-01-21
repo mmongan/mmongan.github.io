@@ -11,6 +11,10 @@
     "serve": "webpack serve"
   },
   "devDependencies": {
+    "@babylonjs/core": "^6.39.0",
+    "@babylonjs/inspector": "^6.39.0",
+    "@babylonjs/loaders": "^6.39.0",
+    "@babylonjs/materials": "^6.39.0",
     "@types/node": "^20.11.5",
     "@webpack-cli/generators": "^3.0.7",
     "css-loader": "^6.8.1",
@@ -25,11 +29,8 @@
     "webpack-dev-server": "^4.15.1",
     "workbox-webpack-plugin": "^7.0.0"
   },
+  "description": "My webpack project",
   "dependencies": {
-    "@babylonjs/core": "^6.38.1",
-    "@babylonjs/loaders": "^6.38.1",
-    "babylonjs": "^6.39.0",
-    "babylonjs-loaders": "^6.39.0"
-  },
-  "description": "My webpack project"
+    "@webxr-input-profiles/motion-controllers": "^1.0.0"
+  }
 }

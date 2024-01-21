@@ -1,4 +1,5 @@
 const path = require('path');
+const { Extension } = require('typescript');
 module.exports = {
   mode: 'development',
   entry: './src/index.js',
@@ -10,6 +11,7 @@ module.exports = {
     rules: [{ test: /\.txt$/, use: 'raw-loader' }]
   },
   resolve: {
+    extensions: [".ts", ".js"],
     alias: {
       'node_modules': path.join(__dirname, 'node_modules'),
     }

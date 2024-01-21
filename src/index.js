@@ -34,46 +34,55 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
         if (op[0] & 5) throw op[1]; return { value: op[0] ? op[1] : void 0, done: true };
     }
 };
-import * as BABYLON from '@babylonjs/core';
-/// <reference path="create-scene.ts" />
-import * as SCENE from './createscene';
-var main = function () {
-    var _this = this;
-    var canvas = document.getElementById('render-canvas');
-    var engine;
-    var createDefaultEngine = function () {
-        return new BABYLON.Engine(canvas, true, {
-            preserveDrawingBuffer: true,
-            stencil: true
-        });
-    };
-    // Create engine.
-    engine = createDefaultEngine();
-    if (!engine) {
-        throw 'Engine should not be null';
-    }
-    (function () { return __awaiter(_this, void 0, void 0, function () {
-        var scene;
-        return __generator(this, function (_a) {
-            switch (_a.label) {
-                case 0: return [4 /*yield*/, SCENE.createScene(engine, canvas)];
-                case 1:
-                    scene = _a.sent();
-                    // Run render loop to render future frames.
-                    engine.runRenderLoop(function () {
-                        if (scene) {
-                            scene.render();
+import { FreeCamera } from '@babylonjs/core/Cameras/freeCamera';
+import { Engine } from '@babylonjs/core/Engines/engine';
+import { HemisphericLight } from '@babylonjs/core/Lights/hemisphericLight';
+import { Vector3 } from '@babylonjs/core/Maths/math.vector';
+import { Scene } from '@babylonjs/core/scene';
+import { SceneLoader } from "@babylonjs/core";
+import { GridMaterial } from '@babylonjs/materials/grid/gridMaterial';
+import '@babylonjs/loaders';
+(function () { return __awaiter(void 0, void 0, void 0, function () {
+    var canvas, engine, scene, camera, light, material, yaxis, trumpetmesh, importResult, r;
+    return __generator(this, function (_a) {
+        switch (_a.label) {
+            case 0:
+                canvas = document.getElementById("render-canvas");
+                engine = new Engine(canvas);
+                scene = new Scene(engine);
+                camera = new FreeCamera("camera1", new Vector3(1, 1, -1), scene);
+                // This targets the camera to scene origin
+                camera.setTarget(Vector3.Zero());
+                // This attaches the camera to the canvas
+                camera.attachControl(canvas, true);
+                light = new HemisphericLight("light1", new Vector3(0, 1, 0), scene);
+                // Default intensity is 1. Let's dim the light a small amount
+                light.intensity = 0.9;
+                material = new GridMaterial("grid", scene);
+                yaxis = new Vector3(0, 1, 0);
+                return [4 /*yield*/, SceneLoader.ImportMeshAsync("", "", "../assets/models/trumpet.glb", scene, undefined, ".glb").then(function (value) {
+                        for (var _i = 0, _a = value.meshes; _i < _a.length; _i++) {
+                            var v = _a[_i];
+                            if (v.name == "VALVE2") {
+                                v.scaling = v.scaling.scale(2);
+                                //v.movePOV(0,0,0);
+                                trumpetmesh = v;
+                            }
+                            if (v.name == "MOUTHPIECE") {
+                            }
                         }
-                    });
-                    // Handle browser resize.
-                    window.addEventListener('resize', function () {
-                        engine.resize();
-                    });
-                    return [2 /*return*/];
-            }
-        });
-    }); })().catch(function (e) {
-        // Deal with the fact the chain failed
+                    })];
+            case 1:
+                importResult = _a.sent();
+                r = 3.1415926 / 180.0;
+                // Render every frame
+                engine.runRenderLoop(function () {
+                    trumpetmesh.rotate(yaxis, r);
+                    scene.render();
+                });
+                return [2 /*return*/];
+        }
     });
-};
-main();
+}); })().catch(function (e) {
+    // Deal with the fact the chain failed
+});
