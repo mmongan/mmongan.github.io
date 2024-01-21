@@ -71,7 +71,7 @@ const importResult = await SceneLoader.ImportMeshAsync(
     ).then(value => { for (let v of value.meshes) {
             if (v.name == "VALVE2") {
                 v.scaling = v.scaling.scale(2);
-                //v.movePOV(0,0,0);
+                v.movePOV(0,1,0);
                 trumpetmesh = v;
 
             }
@@ -84,7 +84,7 @@ const importResult = await SceneLoader.ImportMeshAsync(
     } });
 
 
-    var xr = await scene.createDefaultXRExperienceAsync({/* configuration options, as needed */})
+    var xr = await scene.createDefaultXRExperienceAsync();
 
     let r = 3.1415926/180.0;
     // Render every frame

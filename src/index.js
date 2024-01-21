@@ -65,7 +65,7 @@ import '@babylonjs/loaders';
                             var v = _a[_i];
                             if (v.name == "VALVE2") {
                                 v.scaling = v.scaling.scale(2);
-                                //v.movePOV(0,0,0);
+                                v.movePOV(0, 1, 0);
                                 trumpetmesh = v;
                             }
                             if (v.name == "MOUTHPIECE") {
@@ -74,7 +74,7 @@ import '@babylonjs/loaders';
                     })];
             case 1:
                 importResult = _a.sent();
-                return [4 /*yield*/, scene.createDefaultXRExperienceAsync({ /* configuration options, as needed */})];
+                return [4 /*yield*/, scene.createDefaultXRExperienceAsync()];
             case 2:
                 xr = _a.sent();
                 r = 3.1415926 / 180.0;
