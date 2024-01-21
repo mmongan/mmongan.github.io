@@ -83,6 +83,9 @@ const importResult = await SceneLoader.ImportMeshAsync(
 
     } });
 
+
+    var xr = await scene.createDefaultXRExperienceAsync({/* configuration options, as needed */})
+
     let r = 3.1415926/180.0;
     // Render every frame
 engine.runRenderLoop(() => {
