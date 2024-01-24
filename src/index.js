@@ -83,7 +83,9 @@ var yaxis = new Vector3(0, 1, 0);
                 finger3 = scene.getMeshByName("FINGER3");
                 mouthpiece = scene.getMeshByName("MOUTHPIECE");
                 if (trumpet != null) {
-                    trumpet.movePOV(0, 1, 2);
+                    trumpet.position.x = 0;
+                    trumpet.position.y = 0;
+                    trumpet.position.z = 0;
                     scene.registerBeforeRender(function () {
                         if (trumpet) {
                             trumpet.rotate(yaxis, Math.PI / (360.0 * 4));
@@ -96,6 +98,8 @@ var yaxis = new Vector3(0, 1, 0);
 }); })().catch(function (e) {
     // Deal with the fact the chain failed
 });
+camera.setTarget(new Vector3(0, 0, 0));
+camera.isStereoscopicSideBySide = true;
 (function () { return __awaiter(void 0, void 0, void 0, function () {
     var xr;
     return __generator(this, function (_a) {

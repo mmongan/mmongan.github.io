@@ -77,7 +77,9 @@ const importResult = await SceneLoader.ImportMeshAsync(
         let mouthpiece = scene.getMeshByName("MOUTHPIECE");
     
         if (trumpet != null) {
-            trumpet.movePOV(0,1,2);
+            trumpet.position.x = 0;
+            trumpet.position.y = 0;
+            trumpet.position.z = 0;
 
             scene.registerBeforeRender(function() {    
                 if (trumpet) {
@@ -90,6 +92,10 @@ const importResult = await SceneLoader.ImportMeshAsync(
 })().catch(e => {
     // Deal with the fact the chain failed
 });   
+
+camera.setTarget(new Vector3(0,0,0));
+
+camera.isStereoscopicSideBySide = true;
 
 
 (async () => {
