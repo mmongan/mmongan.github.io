@@ -78,7 +78,7 @@ const importResult = await SceneLoader.ImportMeshAsync(
     
         if (trumpet != null) {
             trumpet.position.x = 0;
-            trumpet.position.y = 0;
+            trumpet.position.y = 1.5;
             trumpet.position.z = 0;
 
             scene.registerBeforeRender(function() {    

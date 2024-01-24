@@ -84,7 +84,7 @@ var yaxis = new Vector3(0, 1, 0);
                 mouthpiece = scene.getMeshByName("MOUTHPIECE");
                 if (trumpet != null) {
                     trumpet.position.x = 0;
-                    trumpet.position.y = 0;
+                    trumpet.position.y = 1.5;
                     trumpet.position.z = 0;
                     scene.registerBeforeRender(function () {
                         if (trumpet) {
