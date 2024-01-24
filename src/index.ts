@@ -77,7 +77,7 @@ const importResult = await SceneLoader.ImportMeshAsync(
         let mouthpiece = scene.getMeshByName("MOUTHPIECE");
     
         if (trumpet != null) {
-            trumpet.movePOV(0,1,0);
+            trumpet.movePOV(0,1,2);
 
             scene.registerBeforeRender(function() {    
                 if (trumpet) {

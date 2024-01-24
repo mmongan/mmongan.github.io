@@ -83,7 +83,7 @@ var yaxis = new Vector3(0, 1, 0);
                 finger3 = scene.getMeshByName("FINGER3");
                 mouthpiece = scene.getMeshByName("MOUTHPIECE");
                 if (trumpet != null) {
-                    trumpet.movePOV(0, 1, 0);
+                    trumpet.movePOV(0, 1, 2);
                     scene.registerBeforeRender(function () {
                         if (trumpet) {
                             trumpet.rotate(yaxis, Math.PI / (360.0 * 4));
