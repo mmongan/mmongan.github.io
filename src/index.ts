@@ -5,16 +5,13 @@ import { Vector3 } from '@babylonjs/core/Maths/math.vector';
 import { CreateGround } from '@babylonjs/core/Meshes/Builders/groundBuilder';
 import { CreateSphere } from '@babylonjs/core/Meshes/Builders/sphereBuilder';
 import { Scene } from '@babylonjs/core/scene';
-import { SceneLoader, Mesh, AbstractMesh } from "@babylonjs/core";
+import { SceneLoader, Mesh, AbstractMesh, WebXRInputSource } from "@babylonjs/core";
 
 import { GridMaterial } from '@babylonjs/materials/grid/gridMaterial';
 
 import '@babylonjs/loaders';
 
-(async () => {
 
-
-// Get the canvas element from the DOM.
 const canvas = document.getElementById("render-canvas") as HTMLCanvasElement;
 
 // Associate a Babylon Engine to it.
@@ -59,7 +56,10 @@ var material = new GridMaterial("grid", scene);
 
 const yaxis = new Vector3(0,1,0);
 
-let trumpetmesh : AbstractMesh;
+
+(async () => {
+
+// Get the canvas element from the DOM.
 
 const importResult = await SceneLoader.ImportMeshAsync(
     "",
@@ -68,36 +68,41 @@ const importResult = await SceneLoader.ImportMeshAsync(
     scene,
     undefined,
     ".glb"
-    ).then(value => { for (let v of value.meshes) {
-            if (v.name == "VALVE2") {
-                v.scaling = v.scaling.scale(2);
-                v.movePOV(0,1,0);
-                trumpetmesh = v;
+    ).then(value => { });
 
-            }
+        let trumpet = scene.getMeshByName("VALVE2");
+        let finger1 = scene.getMeshByName("FINGER1");
+        let finger2 = scene.getMeshByName("FINGER2");
+        let finger3 = scene.getMeshByName("FINGER3");
+        let mouthpiece = scene.getMeshByName("MOUTHPIECE");
+    
+        if (trumpet != null) {
+            trumpet.movePOV(0,1,0);
 
-            if (v.name == "MOUTHPIECE") {
-                
+            scene.registerBeforeRender(function() {    
+                if (trumpet) {
+                    trumpet.rotate(yaxis, Math.PI/(360.0*4));
+                }
+            });
+            
+        }
+ 
+})().catch(e => {
+    // Deal with the fact the chain failed
+});   
 
-            }
 
-    } });
+(async () => {
+var xr = await scene.createDefaultXRExperienceAsync();
 
-
-    var xr = await scene.createDefaultXRExperienceAsync();
-
-    let r = 3.1415926/180.0;
-    // Render every frame
+// Render every frame
 engine.runRenderLoop(() => {
 
-  trumpetmesh.rotate(yaxis, r);
-
-  
-
-  scene.render();
+scene.render();
 });
 
 })().catch(e => {
     // Deal with the fact the chain failed
 });   
+
 

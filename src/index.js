@@ -42,45 +42,69 @@ import { Scene } from '@babylonjs/core/scene';
 import { SceneLoader } from "@babylonjs/core";
 import { GridMaterial } from '@babylonjs/materials/grid/gridMaterial';
 import '@babylonjs/loaders';
+var canvas = document.getElementById("render-canvas");
+// Associate a Babylon Engine to it.
+var engine = new Engine(canvas);
+// Create our first scene.
+var scene = new Scene(engine);
+// This creates and positions a free camera (non-mesh)
+var camera = new FreeCamera("camera1", new Vector3(1, 1, -1), scene);
+// This targets the camera to scene origin
+camera.setTarget(Vector3.Zero());
+// This attaches the camera to the canvas
+camera.attachControl(canvas, true);
+// This creates a light, aiming 0,1,0 - to the sky (non-mesh)
+var light = new HemisphericLight("light1", new Vector3(0, 1, 0), scene);
+// Default intensity is 1. Let's dim the light a small amount
+light.intensity = 0.9;
+// Create a grid material
+var material = new GridMaterial("grid", scene);
+// Our built-in 'sphere' shape.
+//var sphere = CreateSphere('sphere1', { segments: 16, diameter: 2 }, scene);
+// Move the sphere upward 1/2 its height
+//sphere.position.y = 2;
+// Affect a material
+//sphere.material = material;
+// Our built-in 'ground' shape.
+//var ground = CreateGround('ground1', { width: 6, height: 6, subdivisions: 2 }, scene);
+// Affect a material
+//ground.material = material;
+var yaxis = new Vector3(0, 1, 0);
 (function () { return __awaiter(void 0, void 0, void 0, function () {
-    var canvas, engine, scene, camera, light, material, yaxis, trumpetmesh, importResult, xr, r;
+    var importResult, trumpet, finger1, finger2, finger3, mouthpiece;
     return __generator(this, function (_a) {
         switch (_a.label) {
-            case 0:
-                canvas = document.getElementById("render-canvas");
-                engine = new Engine(canvas);
-                scene = new Scene(engine);
-                camera = new FreeCamera("camera1", new Vector3(1, 1, -1), scene);
-                // This targets the camera to scene origin
-                camera.setTarget(Vector3.Zero());
-                // This attaches the camera to the canvas
-                camera.attachControl(canvas, true);
-                light = new HemisphericLight("light1", new Vector3(0, 1, 0), scene);
-                // Default intensity is 1. Let's dim the light a small amount
-                light.intensity = 0.9;
-                material = new GridMaterial("grid", scene);
-                yaxis = new Vector3(0, 1, 0);
-                return [4 /*yield*/, SceneLoader.ImportMeshAsync("", "", "../assets/models/trumpet.glb", scene, undefined, ".glb").then(function (value) {
-                        for (var _i = 0, _a = value.meshes; _i < _a.length; _i++) {
-                            var v = _a[_i];
-                            if (v.name == "VALVE2") {
-                                v.scaling = v.scaling.scale(2);
-                                v.movePOV(0, 1, 0);
-                                trumpetmesh = v;
-                            }
-                            if (v.name == "MOUTHPIECE") {
-                            }
-                        }
-                    })];
+            case 0: return [4 /*yield*/, SceneLoader.ImportMeshAsync("", "", "../assets/models/trumpet.glb", scene, undefined, ".glb").then(function (value) { })];
             case 1:
                 importResult = _a.sent();
-                return [4 /*yield*/, scene.createDefaultXRExperienceAsync()];
-            case 2:
+                trumpet = scene.getMeshByName("VALVE2");
+                finger1 = scene.getMeshByName("FINGER1");
+                finger2 = scene.getMeshByName("FINGER2");
+                finger3 = scene.getMeshByName("FINGER3");
+                mouthpiece = scene.getMeshByName("MOUTHPIECE");
+                if (trumpet != null) {
+                    trumpet.movePOV(0, 1, 0);
+                    scene.registerBeforeRender(function () {
+                        if (trumpet) {
+                            trumpet.rotate(yaxis, Math.PI / (360.0 * 4));
+                        }
+                    });
+                }
+                return [2 /*return*/];
+        }
+    });
+}); })().catch(function (e) {
+    // Deal with the fact the chain failed
+});
+(function () { return __awaiter(void 0, void 0, void 0, function () {
+    var xr;
+    return __generator(this, function (_a) {
+        switch (_a.label) {
+            case 0: return [4 /*yield*/, scene.createDefaultXRExperienceAsync()];
+            case 1:
                 xr = _a.sent();
-                r = 3.1415926 / 180.0;
                 // Render every frame
                 engine.runRenderLoop(function () {
-                    trumpetmesh.rotate(yaxis, r);
                     scene.render();
                 });
                 return [2 /*return*/];
