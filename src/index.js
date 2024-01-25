@@ -71,12 +71,18 @@ var material = new GridMaterial("grid", scene);
 //ground.material = material;
 var yaxis = new Vector3(0, 1, 0);
 (function () { return __awaiter(void 0, void 0, void 0, function () {
-    var importResult, trumpet, finger1, finger2, finger3, mouthpiece;
+    var importResult, pressfingerbone1, pressfingerbone2, pressfingerbone3, trumpet, finger1, finger2, finger3, mouthpiece;
     return __generator(this, function (_a) {
         switch (_a.label) {
             case 0: return [4 /*yield*/, SceneLoader.ImportMeshAsync("", "", "../assets/models/trumpet.glb", scene, undefined, ".glb").then(function (value) { })];
             case 1:
                 importResult = _a.sent();
+                pressfingerbone1 = scene.getAnimationGroupByName("pressfingerbone1");
+                pressfingerbone2 = scene.getAnimationGroupByName("pressfingerbone2");
+                pressfingerbone3 = scene.getAnimationGroupByName("pressfingerbone3");
+                pressfingerbone1 === null || pressfingerbone1 === void 0 ? void 0 : pressfingerbone1.play(true);
+                pressfingerbone2 === null || pressfingerbone2 === void 0 ? void 0 : pressfingerbone2.play(true);
+                pressfingerbone3 === null || pressfingerbone3 === void 0 ? void 0 : pressfingerbone3.play(true);
                 trumpet = scene.getMeshByName("VALVE2");
                 finger1 = scene.getMeshByName("FINGER1");
                 finger2 = scene.getMeshByName("FINGER2");

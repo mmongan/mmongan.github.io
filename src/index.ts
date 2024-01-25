@@ -70,24 +70,32 @@ const importResult = await SceneLoader.ImportMeshAsync(
     ".glb"
     ).then(value => { });
 
-        let trumpet = scene.getMeshByName("VALVE2");
-        let finger1 = scene.getMeshByName("FINGER1");
-        let finger2 = scene.getMeshByName("FINGER2");
-        let finger3 = scene.getMeshByName("FINGER3");
-        let mouthpiece = scene.getMeshByName("MOUTHPIECE");
-    
-        if (trumpet != null) {
-            trumpet.position.x = 1;
-            trumpet.position.y = 1;
-            trumpet.position.z = 1;
+    let pressfingerbone1 = scene.getAnimationGroupByName("pressfingerbone1");
+    let pressfingerbone2 = scene.getAnimationGroupByName("pressfingerbone2");
+    let pressfingerbone3 = scene.getAnimationGroupByName("pressfingerbone3");
 
-            scene.registerBeforeRender(function() {    
-                if (trumpet) {
-                    trumpet.rotate(yaxis, Math.PI/(360.0*4));
-                }
-            });
-            
-        }
+    pressfingerbone1?.play(true);
+    pressfingerbone2?.play(true);
+    pressfingerbone3?.play(true);
+
+    let trumpet = scene.getMeshByName("VALVE2");
+    let finger1 = scene.getMeshByName("FINGER1");
+    let finger2 = scene.getMeshByName("FINGER2");
+    let finger3 = scene.getMeshByName("FINGER3");
+    let mouthpiece = scene.getMeshByName("MOUTHPIECE");
+
+    if (trumpet != null) {
+        trumpet.position.x = 1;
+        trumpet.position.y = 1;
+        trumpet.position.z = 1;
+
+        scene.registerBeforeRender(function() {    
+            if (trumpet) {
+                trumpet.rotate(yaxis, Math.PI/(360.0*4));
+            }
+        });
+        
+    }
  
 })().catch(e => {
     // Deal with the fact the chain failed
