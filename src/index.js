@@ -48,7 +48,7 @@ var engine = new Engine(canvas);
 // Create our first scene.
 var scene = new Scene(engine);
 // This creates and positions a free camera (non-mesh)
-var camera = new FreeCamera("camera1", new Vector3(1, 1, -1), scene);
+var camera = new FreeCamera("camera1", new Vector3(0, 1, -1), scene);
 // This targets the camera to scene origin
 camera.setTarget(Vector3.Zero());
 // This attaches the camera to the canvas
@@ -70,39 +70,40 @@ var material = new GridMaterial("grid", scene);
 // Affect a material
 //ground.material = material;
 var yaxis = new Vector3(0, 1, 0);
-(function () { return __awaiter(void 0, void 0, void 0, function () {
-    var importResult, pressfingerbone1, pressfingerbone2, pressfingerbone3, trumpet, finger1, finger2, finger3, mouthpiece;
-    return __generator(this, function (_a) {
-        switch (_a.label) {
-            case 0: return [4 /*yield*/, SceneLoader.ImportMeshAsync("", "", "../assets/models/trumpet.glb", scene, undefined, ".glb").then(function (value) { })];
-            case 1:
-                importResult = _a.sent();
-                pressfingerbone1 = scene.getAnimationGroupByName("pressfingerbone1");
-                pressfingerbone2 = scene.getAnimationGroupByName("pressfingerbone2");
-                pressfingerbone3 = scene.getAnimationGroupByName("pressfingerbone3");
-                pressfingerbone1 === null || pressfingerbone1 === void 0 ? void 0 : pressfingerbone1.play(true);
-                pressfingerbone2 === null || pressfingerbone2 === void 0 ? void 0 : pressfingerbone2.play(true);
-                pressfingerbone3 === null || pressfingerbone3 === void 0 ? void 0 : pressfingerbone3.play(true);
-                trumpet = scene.getMeshByName("VALVE2");
-                finger1 = scene.getMeshByName("FINGER1");
-                finger2 = scene.getMeshByName("FINGER2");
-                finger3 = scene.getMeshByName("FINGER3");
-                mouthpiece = scene.getMeshByName("MOUTHPIECE");
-                if (trumpet != null) {
-                    trumpet.position.x = 1;
-                    trumpet.position.y = 1;
-                    trumpet.position.z = 1;
-                    scene.registerBeforeRender(function () {
-                        if (trumpet) {
-                            trumpet.rotate(yaxis, Math.PI / (360.0 * 4));
-                        }
-                    });
-                }
-                return [2 /*return*/];
+// Get the canvas element from the DOM.
+var importResult = SceneLoader.ImportMesh(null, "../assets/models/trumpet.glb", "", scene, function (meshes, particleSystems, skeletons, animationGroups) {
+    var pressfingerbone1 = scene.getAnimationGroupByName("pressfingerbone1");
+    var pressfingerbone2 = scene.getAnimationGroupByName("pressfingerbone2");
+    var pressfingerbone3 = scene.getAnimationGroupByName("pressfingerbone3");
+    pressfingerbone1 === null || pressfingerbone1 === void 0 ? void 0 : pressfingerbone1.play(true);
+    pressfingerbone2 === null || pressfingerbone2 === void 0 ? void 0 : pressfingerbone2.play(true);
+    pressfingerbone3 === null || pressfingerbone3 === void 0 ? void 0 : pressfingerbone3.play(true);
+    var trumpet = scene.getMeshByName("VALVE2");
+    var finger1 = scene.getMeshByName("FINGER1");
+    var finger2 = scene.getMeshByName("FINGER2");
+    var finger3 = scene.getMeshByName("FINGER3");
+    var mouthpiece = scene.getMeshByName("MOUTHPIECE");
+    if (trumpet != null) {
+        scene.registerBeforeRender(function () {
+            if (trumpet) {
+                //                    trumpet.rotate(yaxis, Math.PI/(360.0*4));
+            }
+        });
+    }
+    scene.onPointerDown = function (evt, pickResult) {
+        if (true) { //pickResult.pickedMesh) {
+            for (var i = 0; i < scene.animationGroups.length; i++) {
+                console.log("animation" + scene.animationGroups[i].name);
+                //if (scene.animationGroups[i].name.startsWith("pressfingerbones")) {
+                scene.animationGroups[i].play();
+                scene.animationGroups[i].onAnimationGroupEndObservable.add(function () {
+                    console.log("animation" + scene.animationGroups[i].name);
+                    scene.animationGroups[i].play();
+                });
+                //}
+            }
         }
-    });
-}); })().catch(function (e) {
-    // Deal with the fact the chain failed
+    };
 });
 camera.isStereoscopicSideBySide = true;
 (function () { return __awaiter(void 0, void 0, void 0, function () {
