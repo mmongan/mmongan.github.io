@@ -75,9 +75,21 @@ var importResult = SceneLoader.ImportMesh(null, "../assets/models/trumpet.glb", 
     var pressfingerbone1 = scene.getAnimationGroupByName("pressfingerbone1");
     var pressfingerbone2 = scene.getAnimationGroupByName("pressfingerbone2");
     var pressfingerbone3 = scene.getAnimationGroupByName("pressfingerbone3");
-    pressfingerbone1 === null || pressfingerbone1 === void 0 ? void 0 : pressfingerbone1.play(true);
-    pressfingerbone2 === null || pressfingerbone2 === void 0 ? void 0 : pressfingerbone2.play(true);
-    pressfingerbone3 === null || pressfingerbone3 === void 0 ? void 0 : pressfingerbone3.play(true);
+    for (var i = 0; i < animationGroups.length; i++) {
+        console.log("animation " + animationGroups[i].name);
+        //if (scene.animationGroups[i].name.startsWith("pressfingerbones")) {
+        //animationGroups[i].play(false);
+        var animation = animationGroups[i];
+        animation.start(false, -1.0, 3, 1, false);
+        // animation.onAnimationGroupEndObservable.add(function () {
+        //     console.log("animation" + animation.name);
+        //     animation.stop();
+        // })
+        //}
+    }
+    //pressfingerbone1?.play(true);
+    //pressfingerbone2?.play(false);
+    //pressfingerbone3?.stop();
     var trumpet = scene.getMeshByName("VALVE2");
     var finger1 = scene.getMeshByName("FINGER1");
     var finger2 = scene.getMeshByName("FINGER2");
@@ -86,23 +98,23 @@ var importResult = SceneLoader.ImportMesh(null, "../assets/models/trumpet.glb", 
     if (trumpet != null) {
         scene.registerBeforeRender(function () {
             if (trumpet) {
-                //                    trumpet.rotate(yaxis, Math.PI/(360.0*4));
+                trumpet.rotate(yaxis, Math.PI / (360.0 * 4));
             }
         });
     }
     scene.onPointerDown = function (evt, pickResult) {
-        if (true) { //pickResult.pickedMesh) {
-            for (var i = 0; i < scene.animationGroups.length; i++) {
-                console.log("animation" + scene.animationGroups[i].name);
-                //if (scene.animationGroups[i].name.startsWith("pressfingerbones")) {
-                scene.animationGroups[i].play();
-                scene.animationGroups[i].onAnimationGroupEndObservable.add(function () {
-                    console.log("animation" + scene.animationGroups[i].name);
-                    scene.animationGroups[i].play();
-                });
-                //}
-            }
-        }
+        // if (true) { //pickResult.pickedMesh) {
+        //     for (var i = 0; i < scene.animationGroups.length; i++) {
+        //         console.log("animation" + scene.animationGroups[i].name);
+        //         //if (scene.animationGroups[i].name.startsWith("pressfingerbones")) {
+        //             scene.animationGroups[i].play();
+        //             scene.animationGroups[i].onAnimationGroupEndObservable.add(function () {
+        //                 console.log("animation" + scene.animationGroups[i].name);
+        //                 scene.animationGroups[i].play();
+        //             })
+        //         //}
+        //     }
+        // }
     };
 });
 camera.isStereoscopicSideBySide = true;

@@ -70,10 +70,24 @@ const importResult = SceneLoader.ImportMesh(
         let pressfingerbone2 = scene.getAnimationGroupByName("pressfingerbone2");
         let pressfingerbone3 = scene.getAnimationGroupByName("pressfingerbone3");
     
-    
-        pressfingerbone1?.play(true);
-        pressfingerbone2?.play(true);
-        pressfingerbone3?.play(true);
+        for (var i = 0; i < animationGroups.length; i++) {
+            console.log("animation " + animationGroups[i].name);
+            //if (scene.animationGroups[i].name.startsWith("pressfingerbones")) {
+                //animationGroups[i].play(false);
+
+                const animation = animationGroups[i];
+
+                animation.start(false, -1.0, 3, 1, false);
+                // animation.onAnimationGroupEndObservable.add(function () {
+                //     console.log("animation" + animation.name);
+                //     animation.stop();
+                // })
+            //}
+        }        
+        
+        //pressfingerbone1?.play(true);
+        //pressfingerbone2?.play(false);
+        //pressfingerbone3?.stop();
     
     
         let trumpet = scene.getMeshByName("VALVE2");
@@ -86,7 +100,7 @@ const importResult = SceneLoader.ImportMesh(
     
             scene.registerBeforeRender(function() {    
                 if (trumpet) {
-//                    trumpet.rotate(yaxis, Math.PI/(360.0*4));
+                    trumpet.rotate(yaxis, Math.PI/(360.0*4));
     
                     
                     
@@ -100,18 +114,18 @@ const importResult = SceneLoader.ImportMesh(
             
             
     
-            if (true) { //pickResult.pickedMesh) {
-                for (var i = 0; i < scene.animationGroups.length; i++) {
-                    console.log("animation" + scene.animationGroups[i].name);
-                    //if (scene.animationGroups[i].name.startsWith("pressfingerbones")) {
-                        scene.animationGroups[i].play();
-                        scene.animationGroups[i].onAnimationGroupEndObservable.add(function () {
-                            console.log("animation" + scene.animationGroups[i].name);
-                            scene.animationGroups[i].play();
-                        })
-                    //}
-                }
-            }
+            // if (true) { //pickResult.pickedMesh) {
+            //     for (var i = 0; i < scene.animationGroups.length; i++) {
+            //         console.log("animation" + scene.animationGroups[i].name);
+            //         //if (scene.animationGroups[i].name.startsWith("pressfingerbones")) {
+            //             scene.animationGroups[i].play();
+            //             scene.animationGroups[i].onAnimationGroupEndObservable.add(function () {
+            //                 console.log("animation" + scene.animationGroups[i].name);
+            //                 scene.animationGroups[i].play();
+            //             })
+            //         //}
+            //     }
+            // }
         };
     
     });
