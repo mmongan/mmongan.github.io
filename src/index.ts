@@ -80,7 +80,7 @@ const importResult = SceneLoader.ImportMesh(
         trumpet = scene.getMeshByName("LEADPIPE") as AbstractMesh;        
         trumpet.position = new Vector3(0,1,0);
         trumpet.rotate(zaxis,Math.PI);
-        trumpet.rotate(xaxis,Math.PI/2);
+        trumpet.rotate(xaxis,-Math.PI/2);
 
 
         pressfingerbone1 = scene.getAnimationGroupByName("pressfingerbone1action");        
