@@ -1,39 +1,37 @@
+// TRUMPET-PUPPET
+// Copyright (C) 2024  MARTY MONGAN
+//
+//This program is free software: you can redistribute it and/or modify
+//it under the terms of the GNU General Public License as published by
+//the Free Software Foundation, either version 3 of the License, or
+//(at your option) any later version.
+//
+//This program is distributed in the hope that it will be useful,
+//but WITHOUT ANY WARRANTY; without even the implied warranty of
+//MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//GNU General Public License for more details.
+//
+//You should have received a copy of the GNU General Public License
+//along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import { FreeCamera } from '@babylonjs/core/Cameras/freeCamera';
 import { Engine } from '@babylonjs/core/Engines/engine';
 import { HemisphericLight } from '@babylonjs/core/Lights/hemisphericLight';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector';
 import { Scene } from '@babylonjs/core/scene';
 import { GrassProceduralTexture } from '@babylonjs/procedural-textures';
-import { SceneLoader, MeshBuilder, WebXRFeatureName, Ray, StandardMaterial, Color3 } from "@babylonjs/core";
+import { SceneLoader, MeshBuilder, WebXRFeatureName, StandardMaterial, Color3 } from "@babylonjs/core";
 import { GridMaterial } from '@babylonjs/materials/grid/gridMaterial';
 import '@babylonjs/loaders';
 var canvas = document.getElementById("render-canvas");
 // Associate a Babylon Engine to it.
 var engine = new Engine(canvas);
-// Create our first scene.
 var scene = new Scene(engine);
-// This creates and positions a free camera (non-mesh)
 var camera = new FreeCamera("camera1", new Vector3(0, 1, -.7), scene);
-// This targets the camera to scene origin
 camera.setTarget(Vector3.Zero());
-// This attaches the camera to the canvas
 camera.attachControl(canvas, true);
-// This creates a light, aiming 0,1,0 - to the sky (non-mesh)
 var light = new HemisphericLight("light1", new Vector3(0, 1, 0), scene);
-// Default intensity is 1. Let's dim the light a small amount
 light.intensity = 0.9;
-// Create a grid material
 var material = new GridMaterial("grid", scene);
-// Our built-in 'sphere' shape.
-//var sphere = CreateSphere('sphere1', { segments: 16, diameter: 2 }, scene);
-// Move the sphere upward 1/2 its height
-//sphere.position.y = 2;
-// Affect a material
-//sphere.material = material;
-// Our built-in 'ground' shape.
-//var ground = CreateGround('ground1', { width: 6, height: 6, subdivisions: 2 }, scene);
-// Affect a material
-//ground.material = material;
 var xaxis = new Vector3(1, 0, 0);
 var yaxis = new Vector3(0, 1, 0);
 var zaxis = new Vector3(0, 0, 1);
@@ -43,7 +41,6 @@ var trumpet;
 var pressfingerbone1;
 var pressfingerbone2;
 var pressfingerbone3;
-// Get the canvas element from the DOM.
 var importResult = SceneLoader.ImportMesh(null, "../assets/models/trumpet.glb", "", scene, function (meshes, particleSystems, skeletons, animationGroups) {
     trumpet = scene.getMeshByName("LEADPIPE");
     trumpet.position = new Vector3(0, 1, 0);
@@ -91,7 +88,6 @@ var setupcontrollers = function (xr) {
                 var triggerComponent_1 = motionController.getComponent(xr_ids[0]); //xr-standard-trigger
                 triggerComponent_1.onButtonStateChangedObservable.add(function () {
                     if (triggerComponent_1.pressed) {
-                        //trumpet.position = new Vector3(0,1,0);
                         //Box_Left_Trigger.scaling= new BABYLON.Vector3(1.2,1.2,1.2);
                     }
                     else {
@@ -293,17 +289,6 @@ scene.createDefaultXRExperienceAsync().then(function (xr) {
         if (trumpet) {
             scene.registerBeforeRender(function () {
                 if (trumpet) {
-                    // trumpet.rotate(yaxis, Math.PI/(360.0*4));
-                    // trumpet.rotate(zaxis, Math.PI/(360.0*3));
-                    // if (trumpet) {
-                    //     trumpet.position = new Vector3(1, 1, 1);
-                    //trumpet.position = leftController                                                            
-                    if (leftController && leftController.pointer) {
-                        var tmpRay = new Ray(leftController.pointer.absolutePosition, leftController.pointer.forward, 0.5);
-                        leftController.getWorldPointerRayToRef(tmpRay, true);
-                        var newPosition = new Vector3(tmpRay.origin.x + tmpRay.direction.x, tmpRay.origin.y, tmpRay.origin.z + tmpRay.direction.z);
-                        trumpet.position = newPosition;
-                    }
                 }
             });
         }
