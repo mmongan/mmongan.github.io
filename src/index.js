@@ -97,8 +97,11 @@ var setupcontrollers = function (xr) {
                 var squeezeComponent_1 = motionController.getComponent(xr_ids[1]); //xr-standard-squeeze
                 squeezeComponent_1.onButtonStateChangedObservable.add(function () {
                     if (squeezeComponent_1.pressed) {
-                        //Box_Left_Squeeze.scaling= new BABYLON.Vector3(1.2,1.2,1.2);
+                        //Box_Left_Squeeze.scaling= new BABYLON.Vector3(1.2,1.2,1.2);                             
                         trumpet.setParent(motionController.rootMesh);
+                        if (Vector3.Distance(motionController.rootMesh.position, trumpet.position) > 1) {
+                            trumpet.position = new Vector3(0.0, 0.0, 0.0);
+                        }
                     }
                     else {
                         //Box_Left_Squeeze.scaling=new BABYLON.Vector3(1,1,1);
@@ -191,8 +194,11 @@ var setupcontrollers = function (xr) {
                 var squeezeComponent_2 = motionController.getComponent(xr_ids[1]); //xr-standard-squeeze
                 squeezeComponent_2.onButtonStateChangedObservable.add(function () {
                     if (squeezeComponent_2.pressed) {
-                        //Box_Right_Squeeze.scaling= new BABYLON.Vector3(1.2,1.2,1.2);
+                        //Box_Right_Squeeze.scaling= new BABYLON.Vector3(1.2,1.2,1.2);                             
                         trumpet.setParent(motionController.rootMesh);
+                        if (Vector3.Distance(motionController.rootMesh.position, trumpet.position) > 1) {
+                            trumpet.position = new Vector3(0.0, 0.0, 0.0);
+                        }
                     }
                     else {
                         //Box_Right_Squeeze.scaling=new BABYLON.Vector3(1,1,1);

@@ -23,7 +23,7 @@ import { CreateGround } from '@babylonjs/core/Meshes/Builders/groundBuilder';
 import { CreateSphere } from '@babylonjs/core/Meshes/Builders/sphereBuilder';
 import { Scene } from '@babylonjs/core/scene';
 import { GrassProceduralTexture } from '@babylonjs/procedural-textures';
-import { SceneLoader, Mesh, AbstractMesh, WebXRInputSource, WebXRDefaultExperience, MeshBuilder, WebXRFeatureName, Ray, AnimationGroup, Nullable, StandardMaterial, Color3 } from "@babylonjs/core";
+import { SceneLoader, Mesh, AbstractMesh, WebXRInputSource, WebXRDefaultExperience, MeshBuilder, WebXRFeatureName, Ray, AnimationGroup, Nullable, StandardMaterial, Color3, RotationGizmo } from "@babylonjs/core";
 import { fetchProfile, MotionController } from '@webxr-input-profiles/motion-controllers'
 
 import { GridMaterial } from '@babylonjs/materials/grid/gridMaterial';
@@ -65,6 +65,7 @@ const importResult = SceneLoader.ImportMesh(
         trumpet.position = new Vector3(0,1,0);
         trumpet.rotate(zaxis,Math.PI);
         trumpet.rotate(xaxis,-Math.PI/2);
+        
 
 
         pressfingerbone1 = scene.getAnimationGroupByName("pressfingerbone1action");        
@@ -140,8 +141,15 @@ const importResult = SceneLoader.ImportMesh(
                      let squeezeComponent = motionController.getComponent(xr_ids[1]);//xr-standard-squeeze
                      squeezeComponent.onButtonStateChangedObservable.add(() => {
                          if (squeezeComponent.pressed) {
-                             //Box_Left_Squeeze.scaling= new BABYLON.Vector3(1.2,1.2,1.2);
-                             trumpet.setParent(motionController.rootMesh);                            
+                             //Box_Left_Squeeze.scaling= new BABYLON.Vector3(1.2,1.2,1.2);                             
+                             trumpet.setParent(motionController.rootMesh);
+
+                             if (Vector3.Distance(motionController.rootMesh.position, trumpet.position) > 1)
+                             {
+                                trumpet.position = new Vector3(0.0,0.0,0.0);
+                             }
+                             
+                             
                          }else{
                              //Box_Left_Squeeze.scaling=new BABYLON.Vector3(1,1,1);
                              trumpet.setParent(null);
@@ -242,8 +250,14 @@ const importResult = SceneLoader.ImportMesh(
                      let squeezeComponent = motionController.getComponent(xr_ids[1]);//xr-standard-squeeze
                      squeezeComponent.onButtonStateChangedObservable.add(() => {
                          if (squeezeComponent.pressed) {
-                             //Box_Right_Squeeze.scaling= new BABYLON.Vector3(1.2,1.2,1.2);
+                             //Box_Right_Squeeze.scaling= new BABYLON.Vector3(1.2,1.2,1.2);                             
                              trumpet.setParent(motionController.rootMesh);
+
+                             if (Vector3.Distance(motionController.rootMesh.position, trumpet.position) > 1)
+                             {
+                                trumpet.position = new Vector3(0.0,0.0,0.0);
+                             }
+                             
                          }else{
                              //Box_Right_Squeeze.scaling=new BABYLON.Vector3(1,1,1);
                              trumpet.setParent(null);
