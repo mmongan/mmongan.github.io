@@ -3,7 +3,8 @@ import { Engine } from '@babylonjs/core/Engines/engine';
 import { HemisphericLight } from '@babylonjs/core/Lights/hemisphericLight';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector';
 import { Scene } from '@babylonjs/core/scene';
-import { SceneLoader, MeshBuilder, WebXRFeatureName, Ray } from "@babylonjs/core";
+import { GrassProceduralTexture } from '@babylonjs/procedural-textures';
+import { SceneLoader, MeshBuilder, WebXRFeatureName, Ray, StandardMaterial, Color3 } from "@babylonjs/core";
 import { GridMaterial } from '@babylonjs/materials/grid/gridMaterial';
 import '@babylonjs/loaders';
 var canvas = document.getElementById("render-canvas");
@@ -47,7 +48,7 @@ var importResult = SceneLoader.ImportMesh(null, "../assets/models/trumpet.glb", 
     trumpet = scene.getMeshByName("LEADPIPE");
     trumpet.position = new Vector3(0, 1, 0);
     trumpet.rotate(zaxis, Math.PI);
-    trumpet.rotate(xaxis, Math.PI / 2);
+    trumpet.rotate(xaxis, -Math.PI / 2);
     pressfingerbone1 = scene.getAnimationGroupByName("pressfingerbone1action");
     pressfingerbone2 = scene.getAnimationGroupByName("pressfingerbone2action");
     pressfingerbone3 = scene.getAnimationGroupByName("pressfingerbone3action");
@@ -265,7 +266,22 @@ scene.createDefaultXRExperienceAsync().then(function (xr) {
         xrInput: xr.input,
         enablePointerSelectionOnAllControllers: true
     });
-    var ground = MeshBuilder.CreateGround("ground", { width: 400, height: 400 });
+    var ground = MeshBuilder.CreateGround("ground", { width: 100, height: 100 }, scene);
+    var grassMaterial = new StandardMaterial("grassMat", scene);
+    var grassTexture = new GrassProceduralTexture("grassTex", 1024, scene);
+    grassMaterial.ambientTexture = grassTexture;
+    ground.material = grassMaterial;
+    // const skyMaterial = new StandardMaterial("skyMaterial", scene);        
+    // skyMaterial.backFaceCulling = false;
+    // const skybox = MeshBuilder.CreateBox("skyBox", { size: 1000.0 }, scene);
+    // skybox.material = skyMaterial;        
+    var environment = scene.createDefaultEnvironment({
+        createSkybox: true,
+        skyboxSize: 150,
+        skyboxColor: Color3.Teal(),
+        enableGroundShadow: true,
+        groundYBias: 1
+    });
     var teleportation = featuresManager.enableFeature(WebXRFeatureName.TELEPORTATION, "stable", {
         xrInput: xr.input,
         floorMeshes: [ground],

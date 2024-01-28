@@ -5,7 +5,8 @@ import { Vector3 } from '@babylonjs/core/Maths/math.vector';
 import { CreateGround } from '@babylonjs/core/Meshes/Builders/groundBuilder';
 import { CreateSphere } from '@babylonjs/core/Meshes/Builders/sphereBuilder';
 import { Scene } from '@babylonjs/core/scene';
-import { SceneLoader, Mesh, AbstractMesh, WebXRInputSource, WebXRDefaultExperience, MeshBuilder, WebXRFeatureName, Ray, AnimationGroup, Nullable } from "@babylonjs/core";
+import { GrassProceduralTexture } from '@babylonjs/procedural-textures';
+import { SceneLoader, Mesh, AbstractMesh, WebXRInputSource, WebXRDefaultExperience, MeshBuilder, WebXRFeatureName, Ray, AnimationGroup, Nullable, StandardMaterial, Color3 } from "@babylonjs/core";
 import { fetchProfile, MotionController } from '@webxr-input-profiles/motion-controllers'
 
 import { GridMaterial } from '@babylonjs/materials/grid/gridMaterial';
@@ -346,10 +347,32 @@ const importResult = SceneLoader.ImportMesh(
         });
     
     
-        const ground = MeshBuilder.CreateGround("ground", {width: 400, height: 400});
-    
+        const ground = MeshBuilder.CreateGround("ground", {width: 100, height: 100}, scene);
+        
 
-        const teleportation = featuresManager.enableFeature(WebXRFeatureName.TELEPORTATION, "stable", {
+        var grassMaterial = new StandardMaterial("grassMat", scene);
+        var grassTexture = new GrassProceduralTexture("grassTex", 1024, scene);
+        grassMaterial.ambientTexture = grassTexture;
+
+        ground.material = grassMaterial;
+    
+        // const skyMaterial = new StandardMaterial("skyMaterial", scene);        
+        // skyMaterial.backFaceCulling = false;
+        
+        // const skybox = MeshBuilder.CreateBox("skyBox", { size: 1000.0 }, scene);
+        // skybox.material = skyMaterial;        
+        
+
+        var environment =  scene.createDefaultEnvironment({ 
+            createSkybox: true,
+            skyboxSize: 150,
+            skyboxColor: Color3.Teal(),
+            enableGroundShadow: true, 
+            groundYBias: 1 
+        });        
+
+
+        const teleportation = featuresManager.enableFeature(WebXRFeatureName.TELEPORTATION, "stable", {            
             xrInput: xr.input,
             floorMeshes: [ground],
             snapPositions: [new Vector3(2.4*3.5*1, 0, -10*1)],
