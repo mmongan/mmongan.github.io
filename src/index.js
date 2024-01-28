@@ -266,22 +266,23 @@ scene.createDefaultXRExperienceAsync().then(function (xr) {
         xrInput: xr.input,
         enablePointerSelectionOnAllControllers: true
     });
-    var ground = MeshBuilder.CreateGround("ground", { width: 100, height: 100 }, scene);
-    var grassMaterial = new StandardMaterial("grassMat", scene);
-    var grassTexture = new GrassProceduralTexture("grassTex", 1024, scene);
-    grassMaterial.ambientTexture = grassTexture;
-    ground.material = grassMaterial;
     // const skyMaterial = new StandardMaterial("skyMaterial", scene);        
     // skyMaterial.backFaceCulling = false;
     // const skybox = MeshBuilder.CreateBox("skyBox", { size: 1000.0 }, scene);
     // skybox.material = skyMaterial;        
     var environment = scene.createDefaultEnvironment({
+        createGround: false,
         createSkybox: true,
         skyboxSize: 150,
         skyboxColor: Color3.Teal(),
         enableGroundShadow: true,
         groundYBias: 1
     });
+    var ground = MeshBuilder.CreateGround("ground", { width: 100, height: 100 }, scene);
+    var grassMaterial = new StandardMaterial("grassMat", scene);
+    var grassTexture = new GrassProceduralTexture("grassTex", 1024, scene);
+    grassMaterial.ambientTexture = grassTexture;
+    ground.material = grassMaterial;
     var teleportation = featuresManager.enableFeature(WebXRFeatureName.TELEPORTATION, "stable", {
         xrInput: xr.input,
         floorMeshes: [ground],

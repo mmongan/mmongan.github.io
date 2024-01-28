@@ -347,14 +347,6 @@ const importResult = SceneLoader.ImportMesh(
         });
     
     
-        const ground = MeshBuilder.CreateGround("ground", {width: 100, height: 100}, scene);
-        
-
-        var grassMaterial = new StandardMaterial("grassMat", scene);
-        var grassTexture = new GrassProceduralTexture("grassTex", 1024, scene);
-        grassMaterial.ambientTexture = grassTexture;
-
-        ground.material = grassMaterial;
     
         // const skyMaterial = new StandardMaterial("skyMaterial", scene);        
         // skyMaterial.backFaceCulling = false;
@@ -364,12 +356,23 @@ const importResult = SceneLoader.ImportMesh(
         
 
         var environment =  scene.createDefaultEnvironment({ 
+            createGround: false,
             createSkybox: true,
             skyboxSize: 150,
             skyboxColor: Color3.Teal(),
             enableGroundShadow: true, 
             groundYBias: 1 
         });        
+
+
+        const ground = MeshBuilder.CreateGround("ground", {width: 100, height: 100}, scene);
+        
+
+        var grassMaterial = new StandardMaterial("grassMat", scene);
+        var grassTexture = new GrassProceduralTexture("grassTex", 1024, scene);
+        grassMaterial.ambientTexture = grassTexture;
+
+        ground.material = grassMaterial;
 
 
         const teleportation = featuresManager.enableFeature(WebXRFeatureName.TELEPORTATION, "stable", {            
