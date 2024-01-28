@@ -3,7 +3,7 @@ import { Engine } from '@babylonjs/core/Engines/engine';
 import { HemisphericLight } from '@babylonjs/core/Lights/hemisphericLight';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector';
 import { Scene } from '@babylonjs/core/scene';
-import { SceneLoader, MeshBuilder, WebXRFeatureName } from "@babylonjs/core";
+import { SceneLoader, MeshBuilder, WebXRFeatureName, Ray } from "@babylonjs/core";
 import { GridMaterial } from '@babylonjs/materials/grid/gridMaterial';
 import '@babylonjs/loaders';
 var canvas = document.getElementById("render-canvas");
@@ -37,6 +37,7 @@ var yaxis = new Vector3(0, 1, 0);
 var zaxis = new Vector3(0, 0, 1);
 var leftController;
 var rightController;
+var trumpet;
 var setupcontrollers = function (xr) {
     xr.input.onControllerAddedObservable.add(function (controller) {
         controller.onMotionControllerInitObservable.add(function (motionController) {
@@ -46,6 +47,8 @@ var setupcontrollers = function (xr) {
                 var triggerComponent_1 = motionController.getComponent(xr_ids[0]); //xr-standard-trigger
                 triggerComponent_1.onButtonStateChangedObservable.add(function () {
                     if (triggerComponent_1.pressed) {
+                        trumpet.setParent(motionController.rootMesh);
+                        //trumpet.position = new Vector3(0,1,0);
                         //Box_Left_Trigger.scaling= new BABYLON.Vector3(1.2,1.2,1.2);
                     }
                     else {
@@ -211,24 +214,15 @@ var setupcontrollers = function (xr) {
 };
 // Get the canvas element from the DOM.
 var importResult = SceneLoader.ImportMesh(null, "../assets/models/trumpet.glb", "", scene, function (meshes, particleSystems, skeletons, animationGroups) {
-    var trumpet = scene.getMeshByName("LEADPIPE");
-    if (trumpet) {
-        scene.registerBeforeRender(function () {
-            if (trumpet) {
-                trumpet.rotate(yaxis, Math.PI / (360.0 * 4));
-                trumpet.rotate(zaxis, Math.PI / (360.0 * 3));
-                if (trumpet) {
-                    trumpet.position = new Vector3(1, 1, 1);
-                }
-            }
-        });
-    }
+    trumpet = scene.getMeshByName("LEADPIPE");
+    trumpet.position = new Vector3(0, 1, 0);
+    trumpet.rotate(zaxis, 2 * Math.PI);
     var pressfingerbone1 = scene.getAnimationGroupByName("pressfingerbone1action");
     var pressfingerbone2 = scene.getAnimationGroupByName("pressfingerbone2action");
     var pressfingerbone3 = scene.getAnimationGroupByName("pressfingerbone3action");
-    pressfingerbone1 === null || pressfingerbone1 === void 0 ? void 0 : pressfingerbone1.play(true);
-    pressfingerbone1 === null || pressfingerbone1 === void 0 ? void 0 : pressfingerbone1.play(true);
-    pressfingerbone1 === null || pressfingerbone1 === void 0 ? void 0 : pressfingerbone1.play(true);
+    //pressfingerbone1?.play(true);
+    //pressfingerbone2?.play(true);
+    //pressfingerbone3?.play(true);
     // for (var i = 0; i < animationGroups.length; i++) {
     //     console.log("animation " + animationGroups[i].name);
     //     if (scene.animationGroups[i].name.startsWith("pressfingerbone")) {
@@ -277,16 +271,22 @@ scene.createDefaultXRExperienceAsync().then(function (xr) {
     });
     setupcontrollers(xr);
     engine.runRenderLoop(function () {
-        if (leftController) {
-            //trumpet.setmatrix = pose.transform.matrix;
-        }
-        // Check for and respond to any gamepad state changes.
-        for (var _i = 0, _a = xr.input.controllers; _i < _a.length; _i++) {
-            var source = _a[_i];
-            var inputsource = source.inputSource;
-            if (inputsource.gamepad) {
-                //let pose = getPose(inputsource.gripSpace, refSpace);
-            }
+        if (trumpet) {
+            scene.registerBeforeRender(function () {
+                if (trumpet) {
+                    // trumpet.rotate(yaxis, Math.PI/(360.0*4));
+                    // trumpet.rotate(zaxis, Math.PI/(360.0*3));
+                    // if (trumpet) {
+                    //     trumpet.position = new Vector3(1, 1, 1);
+                    //trumpet.position = leftController                                                            
+                    if (leftController && leftController.pointer) {
+                        var tmpRay = new Ray(leftController.pointer.absolutePosition, leftController.pointer.forward, 0.5);
+                        leftController.getWorldPointerRayToRef(tmpRay, true);
+                        var newPosition = new Vector3(tmpRay.origin.x + tmpRay.direction.x, tmpRay.origin.y, tmpRay.origin.z + tmpRay.direction.z);
+                        trumpet.position = newPosition;
+                    }
+                }
+            });
         }
         scene.render();
     });
