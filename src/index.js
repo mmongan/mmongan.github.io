@@ -1,45 +1,9 @@
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
-var __generator = (this && this.__generator) || function (thisArg, body) {
-    var _ = { label: 0, sent: function() { if (t[0] & 1) throw t[1]; return t[1]; }, trys: [], ops: [] }, f, y, t, g;
-    return g = { next: verb(0), "throw": verb(1), "return": verb(2) }, typeof Symbol === "function" && (g[Symbol.iterator] = function() { return this; }), g;
-    function verb(n) { return function (v) { return step([n, v]); }; }
-    function step(op) {
-        if (f) throw new TypeError("Generator is already executing.");
-        while (g && (g = 0, op[0] && (_ = 0)), _) try {
-            if (f = 1, y && (t = op[0] & 2 ? y["return"] : op[0] ? y["throw"] || ((t = y["return"]) && t.call(y), 0) : y.next) && !(t = t.call(y, op[1])).done) return t;
-            if (y = 0, t) op = [op[0] & 2, t.value];
-            switch (op[0]) {
-                case 0: case 1: t = op; break;
-                case 4: _.label++; return { value: op[1], done: false };
-                case 5: _.label++; y = op[1]; op = [0]; continue;
-                case 7: op = _.ops.pop(); _.trys.pop(); continue;
-                default:
-                    if (!(t = _.trys, t = t.length > 0 && t[t.length - 1]) && (op[0] === 6 || op[0] === 2)) { _ = 0; continue; }
-                    if (op[0] === 3 && (!t || (op[1] > t[0] && op[1] < t[3]))) { _.label = op[1]; break; }
-                    if (op[0] === 6 && _.label < t[1]) { _.label = t[1]; t = op; break; }
-                    if (t && _.label < t[2]) { _.label = t[2]; _.ops.push(op); break; }
-                    if (t[2]) _.ops.pop();
-                    _.trys.pop(); continue;
-            }
-            op = body.call(thisArg, _);
-        } catch (e) { op = [6, e]; y = 0; } finally { f = t = 0; }
-        if (op[0] & 5) throw op[1]; return { value: op[0] ? op[1] : void 0, done: true };
-    }
-};
 import { FreeCamera } from '@babylonjs/core/Cameras/freeCamera';
 import { Engine } from '@babylonjs/core/Engines/engine';
 import { HemisphericLight } from '@babylonjs/core/Lights/hemisphericLight';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector';
 import { Scene } from '@babylonjs/core/scene';
-import { SceneLoader } from "@babylonjs/core";
+import { SceneLoader, MeshBuilder, WebXRFeatureName } from "@babylonjs/core";
 import { GridMaterial } from '@babylonjs/materials/grid/gridMaterial';
 import '@babylonjs/loaders';
 var canvas = document.getElementById("render-canvas");
@@ -48,7 +12,7 @@ var engine = new Engine(canvas);
 // Create our first scene.
 var scene = new Scene(engine);
 // This creates and positions a free camera (non-mesh)
-var camera = new FreeCamera("camera1", new Vector3(0, 1, -1), scene);
+var camera = new FreeCamera("camera1", new Vector3(0, 1, -.7), scene);
 // This targets the camera to scene origin
 camera.setTarget(Vector3.Zero());
 // This attaches the camera to the canvas
@@ -70,38 +34,219 @@ var material = new GridMaterial("grid", scene);
 // Affect a material
 //ground.material = material;
 var yaxis = new Vector3(0, 1, 0);
+var zaxis = new Vector3(0, 0, 1);
+var leftController;
+var rightController;
+var setupcontrollers = function (xr) {
+    xr.input.onControllerAddedObservable.add(function (controller) {
+        controller.onMotionControllerInitObservable.add(function (motionController) {
+            if (motionController.handness === 'left') {
+                leftController = motionController;
+                var xr_ids = motionController.getComponentIds();
+                var triggerComponent_1 = motionController.getComponent(xr_ids[0]); //xr-standard-trigger
+                triggerComponent_1.onButtonStateChangedObservable.add(function () {
+                    if (triggerComponent_1.pressed) {
+                        //Box_Left_Trigger.scaling= new BABYLON.Vector3(1.2,1.2,1.2);
+                    }
+                    else {
+                        //Box_Left_Trigger.scaling= new BABYLON.Vector3(1,1,1);
+                    }
+                });
+                var squeezeComponent_1 = motionController.getComponent(xr_ids[1]); //xr-standard-squeeze
+                squeezeComponent_1.onButtonStateChangedObservable.add(function () {
+                    if (squeezeComponent_1.pressed) {
+                        //Box_Left_Squeeze.scaling= new BABYLON.Vector3(1.2,1.2,1.2);
+                    }
+                    else {
+                        //Box_Left_Squeeze.scaling=new BABYLON.Vector3(1,1,1);
+                    }
+                });
+                var thumbstickComponent_1 = motionController.getComponent(xr_ids[2]); //xr-standard-thumbstick
+                thumbstickComponent_1.onButtonStateChangedObservable.add(function () {
+                    if (thumbstickComponent_1.pressed) {
+                        //Box_Left_ThumbStick.scaling= new BABYLON.Vector3(1.2,1.2,1.2);
+                    }
+                    else {
+                        //Box_Left_ThumbStick.scaling=new BABYLON.Vector3(1,1,1);
+                    }
+                    /*
+                        let axes = thumbstickComponent.axes;
+                        Box_Left_ThumbStick.position.x += axes.x;
+                        Box_Left_ThumbStick.position.y += axes.y;
+                    */
+                });
+                thumbstickComponent_1.onAxisValueChangedObservable.add(function (axes) {
+                    //https://playground.babylonjs.com/#INBVUY#87
+                    //inactivate camera rotation : not working so far
+                    /*
+                    let rotationValue = 0;
+                    const matrix = new BABYLON.Matrix();
+                    let deviceRotationQuaternion = webXRInput.xrCamera.getDirection(BABYLON.Axis.Z).toQuaternion(); // webXRInput.xrCamera.rotationQuaternion;
+                    var angle = rotationValue * (Math.PI / 8);
+                    var quaternion = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, angle);
+                    const move = new BABYLON.Vector3(0,0,0);
+                    deviceRotationQuaternion = deviceRotationQuaternion.multiply(quaternion);
+                    BABYLON.Matrix.FromQuaternionToRef(deviceRotationQuaternion, matrix);
+                    const addPos = BABYLON.Vector3.TransformCoordinates(move, matrix);
+                    addPos.y = 0;
+
+                    webXRInput.xrCamera.position = webXRInput.xrCamera.position.add(addPos);
+                   // webXRInput.xrCamera.rotationQuaternion = BABYLON.Quaternion.Identity();
+                    
+                    //webXRInput.xrCamera.rotation = new BABYLON.Vector3(0,0,0);
+                    */
+                    //Box_Left_ThumbStick is moving according to stick axes but camera rotation is also changing..
+                    // Box_Left_ThumbStick.position.x += (axes.x)/100;
+                    //  Box_Left_ThumbStick.position.y -= (axes.y)/100;
+                    // console.log(values.x, values.y);
+                });
+                var xbuttonComponent_1 = motionController.getComponent(xr_ids[3]); //x-button
+                xbuttonComponent_1.onButtonStateChangedObservable.add(function () {
+                    if (xbuttonComponent_1.pressed) {
+                        //Sphere_Left_XButton.scaling= new BABYLON.Vector3(1.2,1.2,1.2);
+                    }
+                    else {
+                        //Sphere_Left_XButton.scaling=new BABYLON.Vector3(1,1,1);  
+                    }
+                });
+                var ybuttonComponent_1 = motionController.getComponent(xr_ids[4]); //y-button
+                ybuttonComponent_1.onButtonStateChangedObservable.add(function () {
+                    if (ybuttonComponent_1.pressed) {
+                        //Sphere_Left_YButton.scaling= new BABYLON.Vector3(1.2,1.2,1.2);
+                    }
+                    else {
+                        //Sphere_Left_YButton.scaling=new BABYLON.Vector3(1,1,1);  
+                    }
+                });
+                /* not worked.
+                let thumbrestComponent = motionController.getComponent(xr_ids[5]);//thumrest
+                thumbrestComponent.onButtonStateChangedObservable.add(() => {
+                    //not worked
+                    if ((thumbrestComponent.value>0.1&&thumbrestComponent.value<0.6) {
+                        sphere1.position.y=10;
+                    }
+                    if(thumbrestComponent.touched){
+                         sphere1.position.y=10;
+                    }
+
+                });
+                */
+            }
+            if (motionController.handness === 'right') {
+                rightController = motionController;
+                var xr_ids = motionController.getComponentIds();
+                var triggerComponent_2 = motionController.getComponent(xr_ids[0]); //xr-standard-trigger
+                triggerComponent_2.onButtonStateChangedObservable.add(function () {
+                    if (triggerComponent_2.pressed) {
+                        //Box_Right_Trigger.scaling= new BABYLON.Vector3(1.2,1.2,1.2);
+                    }
+                    else {
+                        //Box_Right_Trigger.scaling= new BABYLON.Vector3(1,1,1);
+                    }
+                });
+                var squeezeComponent_2 = motionController.getComponent(xr_ids[1]); //xr-standard-squeeze
+                squeezeComponent_2.onButtonStateChangedObservable.add(function () {
+                    if (squeezeComponent_2.pressed) {
+                        //Box_Right_Squeeze.scaling= new BABYLON.Vector3(1.2,1.2,1.2);
+                    }
+                    else {
+                        //Box_Right_Squeeze.scaling=new BABYLON.Vector3(1,1,1);
+                    }
+                });
+                var thumbstickComponent_2 = motionController.getComponent(xr_ids[2]); //xr-standard-thumbstick
+                thumbstickComponent_2.onButtonStateChangedObservable.add(function () {
+                    if (thumbstickComponent_2.pressed) {
+                        //Box_Right_ThumbStick.scaling= new BABYLON.Vector3(1.2,1.2,1.2);
+                    }
+                    else {
+                        //Box_Right_ThumbStick.scaling=new BABYLON.Vector3(1,1,1);
+                    }
+                });
+                thumbstickComponent_2.onAxisValueChangedObservable.add(function (axes) {
+                    //Box_Right_ThumbStick is moving according to stick axes but camera rotation is also changing..
+                    // Box_Right_ThumbStick.position.x += (axes.x)/100;
+                    // Box_Right_ThumbStick.position.y += (axes.y)/100;
+                    // console.log(values.x, values.y);
+                });
+                var abuttonComponent_1 = motionController.getComponent(xr_ids[3]); //a-button
+                abuttonComponent_1.onButtonStateChangedObservable.add(function () {
+                    if (abuttonComponent_1.pressed) {
+                        //Sphere_Right_AButton.scaling= new BABYLON.Vector3(1.2,1.2,1.2);
+                    }
+                    else {
+                        //Sphere_Right_AButton.scaling=new BABYLON.Vector3(1,1,1);  
+                    }
+                });
+                var bbuttonComponent_1 = motionController.getComponent(xr_ids[4]); //b-button
+                bbuttonComponent_1.onButtonStateChangedObservable.add(function () {
+                    if (bbuttonComponent_1.pressed) {
+                        //Sphere_Right_BButton.scaling= new BABYLON.Vector3(1.2,1.2,1.2);
+                    }
+                    else {
+                        //Sphere_Right_BButton.scaling=new BABYLON.Vector3(1,1,1);  
+                    }
+                });
+                /* not worked.
+                let thumbrestComponent = motionController.getComponent(xr_ids[5]);//thumrest
+                thumbrestComponent.onButtonStateChangedObservable.add(() => {
+                    //not worked
+                    if ((thumbrestComponent.value>0.1&&thumbrestComponent.value<0.6) {
+                        sphere1.position.y=10;
+                    }
+                    if(thumbrestComponent.touched){
+                         sphere1.position.y=10;
+                    }
+
+                });
+                */
+                /*
+                 const xr_ids = motionController.getComponentIds();
+                 for (let i=0;i<xr_ids.length;i++){
+                     console.log("right:"+xr_ids[i]);
+                 }
+                */
+            }
+        });
+    });
+};
 // Get the canvas element from the DOM.
 var importResult = SceneLoader.ImportMesh(null, "../assets/models/trumpet.glb", "", scene, function (meshes, particleSystems, skeletons, animationGroups) {
-    var pressfingerbone1 = scene.getAnimationGroupByName("pressfingerbone1");
-    var pressfingerbone2 = scene.getAnimationGroupByName("pressfingerbone2");
-    var pressfingerbone3 = scene.getAnimationGroupByName("pressfingerbone3");
-    for (var i = 0; i < animationGroups.length; i++) {
-        console.log("animation " + animationGroups[i].name);
-        //if (scene.animationGroups[i].name.startsWith("pressfingerbones")) {
-        //animationGroups[i].play(false);
-        var animation = animationGroups[i];
-        animation.start(false, -1.0, 3, 1, false);
-        // animation.onAnimationGroupEndObservable.add(function () {
-        //     console.log("animation" + animation.name);
-        //     animation.stop();
-        // })
-        //}
-    }
-    //pressfingerbone1?.play(true);
-    //pressfingerbone2?.play(false);
-    //pressfingerbone3?.stop();
-    var trumpet = scene.getMeshByName("VALVE2");
-    var finger1 = scene.getMeshByName("FINGER1");
-    var finger2 = scene.getMeshByName("FINGER2");
-    var finger3 = scene.getMeshByName("FINGER3");
-    var mouthpiece = scene.getMeshByName("MOUTHPIECE");
-    if (trumpet != null) {
+    var trumpet = scene.getMeshByName("LEADPIPE");
+    if (trumpet) {
         scene.registerBeforeRender(function () {
             if (trumpet) {
                 trumpet.rotate(yaxis, Math.PI / (360.0 * 4));
+                trumpet.rotate(zaxis, Math.PI / (360.0 * 3));
+                if (trumpet) {
+                    trumpet.position = new Vector3(1, 1, 1);
+                }
             }
         });
     }
+    var pressfingerbone1 = scene.getAnimationGroupByName("pressfingerbone1action");
+    var pressfingerbone2 = scene.getAnimationGroupByName("pressfingerbone2action");
+    var pressfingerbone3 = scene.getAnimationGroupByName("pressfingerbone3action");
+    pressfingerbone1 === null || pressfingerbone1 === void 0 ? void 0 : pressfingerbone1.play(true);
+    pressfingerbone1 === null || pressfingerbone1 === void 0 ? void 0 : pressfingerbone1.play(true);
+    pressfingerbone1 === null || pressfingerbone1 === void 0 ? void 0 : pressfingerbone1.play(true);
+    // for (var i = 0; i < animationGroups.length; i++) {
+    //     console.log("animation " + animationGroups[i].name);
+    //     if (scene.animationGroups[i].name.startsWith("pressfingerbone")) {
+    //         //animationGroups[i].play(false);
+    //         const animation = animationGroups[i];
+    //         animation.start(false, 1.0, 1, 3, false);
+    //         animation.onAnimationGroupEndObservable.add(function () {
+    //             console.log("end animation" + animation.name);
+    //             animation.stop();
+    //         })
+    //     }
+    // }        
+    //pressfingerbone1?.play(true);
+    //pressfingerbone2?.play(false);
+    //pressfingerbone3?.stop();
+    // let trumpet = scene.getMeshByName("LEADPIPE") as AbstractMesh;
+    // if (trumpet != null) {
+    // }
     scene.onPointerDown = function (evt, pickResult) {
         // if (true) { //pickResult.pickedMesh) {
         //     for (var i = 0; i < scene.animationGroups.length; i++) {
@@ -117,21 +262,32 @@ var importResult = SceneLoader.ImportMesh(null, "../assets/models/trumpet.glb", 
         // }
     };
 });
-camera.isStereoscopicSideBySide = true;
-(function () { return __awaiter(void 0, void 0, void 0, function () {
-    var xr;
-    return __generator(this, function (_a) {
-        switch (_a.label) {
-            case 0: return [4 /*yield*/, scene.createDefaultXRExperienceAsync()];
-            case 1:
-                xr = _a.sent();
-                // Render every frame
-                engine.runRenderLoop(function () {
-                    scene.render();
-                });
-                return [2 /*return*/];
-        }
+scene.createDefaultXRExperienceAsync().then(function (xr) {
+    // Render every frame
+    var featuresManager = xr.baseExperience.featuresManager;
+    var pointerSelection = featuresManager.enableFeature(WebXRFeatureName.POINTER_SELECTION, "stable", {
+        xrInput: xr.input,
+        enablePointerSelectionOnAllControllers: true
     });
-}); })().catch(function (e) {
-    // Deal with the fact the chain failed
+    var ground = MeshBuilder.CreateGround("ground", { width: 400, height: 400 });
+    var teleportation = featuresManager.enableFeature(WebXRFeatureName.TELEPORTATION, "stable", {
+        xrInput: xr.input,
+        floorMeshes: [ground],
+        snapPositions: [new Vector3(2.4 * 3.5 * 1, 0, -10 * 1)],
+    });
+    setupcontrollers(xr);
+    engine.runRenderLoop(function () {
+        if (leftController) {
+            //trumpet.setmatrix = pose.transform.matrix;
+        }
+        // Check for and respond to any gamepad state changes.
+        for (var _i = 0, _a = xr.input.controllers; _i < _a.length; _i++) {
+            var source = _a[_i];
+            var inputsource = source.inputSource;
+            if (inputsource.gamepad) {
+                //let pose = getPose(inputsource.gripSpace, refSpace);
+            }
+        }
+        scene.render();
+    });
 });
