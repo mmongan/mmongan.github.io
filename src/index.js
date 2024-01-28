@@ -33,11 +33,54 @@ var material = new GridMaterial("grid", scene);
 //var ground = CreateGround('ground1', { width: 6, height: 6, subdivisions: 2 }, scene);
 // Affect a material
 //ground.material = material;
+var xaxis = new Vector3(1, 0, 0);
 var yaxis = new Vector3(0, 1, 0);
 var zaxis = new Vector3(0, 0, 1);
 var leftController;
 var rightController;
 var trumpet;
+var pressfingerbone1;
+var pressfingerbone2;
+var pressfingerbone3;
+// Get the canvas element from the DOM.
+var importResult = SceneLoader.ImportMesh(null, "../assets/models/trumpet.glb", "", scene, function (meshes, particleSystems, skeletons, animationGroups) {
+    trumpet = scene.getMeshByName("LEADPIPE");
+    trumpet.position = new Vector3(0, 1, 0);
+    trumpet.rotate(zaxis, Math.PI);
+    trumpet.rotate(xaxis, Math.PI / 2);
+    pressfingerbone1 = scene.getAnimationGroupByName("pressfingerbone1action");
+    pressfingerbone2 = scene.getAnimationGroupByName("pressfingerbone2action");
+    pressfingerbone3 = scene.getAnimationGroupByName("pressfingerbone3action");
+    var _loop_1 = function () {
+        console.log("animation " + animationGroups[i].name);
+        if (scene.animationGroups[i].name.startsWith("pressfingerbone")) {
+            animationGroups[i].stop();
+            var animation_1 = animationGroups[i];
+            //animation.start(false, 1.0, 1, 3, false);
+            animation_1.onAnimationGroupEndObservable.add(function () {
+                console.log("end animation" + animation_1.name);
+                animation_1.stop();
+            });
+        }
+    };
+    for (var i = 0; i < animationGroups.length; i++) {
+        _loop_1();
+    }
+    scene.onPointerDown = function (evt, pickResult) {
+        // if (true) { //pickResult.pickedMesh) {
+        //     for (var i = 0; i < scene.animationGroups.length; i++) {
+        //         console.log("animation" + scene.animationGroups[i].name);
+        //         //if (scene.animationGroups[i].name.startsWith("pressfingerbones")) {
+        //             scene.animationGroups[i].play();
+        //             scene.animationGroups[i].onAnimationGroupEndObservable.add(function () {
+        //                 console.log("animation" + scene.animationGroups[i].name);
+        //                 scene.animationGroups[i].play();
+        //             })
+        //         //}
+        //     }
+        // }
+    };
+});
 var setupcontrollers = function (xr) {
     xr.input.onControllerAddedObservable.add(function (controller) {
         controller.onMotionControllerInitObservable.add(function (motionController) {
@@ -47,21 +90,22 @@ var setupcontrollers = function (xr) {
                 var triggerComponent_1 = motionController.getComponent(xr_ids[0]); //xr-standard-trigger
                 triggerComponent_1.onButtonStateChangedObservable.add(function () {
                     if (triggerComponent_1.pressed) {
-                        trumpet.setParent(motionController.rootMesh);
                         //trumpet.position = new Vector3(0,1,0);
                         //Box_Left_Trigger.scaling= new BABYLON.Vector3(1.2,1.2,1.2);
                     }
                     else {
-                        //Box_Left_Trigger.scaling= new BABYLON.Vector3(1,1,1);
+                        //Box_Left_Trigger.scaling= new BABYLON.Vector3(1,1,1);                             
                     }
                 });
                 var squeezeComponent_1 = motionController.getComponent(xr_ids[1]); //xr-standard-squeeze
                 squeezeComponent_1.onButtonStateChangedObservable.add(function () {
                     if (squeezeComponent_1.pressed) {
                         //Box_Left_Squeeze.scaling= new BABYLON.Vector3(1.2,1.2,1.2);
+                        trumpet.setParent(motionController.rootMesh);
                     }
                     else {
                         //Box_Left_Squeeze.scaling=new BABYLON.Vector3(1,1,1);
+                        trumpet.setParent(null);
                     }
                 });
                 var thumbstickComponent_1 = motionController.getComponent(xr_ids[2]); //xr-standard-thumbstick
@@ -151,9 +195,11 @@ var setupcontrollers = function (xr) {
                 squeezeComponent_2.onButtonStateChangedObservable.add(function () {
                     if (squeezeComponent_2.pressed) {
                         //Box_Right_Squeeze.scaling= new BABYLON.Vector3(1.2,1.2,1.2);
+                        trumpet.setParent(motionController.rootMesh);
                     }
                     else {
                         //Box_Right_Squeeze.scaling=new BABYLON.Vector3(1,1,1);
+                        trumpet.setParent(null);
                     }
                 });
                 var thumbstickComponent_2 = motionController.getComponent(xr_ids[2]); //xr-standard-thumbstick
@@ -212,50 +258,6 @@ var setupcontrollers = function (xr) {
         });
     });
 };
-// Get the canvas element from the DOM.
-var importResult = SceneLoader.ImportMesh(null, "../assets/models/trumpet.glb", "", scene, function (meshes, particleSystems, skeletons, animationGroups) {
-    trumpet = scene.getMeshByName("LEADPIPE");
-    trumpet.position = new Vector3(0, 1, 0);
-    trumpet.rotate(zaxis, 2 * Math.PI);
-    var pressfingerbone1 = scene.getAnimationGroupByName("pressfingerbone1action");
-    var pressfingerbone2 = scene.getAnimationGroupByName("pressfingerbone2action");
-    var pressfingerbone3 = scene.getAnimationGroupByName("pressfingerbone3action");
-    //pressfingerbone1?.play(true);
-    //pressfingerbone2?.play(true);
-    //pressfingerbone3?.play(true);
-    // for (var i = 0; i < animationGroups.length; i++) {
-    //     console.log("animation " + animationGroups[i].name);
-    //     if (scene.animationGroups[i].name.startsWith("pressfingerbone")) {
-    //         //animationGroups[i].play(false);
-    //         const animation = animationGroups[i];
-    //         animation.start(false, 1.0, 1, 3, false);
-    //         animation.onAnimationGroupEndObservable.add(function () {
-    //             console.log("end animation" + animation.name);
-    //             animation.stop();
-    //         })
-    //     }
-    // }        
-    //pressfingerbone1?.play(true);
-    //pressfingerbone2?.play(false);
-    //pressfingerbone3?.stop();
-    // let trumpet = scene.getMeshByName("LEADPIPE") as AbstractMesh;
-    // if (trumpet != null) {
-    // }
-    scene.onPointerDown = function (evt, pickResult) {
-        // if (true) { //pickResult.pickedMesh) {
-        //     for (var i = 0; i < scene.animationGroups.length; i++) {
-        //         console.log("animation" + scene.animationGroups[i].name);
-        //         //if (scene.animationGroups[i].name.startsWith("pressfingerbones")) {
-        //             scene.animationGroups[i].play();
-        //             scene.animationGroups[i].onAnimationGroupEndObservable.add(function () {
-        //                 console.log("animation" + scene.animationGroups[i].name);
-        //                 scene.animationGroups[i].play();
-        //             })
-        //         //}
-        //     }
-        // }
-    };
-});
 scene.createDefaultXRExperienceAsync().then(function (xr) {
     // Render every frame
     var featuresManager = xr.baseExperience.featuresManager;
