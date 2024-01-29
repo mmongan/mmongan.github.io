@@ -23,12 +23,14 @@ import { CreateGround } from '@babylonjs/core/Meshes/Builders/groundBuilder';
 import { CreateSphere } from '@babylonjs/core/Meshes/Builders/sphereBuilder';
 import { Scene } from '@babylonjs/core/scene';
 import { GrassProceduralTexture } from '@babylonjs/procedural-textures';
-import { SceneLoader, Mesh, AbstractMesh, WebXRInputSource, WebXRDefaultExperience, MeshBuilder, WebXRFeatureName, Ray, AnimationGroup, Nullable, StandardMaterial, Color3, RotationGizmo } from "@babylonjs/core";
+import { SceneLoader, Mesh, AbstractMesh, WebXRInputSource, WebXRDefaultExperience, MeshBuilder, WebXRFeatureName, Ray, AnimationGroup, Nullable, StandardMaterial, Color3, RotationGizmo, PhysicsImpostor, Tools, Axis } from "@babylonjs/core";
 import { fetchProfile, MotionController } from '@webxr-input-profiles/motion-controllers'
 
 import { GridMaterial } from '@babylonjs/materials/grid/gridMaterial';
 
+import '@babylonjs/gui';
 import '@babylonjs/loaders';
+import { AdvancedDynamicTexture, StackPanel, TextBlock } from '@babylonjs/gui';
 
 
 const canvas = document.getElementById("render-canvas") as HTMLCanvasElement;
@@ -178,26 +180,6 @@ const importResult = SceneLoader.ImportMesh(
                      */
                      });
                      thumbstickComponent.onAxisValueChangedObservable.add((axes : any) => {
-                         //https://playground.babylonjs.com/#INBVUY#87
-                         //inactivate camera rotation : not working so far
-     
-                         /*
-                         let rotationValue = 0;
-                         const matrix = new BABYLON.Matrix();
-                         let deviceRotationQuaternion = webXRInput.xrCamera.getDirection(BABYLON.Axis.Z).toQuaternion(); // webXRInput.xrCamera.rotationQuaternion;
-                         var angle = rotationValue * (Math.PI / 8);
-                         var quaternion = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, angle);
-                         const move = new BABYLON.Vector3(0,0,0);
-                         deviceRotationQuaternion = deviceRotationQuaternion.multiply(quaternion);
-                         BABYLON.Matrix.FromQuaternionToRef(deviceRotationQuaternion, matrix);
-                         const addPos = BABYLON.Vector3.TransformCoordinates(move, matrix);
-                         addPos.y = 0;
-     
-                         webXRInput.xrCamera.position = webXRInput.xrCamera.position.add(addPos);
-                        // webXRInput.xrCamera.rotationQuaternion = BABYLON.Quaternion.Identity();
-                         
-                         //webXRInput.xrCamera.rotation = new BABYLON.Vector3(0,0,0);
-                         */
                          //Box_Left_ThumbStick is moving according to stick axes but camera rotation is also changing..
                         // Box_Left_ThumbStick.position.x += (axes.x)/100;
                        //  Box_Left_ThumbStick.position.y -= (axes.y)/100;
@@ -206,14 +188,14 @@ const importResult = SceneLoader.ImportMesh(
      
                      let xbuttonComponent = motionController.getComponent(xr_ids[3]);//x-button
                      xbuttonComponent.onButtonStateChangedObservable.add(() => {
-                        if (xbuttonComponent.touched ) {
-                            if (pressfingerbone3 && !pressfingerbone3.isPlaying) {
-                                pressfingerbone3.play(false); 
-                            }
+                        if (xbuttonComponent.pressed ) {
+                            // if (pressfingerbone3 && !pressfingerbone3.isPlaying) {
+                            //     pressfingerbone3.play(false); 
+                            // }
                         } else {                             
-                            if (releasefingerbone3 && !releasefingerbone3.isPlaying) {
-                                releasefingerbone3.play(false); 
-                            }
+                            // if (releasefingerbone3 && !releasefingerbone3.isPlaying) {
+                            //     releasefingerbone3.play(false); 
+                            // }
                         }
                      });
                      let ybuttonComponent = motionController.getComponent(xr_ids[4]);//y-button
@@ -294,27 +276,30 @@ const importResult = SceneLoader.ImportMesh(
                      let abuttonComponent = motionController.getComponent(xr_ids[3]);//a-button
                      abuttonComponent.onButtonStateChangedObservable.add(() => {
                         
-                        if (abuttonComponent.pressed || abuttonComponent.touched ) {
-                            if (pressfingerbone1 && !pressfingerbone1.isPlaying) {
-                                pressfingerbone1.play(false); 
-                            }
+                        if (abuttonComponent.pressed) {
+                            // if (pressfingerbone1 && !pressfingerbone1.isPlaying) {
+                                 pressfingerbone1?.play(false); 
+                                 pressfingerbone3?.play(false); 
+                            // }
                         } else {                             
-                            if (releasefingerbone1 && !releasefingerbone1.isPlaying) {
-                            releasefingerbone1.play(false); 
-                            }
+                            // if (releasefingerbone1 && !releasefingerbone1.isPlaying) {
+                                  releasefingerbone1?.play(false); 
+                                  releasefingerbone3?.play(false); 
+
+                            // }
                         }
                         
                      });
                      let bbuttonComponent = motionController.getComponent(xr_ids[4]);//b-button
                      bbuttonComponent.onButtonStateChangedObservable.add(() => {
-                        if (bbuttonComponent.touched ) {
-                            if (pressfingerbone2 && !pressfingerbone2.isPlaying) {
-                                pressfingerbone2.play(false); 
-                            }
+                        if (bbuttonComponent.pressed ) {
+                            // if (pressfingerbone2 && !pressfingerbone2.isPlaying) {
+                            //     pressfingerbone2.play(false); 
+                            // }
                         } else {                             
-                            if (releasefingerbone2 && !releasefingerbone2.isPlaying) {
-                            releasefingerbone2.play(false); 
-                            }
+                            // if (releasefingerbone2 && !releasefingerbone2.isPlaying) {
+                            //     releasefingerbone2.play(false); 
+                            // }
                         }
                      });
                      /* not worked.
@@ -394,7 +379,51 @@ const importResult = SceneLoader.ImportMesh(
             floorMeshes: [ground],            
             snapPositions: [new Vector3(2.4*3.5*1, 0, -10*1)],            
         });        
-        
+
+
+        var groundCollider = MeshBuilder.CreateBox("groudCollider", { width: 100, height: 1, depth: 100 });
+        groundCollider.position.y = -0.5;
+        groundCollider.isVisible = false;
+        groundCollider.physicsImpostor = new PhysicsImpostor(
+            groundCollider,
+            PhysicsImpostor.BoxImpostor,
+            {
+                mass: 0,
+                friction: 0.8,
+                restitution: 0.5,
+            },
+            scene);
+
+
+            
+        var plane = MeshBuilder.CreatePlane("plane", { size: 2 });
+        plane.position = new Vector3(2, 1, 2);
+        //plane.rotate(Axis.Y, Tools.ToRadians(180 + 30));
+
+        const guiTexture = AdvancedDynamicTexture.CreateForMesh(plane);
+        const panel = new StackPanel();
+        guiTexture.addControl(panel);
+
+        var title = new TextBlock();
+        title.text = "Trumpet Puppet"
+        title.color = "white";
+        title.fontSize = 100;
+        title.height = "100px";
+        title.paddingBottom = "20px";
+        panel.addControl(title);
+
+        var description = new TextBlock();
+        description.text =
+            "WebXR";
+        description.color = "white";
+        description.fontSize = 40;
+        description.height = "120px";
+        description.paddingBottom = "40px";
+        panel.addControl(description);
+    
+
+
+
         setupcontrollers(xr);
             
         engine.runRenderLoop(() => {

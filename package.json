@@ -32,6 +32,7 @@
   },
   "description": "My webpack project",
   "dependencies": {
+    "@babylonjs/gui": "^6.40.0",
     "@babylonjs/procedural-textures": "^6.40.0",
     "@babylonjs/serializers": "^6.40.0"
   }
