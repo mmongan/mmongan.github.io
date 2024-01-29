@@ -41,6 +41,9 @@ var trumpet;
 var pressfingerbone1;
 var pressfingerbone2;
 var pressfingerbone3;
+var releasefingerbone1;
+var releasefingerbone2;
+var releasefingerbone3;
 var importResult = SceneLoader.ImportMesh(null, "../assets/models/trumpet.glb", "", scene, function (meshes, particleSystems, skeletons, animationGroups) {
     trumpet = scene.getMeshByName("LEADPIPE");
     trumpet.position = new Vector3(0, 1, 0);
@@ -49,6 +52,9 @@ var importResult = SceneLoader.ImportMesh(null, "../assets/models/trumpet.glb", 
     pressfingerbone1 = scene.getAnimationGroupByName("pressfingerbone1action");
     pressfingerbone2 = scene.getAnimationGroupByName("pressfingerbone2action");
     pressfingerbone3 = scene.getAnimationGroupByName("pressfingerbone3action");
+    releasefingerbone1 = scene.getAnimationGroupByName("releasefingerbone1action");
+    releasefingerbone2 = scene.getAnimationGroupByName("releasefingerbone2action");
+    releasefingerbone3 = scene.getAnimationGroupByName("releasefingerbone3action");
     var _loop_1 = function () {
         console.log("animation " + animationGroups[i].name);
         if (scene.animationGroups[i].name.startsWith("pressfingerbone")) {
@@ -149,11 +155,15 @@ var setupcontrollers = function (xr) {
                 });
                 var xbuttonComponent_1 = motionController.getComponent(xr_ids[3]); //x-button
                 xbuttonComponent_1.onButtonStateChangedObservable.add(function () {
-                    if (xbuttonComponent_1.pressed) {
-                        //Sphere_Left_XButton.scaling= new BABYLON.Vector3(1.2,1.2,1.2);
+                    if (xbuttonComponent_1.touched) {
+                        if (pressfingerbone3 && !pressfingerbone3.isPlaying) {
+                            pressfingerbone3.play(false);
+                        }
                     }
                     else {
-                        //Sphere_Left_XButton.scaling=new BABYLON.Vector3(1,1,1);  
+                        if (releasefingerbone3 && !releasefingerbone3.isPlaying) {
+                            releasefingerbone3.play(false);
+                        }
                     }
                 });
                 var ybuttonComponent_1 = motionController.getComponent(xr_ids[4]); //y-button
@@ -222,20 +232,28 @@ var setupcontrollers = function (xr) {
                 });
                 var abuttonComponent_1 = motionController.getComponent(xr_ids[3]); //a-button
                 abuttonComponent_1.onButtonStateChangedObservable.add(function () {
-                    if (abuttonComponent_1.pressed) {
-                        //Sphere_Right_AButton.scaling= new BABYLON.Vector3(1.2,1.2,1.2);
+                    if (abuttonComponent_1.pressed || abuttonComponent_1.touched) {
+                        if (pressfingerbone1 && !pressfingerbone1.isPlaying) {
+                            pressfingerbone1.play(false);
+                        }
                     }
                     else {
-                        //Sphere_Right_AButton.scaling=new BABYLON.Vector3(1,1,1);  
+                        if (releasefingerbone1 && !releasefingerbone1.isPlaying) {
+                            releasefingerbone1.play(false);
+                        }
                     }
                 });
                 var bbuttonComponent_1 = motionController.getComponent(xr_ids[4]); //b-button
                 bbuttonComponent_1.onButtonStateChangedObservable.add(function () {
-                    if (bbuttonComponent_1.pressed) {
-                        //Sphere_Right_BButton.scaling= new BABYLON.Vector3(1.2,1.2,1.2);
+                    if (bbuttonComponent_1.touched) {
+                        if (pressfingerbone2 && !pressfingerbone2.isPlaying) {
+                            pressfingerbone2.play(false);
+                        }
                     }
                     else {
-                        //Sphere_Right_BButton.scaling=new BABYLON.Vector3(1,1,1);  
+                        if (releasefingerbone2 && !releasefingerbone2.isPlaying) {
+                            releasefingerbone2.play(false);
+                        }
                     }
                 });
                 /* not worked.

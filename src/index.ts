@@ -50,9 +50,14 @@ const zaxis = new Vector3(0,0,1);
 let leftController : MotionController;
 let rightController : MotionController;
 let trumpet: AbstractMesh;
+
 let pressfingerbone1 : Nullable<AnimationGroup>;
 let pressfingerbone2 : Nullable<AnimationGroup>;
 let pressfingerbone3 : Nullable<AnimationGroup>;
+
+let releasefingerbone1 : Nullable<AnimationGroup>;
+let releasefingerbone2 : Nullable<AnimationGroup>;
+let releasefingerbone3 : Nullable<AnimationGroup>;
 
 
 const importResult = SceneLoader.ImportMesh(
@@ -71,6 +76,10 @@ const importResult = SceneLoader.ImportMesh(
         pressfingerbone1 = scene.getAnimationGroupByName("pressfingerbone1action");        
         pressfingerbone2 = scene.getAnimationGroupByName("pressfingerbone2action");
         pressfingerbone3 = scene.getAnimationGroupByName("pressfingerbone3action");
+
+        releasefingerbone1 = scene.getAnimationGroupByName("releasefingerbone1action");
+        releasefingerbone2 = scene.getAnimationGroupByName("releasefingerbone2action");
+        releasefingerbone3 = scene.getAnimationGroupByName("releasefingerbone3action");
         
     
         for (var i = 0; i < animationGroups.length; i++) {
@@ -144,7 +153,7 @@ const importResult = SceneLoader.ImportMesh(
                              //Box_Left_Squeeze.scaling= new BABYLON.Vector3(1.2,1.2,1.2);                             
                              trumpet.setParent(motionController.rootMesh);
 
-                             if (Vector3.Distance(motionController.rootMesh.position, trumpet.position) > 1)
+                             if (Vector3.Distance(motionController.rootMesh.position, trumpet.position) > 3)
                              {
                                 trumpet.position = new Vector3(0.0,0.0,0.0);
                              }
@@ -197,12 +206,15 @@ const importResult = SceneLoader.ImportMesh(
      
                      let xbuttonComponent = motionController.getComponent(xr_ids[3]);//x-button
                      xbuttonComponent.onButtonStateChangedObservable.add(() => {
-                         if (xbuttonComponent.pressed) {
-                             //Sphere_Left_XButton.scaling= new BABYLON.Vector3(1.2,1.2,1.2);
-                            
-                         }else{
-                             //Sphere_Left_XButton.scaling=new BABYLON.Vector3(1,1,1);  
-                         }
+                        if (xbuttonComponent.touched ) {
+                            if (pressfingerbone3 && !pressfingerbone3.isPlaying) {
+                                pressfingerbone3.play(false); 
+                            }
+                        } else {                             
+                            if (releasefingerbone3 && !releasefingerbone3.isPlaying) {
+                                releasefingerbone3.play(false); 
+                            }
+                        }
                      });
                      let ybuttonComponent = motionController.getComponent(xr_ids[4]);//y-button
                      ybuttonComponent.onButtonStateChangedObservable.add(() => {
@@ -281,20 +293,29 @@ const importResult = SceneLoader.ImportMesh(
      
                      let abuttonComponent = motionController.getComponent(xr_ids[3]);//a-button
                      abuttonComponent.onButtonStateChangedObservable.add(() => {
-                         if (abuttonComponent.pressed) {
-                             //Sphere_Right_AButton.scaling= new BABYLON.Vector3(1.2,1.2,1.2);
-                         }else{
-                             //Sphere_Right_AButton.scaling=new BABYLON.Vector3(1,1,1);  
-                         }
+                        
+                        if (abuttonComponent.pressed || abuttonComponent.touched ) {
+                            if (pressfingerbone1 && !pressfingerbone1.isPlaying) {
+                                pressfingerbone1.play(false); 
+                            }
+                        } else {                             
+                            if (releasefingerbone1 && !releasefingerbone1.isPlaying) {
+                            releasefingerbone1.play(false); 
+                            }
+                        }
+                        
                      });
                      let bbuttonComponent = motionController.getComponent(xr_ids[4]);//b-button
                      bbuttonComponent.onButtonStateChangedObservable.add(() => {
-                         if (bbuttonComponent.pressed) {
-                             //Sphere_Right_BButton.scaling= new BABYLON.Vector3(1.2,1.2,1.2);
-                            
-                         }else{
-                             //Sphere_Right_BButton.scaling=new BABYLON.Vector3(1,1,1);  
-                         }
+                        if (bbuttonComponent.touched ) {
+                            if (pressfingerbone2 && !pressfingerbone2.isPlaying) {
+                                pressfingerbone2.play(false); 
+                            }
+                        } else {                             
+                            if (releasefingerbone2 && !releasefingerbone2.isPlaying) {
+                            releasefingerbone2.play(false); 
+                            }
+                        }
                      });
                      /* not worked.
                      let thumbrestComponent = motionController.getComponent(xr_ids[5]);//thumrest
