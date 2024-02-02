@@ -1,0 +1,22 @@
+{
+  "name": "mmongan.github.io",
+  "version": "1.0.0",
+  "description": "Byte me.",
+  "main": "main.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@babylonjs/core": "^6.41.0",
+    "@babylonjs/materials": "^6.41.0",
+    "ts-loader": "^9.5.1",
+    "typescript": "^5.3.3",
+    "webpack-cli": "^5.1.4",
+    "webpack": "^5.90.1",
+    "webpack-dev-server": "^4.15.1"
+  },
+  "dependencies": {        
+  }
+}
