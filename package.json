@@ -1,7 +1,7 @@
 {
-  "name": "vite-babylon-800",
-  "author": "Andrei Stepanov <eldinor@gmail.com> (https://babylonpress.org/)",
-  "contributors":["minibao (https://github.com/minibao/babylon-vite)"],
+  "name": "mmongan",
+  "author": "Marty Mongan <marty.mongan@gmail.com>",
+  "contributors":[],
   "private": true,
   "version": "0.0.1",
   "type": "module",
