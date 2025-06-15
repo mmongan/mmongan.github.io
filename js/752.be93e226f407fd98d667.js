@@ -1,0 +1,2 @@
+"use strict";(self.webpackChunkbabylonjs_typescript_webpack_template=self.webpackChunkbabylonjs_typescript_webpack_template||[]).push([[752],{8752:(e,a,r)=>{r.r(a),r.d(a,{passPixelShader:()=>l});var t=r(3862);const s="passPixelShader",p="varying vec2 vUV;uniform sampler2D textureSampler;\n#define CUSTOM_FRAGMENT_DEFINITIONS\nvoid main(void) \n{gl_FragColor=texture2D(textureSampler,vUV);}";t.l.ShadersStore[s]||(t.l.ShadersStore[s]=p);const l={name:s,shader:p}}}]);
+//# sourceMappingURL=752.be93e226f407fd98d667.js.map
