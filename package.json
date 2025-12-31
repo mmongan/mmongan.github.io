@@ -1,0 +1,37 @@
+{
+  "name": "chartxr",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "webpack serve --mode development",
+    "build": "webpack --mode production",
+    "gen-cert": "node ./scripts/generate-cert.js",
+    "start-https-cert": "npm run gen-cert && npm start",
+    "predeploy": "npm run build",
+    "deploy": "gh-pages -d dist"
+  },
+  "homepage": "https://mmongan.github.io/chartxr",
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "gh-pages": "^6.3.0",
+    "html-webpack-plugin": "^5.6.5",
+    "selfsigned": "^2.1.0",
+    "ts-loader": "^9.5.4",
+    "typescript": "^5.9.3",
+    "webpack": "^5.104.1",
+    "webpack-cli": "^6.0.1",
+    "webpack-dev-server": "^5.2.2"
+  },
+  "dependencies": {
+    "@babylonjs/core": "^8.42.0",
+    "@babylonjs/loaders": "^8.42.0",
+    "babylonjs": "^8.42.0",
+    "babylonjs-gui": "^8.42.0",
+    "babylonjs-loaders": "^8.42.0",
+    "babylonjs-materials": "^8.42.0"
+  }
+}

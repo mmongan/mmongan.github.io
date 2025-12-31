@@ -1,0 +1,38 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"type": "typescript",
+			"tsconfig": "tsconfig.json",
+			"problemMatcher": [
+				"$tsc"
+			],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"label": "tsc: build - tsconfig.json"
+		},
+		{
+			"label": "build webpack bundle",
+			"type": "shell",
+			"command": "npm run build",
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "start webpack dev server",
+			"type": "shell",
+			"command": "npm start",
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "start webpack dev server",
+			"type": "shell",
+			"command": "npm start",
+			"problemMatcher": [],
+			"group": "build"
+		}
+	]
+}
