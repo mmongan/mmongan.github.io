@@ -2,6 +2,8 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
   build: {
+    outDir: './',
+    emptyOutDir: false,
     rollupOptions: {
       output: {
         manualChunks(id: string) {

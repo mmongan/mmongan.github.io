@@ -6,8 +6,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "predeploy": "npm run build",
-    "deploy": "gh-pages -d dist"
+    "deploy": "npm run build && git add -A && git commit -m 'build: update compiled assets' && git push origin main"
   },
   "homepage": "https://mmongan.github.io",
   "dependencies": {
