@@ -83,11 +83,11 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
   bottomHandle.material = handleMaterial;
   handles.push({ mesh: bottomHandle, isHandle: true });
 
-  // Corner connectors: make them twice the diameter of the handles, brighter and slightly forward so they're obvious
+  // Corner connectors: match the visual style of the handles (same diameter and material)
   const halfW = menuWidth / 2;
   const halfH = menuHeight / 2;
   const cornerZ = 0.035; // slightly more in front of the menu surface to avoid z-fighting
-  const cornerSize = handleDiameter * 2; // make corners 2x the handle diameter
+  const cornerSize = handleDiameter; // match the handle diameter so corners visually align with handles
   const cornerPositions = [
     new Vector3(-halfW, halfH, cornerZ),  // top-left
     new Vector3(halfW, halfH, cornerZ),   // top-right
@@ -98,15 +98,12 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
     const sphere = MeshBuilder.CreateSphere(`cornerSphere${idx}`, { diameter: cornerSize }, scene);
     sphere.parent = menuBox;
     sphere.position = pos;
-    // give them an emissive highlight so they stand out even on transparent menu
-    const cornerMat = new StandardMaterial(`cornerMat${idx}`, scene);
-    cornerMat.diffuseColor = Color3.FromHexString("#FFD700"); // gold
-    cornerMat.emissiveColor = Color3.FromHexString("#FFD700");
-    sphere.material = cornerMat;
+    // reuse the same handle material so corners match the handles
+    sphere.material = handleMaterial;
     sphere.isPickable = true; // interactive handle
     sphere.isVisible = true;
     sphere.receiveShadows = false;
-    sphere.renderOutline = true; // make outlines visible in some renderers
+    sphere.renderOutline = false; // match handles (no outline)
     handles.push({ mesh: sphere, isHandle: true });
     // runtime debug log so we can confirm presence in console
     try { console.log('cornerSphere created', sphere.name, sphere.position); } catch (e) {}
