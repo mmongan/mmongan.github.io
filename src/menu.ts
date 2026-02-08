@@ -79,9 +79,9 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
     // calculate position relative to menu (3-column grid with 2 rows)
     const xOffset = (gridCol - 1) * 0.23; // -0.23, 0, 0.23 for cols 0, 1, 2
     const yOffset = gridRow === 0 ? 0.12 : -0.12; // top row or bottom row
-    const zOffset = -0.015;
+    const zOffset = 0.02; // place shapes slightly in front of the menu surface so they aren't occluded
     
-    const shapeSize = 0.05; // slightly larger size for palette
+    const shapeSize = 0.06; // slightly larger size for palette to improve visibility
     let shapeModel: AbstractMesh | null = null;
     
     switch (shape) {
