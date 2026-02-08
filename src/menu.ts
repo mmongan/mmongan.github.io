@@ -79,6 +79,26 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
   bottomHandle.material = handleMaterial;
   handles.push({ mesh: bottomHandle, isHandle: true });
 
+  // Corner connectors: small decorative spheres at each corner to visually link edges
+  const cornerSize = 0.03;
+  const halfW = menuWidth / 2;
+  const halfH = menuHeight / 2;
+  const cornerZ = 0.015; // slightly in front of the menu surface to avoid z-fighting
+  const cornerPositions = [
+    new Vector3(-halfW, halfH, cornerZ),  // top-left
+    new Vector3(halfW, halfH, cornerZ),   // top-right
+    new Vector3(-halfW, -halfH, cornerZ), // bottom-left
+    new Vector3(halfW, -halfH, cornerZ)   // bottom-right
+  ];
+  cornerPositions.forEach((pos, idx) => {
+    const sphere = MeshBuilder.CreateSphere(`cornerSphere${idx}`, { diameter: cornerSize }, scene);
+    sphere.parent = menuBox;
+    sphere.position = pos;
+    sphere.material = handleMaterial;
+    // decorative only: do not allow these spheres to be pickable
+    sphere.isPickable = false;
+  });
+
   // Create shape models positioned around the menu, parented to menu so they move together
   const cols = 6;
   const rows = 3;
