@@ -236,12 +236,7 @@ async function createScene() {
                     else if (menuShapeType === 'octahedron') newShape.material.diffuseColor = Color3.FromHexString('#45B7D1');
                     else if (menuShapeType === 'dodecahedron') newShape.material.diffuseColor = Color3.FromHexString('#FFA07A');
                   } catch (e) {}
-                  // add outline highlight to indicate it's being held
-                  try {
-                    newShape.renderOutline = true;
-                    newShape.outlineWidth = 0.03;
-                    (newShape as any).outlineColor = Color3.FromHexString('#FFFF00');
-                  } catch (e) {}
+                  // grab highlight disabled: no outline changes when held
                   // mark shape as owned by this controller to prevent other hands from grabbing it
                   try { (newShape as any)._heldBy = xrController; } catch (_) {}
                   ctrlState._heldShape = newShape;
@@ -259,18 +254,13 @@ async function createScene() {
                     ctrlState._heldShape = grabTarget;
                     ctrlState._heldShapeParent = grabTarget.parent;
                     try { grabTarget.setParent(xrController.grip); } catch (_) { grabTarget.parent = xrController.grip; }
-                    try {
-                      grabTarget.renderOutline = true;
-                      grabTarget.outlineWidth = 0.03;
-                      (grabTarget as any).outlineColor = Color3.FromHexString('#FFFF00');
-                    } catch (e) {}
+                    // grab highlight disabled: do not change outline on grab
                   }
                 }
               }
             } else {
               // release: preserve world position
               if (ctrlState._heldShape) {
-                try { ctrlState._heldShape.renderOutline = false; } catch (_) {}
                 try { (ctrlState._heldShape as any)._heldBy = null; } catch (_) {}
                 const worldPos = ctrlState._heldShape.getAbsolutePosition().clone();
                 try { ctrlState._heldShape.setParent(null); } catch (_) { ctrlState._heldShape.parent = null; }
@@ -298,7 +288,6 @@ async function createScene() {
         try {
           const ctrlState = xrController as any;
           if (ctrlState._heldShape) {
-            try { ctrlState._heldShape.renderOutline = false; } catch (_) {}
             try { (ctrlState._heldShape as any)._heldBy = null; } catch (_) {}
             try {
               const worldPos = ctrlState._heldShape.getAbsolutePosition().clone();

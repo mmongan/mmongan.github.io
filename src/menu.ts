@@ -234,15 +234,9 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
       shapeModel.parent = menuBox;
       shapeModel.position = new Vector3(xOffset, yOffset, zOffset);
 
-      // add hover/pick interactions (outline on hover, call onPick on pick)
+      // add pick interaction only (hover highlight disabled)
       try {
         shapeModel.actionManager = new ActionManager(scene);
-        shapeModel.actionManager.registerAction(new ExecuteCodeAction(ActionManager.OnPointerOverTrigger, () => {
-          try { shapeModel.renderOutline = true; shapeModel.outlineWidth = 0.04; (shapeModel as any).outlineColor = Color3.White(); } catch (e) {}
-        }));
-        shapeModel.actionManager.registerAction(new ExecuteCodeAction(ActionManager.OnPointerOutTrigger, () => {
-          try { shapeModel.renderOutline = false; } catch (e) {}
-        }));
         shapeModel.actionManager.registerAction(new ExecuteCodeAction(ActionManager.OnPickTrigger, () => {
           try { console.log('menu pick (pointer):', shape); } catch (e) {}
           try { onPick && onPick(shape); } catch (e) {}
