@@ -79,11 +79,11 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
   bottomHandle.material = handleMaterial;
   handles.push({ mesh: bottomHandle, isHandle: true });
 
-  // Corner connectors: small decorative spheres at each corner to visually link edges
-  const cornerSize = 0.03;
+  // Corner connectors: make them larger/brighter and slightly forward so they're obvious
+  const cornerSize = 0.05; // larger for visibility
   const halfW = menuWidth / 2;
   const halfH = menuHeight / 2;
-  const cornerZ = 0.015; // slightly in front of the menu surface to avoid z-fighting
+  const cornerZ = 0.035; // slightly more in front of the menu surface to avoid z-fighting
   const cornerPositions = [
     new Vector3(-halfW, halfH, cornerZ),  // top-left
     new Vector3(halfW, halfH, cornerZ),   // top-right
@@ -94,10 +94,18 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
     const sphere = MeshBuilder.CreateSphere(`cornerSphere${idx}`, { diameter: cornerSize }, scene);
     sphere.parent = menuBox;
     sphere.position = pos;
-    sphere.material = handleMaterial;
-    // interactive handle: allow picking and add to handles list so menu logic treats it as a handle
-    sphere.isPickable = true;
+    // give them an emissive highlight so they stand out even on transparent menu
+    const cornerMat = new StandardMaterial(`cornerMat${idx}`, scene);
+    cornerMat.diffuseColor = Color3.FromHexString("#FFD700"); // gold
+    cornerMat.emissiveColor = Color3.FromHexString("#FFD700");
+    sphere.material = cornerMat;
+    sphere.isPickable = true; // interactive handle
+    sphere.isVisible = true;
+    sphere.receiveShadows = false;
+    sphere.renderOutline = true; // make outlines visible in some renderers
     handles.push({ mesh: sphere, isHandle: true });
+    // runtime debug log so we can confirm presence in console
+    try { console.log('cornerSphere created', sphere.name, sphere.position); } catch (e) {}
   });
 
   // Create shape models positioned around the menu, parented to menu so they move together
