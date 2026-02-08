@@ -103,6 +103,20 @@ async function createScene() {
     menuMesh = menuResult.menu;
     menuShapeModels = menuResult.shapeModels;
 
+    // Backwards-compat: remove any legacy edge handles or corner spheres left in compiled chunks
+    try {
+      const handlePattern = /^(leftHandle|rightHandle|topHandle|bottomHandle|edgeZone|cornerSphere\d+)$/;
+      const childMeshes = (menuMesh && typeof menuMesh.getChildMeshes === 'function') ? menuMesh.getChildMeshes(true) : scene.meshes;
+      const removed: string[] = [];
+      (childMeshes || []).forEach((m: any) => {
+        if (m && m.name && handlePattern.test(m.name)) {
+          try { m.dispose(true); removed.push(m.name); } catch (e) {}
+        }
+      });
+      if (removed.length) try { console.log('removed legacy menu handles:', removed.join(', ')); } catch (e) {}
+    } catch (e) {}
+
+
     // create a world-locked root to hold the menu so we can parent/unparent easily
     try { menuRoot = new TransformNode("menuRoot", scene); } catch (_) { menuRoot = null; }
     if (menuRoot && menuMesh) {
