@@ -81,6 +81,19 @@ async function createScene() {
 
   // create the floating menu (lazy import)
   try {
+    // cleanup any previous menu artifacts to ensure we use the new menu implementation
+    try {
+      const old = scene.getMeshByName('menuBox');
+      if (old) {
+        try { old.dispose(true); } catch (_) {}
+      }
+      // remove any meshes created by previous menu runs with known prefixes
+      scene.meshes.filter(m => /^menuDebugPlane|^menuBox|^cornerSphere|^menuDebug/.test(m.name)).forEach(m => { try { m.dispose(true); } catch (_) {} });
+      // remove previous menu root if present
+      try { if (menuRoot) { menuRoot.dispose(); menuRoot = null; } } catch (_) {}
+      menuMesh = null; menuShapeModels = []; menuHandles = [];
+    } catch (e) {}
+
     const menuModule = await import("./menu");
     const createFloatingMenu = menuModule.default as (parentCamera: any, scene: Scene, onPick: (shape: any) => void) => Promise<any>;
 
