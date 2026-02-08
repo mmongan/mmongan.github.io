@@ -1,5 +1,9 @@
-node_modules/
 .DS_Store
 *.log
 .env
 .venv
+debug.log*
+package-lock.json
+# Node modules and caches
+node_modules/
+node_modules/.cache/
