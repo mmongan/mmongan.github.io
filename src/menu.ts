@@ -95,8 +95,9 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
     sphere.parent = menuBox;
     sphere.position = pos;
     sphere.material = handleMaterial;
-    // decorative only: do not allow these spheres to be pickable
-    sphere.isPickable = false;
+    // interactive handle: allow picking and add to handles list so menu logic treats it as a handle
+    sphere.isPickable = true;
+    handles.push({ mesh: sphere, isHandle: true });
   });
 
   // Create shape models positioned around the menu, parented to menu so they move together
