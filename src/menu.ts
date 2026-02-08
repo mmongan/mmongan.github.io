@@ -121,7 +121,8 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
   createPaletteShape("Cube", "cube", "#4ECDC4", 1, 0);
   createPaletteShape("Octahedron", "octahedron", "#45B7D1", 0, 1);
   createPaletteShape("Dodecahedron", "dodecahedron", "#FFA07A", 1, 1);
-  createPaletteShape("Icosahedron", "icosahedron", "#98D8C8", 2, 0);
+  // place Icosahedron in the top-right slot instead of an invalid row
+  createPaletteShape("Icosahedron", "icosahedron", "#98D8C8", 0, 2);
 
   return { menu: menuBox as AbstractMesh, shapeModels, handles };
 }
