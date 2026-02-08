@@ -1,6 +1,9 @@
 import { MeshBuilder, Scene, TransformNode, AbstractMesh, StandardMaterial, Color3, DynamicTexture, ActionManager, ExecuteCodeAction } from "@babylonjs/core";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 
+// Build marker to help identify built bundles
+const MENU_BUILD_MARKER = "MENU_BUILD_MARKER_v2026_02_08_1";
+
 export type ShapeType = "tetrahedron" | "cube" | "octahedron" | "dodecahedron" | "icosahedron" | "sphere" | "poly0" | "poly1" | "poly2" | "poly3" | "poly4" | "poly5" | "poly6" | "poly7" | "poly8" | "poly9" | "poly10" | "poly11" | "poly12" | "poly13" | "poly14";
 
 export interface MenuShapeModel {
@@ -266,15 +269,6 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
       shapeModels.push({ mesh: shapeModel, shapeType: shape });
     }
   };
-
-  // build shapes list: poly0..poly14 + sphere + cube
-  const paletteColors = ['#98D8C8','#FF6B6B','#45B7D1','#FFA07A','#F6C9E2','#D4A5FF','#FFB86B','#B0E57C','#9AD0FF','#E3E66D','#C0C0C0','#FF9FB4','#8FD3C7','#D9B8FF','#FFD7A6'];
-  const shapesList: Array<{label:string, shape:ShapeType, color:string}> = [];
-  for (let i = 0; i < 15; i++) {
-    shapesList.push({ label: `Poly${i}`, shape: (`poly${i}` as ShapeType), color: paletteColors[i % paletteColors.length] });
-  }
-  shapesList.push({ label: 'Sphere', shape: 'sphere', color: '#FFD166' });
-  shapesList.push({ label: 'Cube', shape: 'cube', color: '#4ECDC4' });
 
   // debug: log final palette configuration
   try {
