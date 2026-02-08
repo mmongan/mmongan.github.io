@@ -48,42 +48,43 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
   const handleMaterial = new StandardMaterial("handleMat", scene);
   handleMaterial.diffuseColor = Color3.FromHexString("#555555");
   handleMaterial.alpha = 0.7;
+  const handleDiameter = 0.02;
 
   // Left handle
-  const leftHandle = MeshBuilder.CreateCylinder("leftHandle", { height: menuHeight, diameter: 0.02 }, scene);
+  const leftHandle = MeshBuilder.CreateCylinder("leftHandle", { height: menuHeight, diameter: handleDiameter }, scene);
   leftHandle.parent = menuBox;
-  leftHandle.position = new Vector3(-menuWidth / 2 - 0.02, 0, 0.015);
+  leftHandle.position = new Vector3(-menuWidth / 2 - handleDiameter, 0, 0.015);
   leftHandle.material = handleMaterial;
   handles.push({ mesh: leftHandle, isHandle: true });
 
   // Right handle
-  const rightHandle = MeshBuilder.CreateCylinder("rightHandle", { height: menuHeight, diameter: 0.02 }, scene);
+  const rightHandle = MeshBuilder.CreateCylinder("rightHandle", { height: menuHeight, diameter: handleDiameter }, scene);
   rightHandle.parent = menuBox;
-  rightHandle.position = new Vector3(menuWidth / 2 + 0.02, 0, 0.015);
+  rightHandle.position = new Vector3(menuWidth / 2 + handleDiameter, 0, 0.015);
   rightHandle.material = handleMaterial;
   handles.push({ mesh: rightHandle, isHandle: true });
 
   // Top handle
-  const topHandle = MeshBuilder.CreateCylinder("topHandle", { height: menuWidth, diameter: 0.02 }, scene);
+  const topHandle = MeshBuilder.CreateCylinder("topHandle", { height: menuWidth, diameter: handleDiameter }, scene);
   topHandle.parent = menuBox;
-  topHandle.position = new Vector3(0, menuHeight / 2 + 0.02, 0.015);
+  topHandle.position = new Vector3(0, menuHeight / 2 + handleDiameter, 0.015);
   topHandle.rotation.z = Math.PI / 2;
   topHandle.material = handleMaterial;
   handles.push({ mesh: topHandle, isHandle: true });
 
   // Bottom handle
-  const bottomHandle = MeshBuilder.CreateCylinder("bottomHandle", { height: menuWidth, diameter: 0.02 }, scene);
+  const bottomHandle = MeshBuilder.CreateCylinder("bottomHandle", { height: menuWidth, diameter: handleDiameter }, scene);
   bottomHandle.parent = menuBox;
-  bottomHandle.position = new Vector3(0, -menuHeight / 2 - 0.02, 0.015);
+  bottomHandle.position = new Vector3(0, -menuHeight / 2 - handleDiameter, 0.015);
   bottomHandle.rotation.z = Math.PI / 2;
   bottomHandle.material = handleMaterial;
   handles.push({ mesh: bottomHandle, isHandle: true });
 
-  // Corner connectors: make them larger/brighter and slightly forward so they're obvious
-  const cornerSize = 0.05; // larger for visibility
+  // Corner connectors: make them twice the diameter of the handles, brighter and slightly forward so they're obvious
   const halfW = menuWidth / 2;
   const halfH = menuHeight / 2;
   const cornerZ = 0.035; // slightly more in front of the menu surface to avoid z-fighting
+  const cornerSize = handleDiameter * 2; // make corners 2x the handle diameter
   const cornerPositions = [
     new Vector3(-halfW, halfH, cornerZ),  // top-left
     new Vector3(halfW, halfH, cornerZ),   // top-right
