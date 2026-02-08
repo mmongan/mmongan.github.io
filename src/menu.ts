@@ -1,4 +1,4 @@
-import { MeshBuilder, Scene, TransformNode, AbstractMesh, StandardMaterial, Color3, DynamicTexture } from "@babylonjs/core";
+import { MeshBuilder, Scene, TransformNode, AbstractMesh, StandardMaterial, Color3, DynamicTexture, ActionManager, ExecuteCodeAction } from "@babylonjs/core";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 
 export type ShapeType = "tetrahedron" | "cube" | "octahedron" | "dodecahedron" | "icosahedron" | "sphere" | "poly0" | "poly1" | "poly2" | "poly3" | "poly4" | "poly5" | "poly6" | "poly7" | "poly8" | "poly9" | "poly10" | "poly11" | "poly12" | "poly13" | "poly14";
@@ -137,7 +137,9 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
   const xSpacing = innerWidth / (cols - 1);
   const ySpacing = innerHeight / (rows - 1);
   const zOffset = menuDepth + 0.03; // slightly in front of menu surface
-  const shapeSize = 0.06; // smaller to ensure fit and avoid clipping
+  // choose shape size to fit spacing but make shapes more visible
+  const maxShape = Math.min(0.08, Math.min(xSpacing, ySpacing) * 0.6);
+  const shapeSize = Math.max(0.05, maxShape);
 
   // Debug/version label: show build timestamp so we can confirm deployed code is running
   try {
@@ -201,10 +203,42 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
       mat.diffuseColor = Color3.FromHexString(color);
       shapeModel.material = mat;
       shapeModel.isVisible = true;
+      shapeModel.isPickable = true; // allow pointer interactions
 
       // Parent to menu so it moves with the menu
       shapeModel.parent = menuBox;
       shapeModel.position = new Vector3(xOffset, yOffset, zOffset);
+
+      // add hover/pick interactions (outline on hover, call onPick on pick)
+      try {
+        shapeModel.actionManager = new ActionManager(scene);
+        shapeModel.actionManager.registerAction(new ExecuteCodeAction(ActionManager.OnPointerOverTrigger, () => {
+          try { shapeModel.renderOutline = true; shapeModel.outlineWidth = 0.04; (shapeModel as any).outlineColor = Color3.White(); } catch (e) {}
+        }));
+        shapeModel.actionManager.registerAction(new ExecuteCodeAction(ActionManager.OnPointerOutTrigger, () => {
+          try { shapeModel.renderOutline = false; } catch (e) {}
+        }));
+        shapeModel.actionManager.registerAction(new ExecuteCodeAction(ActionManager.OnPickTrigger, () => {
+          try { console.log('menu pick (pointer):', shape); } catch (e) {}
+          try { onPick && onPick(shape); } catch (e) {}
+        }));
+      } catch (e) {}
+
+      // Label: small plane under the shape showing its name
+      try {
+        const labelTex = new DynamicTexture(label + "-label-tex", { width: 256, height: 64 }, scene, false);
+        labelTex.hasAlpha = true;
+        labelTex.drawText(label, null, 40, "bold 20px Arial", "#FFFFFF", "transparent", true);
+        const labelMat = new StandardMaterial(label + "-label-mat", scene);
+        labelMat.diffuseTexture = labelTex;
+        labelMat.specularColor = Color3.Black();
+        labelMat.emissiveColor = Color3.White();
+        const labelPlane = MeshBuilder.CreatePlane(label + "-label", { width: shapeSize * 1.6, height: shapeSize * 0.6 }, scene);
+        labelPlane.parent = menuBox;
+        labelPlane.position = new Vector3(xOffset, yOffset - shapeSize * 0.9, zOffset + 0.002);
+        labelPlane.material = labelMat;
+        labelPlane.isPickable = false;
+      } catch (e) {}
 
       // Track this shape model for grabbing
       shapeModels.push({ mesh: shapeModel, shapeType: shape });
