@@ -33,6 +33,17 @@ async function createScene() {
     uiOptions: { sessionMode: "immersive-ar", referenceSpaceType: "local-floor" }
   });
 
+  // Do not animate the camera while in XR — keep camera transforms driven by XR poses only
+  try {
+    if (xr && xr.baseExperience && xr.baseExperience.camera) {
+      (xr.baseExperience.camera as any).animationsEnabled = false;
+    }
+    // also disable scene-level animations to avoid incidental camera/scene animations
+    scene.animationsEnabled = false;
+  } catch (e) {
+    // ignore if the runtime doesn't expose these properties
+  }
+
   // Hit test feature to place objects on real world surfaces
   const fm = xr.baseExperience.featuresManager;
   const hitTest = fm.enableFeature(WebXRHitTest.Name, "latest") as WebXRHitTest;
@@ -41,6 +52,38 @@ async function createScene() {
   const reticle = MeshBuilder.CreateDisc("reticle", { radius: 0.06 }, scene);
   reticle.rotation.x = Math.PI / 2;
   reticle.isVisible = false;
+
+  // menu state (declared early so callbacks can reference them)
+  let menuMesh: any = null;
+  let menuGrabbed = false;
+  let lastMenuWorldPos = new Vector3(0, 0, 0);
+
+  // create the floating menu (lazy import)
+  try {
+    const menuModule = await import("./menu");
+    const createFloatingMenu = menuModule.default as (parentCamera: any, scene: Scene, onPick: (shape: any) => void) => Promise<any>;
+    menuMesh = await createFloatingMenu(xr.baseExperience.camera, scene, (shape: any) => {
+      // spawn the chosen shape at the reticle if available, otherwise in front of camera
+      let pos = null as Vector3 | null;
+      try { if (reticle && reticle.isVisible) pos = reticle.position.clone(); } catch {}
+      if (!pos) {
+        const cam = xr.baseExperience.camera;
+        pos = cam.position.add(cam.getForwardRay(1).direction.scale(0.8));
+      }
+      spawnShape(shape, pos as Vector3, scene);
+    });
+
+    // Ensure menu is unparented and record its world position so it remains fixed
+    try {
+      menuMesh.setParent(null);
+      (menuMesh as any).setAbsolutePosition(menuMesh.getAbsolutePosition());
+      lastMenuWorldPos = menuMesh.getAbsolutePosition().clone();
+    } catch (e) {
+      try { menuMesh.parent = null; } catch {}
+    }
+  } catch (e) {
+    console.warn("failed to create floating menu:", e);
+  }
 
   hitTest.onHitTestResultObservable.add((results) => {
     if (results && results.length) {
@@ -57,30 +100,57 @@ async function createScene() {
     }
   });
 
-  // Floating menu attached to the XR camera (lazy-loaded GUI)
-  const menuModule = await import("./menu");
-  const menuMesh = await menuModule.default(xr.baseExperience.camera as any, scene, (shape: ShapeType) => {
-    const pos = reticle.isVisible ? reticle.position.clone() : xr.baseExperience.camera.position.add(xr.baseExperience.camera.getForwardRay(2).direction.scale(1.2));
-    spawnShape(shape, pos, scene);
-  });
-
   // Allow placing the menu at the reticle position: tap to place/unparent so it floats in world space
   let menuPlaced = false;
   scene.onPointerObservable.add((pi) => {
     if (pi.type === PointerEventTypes.POINTERDOWN) {
       if (reticle.isVisible) {
         // move menu to reticle and unparent so it stays in world space
-        menuMesh.parent = null;
-        menuMesh.position.copyFrom(reticle.position);
+        menuMesh.setParent(null);
+        (menuMesh as any).setAbsolutePosition(reticle.position);
+        // record last world position
+        try { lastMenuWorldPos = menuMesh.getAbsolutePosition().clone(); } catch {}
         // rotate to face the camera
-        try {
-          menuMesh.lookAt(xr.baseExperience.camera.position);
-        } catch (e) {
-          // ignore if lookAt fails in some environments
-        }
+        try { menuMesh.lookAt(xr.baseExperience.camera.position); } catch {}
         menuPlaced = true;
       }
     }
+  });
+
+  // Allow attaching the menu to controller grips while the main selection/squeeze button is held,
+  // then releasing it at the current world position when the button is released.
+  xr.input.onControllerAddedObservable.add((xrController) => {
+    xrController.onMotionControllerInitObservable.add((motionController: any) => {
+      const mainComponent = motionController.getMainComponent ? motionController.getMainComponent() : null;
+      if (mainComponent && mainComponent.onButtonStateChangedObservable) {
+        mainComponent.onButtonStateChangedObservable.add((state: any) => {
+          if (!(state && state.changes && state.changes.pressed)) return;
+          const pressed = state.changes.pressed.current;
+          if (pressed) {
+            // attach to grip if available
+            if (xrController.grip) {
+              menuGrabbed = true;
+              menuMesh.setParent(xrController.grip);
+              // place slightly forward from grip so it's visible
+              menuMesh.position.set(0, 0, 0.15);
+              try { menuMesh.lookAt(xr.baseExperience.camera.position); } catch {}
+            }
+          } else {
+            // release: preserve world position and stop following
+            try {
+              const worldPos = menuMesh.getAbsolutePosition().clone();
+              menuMesh.setParent(null);
+              (menuMesh as any).setAbsolutePosition(worldPos);
+              lastMenuWorldPos = worldPos.clone();
+            } catch (e) {
+              // fallback
+              menuMesh.parent = null;
+            }
+            menuGrabbed = false;
+          }
+        });
+      }
+    });
   });
 
   function spawnShape(type: ShapeType, position: Vector3, scene: Scene) {
@@ -109,6 +179,17 @@ async function createScene() {
   }
 
   engine.runRenderLoop(() => {
+    // if not grabbed, keep the menu at the recorded world position (prevent accidental re-parenting)
+    try {
+      if (typeof menuGrabbed !== 'undefined' && !menuGrabbed) {
+        const abs = menuMesh.getAbsolutePosition();
+        if (!abs.equalsWithEpsilon(lastMenuWorldPos, 1e-5)) {
+          (menuMesh as any).setAbsolutePosition(lastMenuWorldPos);
+        }
+      }
+    } catch (e) {
+      // ignore debug enforcement errors
+    }
     scene.render();
   });
 

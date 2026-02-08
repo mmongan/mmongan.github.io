@@ -6,18 +6,24 @@ export type ShapeType = "box" | "sphere" | "cylinder" | "torus";
 export default async function createFloatingMenu(parentCamera: TransformNode, scene: Scene, onPick: (shape: ShapeType) => void): Promise<AbstractMesh> {
   const GUI: any = await import("@babylonjs/gui");
 
-  const menuPlane = MeshBuilder.CreatePlane("menuPlane", { size: 1 }, scene);
-  menuPlane.scaling = new Vector3(0.45, 0.45, 1);
-  menuPlane.parent = parentCamera;
-  menuPlane.position = new Vector3(0.35, -0.25, 0.6);
-  menuPlane.rotation.x = 0;
+  // create a thin rectangular box so the menu is a 3D object
+  const menuBox = MeshBuilder.CreateBox("menuBox", { width: 0.34, height: 0.24, depth: 0.02 }, scene);
+  // Do not parent to the camera — create at an initial world position in front of the provided camera transform.
+  try {
+    const camPos = parentCamera.getAbsolutePosition();
+    menuBox.position = camPos.add(new Vector3(0.35, -0.25, 0.6));
+  } catch (e) {
+    // fallback to local offset if absolute position isn't available yet
+    menuBox.position = new Vector3(0.35, -0.25, 0.6);
+  }
+  menuBox.rotation.x = 0;
 
-  const adt = GUI.AdvancedDynamicTexture.CreateForMesh(menuPlane, 512, 512, false);
+  const adt = GUI.AdvancedDynamicTexture.CreateForMesh(menuBox, 1024, 512, false);
 
   // Background plate
   const plate = new GUI.Rectangle("plate");
-  plate.width = "260px";
-  plate.height = "260px";
+  plate.width = "320px";
+  plate.height = "220px";
   plate.cornerRadius = 20;
   plate.background = "rgba(20,20,20,0.6)";
   plate.thickness = 0;
@@ -72,19 +78,21 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
   grid.addControl(btnCyl, 1, 0);
   grid.addControl(btnTorus, 1, 1);
 
-  // small subtle shadow using a semi-transparent plane behind (mesh-level)
-  const shadowPlane = MeshBuilder.CreatePlane("menuShadow", { size: 1.05 }, scene);
-  shadowPlane.parent = parentCamera;
-  shadowPlane.position = new Vector3(0.35, -0.25, 0.595);
-  shadowPlane.rotation.x = 0;
-  const shadowAdt = GUI.AdvancedDynamicTexture.CreateForMesh(shadowPlane, 256, 256, false);
+  // small subtle shadow using a slightly larger, very thin box behind
+  const shadowBox = MeshBuilder.CreateBox("menuShadow", { width: 0.36, height: 0.26, depth: 0.018 }, scene);
+  // make the shadow a child of the menu box so it moves with the menu when unparented
+  shadowBox.parent = menuBox;
+  // position slightly behind the menu box in local space
+  shadowBox.position = new Vector3(0, 0, -0.011);
+  shadowBox.rotation.x = 0;
+  const shadowAdt = GUI.AdvancedDynamicTexture.CreateForMesh(shadowBox, 512, 256, false);
   const shadowRect = new GUI.Rectangle("shadowRect");
-  shadowRect.width = "260px";
-  shadowRect.height = "260px";
+  shadowRect.width = "320px";
+  shadowRect.height = "220px";
   shadowRect.cornerRadius = 22;
   shadowRect.background = "rgba(0,0,0,0.25)";
   shadowRect.thickness = 0;
   shadowAdt.addControl(shadowRect);
 
-  return menuPlane as AbstractMesh;
+  return menuBox as AbstractMesh;
 }
