@@ -1,10 +1,11 @@
-import * as GUI from "@babylonjs/gui";
 import { MeshBuilder, Mesh, Scene, TransformNode, AbstractMesh } from "@babylonjs/core";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 
 export type ShapeType = "box" | "sphere" | "cylinder" | "torus";
 
-export default function createFloatingMenu(parentCamera: TransformNode, scene: Scene, onPick: (shape: ShapeType) => void) {
+export default async function createFloatingMenu(parentCamera: TransformNode, scene: Scene, onPick: (shape: ShapeType) => void): Promise<AbstractMesh> {
+  const GUI: any = await import("@babylonjs/gui");
+
   const menuPlane = MeshBuilder.CreatePlane("menuPlane", { size: 1 }, scene);
   menuPlane.scaling = new Vector3(0.45, 0.45, 1);
   menuPlane.parent = parentCamera;
@@ -55,7 +56,7 @@ export default function createFloatingMenu(parentCamera: TransformNode, scene: S
     txt.text = label;
     txt.color = "white";
     txt.fontSize = 14;
-    txt.top = "8px";
+    txt.marginTop = 8;
     circle.addControl(txt);
 
     return btn;

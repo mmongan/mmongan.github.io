@@ -10,7 +10,7 @@ import { PointerEventTypes } from "@babylonjs/core/Events/pointerEvents";
 import { WebXRDefaultExperience } from "@babylonjs/core/XR/webXRDefaultExperience";
 import { WebXRHitTest } from "@babylonjs/core/XR/features/webXRHitTest";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
-import createFloatingMenu, { ShapeType } from "./menu";
+import type { ShapeType } from "./menu";
 
 async function createScene() {
   const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement | null;
@@ -57,8 +57,9 @@ async function createScene() {
     }
   });
 
-  // Floating menu attached to the XR camera
-  const menuMesh = createFloatingMenu(xr.baseExperience.camera as any, scene, (shape) => {
+  // Floating menu attached to the XR camera (lazy-loaded GUI)
+  const menuModule = await import("./menu");
+  const menuMesh = await menuModule.default(xr.baseExperience.camera as any, scene, (shape: ShapeType) => {
     const pos = reticle.isVisible ? reticle.position.clone() : xr.baseExperience.camera.position.add(xr.baseExperience.camera.getForwardRay(2).direction.scale(1.2));
     spawnShape(shape, pos, scene);
   });
