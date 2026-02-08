@@ -83,7 +83,11 @@ async function createScene() {
   try {
     const menuModule = await import("./menu");
     const createFloatingMenu = menuModule.default as (parentCamera: any, scene: Scene, onPick: (shape: any) => void) => Promise<any>;
-    const menuResult = await createFloatingMenu(xr.baseExperience.camera as any, scene, (shape: ShapeType) => {});
+
+    // fallback: if XR not available, create a simple TransformNode to parent the menu so it appears in non-XR testing
+    const parentCamera = (xr && xr.baseExperience && (xr.baseExperience as any).camera) ? (xr.baseExperience as any).camera : (function() { try { return new TransformNode('menuDebugParent', scene); } catch { return null; } })();
+
+    const menuResult = await createFloatingMenu(parentCamera as any, scene, (shape: ShapeType) => {});
     menuMesh = menuResult.menu;
     menuShapeModels = menuResult.shapeModels;
     menuHandles = menuResult.handles;
