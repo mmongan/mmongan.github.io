@@ -11,12 +11,7 @@ export interface MenuShapeModel {
   shapeType: ShapeType;
 }
 
-export interface MenuHandle {
-  mesh: AbstractMesh;
-  isHandle: true;
-}
-
-export default async function createFloatingMenu(parentCamera: TransformNode, scene: Scene, onPick: (s: ShapeType) => void): Promise<{ menu: AbstractMesh; shapeModels: MenuShapeModel[]; handles: MenuHandle[] }> {
+export default async function createFloatingMenu(parentCamera: TransformNode, scene: Scene, onPick: (s: ShapeType) => void): Promise<{ menu: AbstractMesh; shapeModels: MenuShapeModel[] }> {
   // menu visual - expanded to fit full palette with internal padding
   const menuWidth = 1.8;
   const menuHeight = 1.0;
@@ -208,5 +203,5 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
     createPaletteShape(s.label, s.shape, s.color, row, col);
   }
 
-  return { menu: menuBox as AbstractMesh, shapeModels, handles };
-}
+  return { menu: menuBox as AbstractMesh, shapeModels };
+} 

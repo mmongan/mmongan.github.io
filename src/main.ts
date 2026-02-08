@@ -16,8 +16,7 @@ import type { ShapeType } from "./menu";
 // menu state
 let menuMesh: any = null;
 let menuRoot: any = null;
-let menuShapeModels: any[] = [];
-let menuHandles: any[] = [];
+let menuShapeModels: any[] = []; 
 
 let spawnedShapes: any[] = [];
 // per-controller hold state is stored on the controller object (e.g. controller._heldShape)
@@ -91,7 +90,7 @@ async function createScene() {
       scene.meshes.filter(m => /^menuDebugPlane|^menuBox|^cornerSphere|^menuDebug/.test(m.name)).forEach(m => { try { m.dispose(true); } catch (_) {} });
       // remove previous menu root if present
       try { if (menuRoot) { menuRoot.dispose(); menuRoot = null; } } catch (_) {}
-      menuMesh = null; menuShapeModels = []; menuHandles = [];
+      menuMesh = null; menuShapeModels = []; 
     } catch (e) {}
 
     const menuModule = await import("./menu");
@@ -103,7 +102,6 @@ async function createScene() {
     const menuResult = await createFloatingMenu(parentCamera as any, scene, (shape: ShapeType) => {});
     menuMesh = menuResult.menu;
     menuShapeModels = menuResult.shapeModels;
-    menuHandles = menuResult.handles;
 
     // create a world-locked root to hold the menu so we can parent/unparent easily
     try { menuRoot = new TransformNode("menuRoot", scene); } catch (_) { menuRoot = null; }
