@@ -1,14 +1,16 @@
 // @ts-ignore: allow side-effect CSS import without typings
 import "./styles.css";
-import { Engine } from "@babylonjs/core/Engines/engine";
-import { Scene } from "@babylonjs/core/scene";
-import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
-import { Vector3 } from "@babylonjs/core/Maths/math.vector";
-import { Color3 } from "@babylonjs/core/Maths/math.color";
-import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
-import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
-import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
-import { WebXRDefaultExperience } from "@babylonjs/core/XR/webXRDefaultExperience";
+import {
+  Engine,
+  Scene,
+  HemisphericLight,
+  Vector3,
+  Color3,
+  MeshBuilder,
+  TransformNode,
+  StandardMaterial,
+  WebXRDefaultExperience
+} from "@babylonjs/core";
 import type { ShapeType } from "./menu";
 
 // menu state

@@ -14,21 +14,25 @@ export interface MenuHandle {
 }
 
 export default async function createFloatingMenu(parentCamera: TransformNode, scene: Scene, onPick: (s: ShapeType) => void): Promise<{ menu: AbstractMesh; shapeModels: MenuShapeModel[]; handles: MenuHandle[] }> {
-  // menu visual
-  const menuBox = MeshBuilder.CreateBox("menuBox", { width: 0.55, height: 0.35, depth: 0.02 }, scene);
+  // menu visual - increased size and made transparent
+  const menuBox = MeshBuilder.CreateBox("menuBox", { width: 0.75, height: 0.55, depth: 0.02 }, scene);
   // position higher and in front (local-floor reference: Y is height above floor)
   menuBox.position = new Vector3(0, 1.0, -0.5);
   // rotate to face the user
   menuBox.rotation.x = 0;
   menuBox.rotation.y = 0;
 
-  // edges disabled for cleaner look
+  // Create material for menu box with transparency
+  const menuMaterial = new StandardMaterial("menuBoxMat", scene);
+  menuMaterial.diffuseColor = Color3.FromHexString("#E8E8E8");
+  menuMaterial.alpha = 0.2; // highly transparent
+  menuBox.material = menuMaterial;
 
   const shapeModels: MenuShapeModel[] = [];
   const handles: MenuHandle[] = [];
 
   // Create an invisible edge/border zone for grabbing (parented to menu, larger than menu to catch edges)
-  const edgeZone = MeshBuilder.CreateBox("edgeZone", { width: 0.65, height: 0.45, depth: 0.02 }, scene);
+  const edgeZone = MeshBuilder.CreateBox("edgeZone", { width: 0.85, height: 0.65, depth: 0.02 }, scene);
   edgeZone.parent = menuBox;
   edgeZone.position = new Vector3(0, 0, 0);
   edgeZone.isVisible = false;
@@ -41,43 +45,43 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
   handleMaterial.alpha = 0.7;
 
   // Left handle
-  const leftHandle = MeshBuilder.CreateCylinder("leftHandle", { height: 0.35, diameter: 0.02 }, scene);
+  const leftHandle = MeshBuilder.CreateCylinder("leftHandle", { height: 0.55, diameter: 0.02 }, scene);
   leftHandle.parent = menuBox;
-  leftHandle.position = new Vector3(-0.285, 0, 0.015);
+  leftHandle.position = new Vector3(-0.385, 0, 0.015);
   leftHandle.material = handleMaterial;
   handles.push({ mesh: leftHandle, isHandle: true });
 
   // Right handle
-  const rightHandle = MeshBuilder.CreateCylinder("rightHandle", { height: 0.35, diameter: 0.02 }, scene);
+  const rightHandle = MeshBuilder.CreateCylinder("rightHandle", { height: 0.55, diameter: 0.02 }, scene);
   rightHandle.parent = menuBox;
-  rightHandle.position = new Vector3(0.285, 0, 0.015);
+  rightHandle.position = new Vector3(0.385, 0, 0.015);
   rightHandle.material = handleMaterial;
   handles.push({ mesh: rightHandle, isHandle: true });
 
   // Top handle
-  const topHandle = MeshBuilder.CreateCylinder("topHandle", { height: 0.55, diameter: 0.02 }, scene);
+  const topHandle = MeshBuilder.CreateCylinder("topHandle", { height: 0.75, diameter: 0.02 }, scene);
   topHandle.parent = menuBox;
-  topHandle.position = new Vector3(0, 0.175, 0.015);
+  topHandle.position = new Vector3(0, 0.275, 0.015);
   topHandle.rotation.z = Math.PI / 2;
   topHandle.material = handleMaterial;
   handles.push({ mesh: topHandle, isHandle: true });
 
   // Bottom handle
-  const bottomHandle = MeshBuilder.CreateCylinder("bottomHandle", { height: 0.55, diameter: 0.02 }, scene);
+  const bottomHandle = MeshBuilder.CreateCylinder("bottomHandle", { height: 0.75, diameter: 0.02 }, scene);
   bottomHandle.parent = menuBox;
-  bottomHandle.position = new Vector3(0, -0.175, 0.015);
+  bottomHandle.position = new Vector3(0, -0.275, 0.015);
   bottomHandle.rotation.z = Math.PI / 2;
   bottomHandle.material = handleMaterial;
   handles.push({ mesh: bottomHandle, isHandle: true });
 
   // Create shape models positioned around the menu, parented to menu so they move together
   const createPaletteShape = (label: string, shape: ShapeType, color: string, gridRow: number, gridCol: number) => {
-    // calculate position relative to menu (3-column grid)
-    const xOffset = (gridCol - 1) * 0.18; // -0.18, 0, 0.18 for cols 0, 1, 2
-    const yOffset = gridRow === 0 ? 0.08 : -0.08; // top row or bottom row
+    // calculate position relative to menu (3-column grid with 2 rows)
+    const xOffset = (gridCol - 1) * 0.23; // -0.23, 0, 0.23 for cols 0, 1, 2
+    const yOffset = gridRow === 0 ? 0.12 : -0.12; // top row or bottom row
     const zOffset = -0.015;
     
-    const shapeSize = 0.04; // small size for palette
+    const shapeSize = 0.05; // slightly larger size for palette
     let shapeModel: AbstractMesh | null = null;
     
     switch (shape) {
