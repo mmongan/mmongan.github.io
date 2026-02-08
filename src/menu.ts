@@ -113,7 +113,7 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
 
   // Debug/version label: show build timestamp so we can confirm deployed code is running
   try {
-    const debugText = `build: ${new Date().toISOString()}`;
+    const debugText = `MENU_DEBUG_TOKEN_${new Date().toISOString()}`;
     const tex = new DynamicTexture("menuDebugTex", { width: 512, height: 64 }, scene, false);
     tex.hasAlpha = true;
     tex.getContext().font = "bold 36px Arial";
