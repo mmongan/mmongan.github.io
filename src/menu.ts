@@ -130,15 +130,25 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
 
   // Create shape models positioned around the menu, parented to menu so they move together
   const cols = 6;
-  const rows = 3;
+  // build shapes list: poly0..poly14 + sphere + cube (we'll compute rows dynamically)
+  const paletteColors = ['#98D8C8','#FF6B6B','#45B7D1','#FFA07A','#F6C9E2','#D4A5FF','#FFB86B','#B0E57C','#9AD0FF','#E3E66D','#C0C0C0','#FF9FB4','#8FD3C7','#D9B8FF','#FFD7A6'];
+  const shapesList: Array<{label:string, shape:ShapeType, color:string}> = [];
+  for (let i = 0; i < 15; i++) {
+    shapesList.push({ label: `Poly${i}`, shape: (`poly${i}` as ShapeType), color: paletteColors[i % paletteColors.length] });
+  }
+  shapesList.push({ label: 'Sphere', shape: 'sphere', color: '#FFD166' });
+  shapesList.push({ label: 'Cube', shape: 'cube', color: '#4ECDC4' });
+
+  const rows = Math.ceil(shapesList.length / cols);
+
   // compute spacing inside an inner rect (respect padding) so shapes fit comfortably
   const innerWidth = menuWidth - menuPadding * 2;
   const innerHeight = menuHeight - menuPadding * 2;
-  const xSpacing = innerWidth / (cols - 1);
-  const ySpacing = innerHeight / (rows - 1);
-  const zOffset = menuDepth + 0.03; // slightly in front of menu surface
+  const xSpacing = cols > 1 ? innerWidth / (cols - 1) : 0;
+  const ySpacing = rows > 1 ? innerHeight / (rows - 1) : 0;
+  const zOffset = menuDepth + 0.05; // slightly in front of menu surface (a bit larger)
   // choose shape size to fit spacing but make shapes more visible
-  const maxShape = Math.min(0.08, Math.min(xSpacing, ySpacing) * 0.6);
+  const maxShape = Math.min(0.12, Math.min(xSpacing || 0.08, ySpacing || 0.08) * 0.6);
   const shapeSize = Math.max(0.05, maxShape);
 
   // Debug/version label: show build timestamp so we can confirm deployed code is running
@@ -173,32 +183,44 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
 
     let shapeModel: AbstractMesh | null = null;
 
-    if (shape === 'sphere') {
-      shapeModel = MeshBuilder.CreateSphere(label + "-shape", { diameter: shapeSize }, scene);
-    } else if (shape === 'cube') {
-      shapeModel = MeshBuilder.CreateBox(label + "-shape", { size: shapeSize }, scene);
-    } else if ((shape as string).startsWith('poly')) {
-      const idx = parseInt((shape as string).replace('poly', ''), 10);
-      shapeModel = MeshBuilder.CreatePolyhedron(label + "-shape", { type: idx, size: shapeSize }, scene);
-    } else {
-      // fallback to known named polyhedra for compatibility
-      switch (shape) {
-        case "tetrahedron":
-          shapeModel = MeshBuilder.CreatePolyhedron(label + "-shape", { type: 0, size: shapeSize }, scene);
-          break;
-        case "octahedron":
-          shapeModel = MeshBuilder.CreatePolyhedron(label + "-shape", { type: 1, size: shapeSize }, scene);
-          break;
-        case "dodecahedron":
-          shapeModel = MeshBuilder.CreatePolyhedron(label + "-shape", { type: 2, size: shapeSize }, scene);
-          break;
-        case "icosahedron":
-          shapeModel = MeshBuilder.CreatePolyhedron(label + "-shape", { type: 3, size: shapeSize }, scene);
-          break;
+    try {
+      if (shape === 'sphere') {
+        shapeModel = MeshBuilder.CreateSphere(label + "-shape", { diameter: shapeSize }, scene);
+      } else if (shape === 'cube') {
+        shapeModel = MeshBuilder.CreateBox(label + "-shape", { size: shapeSize }, scene);
+      } else if ((shape as string).startsWith('poly')) {
+        const idx = parseInt((shape as string).replace('poly', ''), 10);
+        try {
+          shapeModel = MeshBuilder.CreatePolyhedron(label + "-shape", { type: idx, size: shapeSize }, scene);
+        } catch (e) {
+          console.warn('poly creation failed for', label, 'index', idx, e);
+          // fallback to box so the slot is visible
+          shapeModel = MeshBuilder.CreateBox(label + "-shape", { size: shapeSize }, scene);
+        }
+      } else {
+        // fallback to known named polyhedra for compatibility
+        switch (shape) {
+          case "tetrahedron":
+            shapeModel = MeshBuilder.CreatePolyhedron(label + "-shape", { type: 0, size: shapeSize }, scene);
+            break;
+          case "octahedron":
+            shapeModel = MeshBuilder.CreatePolyhedron(label + "-shape", { type: 1, size: shapeSize }, scene);
+            break;
+          case "dodecahedron":
+            shapeModel = MeshBuilder.CreatePolyhedron(label + "-shape", { type: 2, size: shapeSize }, scene);
+            break;
+          case "icosahedron":
+            shapeModel = MeshBuilder.CreatePolyhedron(label + "-shape", { type: 3, size: shapeSize }, scene);
+            break;
+        }
       }
+    } catch (e) {
+      console.warn('failed to create shapeModel for', label, e);
     }
 
     if (shapeModel) {
+      // ensure the mesh is visible and unique
+      shapeModel.name = label + "-shape";
       const mat = new StandardMaterial(label + "-mat", scene);
       mat.diffuseColor = Color3.FromHexString(color);
       shapeModel.material = mat;
@@ -253,6 +275,11 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
   }
   shapesList.push({ label: 'Sphere', shape: 'sphere', color: '#FFD166' });
   shapesList.push({ label: 'Cube', shape: 'cube', color: '#4ECDC4' });
+
+  // debug: log final palette configuration
+  try {
+    console.log('palette shapes count', shapesList.length, 'cols', cols);
+  } catch (e) {}
 
   // place into grid
   for (let i = 0; i < shapesList.length; i++) {
