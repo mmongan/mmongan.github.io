@@ -225,6 +225,8 @@ async function createScene() {
                     newShape.outlineWidth = 0.03;
                     (newShape as any).outlineColor = Color3.FromHexString('#FFFF00');
                   } catch (e) {}
+                  // mark shape as owned by this controller to prevent other hands from grabbing it
+                  try { (newShape as any)._heldBy = xrController; } catch (_) {}
                   ctrlState._heldShape = newShape;
                   ctrlState._heldShapeParent = newShape.parent;
                   try { newShape.setParent(xrController.grip); } catch (_) { newShape.parent = xrController.grip; }
@@ -232,20 +234,27 @@ async function createScene() {
                   ctrlState._menuGrabbed = true;
                   try { grabTarget.setParent(xrController.grip); } catch (_) { grabTarget.parent = xrController.grip; }
                 } else if (grabTarget && spawnedShapes.includes(grabTarget)) {
-                  ctrlState._heldShape = grabTarget;
-                  ctrlState._heldShapeParent = grabTarget.parent;
-                  try { grabTarget.setParent(xrController.grip); } catch (_) { grabTarget.parent = xrController.grip; }
-                  try {
-                    grabTarget.renderOutline = true;
-                    grabTarget.outlineWidth = 0.03;
-                    (grabTarget as any).outlineColor = Color3.FromHexString('#FFFF00');
-                  } catch (e) {}
+                  // prevent grabbing if another controller already holds this shape
+                  if ((grabTarget as any)._heldBy) {
+                    // already held by another hand: ignore grab
+                  } else {
+                    try { (grabTarget as any)._heldBy = xrController; } catch (_) {}
+                    ctrlState._heldShape = grabTarget;
+                    ctrlState._heldShapeParent = grabTarget.parent;
+                    try { grabTarget.setParent(xrController.grip); } catch (_) { grabTarget.parent = xrController.grip; }
+                    try {
+                      grabTarget.renderOutline = true;
+                      grabTarget.outlineWidth = 0.03;
+                      (grabTarget as any).outlineColor = Color3.FromHexString('#FFFF00');
+                    } catch (e) {}
+                  }
                 }
               }
             } else {
               // release: preserve world position
               if (ctrlState._heldShape) {
                 try { ctrlState._heldShape.renderOutline = false; } catch (_) {}
+                try { (ctrlState._heldShape as any)._heldBy = null; } catch (_) {}
                 const worldPos = ctrlState._heldShape.getAbsolutePosition().clone();
                 try { ctrlState._heldShape.setParent(null); } catch (_) { ctrlState._heldShape.parent = null; }
                 try { ctrlState._heldShape.position = worldPos; } catch (_) {}
@@ -265,6 +274,40 @@ async function createScene() {
         }
       });
     });
+
+    // cleanup: if a controller is removed while holding something, release it
+    try {
+      xr.input.onControllerRemovedObservable.add((xrController: any) => {
+        try {
+          const ctrlState = xrController as any;
+          if (ctrlState._heldShape) {
+            try { ctrlState._heldShape.renderOutline = false; } catch (_) {}
+            try { (ctrlState._heldShape as any)._heldBy = null; } catch (_) {}
+            try {
+              const worldPos = ctrlState._heldShape.getAbsolutePosition().clone();
+              try { ctrlState._heldShape.setParent(null); } catch (_) { ctrlState._heldShape.parent = null; }
+              try { ctrlState._heldShape.position = worldPos; } catch (_) {}
+            } catch (_) {}
+            ctrlState._heldShape = null;
+            ctrlState._heldShapeParent = null;
+          }
+
+          if (ctrlState._menuGrabbed) {
+            const menuToRelease = menuRoot || menuMesh;
+            if (menuToRelease) {
+              try {
+                const worldPos = (menuToRelease as any).getAbsolutePosition().clone();
+                try { menuToRelease.setParent(null); } catch (_) { menuToRelease.parent = null; }
+                try { (menuToRelease as any).setAbsolutePosition(worldPos); } catch (_) { menuToRelease.position = worldPos; }
+              } catch (_) {}
+            }
+            ctrlState._menuGrabbed = false;
+          }
+        } catch (e) {}
+      });
+    } catch (e) {
+      // ignore
+    }
   } catch (e) {
     // ignore
   }
