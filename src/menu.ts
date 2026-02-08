@@ -108,6 +108,25 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
     try { console.log('cornerSphere created', sphere.name, sphere.position); } catch (e) {}
   });
 
+  // Instrumentation: set a global debug flag and update the visible debug banner (if present)
+  try {
+    (window as any).__MENU_DEBUG = (window as any).__MENU_DEBUG || {};
+    (window as any).__MENU_DEBUG.cornerSpheres = cornerPositions.map((_, i) => `cornerSphere${i}`);
+    try {
+      const dbg = document.getElementById('menu-debug');
+      if (dbg) {
+        dbg.textContent = dbg.textContent + ' • corners ready';
+      } else {
+        const el = document.createElement('div');
+        el.id = 'menu-debug-corners';
+        el.style = 'position:fixed;right:8px;bottom:36px;background:#220;color:white;padding:4px 6px;border-radius:4px;font-family:monospace;font-size:11px;z-index:9999';
+        el.textContent = 'menu corners: ready';
+        document.body.appendChild(el);
+      }
+    } catch (e) {}
+  } catch (e) {}
+
+
   // Create shape models positioned around the menu, parented to menu so they move together
   const cols = 6;
   const rows = 3;
