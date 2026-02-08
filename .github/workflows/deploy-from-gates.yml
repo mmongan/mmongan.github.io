@@ -1,0 +1,95 @@
+name: Build from `gates` and publish to root
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_repo:
+        description: 'Source repo (owner/repo) to build from'
+        required: true
+        default: 'mmongan/gates'
+      source_path:
+        description: 'Path in source repo containing project root (relative)'
+        required: true
+        default: '.'
+      build_dir:
+        description: 'Build output dir inside source (relative)'
+        required: true
+        default: 'dist'
+      token:
+        description: 'Verification token/text to search in built files'
+        required: true
+        default: 'menuDebugTex'
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout this repo (mmongan.github.io)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Guard: ensure no gh-pages branch exists
+        run: |
+          set -e
+          if git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
+            echo "ERROR: gh-pages branch exists on origin. Please delete it and re-run this workflow to ensure Pages is served from main root.";
+            exit 1;
+          fi
+
+      - name: Checkout source repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.inputs.source_repo }}
+          path: source
+          token: ${{ secrets.SOURCE_REPO_TOKEN || github.token }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install & Build
+        working-directory: source/${{ github.event.inputs.source_path }}
+        run: |
+          set -e
+          npm ci
+          npm run build
+
+      - name: Verify token in build output
+        run: |
+          set -e
+          BUILD_DIR=source/${{ github.event.inputs.source_path }}/${{ github.event.inputs.build_dir }}
+          if [ ! -d "$BUILD_DIR" ]; then echo "Build dir not found: $BUILD_DIR"; exit 1; fi
+          if ! grep -R --line-number "${{ github.event.inputs.token }}" "$BUILD_DIR"; then echo "Token not found in build output"; exit 1; fi
+
+      - name: Copy build output into repo root
+        run: |
+          set -e
+          BUILD_DIR=source/${{ github.event.inputs.source_path }}/${{ github.event.inputs.build_dir }}
+          if [ -f "$BUILD_DIR/index.html" ]; then cp "$BUILD_DIR/index.html" ./; fi
+          if [ -d "$BUILD_DIR/assets" ]; then rm -rf ./assets && cp -R "$BUILD_DIR/assets" ./assets; else cp -R "$BUILD_DIR/"* ./ || true; fi
+
+      - name: Update cache-bust query param in index.html
+        run: |
+          stamp=$(date +%Y%m%d%H%M%S)
+          if grep -q '\?v=' index.html; then
+            sed -E -i "s/\?v=[0-9]+/?v=$stamp/g" index.html
+          else
+            sed -E -i "s/(<script[^>]+src=\"[^\"]+\.js)(\")/\1?v=$stamp\2/g" index.html
+          fi
+
+      - name: Commit and push changes
+        env:
+          GIT_AUTHOR_NAME: 'github-actions[bot]'
+          GIT_AUTHOR_EMAIL: '41898282+github-actions[bot]@users.noreply.github.com'
+        run: |
+          git config user.name "$GIT_AUTHOR_NAME"
+          git config user.email "$GIT_AUTHOR_EMAIL"
+          git add index.html assets || true
+          if ! git diff --cached --quiet; then
+            git commit -m "build: update compiled assets [skip ci]"
+            git push origin main
+          else
+            echo "No changes to commit"
+          fi
