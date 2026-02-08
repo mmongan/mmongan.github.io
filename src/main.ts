@@ -6,6 +6,7 @@ import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { PointerEventTypes } from "@babylonjs/core/Events/pointerEvents";
 import { WebXRDefaultExperience } from "@babylonjs/core/XR/webXRDefaultExperience";
 import { WebXRHitTest } from "@babylonjs/core/XR/features/webXRHitTest";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
@@ -23,6 +24,9 @@ async function createScene() {
   // simple ground for non-AR fallback
   const ground = MeshBuilder.CreateGround("ground", { width: 10, height: 10 }, scene);
   ground.position.y = -0.01;
+  // hide ground in AR view and disable interactions
+  ground.isVisible = false;
+  ground.isPickable = false;
 
   // Start XR AR experience
   const xr = await WebXRDefaultExperience.CreateAsync(scene, {
@@ -57,6 +61,25 @@ async function createScene() {
   const menuMesh = createFloatingMenu(xr.baseExperience.camera as any, scene, (shape) => {
     const pos = reticle.isVisible ? reticle.position.clone() : xr.baseExperience.camera.position.add(xr.baseExperience.camera.getForwardRay(2).direction.scale(1.2));
     spawnShape(shape, pos, scene);
+  });
+
+  // Allow placing the menu at the reticle position: tap to place/unparent so it floats in world space
+  let menuPlaced = false;
+  scene.onPointerObservable.add((pi) => {
+    if (pi.type === PointerEventTypes.POINTERDOWN) {
+      if (reticle.isVisible) {
+        // move menu to reticle and unparent so it stays in world space
+        menuMesh.parent = null;
+        menuMesh.position.copyFrom(reticle.position);
+        // rotate to face the camera
+        try {
+          menuMesh.lookAt(xr.baseExperience.camera.position);
+        } catch (e) {
+          // ignore if lookAt fails in some environments
+        }
+        menuPlaced = true;
+      }
+    }
   });
 
   function spawnShape(type: ShapeType, position: Vector3, scene: Scene) {
