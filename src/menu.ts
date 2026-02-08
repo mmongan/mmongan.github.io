@@ -111,6 +111,31 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
   const zOffset = menuDepth + 0.03; // slightly in front of menu surface
   const shapeSize = 0.06; // smaller to ensure fit and avoid clipping
 
+  // Debug/version label: show build timestamp so we can confirm deployed code is running
+  try {
+    const debugText = `build: ${new Date().toISOString()}`;
+    const tex = new DynamicTexture("menuDebugTex", { width: 512, height: 64 }, scene, false);
+    tex.hasAlpha = true;
+    tex.getContext().font = "bold 36px Arial";
+    tex.drawText(debugText, null, 40, "bold 28px Arial", "#FFFFFF", "transparent", true);
+
+    const labelMat = new StandardMaterial("menuDebugMat", scene);
+    labelMat.diffuseTexture = tex;
+    labelMat.specularColor = Color3.Black();
+    labelMat.emissiveColor = Color3.FromHexString("#FFFFFF");
+
+    const labelWidth = Math.min(innerWidth * 0.9, 0.7);
+    const labelHeight = 0.12;
+    const labelPlane = MeshBuilder.CreatePlane("menuDebugPlane", { width: labelWidth, height: labelHeight }, scene);
+    labelPlane.parent = menuBox;
+    // place inside top-left padding
+    labelPlane.position = new Vector3(-innerWidth / 2 + labelWidth / 2 + menuPadding, innerHeight / 2 - labelHeight / 2 - menuPadding, zOffset + 0.005);
+    labelPlane.material = labelMat;
+    labelPlane.isPickable = false;
+  } catch (e) {
+    // ignore debug label errors
+  }
+
   const createPaletteShape = (label: string, shape: ShapeType, color: string, gridRow: number, gridCol: number) => {
     const xOffset = -innerWidth / 2 + gridCol * xSpacing;
     const yOffset = innerHeight / 2 - gridRow * ySpacing;
