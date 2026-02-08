@@ -193,10 +193,20 @@ async function createScene() {
                 }
                 
                 if (isMenuShapeModel && menuShapeType) {
+                  // debug: log which palette shape we think was picked
+                  try { console.log('menu pick:', menuShapeType, shapeModelObj.mesh.name, shapeModelObj.mesh.getAbsolutePosition()); } catch (e) {}
                   // spawn a copy of the shape at grip location
                   spawnShapeInScene(menuShapeType, xrController.grip.position.clone());
                   // immediately grab the newly spawned shape so it's held by the grip
                   const newShape = spawnedShapes[spawnedShapes.length - 1];
+                  // color-code the spawned shape for visual verification
+                  try {
+                    if (menuShapeType === 'icosahedron') newShape.material.diffuseColor = Color3.FromHexString('#98D8C8');
+                    else if (menuShapeType === 'cube') newShape.material.diffuseColor = Color3.FromHexString('#4ECDC4');
+                    else if (menuShapeType === 'tetrahedron') newShape.material.diffuseColor = Color3.FromHexString('#FF6B6B');
+                    else if (menuShapeType === 'octahedron') newShape.material.diffuseColor = Color3.FromHexString('#45B7D1');
+                    else if (menuShapeType === 'dodecahedron') newShape.material.diffuseColor = Color3.FromHexString('#FFA07A');
+                  } catch (e) {}
                   grabbedShape = newShape;
                   grabbedShapeParent = newShape.parent;
                   try { newShape.setParent(xrController.grip); } catch (_) { newShape.parent = xrController.grip; }
