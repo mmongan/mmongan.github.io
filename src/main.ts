@@ -16,13 +16,12 @@ import type { ShapeType } from "./menu";
 // menu state
 let menuMesh: any = null;
 let menuRoot: any = null;
-let menuGrabbed = false;
 let menuShapeModels: any[] = [];
 let menuHandles: any[] = [];
 
 let spawnedShapes: any[] = [];
-let grabbedShape: any = null;
-let grabbedShapeParent: any = null;
+// per-controller hold state is stored on the controller object (e.g. controller._heldShape)
+
 
 async function createScene() {
   const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement | null;
@@ -134,8 +133,16 @@ async function createScene() {
           mainComponent.onButtonStateChangedObservable.add((state: any) => {
             if (!(state && state.changes && state.changes.pressed)) return;
             const pressed = state.changes.pressed.current;
+            const ctrlState = xrController as any;
+
             if (pressed) {
               if (xrController.grip) {
+                // enforce one held object per hand
+                if (ctrlState._heldShape || ctrlState._menuGrabbed) {
+                  // already holding something with this hand; ignore new grabs
+                  return;
+                }
+
                 // check if grabbing a menu shape model first
                 let grabTarget: any = null;
                 let closestDist = 0.3; // 30cm grab radius
@@ -199,42 +206,59 @@ async function createScene() {
                   spawnShapeInScene(menuShapeType, xrController.grip.position.clone());
                   // immediately grab the newly spawned shape so it's held by the grip
                   const newShape = spawnedShapes[spawnedShapes.length - 1];
-                  // color-code the spawned shape for visual verification
+                  // color-code the spawned shape for visual verification and add active outline
                   try {
-                    if (menuShapeType === 'icosahedron') newShape.material.diffuseColor = Color3.FromHexString('#98D8C8');
+                    if (menuShapeType === 'sphere') newShape.material.diffuseColor = Color3.FromHexString('#FFD166');
                     else if (menuShapeType === 'cube') newShape.material.diffuseColor = Color3.FromHexString('#4ECDC4');
+                    else if ((menuShapeType as string).startsWith('poly')) {
+                      const idx = parseInt((menuShapeType as string).replace('poly',''), 10);
+                      const palette = ['#98D8C8','#FF6B6B','#45B7D1','#FFA07A','#F6C9E2','#D4A5FF','#FFB86B','#B0E57C','#9AD0FF','#E3E66D','#C0C0C0','#FF9FB4','#8FD3C7','#D9B8FF','#FFD7A6'];
+                      newShape.material.diffuseColor = Color3.FromHexString(palette[idx % palette.length]);
+                    } else if (menuShapeType === 'icosahedron') newShape.material.diffuseColor = Color3.FromHexString('#98D8C8');
                     else if (menuShapeType === 'tetrahedron') newShape.material.diffuseColor = Color3.FromHexString('#FF6B6B');
                     else if (menuShapeType === 'octahedron') newShape.material.diffuseColor = Color3.FromHexString('#45B7D1');
                     else if (menuShapeType === 'dodecahedron') newShape.material.diffuseColor = Color3.FromHexString('#FFA07A');
                   } catch (e) {}
-                  grabbedShape = newShape;
-                  grabbedShapeParent = newShape.parent;
+                  // add outline highlight to indicate it's being held
+                  try {
+                    newShape.renderOutline = true;
+                    newShape.outlineWidth = 0.03;
+                    (newShape as any).outlineColor = Color3.FromHexString('#FFFF00');
+                  } catch (e) {}
+                  ctrlState._heldShape = newShape;
+                  ctrlState._heldShapeParent = newShape.parent;
                   try { newShape.setParent(xrController.grip); } catch (_) { newShape.parent = xrController.grip; }
                 } else if (isMenuHandle || grabTarget === (menuRoot || menuMesh)) {
-                  menuGrabbed = true;
+                  ctrlState._menuGrabbed = true;
                   try { grabTarget.setParent(xrController.grip); } catch (_) { grabTarget.parent = xrController.grip; }
                 } else if (grabTarget && spawnedShapes.includes(grabTarget)) {
-                  grabbedShape = grabTarget;
-                  grabbedShapeParent = grabTarget.parent;
+                  ctrlState._heldShape = grabTarget;
+                  ctrlState._heldShapeParent = grabTarget.parent;
                   try { grabTarget.setParent(xrController.grip); } catch (_) { grabTarget.parent = xrController.grip; }
+                  try {
+                    grabTarget.renderOutline = true;
+                    grabTarget.outlineWidth = 0.03;
+                    (grabTarget as any).outlineColor = Color3.FromHexString('#FFFF00');
+                  } catch (e) {}
                 }
               }
             } else {
               // release: preserve world position
-              if (grabbedShape) {
-                const worldPos = grabbedShape.getAbsolutePosition().clone();
-                try { grabbedShape.setParent(null); } catch (_) { grabbedShape.parent = null; }
-                try { grabbedShape.position = worldPos; } catch (_) {}
-                grabbedShape = null;
-                grabbedShapeParent = null;
-              } else if (menuGrabbed) {
+              if (ctrlState._heldShape) {
+                try { ctrlState._heldShape.renderOutline = false; } catch (_) {}
+                const worldPos = ctrlState._heldShape.getAbsolutePosition().clone();
+                try { ctrlState._heldShape.setParent(null); } catch (_) { ctrlState._heldShape.parent = null; }
+                try { ctrlState._heldShape.position = worldPos; } catch (_) {}
+                ctrlState._heldShape = null;
+                ctrlState._heldShapeParent = null;
+              } else if (ctrlState._menuGrabbed) {
                 const menuToRelease = menuRoot || menuMesh;
                 if (menuToRelease) {
                   const worldPos = (menuToRelease as any).getAbsolutePosition().clone();
                   try { menuToRelease.setParent(null); } catch (_) { menuToRelease.parent = null; }
                   try { (menuToRelease as any).setAbsolutePosition(worldPos); } catch (_) { menuToRelease.position = worldPos; }
                 }
-                menuGrabbed = false;
+                ctrlState._menuGrabbed = false;
               }
             }
           });
@@ -261,6 +285,9 @@ async function createScene() {
         case "cube":
           shape = MeshBuilder.CreateBox("cube", { size: 0.1 }, scene);
           break;
+        case "sphere":
+          shape = MeshBuilder.CreateSphere("sphere", { diameter: 0.1 }, scene);
+          break;
         case "octahedron":
           shape = MeshBuilder.CreatePolyhedron("octahedron", { type: 1, size: 0.1 }, scene);
           break;
@@ -271,6 +298,16 @@ async function createScene() {
           shape = MeshBuilder.CreatePolyhedron("icosahedron", { type: 3, size: 0.1 }, scene);
           break;
         default:
+          // handle polyNN naming (poly0..poly14)
+          try {
+            if ((shapeType as string).startsWith("poly")) {
+              const idx = parseInt((shapeType as string).replace("poly",""), 10);
+              if (!isNaN(idx)) {
+                shape = MeshBuilder.CreatePolyhedron(shapeType as string, { type: idx, size: 0.1 }, scene);
+                break;
+              }
+            }
+          } catch (e) {}
           return;
       }
       
