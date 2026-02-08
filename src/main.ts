@@ -164,9 +164,8 @@ async function createScene() {
                 let grabTarget: any = null;
                 let closestDist = 0.3; // 30cm grab radius
                 let isMenuShapeModel = false;
-                let isMenuHandle = false;
                 let menuShapeType: ShapeType | null = null;
-                
+
                 // check menu shape models (smaller grab radius - 15cm)
                 for (const shapeModelObj of menuShapeModels) {
                   const dist = Vector3.Distance(shapeModelObj.mesh.getAbsolutePosition(), xrController.grip.position);
@@ -175,27 +174,13 @@ async function createScene() {
                       closestDist = dist;
                       grabTarget = shapeModelObj.mesh;
                       isMenuShapeModel = true;
-                      isMenuHandle = false;
                       menuShapeType = shapeModelObj.shapeType;
                     }
                   }
                 }
-                
-                // check menu handles (second priority)
+
+                // if not grabbing a menu shape, check menu and regular shapes
                 if (!isMenuShapeModel) {
-                  for (const handle of menuHandles) {
-                    const dist = Vector3.Distance(handle.mesh.getAbsolutePosition(), xrController.grip.position);
-                    if (dist < closestDist) {
-                      closestDist = dist;
-                      grabTarget = menuRoot || menuMesh;
-                      isMenuHandle = true;
-                      isMenuShapeModel = false;
-                    }
-                  }
-                }
-                
-                // if not grabbing a menu shape or handle, check menu and regular shapes
-                if (!isMenuShapeModel && !isMenuHandle) {
                   // check menu
                   const menuToGrab = menuRoot || menuMesh;
                   if (menuToGrab) {
@@ -205,7 +190,7 @@ async function createScene() {
                       closestDist = menuDist;
                     }
                   }
-                  
+
                   // check shapes
                   for (const shape of spawnedShapes) {
                     const dist = Vector3.Distance(shape.position, xrController.grip.position);
@@ -242,7 +227,7 @@ async function createScene() {
                   ctrlState._heldShape = newShape;
                   ctrlState._heldShapeParent = newShape.parent;
                   try { newShape.setParent(xrController.grip); } catch (_) { newShape.parent = xrController.grip; }
-                } else if (isMenuHandle || grabTarget === (menuRoot || menuMesh)) {
+                } else if (grabTarget === (menuRoot || menuMesh)) {
                   ctrlState._menuGrabbed = true;
                   try { grabTarget.setParent(xrController.grip); } catch (_) { grabTarget.parent = xrController.grip; }
                 } else if (grabTarget && spawnedShapes.includes(grabTarget)) {
