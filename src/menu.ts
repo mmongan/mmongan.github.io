@@ -32,10 +32,8 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
   menuBox.material = menuMaterial;
 
   const shapeModels: MenuShapeModel[] = [];
-  const handles: MenuHandle[] = [];
 
-  // Handles and corner connectors were removed per request — the menu has no edge handles now.
-  // We keep returning an empty `handles` array so existing consumers (e.g., grab logic) continue to work.
+  // Handles and corner connectors were removed; menu has no edge handles now.
 
 
   // Instrumentation: note that handles/corners have been removed
