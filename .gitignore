@@ -5,3 +5,6 @@ dist/
 .vscode/
 npm-debug.log*
 package-lock.json
+# Node modules and caches
+node_modules/
+node_modules/.cache/
