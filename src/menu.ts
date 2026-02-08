@@ -14,13 +14,15 @@ export interface MenuHandle {
 }
 
 export default async function createFloatingMenu(parentCamera: TransformNode, scene: Scene, onPick: (s: ShapeType) => void): Promise<{ menu: AbstractMesh; shapeModels: MenuShapeModel[]; handles: MenuHandle[] }> {
-  // menu visual - expanded to fit full palette
-  const menuWidth = 1.6;
-  const menuHeight = 0.9;
+  // menu visual - expanded to fit full palette with internal padding
+  const menuWidth = 1.8;
+  const menuHeight = 1.0;
   const menuDepth = 0.02;
+  const menuPadding = 0.06; // meters of padding so palette shapes don't sit on the edge
   const menuBox = MeshBuilder.CreateBox("menuBox", { width: menuWidth, height: menuHeight, depth: menuDepth }, scene);
-  // position higher and in front (local-floor reference: Y is height above floor)
-  menuBox.position = new Vector3(0, 1.0, -0.5);
+  // position higher and further in front (local-floor reference: Y is height above floor)
+  // moved back to -1.0m on Z so the menu appears 1 meter in front of the user
+  menuBox.position = new Vector3(0, 1.0, -1.0);
   // rotate to face the user
   menuBox.rotation.x = 0;
   menuBox.rotation.y = 0;
@@ -35,7 +37,7 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
   const handles: MenuHandle[] = [];
 
   // Create an invisible edge/border zone for grabbing (parented to menu, larger than menu to catch edges)
-  const edgeZone = MeshBuilder.CreateBox("edgeZone", { width: menuWidth + 0.1, height: menuHeight + 0.1, depth: menuDepth }, scene);
+  const edgeZone = MeshBuilder.CreateBox("edgeZone", { width: menuWidth + (menuPadding * 2), height: menuHeight + (menuPadding * 2), depth: menuDepth }, scene);
   edgeZone.parent = menuBox;
   edgeZone.position = new Vector3(0, 0, 0);
   edgeZone.isVisible = false;
@@ -80,14 +82,17 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
   // Create shape models positioned around the menu, parented to menu so they move together
   const cols = 6;
   const rows = 3;
-  const xSpacing = menuWidth / (cols - 1);
-  const ySpacing = menuHeight / (rows - 1);
-  const zOffset = menuDepth + 0.02; // slightly in front of menu surface
-  const shapeSize = 0.08; // slightly larger for visibility
+  // compute spacing inside an inner rect (respect padding) so shapes fit comfortably
+  const innerWidth = menuWidth - menuPadding * 2;
+  const innerHeight = menuHeight - menuPadding * 2;
+  const xSpacing = innerWidth / (cols - 1);
+  const ySpacing = innerHeight / (rows - 1);
+  const zOffset = menuDepth + 0.03; // slightly in front of menu surface
+  const shapeSize = 0.06; // smaller to ensure fit and avoid clipping
 
   const createPaletteShape = (label: string, shape: ShapeType, color: string, gridRow: number, gridCol: number) => {
-    const xOffset = (gridCol - (cols - 1) / 2) * xSpacing;
-    const yOffset = ((rows - 1) / 2 - gridRow) * ySpacing;
+    const xOffset = -innerWidth / 2 + gridCol * xSpacing;
+    const yOffset = innerHeight / 2 - gridRow * ySpacing;
 
     let shapeModel: AbstractMesh | null = null;
 
