@@ -13,16 +13,20 @@ export interface MenuShapeModel {
 
 export default async function createFloatingMenu(parentCamera: TransformNode, scene: Scene, onPick: (s: ShapeType) => void): Promise<{ menu: AbstractMesh; shapeModels: MenuShapeModel[] }> {
   // menu visual - cube volume (evenly spaced items inside)
-  const menuSize = 0.5; // cube side length (meters) — reduced for compact menu
-  const menuPadding = 0.04; // reduced padding to fit items better in smaller cube
+  const menuSize = 0.5; // cube side length (meters) — compact menu
+  const menuPadding = 0.03; // slightly smaller padding for visible layout
   const menuBox = MeshBuilder.CreateBox("menuBox", { width: menuSize, height: menuSize, depth: menuSize }, scene);
-  menuBox.position = new Vector3(0, 1.0, -1.0);
+  // move closer so the cube is easy to see in typical camera view
+  menuBox.position = new Vector3(0, 1.0, -0.6);
   menuBox.rotation.x = 0;
   menuBox.rotation.y = 0;
 
   const menuMaterial = new StandardMaterial("menuBoxMat", scene);
-  menuMaterial.diffuseColor = Color3.FromHexString("#E8E8E8");
-  menuMaterial.alpha = 0.2;
+  // use a strong, slightly transparent blue with emissive so the cube is visible
+  menuMaterial.diffuseColor = Color3.FromHexString("#0033FF");
+  menuMaterial.emissiveColor = Color3.FromHexString("#335BFF");
+  menuMaterial.alpha = 0.95; // mostly opaque
+  menuMaterial.backFaceCulling = false;
   menuBox.material = menuMaterial;
 
   const shapeModels: MenuShapeModel[] = [];
@@ -67,7 +71,8 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
 
   const minSpacing = Math.min(xSpacing || 0.08, ySpacing || 0.08, zSpacing || 0.08);
   const maxShape = Math.min(0.12, minSpacing * 0.6);
-  const shapeSize = Math.max(0.04, maxShape);
+  // make shapes larger and more visible on small cube
+  const shapeSize = Math.max(0.08, maxShape * 1.6);
 
   // spacing between layers (depth)
   const layerSpacing = zSpacing;
@@ -105,10 +110,12 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
       versionMat.diffuseTexture = versionTex;
       versionMat.specularColor = Color3.Black();
       versionMat.emissiveColor = Color3.FromHexString("#FFD166");
-      const vPlane = MeshBuilder.CreatePlane("menuVersionPlane", { width: Math.min(innerSide * 0.5, 0.25), height: 0.06 }, scene);
+      versionMat.alpha = 1.0;
+      versionMat.backFaceCulling = false;
+      const vPlane = MeshBuilder.CreatePlane("menuVersionPlane", { width: Math.min(innerSide * 0.7, 0.35), height: 0.08 }, scene);
       vPlane.parent = menuBox;
-      // place on the front face, centered
-      vPlane.position = new Vector3(0, menuSize / 4, menuSize / 2 + 0.001);
+      // place on the front face, centered and slightly in front
+      vPlane.position = new Vector3(0, menuSize / 4, menuSize / 2 + 0.005);
       vPlane.material = versionMat;
       vPlane.isPickable = false;
     } catch (e) {}
@@ -137,12 +144,12 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
       ];
       const wire = MeshBuilder.CreateLineSystem('menuWireframe', { lines }, scene);
       wire.parent = menuBox;
-      // bright yellow wireframe
-      try { (wire as any).color = Color3.FromHexString('#FFD166'); } catch (er) {}
+      // bright cyan wireframe for visibility
+      try { (wire as any).color = Color3.FromHexString('#00FFEA'); } catch (er) {}
     } catch (er) {}
 
     try {
-      const markerSize = Math.max(0.01, Math.min(0.03, shapeSize * 0.5));
+      const markerSize = Math.max(0.02, Math.min(0.05, shapeSize * 0.8));
       for (let L = 0; L < layers; L++) {
         for (let R = 0; R < rows; R++) {
           for (let C = 0; C < cols; C++) {
@@ -151,8 +158,9 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
             const z = -innerSide / 2 + L * zSpacing;
             const dbgSphere = MeshBuilder.CreateSphere(`debug-slot-${L}-${R}-${C}`, { diameter: markerSize }, scene);
             const dbgMat = new StandardMaterial(`debug-slot-mat-${L}-${R}-${C}`, scene);
-            dbgMat.emissiveColor = Color3.FromHexString('#FF4D4D');
-            dbgMat.alpha = 0.9;
+            // bright neon color for visibility
+            dbgMat.emissiveColor = Color3.FromHexString('#00FF7F');
+            dbgMat.alpha = 1.0;
             dbgSphere.material = dbgMat;
             dbgSphere.parent = menuBox;
             dbgSphere.position = new Vector3(x, y, z);
@@ -207,6 +215,10 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
       shapeModel.name = label + "-shape";
       const mat = new StandardMaterial(label + "-mat", scene);
       mat.diffuseColor = Color3.FromHexString(color);
+      // make the material emissive so shapes are clearly visible
+      mat.emissiveColor = Color3.FromHexString(color);
+      mat.specularColor = Color3.Black();
+      mat.backFaceCulling = false;
       shapeModel.material = mat;
       shapeModel.isVisible = true;
       shapeModel.isPickable = true;
@@ -229,6 +241,7 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
       } catch (e) {}
 
       shapeModels.push({ mesh: shapeModel, shapeType: shape });
+      try { console.log('placed shape', label, { x: xOffset, y: yOffset, z: zOffset }); } catch (e) {}
     }
   };
 
@@ -245,6 +258,14 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
     const s = shapesList[i];
     createPaletteShape(s.label, s.shape, s.color, row, col, layer);
   }
+
+  try {
+    // expose to global debug object for inspection from browser console
+    (window as any).__MENU_DEBUG = (window as any).__MENU_DEBUG || {};
+    (window as any).__MENU_DEBUG.menu = menuBox;
+    (window as any).__MENU_DEBUG.shapeModels = shapeModels;
+    try { console.log('MENU_DEBUG.models', (window as any).__MENU_DEBUG.shapeModels.map((m: any) => m.mesh.name)); } catch (e) {}
+  } catch (e) {}
 
   return { menu: menuBox as AbstractMesh, shapeModels };
 }
