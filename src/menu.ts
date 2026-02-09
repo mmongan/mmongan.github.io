@@ -95,6 +95,55 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
     labelPlane.isPickable = false;
   } catch (e) {}
 
+  // Debug visuals (temporary) — wireframe cube + emissive slot markers
+  const DEBUG_VISUALS = true;
+  if (DEBUG_VISUALS) {
+    try {
+      const h = menuSize / 2;
+      const p1 = new Vector3(-h, -h, -h);
+      const p2 = new Vector3(h, -h, -h);
+      const p3 = new Vector3(h, h, -h);
+      const p4 = new Vector3(-h, h, -h);
+      const p5 = new Vector3(-h, -h, h);
+      const p6 = new Vector3(h, -h, h);
+      const p7 = new Vector3(h, h, h);
+      const p8 = new Vector3(-h, h, h);
+      const lines = [
+        [p1, p2, p3, p4, p1],
+        [p5, p6, p7, p8, p5],
+        [p1, p5],
+        [p2, p6],
+        [p3, p7],
+        [p4, p8]
+      ];
+      const wire = MeshBuilder.CreateLineSystem('menuWireframe', { lines }, scene);
+      wire.parent = menuBox;
+      // bright yellow wireframe
+      try { (wire as any).color = Color3.FromHexString('#FFD166'); } catch (er) {}
+    } catch (er) {}
+
+    try {
+      const markerSize = Math.max(0.02, Math.min(0.04, shapeSize * 0.6));
+      for (let L = 0; L < layers; L++) {
+        for (let R = 0; R < rows; R++) {
+          for (let C = 0; C < cols; C++) {
+            const x = -innerSide / 2 + C * xSpacing;
+            const y = innerSide / 2 - R * ySpacing;
+            const z = -innerSide / 2 + L * zSpacing;
+            const dbgSphere = MeshBuilder.CreateSphere(`debug-slot-${L}-${R}-${C}`, { diameter: markerSize }, scene);
+            const dbgMat = new StandardMaterial(`debug-slot-mat-${L}-${R}-${C}`, scene);
+            dbgMat.emissiveColor = Color3.FromHexString('#FF4D4D');
+            dbgMat.alpha = 0.9;
+            dbgSphere.material = dbgMat;
+            dbgSphere.parent = menuBox;
+            dbgSphere.position = new Vector3(x, y, z);
+            dbgSphere.isPickable = false;
+          }
+        }
+      }
+    } catch (er) {}
+  }
+
   const createPaletteShape = (label: string, shape: ShapeType, color: string, gridRow: number, gridCol: number, layerIdx: number) => {
     const xOffset = -innerSide / 2 + gridCol * xSpacing;
     const yOffset = innerSide / 2 - gridRow * ySpacing;
