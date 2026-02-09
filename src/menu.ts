@@ -74,11 +74,13 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
 
   try {
     const MENU_DEBUG_MARKER = "MENU_DEBUG_TOKEN_v1";
-    const debugText = `${MENU_DEBUG_MARKER} ${new Date().toISOString()}`;
+    // include the build marker so the debug plane shows a clear, unique build/version string
+    const VERSION_LABEL = MENU_BUILD_MARKER || "MENU_BUILD_MARKER_unknown";
+    const debugText = `${MENU_DEBUG_MARKER} • ${VERSION_LABEL} • ${new Date().toISOString()}`;
     const tex = new DynamicTexture("menuDebugTex", { width: 512, height: 64 }, scene, false);
     tex.hasAlpha = true;
-    tex.getContext().font = "bold 36px Arial";
-    tex.drawText(debugText, null, 40, "bold 28px Arial", "#FFFFFF", "transparent", true);
+    tex.getContext().font = "bold 28px Arial";
+    tex.drawText(debugText, null, 36, "bold 20px Arial", "#FFFFFF", "transparent", true);
 
     const labelMat = new StandardMaterial("menuDebugMat", scene);
     labelMat.diffuseTexture = tex;
@@ -93,6 +95,23 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
     labelPlane.position = new Vector3(0, menuSize / 2 + labelHeight / 2 + 0.005, 0);
     labelPlane.material = labelMat;
     labelPlane.isPickable = false;
+
+    // Add a small version-only plane on the front face for quick visual verification
+    try {
+      const versionTex = new DynamicTexture("menuVersionTex", { width: 256, height: 48 }, scene, false);
+      versionTex.hasAlpha = true;
+      versionTex.drawText(VERSION_LABEL, null, 30, "bold 16px Arial", "#FFFFFF", "transparent", true);
+      const versionMat = new StandardMaterial("menuVersionMat", scene);
+      versionMat.diffuseTexture = versionTex;
+      versionMat.specularColor = Color3.Black();
+      versionMat.emissiveColor = Color3.FromHexString("#FFD166");
+      const vPlane = MeshBuilder.CreatePlane("menuVersionPlane", { width: Math.min(innerSide * 0.5, 0.25), height: 0.06 }, scene);
+      vPlane.parent = menuBox;
+      // place on the front face, centered
+      vPlane.position = new Vector3(0, menuSize / 4, menuSize / 2 + 0.001);
+      vPlane.material = versionMat;
+      vPlane.isPickable = false;
+    } catch (e) {}
   } catch (e) {}
 
   // Debug visuals (temporary) — wireframe cube + emissive slot markers
