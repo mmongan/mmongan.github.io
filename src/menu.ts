@@ -20,6 +20,13 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
   menuBox.position = new Vector3(0, 1.0, -0.6);
   menuBox.rotation.x = 0;
   menuBox.rotation.y = 0;
+  // attempt to orient the menu to face the parent camera so it's more likely to be visible
+  try {
+    if (parentCamera && (parentCamera as any).getAbsolutePosition) {
+      const camPos = (parentCamera as any).getAbsolutePosition();
+      menuBox.lookAt(camPos);
+    }
+  } catch (e) {}
 
   const menuMaterial = new StandardMaterial("menuBoxMat", scene);
   // use a strong, slightly transparent blue with emissive so the cube is visible
