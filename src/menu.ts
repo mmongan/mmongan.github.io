@@ -13,8 +13,8 @@ export interface MenuShapeModel {
 
 export default async function createFloatingMenu(parentCamera: TransformNode, scene: Scene, onPick: (s: ShapeType) => void): Promise<{ menu: AbstractMesh; shapeModels: MenuShapeModel[] }> {
   // menu visual - cube volume (evenly spaced items inside)
-  const menuSize = 1.2; // cube side length (meters)
-  const menuPadding = 0.06; // meters of padding so palette shapes don't sit on the edge
+  const menuSize = 0.5; // cube side length (meters) — reduced for compact menu
+  const menuPadding = 0.04; // reduced padding to fit items better in smaller cube
   const menuBox = MeshBuilder.CreateBox("menuBox", { width: menuSize, height: menuSize, depth: menuSize }, scene);
   menuBox.position = new Vector3(0, 1.0, -1.0);
   menuBox.rotation.x = 0;
@@ -85,12 +85,12 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
     labelMat.specularColor = Color3.Black();
     labelMat.emissiveColor = Color3.FromHexString("#FFFFFF");
 
-    const labelWidth = Math.min(innerSide * 0.9, 0.7);
-    const labelHeight = 0.12;
+    const labelWidth = Math.min(innerSide * 0.9, 0.4);
+    const labelHeight = 0.08;
     const labelPlane = MeshBuilder.CreatePlane("menuDebugPlane", { width: labelWidth, height: labelHeight }, scene);
     labelPlane.parent = menuBox;
-    // place centered above the cube
-    labelPlane.position = new Vector3(0, menuSize / 2 + labelHeight / 2 + 0.01, 0);
+    // place centered above the cube (slightly closer for the smaller cube)
+    labelPlane.position = new Vector3(0, menuSize / 2 + labelHeight / 2 + 0.005, 0);
     labelPlane.material = labelMat;
     labelPlane.isPickable = false;
   } catch (e) {}
@@ -123,7 +123,7 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
     } catch (er) {}
 
     try {
-      const markerSize = Math.max(0.02, Math.min(0.04, shapeSize * 0.6));
+      const markerSize = Math.max(0.01, Math.min(0.03, shapeSize * 0.5));
       for (let L = 0; L < layers; L++) {
         for (let R = 0; R < rows; R++) {
           for (let C = 0; C < cols; C++) {
