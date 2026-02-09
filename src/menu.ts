@@ -77,11 +77,11 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
   const zSpacing = layers > 1 ? innerSide / (layers - 1) : 0;
 
   const minSpacing = Math.min(xSpacing || 0.08, ySpacing || 0.08, zSpacing || 0.08);
-  // conservative cap for a single shape so it never exceeds available spacing
-  const maxShape = Math.min(0.12, minSpacing * 0.6);
-  // shrink shapes to a comfortable fraction of spacing so they fit in the grid
-  // - keep a small minimum for visibility, but otherwise prefer ~45% of the spacing
-  const shapeSize = Math.max(0.04, Math.min(maxShape, minSpacing * 0.45));
+  // compute slot marker size directly from spacing so reference spheres are consistent
+  // and cap it for visibility. We'll make palette model shapes match this marker size.
+  const slotMarkerSize = Math.max(0.02, Math.min(0.05, minSpacing * 0.45));
+  // set model size to exactly the slot marker size so models align with the spheres
+  const shapeSize = slotMarkerSize;
 
   // spacing between layers (depth)
   const layerSpacing = zSpacing;
@@ -158,7 +158,7 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
     } catch (er) {}
 
     try {
-      const markerSize = Math.max(0.02, Math.min(0.05, shapeSize * 0.8));
+      const markerSize = slotMarkerSize; // match marker size with the computed slot marker
       for (let L = 0; L < layers; L++) {
         for (let R = 0; R < rows; R++) {
           for (let C = 0; C < cols; C++) {
