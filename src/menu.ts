@@ -55,9 +55,12 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
   } catch (e) {}
 
 
-  // Create shape models positioned around the menu, parented to menu so they move together
-  const cols = 6;
-  // build shapes list: poly0..poly14 + sphere + cube (we'll compute rows dynamically)
+  // Create shape models positioned around the menu in a 3x3x3 stacked grid (columns x rows x layers)
+  const cols = 3;
+  const rows = 3;
+  const layers = 3;
+
+  // build shapes list: poly0..poly14 + sphere + cube (we'll place these into the 3x3x3 grid)
   const paletteColors = ['#98D8C8','#FF6B6B','#45B7D1','#FFA07A','#F6C9E2','#D4A5FF','#FFB86B','#B0E57C','#9AD0FF','#E3E66D','#C0C0C0','#FF9FB4','#8FD3C7','#D9B8FF','#FFD7A6'];
   const shapesList: Array<{label:string, shape:ShapeType, color:string}> = [];
   for (let i = 0; i < 15; i++) {
@@ -66,17 +69,20 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
   shapesList.push({ label: 'Sphere', shape: 'sphere', color: '#FFD166' });
   shapesList.push({ label: 'Cube', shape: 'cube', color: '#4ECDC4' });
 
-  const rows = Math.ceil(shapesList.length / cols);
-
   // compute spacing inside an inner rect (respect padding) so shapes fit comfortably
   const innerWidth = menuWidth - menuPadding * 2;
   const innerHeight = menuHeight - menuPadding * 2;
   const xSpacing = cols > 1 ? innerWidth / (cols - 1) : 0;
   const ySpacing = rows > 1 ? innerHeight / (rows - 1) : 0;
-  const zOffset = menuDepth + 0.05; // slightly in front of menu surface (a bit larger)
-  // choose shape size to fit spacing but make shapes more visible
+  const zOffset = menuDepth + 0.05; // base z offset in front of menu surface
+
+  // choose shape size to fit spacing (use x/y spacing primarily)
   const maxShape = Math.min(0.12, Math.min(xSpacing || 0.08, ySpacing || 0.08) * 0.6);
-  const shapeSize = Math.max(0.05, maxShape);
+  const shapeSize = Math.max(0.04, maxShape);
+
+  // spacing between layers (depth)
+  const layerSpacing = Math.max(shapeSize * 1.2, 0.06);
+
 
   // Debug/version label: show build timestamp so we can confirm deployed code is running
   try {
@@ -104,9 +110,10 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
     // ignore debug label errors
   }
 
-  const createPaletteShape = (label: string, shape: ShapeType, color: string, gridRow: number, gridCol: number) => {
+  const createPaletteShape = (label: string, shape: ShapeType, color: string, gridRow: number, gridCol: number, layerIdx: number) => {
     const xOffset = -innerWidth / 2 + gridCol * xSpacing;
     const yOffset = innerHeight / 2 - gridRow * ySpacing;
+    const layerOffset = (layerIdx - (layers - 1) / 2) * layerSpacing;
 
     let shapeModel: AbstractMesh | null = null;
 
@@ -156,18 +163,7 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
 
       // Parent to menu so it moves with the menu
       shapeModel.parent = menuBox;
-      shapeModel.position = new Vector3(xOffset, yOffset, zOffset);
-
-      // add pick interaction only (hover highlight disabled)
-      try {
-        shapeModel.actionManager = new ActionManager(scene);
-        shapeModel.actionManager.registerAction(new ExecuteCodeAction(ActionManager.OnPickTrigger, () => {
-          try { console.log('menu pick (pointer):', shape); } catch (e) {}
-          try { onPick && onPick(shape); } catch (e) {}
-        }));
-      } catch (e) {}
-
-      // Label: small plane under the shape showing its name
+      shapeModel.position = new Vector3(xOffset, yOffset, zOffset + layerOffset);
       try {
         const labelTex = new DynamicTexture(label + "-label-tex", { width: 256, height: 64 }, scene, false);
         labelTex.hasAlpha = true;
@@ -190,15 +186,18 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
 
   // debug: log final palette configuration
   try {
-    console.log('palette shapes count', shapesList.length, 'cols', cols);
+    console.log('palette shapes count', shapesList.length, 'grid', `${cols}x${rows}x${layers}`);
   } catch (e) {}
 
-  // place into grid
+  // place into 3x3x3 grid (cols x rows x layers)
+  const slotsPerLayer = cols * rows;
   for (let i = 0; i < shapesList.length; i++) {
-    const row = Math.floor(i / cols);
-    const col = i % cols;
+    const layer = Math.floor(i / slotsPerLayer);
+    const indexInLayer = i % slotsPerLayer;
+    const row = Math.floor(indexInLayer / cols);
+    const col = indexInLayer % cols;
     const s = shapesList[i];
-    createPaletteShape(s.label, s.shape, s.color, row, col);
+    createPaletteShape(s.label, s.shape, s.color, row, col, layer);
   }
 
   return { menu: menuBox as AbstractMesh, shapeModels };
