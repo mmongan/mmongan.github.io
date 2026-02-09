@@ -95,12 +95,30 @@ async function createScene() {
 
     // Import the menu implementation (canonical module)
     const menuModule = await import("./menu");
-    const createFloatingMenu = menuModule.default as (parentCamera: any, scene: Scene, onPick: (shape: any) => void) => Promise<any>;
+    const createFloatingMenu = menuModule.default as (parentCamera: any, scene: Scene, onPick: (shape: any, spawnPos?: Vector3) => void) => Promise<any>;
 
     // fallback: if XR not available, create a simple TransformNode to parent the menu so it appears in non-XR testing
     const parentCamera = (xr && xr.baseExperience && (xr.baseExperience as any).camera) ? (xr.baseExperience as any).camera : (function() { try { return new TransformNode('menuDebugParent', scene); } catch { return null; } })();
 
-    const menuResult = await createFloatingMenu(parentCamera as any, scene, (shape: ShapeType) => {});
+    const menuResult = await createFloatingMenu(parentCamera as any, scene, (shape: ShapeType, spawnPos?: Vector3) => {
+      try {
+        let pos = spawnPos as Vector3 | undefined;
+        if (!pos) {
+          try {
+            const cam = parentCamera as any;
+            if (cam && cam.getForwardRay) {
+              const dir = cam.getForwardRay(1).direction as Vector3;
+              const p = cam.getAbsolutePosition ? cam.getAbsolutePosition() as Vector3 : new Vector3(0, 1, 0);
+              pos = p.add(dir.scale(0.4));
+            } else if (cam && cam.getAbsolutePosition) {
+              const p = cam.getAbsolutePosition() as Vector3;
+              pos = p.add(new Vector3(0, 0, -0.4));
+            } else pos = new Vector3(0, 1, -0.6);
+          } catch (e) { pos = new Vector3(0, 1, -0.6); }
+        }
+        if (pos) spawnShapeInScene(shape, pos);
+      } catch (e) {}
+    });
     menuMesh = menuResult.menu;
     menuShapeModels = menuResult.shapeModels;
 

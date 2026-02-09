@@ -11,10 +11,10 @@ export interface MenuShapeModel {
   shapeType: ShapeType;
 }
 
-export default async function createFloatingMenu(parentCamera: TransformNode, scene: Scene, onPick: (s: ShapeType) => void): Promise<{ menu: AbstractMesh; shapeModels: MenuShapeModel[] }> {
+export default async function createFloatingMenu(parentCamera: TransformNode, scene: Scene, onPick: (s: ShapeType, spawnPos?: Vector3) => void): Promise<{ menu: AbstractMesh; shapeModels: MenuShapeModel[] }> {
   // menu visual - cube volume (evenly spaced items inside)
-  const menuSize = 1.0; // cube side length (meters) - user requested
-  const menuPadding = 0.04; // padding
+  const menuSize = 0.5; // cube side length (meters) - shrunk per user request
+  const menuPadding = 0.03; // padding (slightly reduced for tighter layout)
   const menuBox = MeshBuilder.CreateBox("menuBox", { width: menuSize, height: menuSize, depth: menuSize }, scene);
   // move closer so the cube is easy to see in typical camera view
   menuBox.position = new Vector3(0, 1.0, -0.6);
@@ -245,6 +245,29 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
         labelPlane.position = new Vector3(xOffset, yOffset - shapeSize * 0.9, zOffset + 0.002);
         labelPlane.material = labelMat;
         labelPlane.isPickable = false;
+      } catch (e) {}
+
+      // pointer pick -> call onPick with spawn position computed near parent camera
+      try {
+        shapeModel.actionManager = new ActionManager(scene);
+        shapeModel.actionManager.registerAction(new ExecuteCodeAction(ActionManager.OnPickTrigger, () => {
+          try { console.log('menu pick (pointer):', shape); } catch (e) {}
+          try {
+            let spawnPos: Vector3 | null = null;
+            try {
+              const cam = parentCamera as any;
+              if (cam && cam.getForwardRay) {
+                const dir = cam.getForwardRay(1).direction as Vector3;
+                const pos = cam.getAbsolutePosition ? cam.getAbsolutePosition() as Vector3 : new Vector3(0, 1, 0);
+                spawnPos = pos.add(dir.scale(0.4));
+              } else if (cam && cam.getAbsolutePosition) {
+                const pos = cam.getAbsolutePosition() as Vector3;
+                spawnPos = pos.add(new Vector3(0, 0, -0.4));
+              } else spawnPos = new Vector3(0, 1, -0.6);
+            } catch (e) { spawnPos = new Vector3(0, 1, -0.6); }
+            if (onPick) onPick(shape, spawnPos || undefined);
+          } catch (e) {}
+        }));
       } catch (e) {}
 
       shapeModels.push({ mesh: shapeModel, shapeType: shape });
