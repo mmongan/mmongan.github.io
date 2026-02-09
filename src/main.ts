@@ -216,7 +216,7 @@ async function createScene() {
                 
                 if (isMenuShapeModel && menuShapeType) {
                   // debug: log which palette shape we think was picked
-                  try { console.log('menu pick:', menuShapeType, shapeModelObj.mesh.name, shapeModelObj.mesh.getAbsolutePosition()); } catch (e) {}
+                  try { console.log('menu pick:', menuShapeType, grabTarget?.name, grabTarget?.getAbsolutePosition()); } catch (e) {}
                   // spawn a copy of the shape at grip location
                   spawnShapeInScene(menuShapeType, xrController.grip.position.clone());
                   // immediately grab the newly spawned shape so it's held by the grip

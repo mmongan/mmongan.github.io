@@ -1,4 +1,0 @@
-#!/usr/bin/env sh
-# Rebuild and publish (Unix wrapper)
-# Usage: ./rp
-npm run deploy "$@"
