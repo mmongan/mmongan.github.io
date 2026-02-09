@@ -13,8 +13,8 @@ export interface MenuShapeModel {
 
 export default async function createFloatingMenu(parentCamera: TransformNode, scene: Scene, onPick: (s: ShapeType) => void): Promise<{ menu: AbstractMesh; shapeModels: MenuShapeModel[] }> {
   // menu visual - cube volume (evenly spaced items inside)
-  const menuSize = 0.5; // cube side length (meters) — compact menu
-  const menuPadding = 0.03; // slightly smaller padding for visible layout
+  const menuSize = 1.0; // cube side length (meters) - user requested
+  const menuPadding = 0.04; // padding
   const menuBox = MeshBuilder.CreateBox("menuBox", { width: menuSize, height: menuSize, depth: menuSize }, scene);
   // move closer so the cube is easy to see in typical camera view
   menuBox.position = new Vector3(0, 1.0, -0.6);
@@ -29,10 +29,10 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
   } catch (e) {}
 
   const menuMaterial = new StandardMaterial("menuBoxMat", scene);
-  // use a strong, slightly transparent blue with emissive so the cube is visible
-  menuMaterial.diffuseColor = Color3.FromHexString("#0033FF");
-  menuMaterial.emissiveColor = Color3.FromHexString("#335BFF");
-  menuMaterial.alpha = 0.95; // mostly opaque
+  // transparent menu box per request
+  menuMaterial.diffuseColor = Color3.FromHexString("#E8E8E8");
+  menuMaterial.emissiveColor = Color3.Black();
+  menuMaterial.alpha = 0.2; // transparent
   menuMaterial.backFaceCulling = false;
   menuBox.material = menuMaterial;
 
