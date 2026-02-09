@@ -12,12 +12,10 @@ export interface MenuShapeModel {
 }
 
 export default async function createFloatingMenu(parentCamera: TransformNode, scene: Scene, onPick: (s: ShapeType) => void): Promise<{ menu: AbstractMesh; shapeModels: MenuShapeModel[] }> {
-  // menu visual - expanded to fit full palette with internal padding
-  const menuWidth = 1.8;
-  const menuHeight = 1.0;
-  const menuDepth = 0.02;
+  // menu visual - cube volume (evenly spaced items inside)
+  const menuSize = 1.2; // cube side length (meters)
   const menuPadding = 0.06; // meters of padding so palette shapes don't sit on the edge
-  const menuBox = MeshBuilder.CreateBox("menuBox", { width: menuWidth, height: menuHeight, depth: menuDepth }, scene);
+  const menuBox = MeshBuilder.CreateBox("menuBox", { width: menuSize, height: menuSize, depth: menuSize }, scene);
   menuBox.position = new Vector3(0, 1.0, -1.0);
   menuBox.rotation.x = 0;
   menuBox.rotation.y = 0;
@@ -62,14 +60,17 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
   shapesList.push({ label: 'Sphere', shape: 'sphere', color: '#FFD166' });
   shapesList.push({ label: 'Cube', shape: 'cube', color: '#4ECDC4' });
 
-  const innerWidth = menuWidth - menuPadding * 2;
-  const innerHeight = menuHeight - menuPadding * 2;
-  const xSpacing = cols > 1 ? innerWidth / (cols - 1) : 0;
-  const ySpacing = rows > 1 ? innerHeight / (rows - 1) : 0;
-  const zOffset = menuDepth + 0.05;
-  const maxShape = Math.min(0.12, Math.min(xSpacing || 0.08, ySpacing || 0.08) * 0.6);
+  const innerSide = menuSize - menuPadding * 2;
+  const xSpacing = cols > 1 ? innerSide / (cols - 1) : 0;
+  const ySpacing = rows > 1 ? innerSide / (rows - 1) : 0;
+  const zSpacing = layers > 1 ? innerSide / (layers - 1) : 0;
+
+  const minSpacing = Math.min(xSpacing || 0.08, ySpacing || 0.08, zSpacing || 0.08);
+  const maxShape = Math.min(0.12, minSpacing * 0.6);
   const shapeSize = Math.max(0.04, maxShape);
-  const layerSpacing = Math.max(shapeSize * 1.2, 0.06);
+
+  // spacing between layers (depth)
+  const layerSpacing = zSpacing;
 
   try {
     const MENU_DEBUG_MARKER = "MENU_DEBUG_TOKEN_v1";
@@ -84,19 +85,20 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
     labelMat.specularColor = Color3.Black();
     labelMat.emissiveColor = Color3.FromHexString("#FFFFFF");
 
-    const labelWidth = Math.min(innerWidth * 0.9, 0.7);
+    const labelWidth = Math.min(innerSide * 0.9, 0.7);
     const labelHeight = 0.12;
     const labelPlane = MeshBuilder.CreatePlane("menuDebugPlane", { width: labelWidth, height: labelHeight }, scene);
     labelPlane.parent = menuBox;
-    labelPlane.position = new Vector3(-innerWidth / 2 + labelWidth / 2 + menuPadding, innerHeight / 2 - labelHeight / 2 - menuPadding, zOffset + 0.005);
+    // place centered above the cube
+    labelPlane.position = new Vector3(0, menuSize / 2 + labelHeight / 2 + 0.01, 0);
     labelPlane.material = labelMat;
     labelPlane.isPickable = false;
   } catch (e) {}
 
   const createPaletteShape = (label: string, shape: ShapeType, color: string, gridRow: number, gridCol: number, layerIdx: number) => {
-    const xOffset = -innerWidth / 2 + gridCol * xSpacing;
-    const yOffset = innerHeight / 2 - gridRow * ySpacing;
-    const layerOffset = (layerIdx - (layers - 1) / 2) * layerSpacing;
+    const xOffset = -innerSide / 2 + gridCol * xSpacing;
+    const yOffset = innerSide / 2 - gridRow * ySpacing;
+    const zOffset = -innerSide / 2 + layerIdx * zSpacing;
 
     let shapeModel: AbstractMesh | null = null;
 
@@ -142,7 +144,7 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
       shapeModel.isPickable = true;
 
       shapeModel.parent = menuBox;
-      shapeModel.position = new Vector3(xOffset, yOffset, zOffset + layerOffset);
+      shapeModel.position = new Vector3(xOffset, yOffset, zOffset);
       try {
         const labelTex = new DynamicTexture(label + "-label-tex", { width: 256, height: 64 }, scene, false);
         labelTex.hasAlpha = true;
