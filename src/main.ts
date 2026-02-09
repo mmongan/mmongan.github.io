@@ -93,8 +93,8 @@ async function createScene() {
       menuMesh = null; menuShapeModels = []; 
     } catch (e) {}
 
-    // Import the new menu implementation explicitly (menu_v2) to avoid cached chunk issues
-    const menuModule = await import("./menu_v2");
+    // Import the menu implementation (canonical module)
+    const menuModule = await import("./menu");
     const createFloatingMenu = menuModule.default as (parentCamera: any, scene: Scene, onPick: (shape: any) => void) => Promise<any>;
 
     // fallback: if XR not available, create a simple TransformNode to parent the menu so it appears in non-XR testing
