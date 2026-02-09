@@ -2,7 +2,7 @@ import { MeshBuilder, Scene, TransformNode, AbstractMesh, StandardMaterial, Colo
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 
 // Build marker to help identify built bundles
-const MENU_BUILD_MARKER = "MENU_BUILD_MARKER_v2026_02_08_1";
+const MENU_BUILD_MARKER = "MENU_BUILD_MARKER_v2026_02_09_1";
 
 export type ShapeType = "tetrahedron" | "cube" | "octahedron" | "dodecahedron" | "icosahedron" | "sphere" | "poly0" | "poly1" | "poly2" | "poly3" | "poly4" | "poly5" | "poly6" | "poly7" | "poly8" | "poly9" | "poly10" | "poly11" | "poly12" | "poly13" | "poly14";
 
@@ -18,25 +18,17 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
   const menuDepth = 0.02;
   const menuPadding = 0.06; // meters of padding so palette shapes don't sit on the edge
   const menuBox = MeshBuilder.CreateBox("menuBox", { width: menuWidth, height: menuHeight, depth: menuDepth }, scene);
-  // position higher and further in front (local-floor reference: Y is height above floor)
-  // moved back to -1.0m on Z so the menu appears 1 meter in front of the user
   menuBox.position = new Vector3(0, 1.0, -1.0);
-  // rotate to face the user
   menuBox.rotation.x = 0;
   menuBox.rotation.y = 0;
 
-  // Create material for menu box with transparency
   const menuMaterial = new StandardMaterial("menuBoxMat", scene);
   menuMaterial.diffuseColor = Color3.FromHexString("#E8E8E8");
-  menuMaterial.alpha = 0.2; // highly transparent
+  menuMaterial.alpha = 0.2;
   menuBox.material = menuMaterial;
 
   const shapeModels: MenuShapeModel[] = [];
 
-  // Handles and corner connectors were removed; menu has no edge handles now.
-
-
-  // Instrumentation: note that handles/corners have been removed
   try {
     (window as any).__MENU_DEBUG = (window as any).__MENU_DEBUG || {};
     (window as any).__MENU_DEBUG.cornerSpheres = [];
@@ -55,15 +47,13 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
   } catch (e) {}
 
   // quick build landmark for verifying this source is included in builds
-  try { console.log('MENU_3x3x3_LANDMARK'); } catch (e) {}
+  try { console.log('MENU_3x3x3_LANDMARK_v2'); } catch (e) {}
 
   // Create shape models positioned around the menu in a 3x3x3 stacked grid (columns x rows x layers)
-  throw new Error("BUILD_INCLUDES_MENU_TS");
   const cols = 3;
   const rows = 3;
   const layers = 3;
 
-  // build shapes list: poly0..poly14 + sphere + cube (we'll place these into the 3x3x3 grid)
   const paletteColors = ['#98D8C8','#FF6B6B','#45B7D1','#FFA07A','#F6C9E2','#D4A5FF','#FFB86B','#B0E57C','#9AD0FF','#E3E66D','#C0C0C0','#FF9FB4','#8FD3C7','#D9B8FF','#FFD7A6'];
   const shapesList: Array<{label:string, shape:ShapeType, color:string}> = [];
   for (let i = 0; i < 15; i++) {
@@ -72,22 +62,15 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
   shapesList.push({ label: 'Sphere', shape: 'sphere', color: '#FFD166' });
   shapesList.push({ label: 'Cube', shape: 'cube', color: '#4ECDC4' });
 
-  // compute spacing inside an inner rect (respect padding) so shapes fit comfortably
   const innerWidth = menuWidth - menuPadding * 2;
   const innerHeight = menuHeight - menuPadding * 2;
   const xSpacing = cols > 1 ? innerWidth / (cols - 1) : 0;
   const ySpacing = rows > 1 ? innerHeight / (rows - 1) : 0;
-  const zOffset = menuDepth + 0.05; // base z offset in front of menu surface
-
-  // choose shape size to fit spacing (use x/y spacing primarily)
+  const zOffset = menuDepth + 0.05;
   const maxShape = Math.min(0.12, Math.min(xSpacing || 0.08, ySpacing || 0.08) * 0.6);
   const shapeSize = Math.max(0.04, maxShape);
-
-  // spacing between layers (depth)
   const layerSpacing = Math.max(shapeSize * 1.2, 0.06);
 
-
-  // Debug/version label: show build timestamp so we can confirm deployed code is running
   try {
     const MENU_DEBUG_MARKER = "MENU_DEBUG_TOKEN_v1";
     const debugText = `${MENU_DEBUG_MARKER} ${new Date().toISOString()}`;
@@ -105,13 +88,10 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
     const labelHeight = 0.12;
     const labelPlane = MeshBuilder.CreatePlane("menuDebugPlane", { width: labelWidth, height: labelHeight }, scene);
     labelPlane.parent = menuBox;
-    // place inside top-left padding
     labelPlane.position = new Vector3(-innerWidth / 2 + labelWidth / 2 + menuPadding, innerHeight / 2 - labelHeight / 2 - menuPadding, zOffset + 0.005);
     labelPlane.material = labelMat;
     labelPlane.isPickable = false;
-  } catch (e) {
-    // ignore debug label errors
-  }
+  } catch (e) {}
 
   const createPaletteShape = (label: string, shape: ShapeType, color: string, gridRow: number, gridCol: number, layerIdx: number) => {
     const xOffset = -innerWidth / 2 + gridCol * xSpacing;
@@ -131,11 +111,9 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
           shapeModel = MeshBuilder.CreatePolyhedron(label + "-shape", { type: idx, size: shapeSize }, scene);
         } catch (e) {
           console.warn('poly creation failed for', label, 'index', idx, e);
-          // fallback to box so the slot is visible
           shapeModel = MeshBuilder.CreateBox(label + "-shape", { size: shapeSize }, scene);
         }
       } else {
-        // fallback to known named polyhedra for compatibility
         switch (shape) {
           case "tetrahedron":
             shapeModel = MeshBuilder.CreatePolyhedron(label + "-shape", { type: 0, size: shapeSize }, scene);
@@ -156,15 +134,13 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
     }
 
     if (shapeModel) {
-      // ensure the mesh is visible and unique
       shapeModel.name = label + "-shape";
       const mat = new StandardMaterial(label + "-mat", scene);
       mat.diffuseColor = Color3.FromHexString(color);
       shapeModel.material = mat;
       shapeModel.isVisible = true;
-      shapeModel.isPickable = true; // allow pointer interactions
+      shapeModel.isPickable = true;
 
-      // Parent to menu so it moves with the menu
       shapeModel.parent = menuBox;
       shapeModel.position = new Vector3(xOffset, yOffset, zOffset + layerOffset);
       try {
@@ -182,17 +158,14 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
         labelPlane.isPickable = false;
       } catch (e) {}
 
-      // Track this shape model for grabbing
       shapeModels.push({ mesh: shapeModel, shapeType: shape });
     }
   };
 
-  // debug: log final palette configuration
   try {
     console.log('palette shapes count', shapesList.length, 'grid', `${cols}x${rows}x${layers}`);
   } catch (e) {}
 
-  // place into 3x3x3 grid (cols x rows x layers)
   const slotsPerLayer = cols * rows;
   for (let i = 0; i < shapesList.length; i++) {
     const layer = Math.floor(i / slotsPerLayer);
@@ -204,4 +177,4 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
   }
 
   return { menu: menuBox as AbstractMesh, shapeModels };
-} 
+}
