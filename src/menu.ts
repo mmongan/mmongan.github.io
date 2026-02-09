@@ -77,9 +77,11 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
   const zSpacing = layers > 1 ? innerSide / (layers - 1) : 0;
 
   const minSpacing = Math.min(xSpacing || 0.08, ySpacing || 0.08, zSpacing || 0.08);
+  // conservative cap for a single shape so it never exceeds available spacing
   const maxShape = Math.min(0.12, minSpacing * 0.6);
-  // make shapes larger and more visible on small cube
-  const shapeSize = Math.max(0.08, maxShape * 1.6);
+  // shrink shapes to a comfortable fraction of spacing so they fit in the grid
+  // - keep a small minimum for visibility, but otherwise prefer ~45% of the spacing
+  const shapeSize = Math.max(0.04, Math.min(maxShape, minSpacing * 0.45));
 
   // spacing between layers (depth)
   const layerSpacing = zSpacing;
