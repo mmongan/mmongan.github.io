@@ -41,7 +41,8 @@ const { chromium } = require('playwright');
             const b = m.mesh.getBoundingInfo().boundingBox;
             const min = b.minimumWorld;
             const max = b.maximumWorld;
-            return { name: m.mesh.name, sx: Number((max.x - min.x).toFixed(4)), sy: Number((max.y - min.y).toFixed(4)), sz: Number((max.z - min.z).toFixed(4)) };
+            const sc = m.mesh.scaling || { x: 1, y: 1, z: 1 };
+            return { name: m.mesh.name, sx: Number((max.x - min.x).toFixed(4)), sy: Number((max.y - min.y).toFixed(4)), sz: Number((max.z - min.z).toFixed(4)), scaling: { x: Number(sc.x.toFixed(4)), y: Number(sc.y.toFixed(4)), z: Number(sc.z.toFixed(4)) } };
           } catch (e) {
             return { name: (m && m.mesh && m.mesh.name) || 'unknown', error: String(e) };
           }
