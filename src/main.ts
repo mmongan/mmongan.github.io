@@ -128,7 +128,7 @@ async function createScene() {
       const enforced = (window as any).__MENU_DEBUG && (window as any).__MENU_DEBUG.spawnSize ? (window as any).__MENU_DEBUG.spawnSize : null;
       if (enforced && Array.isArray(menuShapeModels)) {
         for (const sm of menuShapeModels) {
-          try { sm.mesh.scaling = new Vector3(enforced, enforced, enforced); sm.mesh.refreshBoundingInfo(true); } catch (e) {}
+          try { sm.mesh.scaling = new Vector3(enforced, enforced, enforced); try { sm.mesh.computeWorldMatrix(true); } catch (e) {} sm.mesh.refreshBoundingInfo(true); } catch (e) {}
         }
       }
     } catch (e) {}
