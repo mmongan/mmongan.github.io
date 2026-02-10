@@ -79,9 +79,10 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
   const minSpacing = Math.min(xSpacing || 0.08, ySpacing || 0.08, zSpacing || 0.08);
   // compute slot marker size directly from spacing so reference spheres are consistent
   // and cap it for visibility. We'll make palette model shapes match this marker size.
-  const slotMarkerSize = Math.max(0.02, Math.min(0.05, minSpacing * 0.45));
+  // reduce marker and model sizes slightly so palette items do not touch each other
+  const slotMarkerSize = Math.max(0.018, Math.min(0.05, minSpacing * 0.4));
   // set model size to a smaller fraction of the slot marker so models reliably fit inside
-  const shapeSize = Math.max(0.02, slotMarkerSize * 0.6); // 60% of marker (with small min)
+  const shapeSize = Math.max(0.015, slotMarkerSize * 0.45); // smaller fraction to avoid touching
   // expose recommended spawn size for runtime spawns and debugging
   try { (window as any).__MENU_DEBUG = (window as any).__MENU_DEBUG || {}; (window as any).__MENU_DEBUG.spawnSize = shapeSize; } catch (e) {}
 
