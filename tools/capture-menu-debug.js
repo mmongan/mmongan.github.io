@@ -32,7 +32,20 @@ const { chromium } = require('playwright');
     }
 
     // try to read per-model bounding sizes from the exposed debug models
-    const modelSizes = await page.evaluate(() => {
+      // try to enforce scaling at runtime for immediate verification, then read bounding sizes
+      try {
+        await page.evaluate(() => {
+          try {
+            const s = (window.__MENU_DEBUG && window.__MENU_DEBUG.spawnSize) || 0.02;
+            const arr = (window.__MENU_DEBUG && window.__MENU_DEBUG.shapeModels) || [];
+            for (const m of arr) {
+              try { if (m && m.mesh) { m.mesh.scaling = { x: s, y: s, z: s }; try { m.mesh.computeWorldMatrix(true); } catch (e) {} if (m.mesh.refreshBoundingInfo) m.mesh.refreshBoundingInfo(true); } } catch (e) {}
+            }
+          } catch (e) {}
+        });
+      } catch (e) {}
+
+      const modelSizes = await page.evaluate(() => {
       try {
         const arr = (window.__MENU_DEBUG && window.__MENU_DEBUG.shapeModels) || null;
         if (!arr) return null;
