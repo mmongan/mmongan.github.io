@@ -259,6 +259,7 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
       try {
         shapeModel.scaling = new Vector3(shapeSize, shapeSize, shapeSize);
         try { shapeModel.computeWorldMatrix(true); } catch (e) {}
+        try { if ((shapeModel as any).bakeCurrentTransformIntoVertices) { (shapeModel as any).bakeCurrentTransformIntoVertices(); shapeModel.scaling = new Vector3(1,1,1); } } catch (e) {}
         try { shapeModel.refreshBoundingInfo(true); } catch (e) {}
       } catch (e) {}
 
