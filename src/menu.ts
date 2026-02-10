@@ -86,6 +86,25 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
   // expose recommended spawn size for runtime spawns and debugging
   try { (window as any).__MENU_DEBUG = (window as any).__MENU_DEBUG || {}; (window as any).__MENU_DEBUG.spawnSize = shapeSize; } catch (e) {}
 
+  // add a visible debug label on the menu showing the computed sizes (helps prove runtime values)
+  try {
+    try { console.log('MENU_DEBUG: slotMarkerSize=', slotMarkerSize, 'shapeSize=', shapeSize); } catch (e) {}
+    const sizeTex = new DynamicTexture("menuSizeTex", { width: 256, height: 48 }, scene, false);
+    sizeTex.hasAlpha = true;
+    sizeTex.drawText(`slot:${slotMarkerSize.toFixed(4)} shape:${shapeSize.toFixed(4)}`, null, 30, "bold 16px Arial", "#FFFFFF", "transparent", true);
+    const sizeMat = new StandardMaterial("menuSizeMat", scene);
+    sizeMat.diffuseTexture = sizeTex;
+    sizeMat.specularColor = Color3.Black();
+    sizeMat.emissiveColor = Color3.FromHexString("#FFFFFF");
+    sizeMat.backFaceCulling = false;
+    const sizePlane = MeshBuilder.CreatePlane("menuSizePlane", { width: Math.min(innerSide * 0.6, 0.32), height: 0.06 }, scene);
+    sizePlane.parent = menuBox;
+    // place near the bottom front so it's visible
+    sizePlane.position = new Vector3(0, -menuSize / 2 + 0.04, menuSize / 2 + 0.005);
+    sizePlane.material = sizeMat;
+    sizePlane.isPickable = false;
+  } catch (e) {}
+
   // spacing between layers (depth)
   const layerSpacing = zSpacing;
 
