@@ -123,6 +123,16 @@ async function createScene() {
     menuMesh = menuResult.menu;
     menuShapeModels = menuResult.shapeModels;
 
+    // enforce runtime scaling for palette shapes to ensure they visually match `spawnSize`
+    try {
+      const enforced = (window as any).__MENU_DEBUG && (window as any).__MENU_DEBUG.spawnSize ? (window as any).__MENU_DEBUG.spawnSize : null;
+      if (enforced && Array.isArray(menuShapeModels)) {
+        for (const sm of menuShapeModels) {
+          try { sm.mesh.scaling = new Vector3(enforced, enforced, enforced); sm.mesh.refreshBoundingInfo(true); } catch (e) {}
+        }
+      }
+    } catch (e) {}
+
     // ensure a runtime spawnSize is available (fallback inference from menu models)
     try {
       (window as any).__MENU_DEBUG = (window as any).__MENU_DEBUG || {};
