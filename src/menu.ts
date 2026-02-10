@@ -209,20 +209,21 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
 
     let shapeModel: AbstractMesh | null = null;
 
-    try {
-      if (shape === 'sphere') {
-        shapeModel = MeshBuilder.CreateSphere(label + "-shape", { diameter: shapeSize }, scene);
-      } else if (shape === 'cube') {
-        shapeModel = MeshBuilder.CreateBox(label + "-shape", { size: shapeSize }, scene);
-      } else if ((shape as string).startsWith('poly')) {
-        const idx = parseInt((shape as string).replace('poly', ''), 10);
-        try {
-          shapeModel = MeshBuilder.CreatePolyhedron(label + "-shape", { type: idx, size: shapeSize }, scene);
-        } catch (e) {
-          console.warn('poly creation failed for', label, 'index', idx, e);
-          shapeModel = MeshBuilder.CreateBox(label + "-shape", { size: shapeSize }, scene);
-        }
-      } else {
+      try {
+        // create unit-sized primitives then scale them to the desired `shapeSize`
+        if (shape === 'sphere') {
+          shapeModel = MeshBuilder.CreateSphere(label + "-shape", { diameter: 1 }, scene);
+        } else if (shape === 'cube') {
+          shapeModel = MeshBuilder.CreateBox(label + "-shape", { size: 1 }, scene);
+        } else if ((shape as string).startsWith('poly')) {
+          const idx = parseInt((shape as string).replace('poly', ''), 10);
+          try {
+            shapeModel = MeshBuilder.CreatePolyhedron(label + "-shape", { type: idx, size: 1 }, scene);
+          } catch (e) {
+            console.warn('poly creation failed for', label, 'index', idx, e);
+            shapeModel = MeshBuilder.CreateBox(label + "-shape", { size: 1 }, scene);
+          }
+        } else {
         switch (shape) {
           case "tetrahedron":
             shapeModel = MeshBuilder.CreatePolyhedron(label + "-shape", { type: 0, size: shapeSize }, scene);
@@ -254,20 +255,9 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
       shapeModel.isVisible = true;
       shapeModel.isPickable = true;
 
-      // Normalize the mesh world size so its largest local dimension equals `shapeSize`.
+      // Scale the unit primitive so its world size matches `shapeSize`.
       try {
-        // ensure bounding info is computed
-        shapeModel.refreshBoundingInfo();
-        const bi = shapeModel.getBoundingInfo();
-        const bb = bi.boundingBox;
-        const min = bb.minimum;
-        const max = bb.maximum;
-        const dx = Math.abs(max.x - min.x);
-        const dy = Math.abs(max.y - min.y);
-        const dz = Math.abs(max.z - min.z);
-        const maxDim = Math.max(dx || 0.0001, dy || 0.0001, dz || 0.0001);
-        const scaleFactor = (typeof shapeSize === 'number' && shapeSize > 0) ? (shapeSize / maxDim) : 1;
-        shapeModel.scaling = new Vector3(scaleFactor, scaleFactor, scaleFactor);
+        shapeModel.scaling = new Vector3(shapeSize, shapeSize, shapeSize);
       } catch (e) {}
 
       shapeModel.parent = menuBox;
