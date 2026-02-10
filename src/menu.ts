@@ -254,6 +254,22 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
       shapeModel.isVisible = true;
       shapeModel.isPickable = true;
 
+      // Normalize the mesh world size so its largest local dimension equals `shapeSize`.
+      try {
+        // ensure bounding info is computed
+        shapeModel.refreshBoundingInfo();
+        const bi = shapeModel.getBoundingInfo();
+        const bb = bi.boundingBox;
+        const min = bb.minimum;
+        const max = bb.maximum;
+        const dx = Math.abs(max.x - min.x);
+        const dy = Math.abs(max.y - min.y);
+        const dz = Math.abs(max.z - min.z);
+        const maxDim = Math.max(dx || 0.0001, dy || 0.0001, dz || 0.0001);
+        const scaleFactor = (typeof shapeSize === 'number' && shapeSize > 0) ? (shapeSize / maxDim) : 1;
+        shapeModel.scaling = new Vector3(scaleFactor, scaleFactor, scaleFactor);
+      } catch (e) {}
+
       shapeModel.parent = menuBox;
       shapeModel.position = new Vector3(xOffset, yOffset, zOffset);
       try {
