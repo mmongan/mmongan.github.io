@@ -226,16 +226,16 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
         } else {
         switch (shape) {
           case "tetrahedron":
-            shapeModel = MeshBuilder.CreatePolyhedron(label + "-shape", { type: 0, size: shapeSize }, scene);
+            shapeModel = MeshBuilder.CreatePolyhedron(label + "-shape", { type: 0, size: 1 }, scene);
             break;
           case "octahedron":
-            shapeModel = MeshBuilder.CreatePolyhedron(label + "-shape", { type: 1, size: shapeSize }, scene);
+            shapeModel = MeshBuilder.CreatePolyhedron(label + "-shape", { type: 1, size: 1 }, scene);
             break;
           case "dodecahedron":
-            shapeModel = MeshBuilder.CreatePolyhedron(label + "-shape", { type: 2, size: shapeSize }, scene);
+            shapeModel = MeshBuilder.CreatePolyhedron(label + "-shape", { type: 2, size: 1 }, scene);
             break;
           case "icosahedron":
-            shapeModel = MeshBuilder.CreatePolyhedron(label + "-shape", { type: 3, size: shapeSize }, scene);
+            shapeModel = MeshBuilder.CreatePolyhedron(label + "-shape", { type: 3, size: 1 }, scene);
             break;
         }
       }
@@ -255,9 +255,11 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
       shapeModel.isVisible = true;
       shapeModel.isPickable = true;
 
-      // Scale the unit primitive so its world size matches `shapeSize`.
+      // Scale the unit primitive so its world size matches `shapeSize` and refresh bounds.
       try {
         shapeModel.scaling = new Vector3(shapeSize, shapeSize, shapeSize);
+        try { shapeModel.computeWorldMatrix(true); } catch (e) {}
+        try { shapeModel.refreshBoundingInfo(true); } catch (e) {}
       } catch (e) {}
 
       shapeModel.parent = menuBox;
