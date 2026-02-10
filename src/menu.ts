@@ -2,7 +2,7 @@ import { MeshBuilder, Scene, TransformNode, AbstractMesh, StandardMaterial, Colo
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 
 // Build marker to help identify built bundles
-const MENU_BUILD_MARKER = "MENU_BUILD_MARKER_v2026_02_09_1";
+const MENU_BUILD_MARKER = "MENU_BUILD_MARKER_v2026_02_09_2";
 
 export type ShapeType = "tetrahedron" | "cube" | "octahedron" | "dodecahedron" |
  "icosahedron" | "sphere" | "poly0" | "poly1" | "poly2" | "poly3" | "poly4" | "poly5" | "poly6" | "poly7" | "poly8" | "poly9" | "poly10" | "poly11" | "poly12" | "poly13" | "poly14";

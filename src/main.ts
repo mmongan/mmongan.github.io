@@ -116,11 +116,25 @@ async function createScene() {
             } else pos = new Vector3(0, 1, -0.6);
           } catch (e) { pos = new Vector3(0, 1, -0.6); }
         }
-        if (pos) spawnShapeInScene(shape, pos, spawnSize);
+        const finalSize = (typeof spawnSize === 'number') ? spawnSize : ((window as any).__MENU_DEBUG && (window as any).__MENU_DEBUG.spawnSize) ? (window as any).__MENU_DEBUG.spawnSize : 0.1;
+        if (pos) spawnShapeInScene(shape, pos, finalSize);
       } catch (e) {}
     });
     menuMesh = menuResult.menu;
     menuShapeModels = menuResult.shapeModels;
+
+    // ensure a runtime spawnSize is available (fallback inference from menu models)
+    try {
+      (window as any).__MENU_DEBUG = (window as any).__MENU_DEBUG || {};
+      if (!(window as any).__MENU_DEBUG.spawnSize) {
+        const first = menuShapeModels && menuShapeModels[0];
+        if (first && first.mesh && first.mesh.getBoundingInfo) {
+          const ext = first.mesh.getBoundingInfo().boundingBox.extendSize;
+          const inferred = Math.max(0.02, Math.min(0.1, Math.max(ext.x, ext.y, ext.z) * 2));
+          (window as any).__MENU_DEBUG.spawnSize = inferred;
+        }
+      }
+    } catch (e) {}
 
     // Backwards-compat: remove any legacy edge handles or corner spheres left in compiled chunks
     try {
