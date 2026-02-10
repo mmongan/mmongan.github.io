@@ -100,7 +100,7 @@ async function createScene() {
     // fallback: if XR not available, create a simple TransformNode to parent the menu so it appears in non-XR testing
     const parentCamera = (xr && xr.baseExperience && (xr.baseExperience as any).camera) ? (xr.baseExperience as any).camera : (function() { try { return new TransformNode('menuDebugParent', scene); } catch { return null; } })();
 
-    const menuResult = await createFloatingMenu(parentCamera as any, scene, (shape: ShapeType, spawnPos?: Vector3) => {
+    const menuResult = await createFloatingMenu(parentCamera as any, scene, (shape: ShapeType, spawnPos?: Vector3, spawnSize?: number) => {
       try {
         let pos = spawnPos as Vector3 | undefined;
         if (!pos) {
@@ -116,7 +116,7 @@ async function createScene() {
             } else pos = new Vector3(0, 1, -0.6);
           } catch (e) { pos = new Vector3(0, 1, -0.6); }
         }
-        if (pos) spawnShapeInScene(shape, pos);
+        if (pos) spawnShapeInScene(shape, pos, spawnSize);
       } catch (e) {}
     });
     menuMesh = menuResult.menu;
@@ -236,7 +236,8 @@ async function createScene() {
                   // debug: log which palette shape we think was picked
                   try { console.log('menu pick:', menuShapeType, grabTarget?.name, grabTarget?.getAbsolutePosition()); } catch (e) {}
                   // spawn a copy of the shape at grip location
-                  spawnShapeInScene(menuShapeType, xrController.grip.position.clone());
+                  const runtimeSpawnSize = ((window as any).__MENU_DEBUG && (window as any).__MENU_DEBUG.spawnSize) ? (window as any).__MENU_DEBUG.spawnSize : 0.1;
+                  spawnShapeInScene(menuShapeType, xrController.grip.position.clone(), runtimeSpawnSize);
                   // immediately grab the newly spawned shape so it's held by the grip
                   const newShape = spawnedShapes[spawnedShapes.length - 1];
                   // color-code the spawned shape for visual verification and add active outline
@@ -337,7 +338,7 @@ async function createScene() {
   // No hit-test updates; reticle remains unused in this mode.
   
   // shape spawning
-  function spawnShapeInScene(shapeType: ShapeType, pos: Vector3) {
+  function spawnShapeInScene(shapeType: ShapeType, pos: Vector3, size = 0.1) {
     try {
       let shape: any;
       const mat = new StandardMaterial("shapeMat", scene);
@@ -345,22 +346,22 @@ async function createScene() {
       
       switch (shapeType) {
         case "tetrahedron":
-          shape = MeshBuilder.CreatePolyhedron("tetrahedron", { type: 0, size: 0.1 }, scene);
+          shape = MeshBuilder.CreatePolyhedron("tetrahedron", { type: 0, size }, scene);
           break;
         case "cube":
-          shape = MeshBuilder.CreateBox("cube", { size: 0.1 }, scene);
+          shape = MeshBuilder.CreateBox("cube", { size }, scene);
           break;
         case "sphere":
-          shape = MeshBuilder.CreateSphere("sphere", { diameter: 0.1 }, scene);
+          shape = MeshBuilder.CreateSphere("sphere", { diameter: size }, scene);
           break;
         case "octahedron":
-          shape = MeshBuilder.CreatePolyhedron("octahedron", { type: 1, size: 0.1 }, scene);
+          shape = MeshBuilder.CreatePolyhedron("octahedron", { type: 1, size }, scene);
           break;
         case "dodecahedron":
-          shape = MeshBuilder.CreatePolyhedron("dodecahedron", { type: 2, size: 0.1 }, scene);
+          shape = MeshBuilder.CreatePolyhedron("dodecahedron", { type: 2, size }, scene);
           break;
         case "icosahedron":
-          shape = MeshBuilder.CreatePolyhedron("icosahedron", { type: 3, size: 0.1 }, scene);
+          shape = MeshBuilder.CreatePolyhedron("icosahedron", { type: 3, size }, scene);
           break;
         default:
           // handle polyNN naming (poly0..poly14)
@@ -368,7 +369,7 @@ async function createScene() {
             if ((shapeType as string).startsWith("poly")) {
               const idx = parseInt((shapeType as string).replace("poly",""), 10);
               if (!isNaN(idx)) {
-                shape = MeshBuilder.CreatePolyhedron(shapeType as string, { type: idx, size: 0.1 }, scene);
+                shape = MeshBuilder.CreatePolyhedron(shapeType as string, { type: idx, size }, scene);
                 break;
               }
             }

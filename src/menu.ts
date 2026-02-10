@@ -11,7 +11,7 @@ export interface MenuShapeModel {
   shapeType: ShapeType;
 }
 
-export default async function createFloatingMenu(parentCamera: TransformNode, scene: Scene, onPick: (s: ShapeType, spawnPos?: Vector3) => void): Promise<{ menu: AbstractMesh; shapeModels: MenuShapeModel[] }> {
+export default async function createFloatingMenu(parentCamera: TransformNode, scene: Scene, onPick: (s: ShapeType, spawnPos?: Vector3, spawnSize?: number) => void): Promise<{ menu: AbstractMesh; shapeModels: MenuShapeModel[] }> {
   // menu visual - cube volume (evenly spaced items inside)
   const menuSize = 0.5; // cube side length (meters) - shrunk per user request
   const menuPadding = 0.03; // padding (slightly reduced for tighter layout)
@@ -82,6 +82,8 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
   const slotMarkerSize = Math.max(0.02, Math.min(0.05, minSpacing * 0.45));
   // set model size to a smaller fraction of the slot marker so models reliably fit inside
   const shapeSize = Math.max(0.02, slotMarkerSize * 0.6); // 60% of marker (with small min)
+  // expose recommended spawn size for runtime spawns and debugging
+  try { (window as any).__MENU_DEBUG = (window as any).__MENU_DEBUG || {}; (window as any).__MENU_DEBUG.spawnSize = shapeSize; } catch (e) {}
 
   // spacing between layers (depth)
   const layerSpacing = zSpacing;
@@ -267,7 +269,7 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
                 spawnPos = pos.add(new Vector3(0, 0, -0.4));
               } else spawnPos = new Vector3(0, 1, -0.6);
             } catch (e) { spawnPos = new Vector3(0, 1, -0.6); }
-            if (onPick) onPick(shape, spawnPos || undefined);
+            if (onPick) onPick(shape, spawnPos || undefined, typeof shapeSize === 'number' ? shapeSize : undefined);
           } catch (e) {}
         }));
       } catch (e) {}
