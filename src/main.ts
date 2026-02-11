@@ -12,6 +12,7 @@ import {
   WebXRDefaultExperience
 } from "@babylonjs/core";
 import type { ShapeType } from "./menu";
+import createFloatingMenu from "./menu";
 
 // menu state
 let menuMesh: any = null;
