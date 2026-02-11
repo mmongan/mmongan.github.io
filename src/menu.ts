@@ -29,10 +29,10 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
   } catch (e) {}
 
   const menuMaterial = new StandardMaterial("menuBoxMat", scene);
-  // transparent menu box per request
-  menuMaterial.diffuseColor = Color3.FromHexString("#E8E8E8");
-  menuMaterial.emissiveColor = Color3.Black();
-  menuMaterial.alpha = 0.2; // transparent
+  menuMaterial.diffuseColor = Color3.FromHexString("#B0E0FF");
+  menuMaterial.emissiveColor = Color3.FromHexString("#203040");
+  // Make the menu more opaque so it's visible by default
+  menuMaterial.alpha = 0.6;
   menuMaterial.backFaceCulling = false;
   menuBox.material = menuMaterial;
 
@@ -154,56 +154,67 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
     } catch (e) {}
   } catch (e) {}
 
-  // Debug visuals (temporary) — wireframe cube + emissive slot markers
-  const DEBUG_VISUALS = true;
-  if (DEBUG_VISUALS) {
-    try {
-      const h = menuSize / 2;
-      const p1 = new Vector3(-h, -h, -h);
-      const p2 = new Vector3(h, -h, -h);
-      const p3 = new Vector3(h, h, -h);
-      const p4 = new Vector3(-h, h, -h);
-      const p5 = new Vector3(-h, -h, h);
-      const p6 = new Vector3(h, -h, h);
-      const p7 = new Vector3(h, h, h);
-      const p8 = new Vector3(-h, h, h);
-      const lines = [
-        [p1, p2, p3, p4, p1],
-        [p5, p6, p7, p8, p5],
-        [p1, p5],
-        [p2, p6],
-        [p3, p7],
-        [p4, p8]
-      ];
-      const wire = MeshBuilder.CreateLineSystem('menuWireframe', { lines }, scene);
-      wire.parent = menuBox;
-      // bright cyan wireframe for visibility
-      try { (wire as any).color = Color3.FromHexString('#00FFEA'); } catch (er) {}
-    } catch (er) {}
+  // Solid-geometry frame edges (visible in Quest AR, unlike GL_LINES)
+  try {
+    const edgeThickness = 0.004; // 4mm tube radius
+    const h = menuSize / 2;
+    const edgeMat = new StandardMaterial('menuEdgeMat', scene);
+    edgeMat.diffuseColor = Color3.FromHexString('#00FFEA');
+    edgeMat.emissiveColor = Color3.FromHexString('#00BBCC');
+    edgeMat.backFaceCulling = false;
 
-      try {
-        // Light crosshair markers at each grid slot position
-        const markerLen = slotMarkerSize * 0.5; // half-length of each axis line
-        const slotLines: Vector3[][] = [];
-        for (let li = 0; li < layers; li++) {
-          for (let ri = 0; ri < rows; ri++) {
-            for (let ci = 0; ci < cols; ci++) {
-              const cx = -innerSide / 2 + ci * xSpacing;
-              const cy =  innerSide / 2 - ri * ySpacing;
-              const cz = -innerSide / 2 + li * zSpacing;
-              // three short axis lines per slot
-              slotLines.push([new Vector3(cx - markerLen, cy, cz), new Vector3(cx + markerLen, cy, cz)]);
-              slotLines.push([new Vector3(cx, cy - markerLen, cz), new Vector3(cx, cy + markerLen, cz)]);
-              slotLines.push([new Vector3(cx, cy, cz - markerLen), new Vector3(cx, cy, cz + markerLen)]);
-            }
-          }
+    // helper: create a thin box edge between two points
+    const createEdge = (name: string, from: Vector3, to: Vector3) => {
+      const dir = to.subtract(from);
+      const len = dir.length();
+      const mid = from.add(dir.scale(0.5));
+      const edge = MeshBuilder.CreateBox(name, { width: edgeThickness, height: edgeThickness, depth: len }, scene);
+      edge.parent = menuBox;
+      edge.position = mid;
+      edge.lookAt(mid.add(dir.normalize()));
+      edge.material = edgeMat;
+      edge.isPickable = false;
+    };
+
+    // 12 edges of the cube
+    const c = [
+      new Vector3(-h, -h, -h), new Vector3(h, -h, -h),
+      new Vector3(h, h, -h), new Vector3(-h, h, -h),
+      new Vector3(-h, -h, h), new Vector3(h, -h, h),
+      new Vector3(h, h, h), new Vector3(-h, h, h)
+    ];
+    const edgePairs = [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
+    edgePairs.forEach(([a, b], i) => createEdge('menuEdge' + i, c[a], c[b]));
+  } catch (er) {}
+
+  // Solid crosshair markers at each grid slot
+  try {
+    const markerLen = slotMarkerSize * 0.5;
+    const markerThick = 0.002; // 2mm
+    const markerMat = new StandardMaterial('menuMarkerMat', scene);
+    markerMat.diffuseColor = Color3.FromHexString('#FFFFFF');
+    markerMat.emissiveColor = Color3.FromHexString('#AAAAAA');
+    markerMat.backFaceCulling = false;
+
+    for (let li = 0; li < layers; li++) {
+      for (let ri = 0; ri < rows; ri++) {
+        for (let ci = 0; ci < cols; ci++) {
+          const cx = -innerSide / 2 + ci * xSpacing;
+          const cy =  innerSide / 2 - ri * ySpacing;
+          const cz = -innerSide / 2 + li * zSpacing;
+          // X axis bar
+          const bx = MeshBuilder.CreateBox('slotX_' + li + '_' + ri + '_' + ci, { width: markerLen * 2, height: markerThick, depth: markerThick }, scene);
+          bx.parent = menuBox; bx.position = new Vector3(cx, cy, cz); bx.material = markerMat; bx.isPickable = false;
+          // Y axis bar
+          const by = MeshBuilder.CreateBox('slotY_' + li + '_' + ri + '_' + ci, { width: markerThick, height: markerLen * 2, depth: markerThick }, scene);
+          by.parent = menuBox; by.position = new Vector3(cx, cy, cz); by.material = markerMat; by.isPickable = false;
+          // Z axis bar
+          const bz = MeshBuilder.CreateBox('slotZ_' + li + '_' + ri + '_' + ci, { width: markerThick, height: markerThick, depth: markerLen * 2 }, scene);
+          bz.parent = menuBox; bz.position = new Vector3(cx, cy, cz); bz.material = markerMat; bz.isPickable = false;
         }
-        const slotWire = MeshBuilder.CreateLineSystem('menuSlotMarkers', { lines: slotLines }, scene);
-        slotWire.parent = menuBox;
-        try { (slotWire as any).color = Color3.FromHexString('#FFFFFF'); } catch (er) {}
-        try { (slotWire as any).alpha = 0.6; } catch (er) {}
-      } catch (er) {}
-  }
+      }
+    }
+  } catch (er) {}
 
   const createPaletteShape = (label: string, shape: ShapeType, color: string, gridRow: number, gridCol: number, layerIdx: number) => {
     const xOffset = -innerSide / 2 + gridCol * xSpacing;
@@ -256,8 +267,9 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
       mat.specularColor = Color3.Black();
       mat.backFaceCulling = false;
       shapeModel.material = mat;
-      shapeModel.isVisible = false;  // shapes hidden per user request
-      shapeModel.isPickable = false;
+      // Show palette shapes so the menu is visible
+      shapeModel.isVisible = true;
+      shapeModel.isPickable = true;
 
       // Scale the unit primitive so its world size matches `shapeSize` reliably.
       try {
@@ -297,7 +309,8 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
         labelPlane.position = new Vector3(xOffset, yOffset - shapeSize * 0.9, zOffset + 0.002);
         labelPlane.material = labelMat;
         labelPlane.isPickable = false;
-        labelPlane.isVisible = false;  // hidden along with shapes
+        // Show labels for clarity
+        labelPlane.isVisible = true;
       } catch (e) {}
 
       // pointer pick -> call onPick with spawn position computed near parent camera
