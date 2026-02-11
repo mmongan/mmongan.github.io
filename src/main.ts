@@ -9,7 +9,8 @@ import {
   MeshBuilder,
   TransformNode,
   StandardMaterial,
-  WebXRDefaultExperience
+  WebXRDefaultExperience,
+  FreeCamera
 } from "@babylonjs/core";
 import type { ShapeType } from "./menu";
 import createFloatingMenu from "./menu";
@@ -64,7 +65,14 @@ async function createScene() {
       optionalFeatures: ["local-floor", "hand-tracking"]
     });
   } catch (e) {
-    console.warn('WebXR not available, menu will still load:', e);
+    console.warn('WebXR not available, using fallback camera:', e);
+  }
+
+  // Fallback camera for non-XR browsers so the scene is visible
+  if (!xr) {
+    const fallbackCam = new FreeCamera("fallbackCamera", new Vector3(0, 1.2, 1.0), scene);
+    fallbackCam.setTarget(new Vector3(0, 1.0, -0.6));
+    fallbackCam.attachControl(canvas, true);
   }
 
   // Do not animate the camera while in XR — keep camera transforms driven by XR poses only
