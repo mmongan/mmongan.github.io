@@ -54,13 +54,18 @@ async function createScene() {
   ground.isPickable = false;
 
   // Start XR AR experience (create defaults but do not auto-enter session)
-  const xr = await WebXRDefaultExperience.CreateAsync(scene, {
-    uiOptions: { 
-      sessionMode: "immersive-ar", 
-      referenceSpaceType: "local-floor"
-    },
-    optionalFeatures: ["local-floor", "hand-tracking"]
-  });
+  let xr: WebXRDefaultExperience | null = null;
+  try {
+    xr = await WebXRDefaultExperience.CreateAsync(scene, {
+      uiOptions: { 
+        sessionMode: "immersive-ar", 
+        referenceSpaceType: "local-floor"
+      },
+      optionalFeatures: ["local-floor", "hand-tracking"]
+    });
+  } catch (e) {
+    console.warn('WebXR not available, menu will still load:', e);
+  }
 
   // Do not animate the camera while in XR — keep camera transforms driven by XR poses only
   try {
