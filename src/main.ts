@@ -78,24 +78,12 @@ async function createScene() {
   reticle.rotation.x = Math.PI / 2;
   reticle.isVisible = false;
 
-  // create the floating menu (lazy import)
-  try {
-    // cleanup any previous menu artifacts to ensure we use the new menu implementation
-    try {
-      const old = scene.getMeshByName('menuBox');
-      if (old) {
-        try { old.dispose(true); } catch (_) {}
-      }
-      // remove any meshes created by previous menu runs with known prefixes
-      scene.meshes.filter(m => /^menuDebugPlane|^menuBox|^cornerSphere|^menuDebug/.test(m.name)).forEach(m => { try { m.dispose(true); } catch (_) {} });
-      // remove previous menu root if present
-      try { if (menuRoot) { menuRoot.dispose(); menuRoot = null; } } catch (_) {}
-      menuMesh = null; menuShapeModels = []; 
-    } catch (e) {}
-
-    // Import the menu implementation (canonical module)
-    const menuModule = await import("./menu");
-    const createFloatingMenu = menuModule.default as (parentCamera: any, scene: Scene, onPick: (shape: any, spawnPos?: Vector3) => void) => Promise<any>;
+  // ── Menu removed ──────────────────────────────────────────────────────
+  // The floating menu has been intentionally removed.  menuMesh, menuRoot
+  // and menuShapeModels remain initialised to their defaults (null / [])
+  // so controller‑interaction code (which is guarded by null‑checks and
+  // try/catch) continues to work without errors.
+  if (false as boolean) {  // dead‑code block kept for reference only
 
     // fallback: if XR not available, create a simple TransformNode to parent the menu so it appears in non-XR testing
     const parentCamera = (xr && xr.baseExperience && (xr.baseExperience as any).camera) ? (xr.baseExperience as any).camera : (function() { try { return new TransformNode('menuDebugParent', scene); } catch { return null; } })();
@@ -227,9 +215,7 @@ async function createScene() {
         try { menuMesh.setParent(null); } catch (_) {}
       }
     }
-  } catch (e) {
-    console.warn('failed to create floating menu', e);
-  }
+  } // end dead-code block
 
 
   // Detect and log Quest-like controllers when they connect so we can verify controller profiles

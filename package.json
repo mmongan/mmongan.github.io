@@ -8,7 +8,7 @@
     "preview": "vite preview",
     "copy-dist": "node scripts/copy-dist.js",
     "build:publish-local": "npm run build && npm run copy-dist",
-    "deploy": "npm run build && git add -A && git commit -m \"build: update compiled assets\" || true && git push origin main"
+    "deploy": "npm run build && npm run copy-dist && git add -A && git commit -m \"build: update compiled assets\" || true && git push origin main"
   },
   "homepage": "https://mmongan.github.io",
   "dependencies": {
