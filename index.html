@@ -50,6 +50,23 @@
     <!-- Visible debug banner so we can verify the build served from main -->
     <div id="menu-debug" class="menu-debug">MENU_DEBUG_TOKEN_v1 • MENU_BUILD_MARKER_v2026_02_09_2 • 2026-02-09T12:00:00Z</div>
 
-      </body>
-    </html>
+    <script>
+      window.addEventListener('load', () => {
+        setTimeout(() => {
+          try {
+            const dbg = window.__MENU_DEBUG;
+            if (dbg && Array.isArray(dbg.shapeModels) && dbg.shapeModels.length) {
+              for (const entry of dbg.shapeModels) {
+                try { entry.mesh && entry.mesh.dispose && entry.mesh.dispose(true); } catch (e) {}
+              }
+              dbg.shapeModels.length = 0;
+              console.log('MENU_OVERRIDE: cleared shapeModels');
+            }
+          } catch (e) { console.error('MENU_OVERRIDE error', e); }
+        }, 500);
+      });
+    </script>
+
+  </body>
+</html>
 

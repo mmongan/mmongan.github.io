@@ -123,6 +123,20 @@ async function createScene() {
     menuMesh = menuResult.menu;
     menuShapeModels = menuResult.shapeModels;
 
+    // For verification: dispose and clear any palette shapes created by the menu
+    // This proves the runtime is using the current code path and allows quick checks.
+    try {
+      if (menuResult && Array.isArray(menuResult.shapeModels) && menuResult.shapeModels.length) {
+        for (const sm of menuResult.shapeModels) {
+          try { if (sm && sm.mesh && typeof sm.mesh.dispose === 'function') { sm.mesh.dispose(true); } } catch (_) {}
+        }
+        menuResult.shapeModels.length = 0;
+        menuShapeModels = [];
+        try { (window as any).__MENU_DEBUG = (window as any).__MENU_DEBUG || {}; (window as any).__MENU_DEBUG.shapeModels = []; } catch (e) {}
+        try { console.log('MENU_VERIFICATION: disposed and cleared palette shapes'); } catch (e) {}
+      }
+    } catch (e) {}
+
     // enforce runtime scaling for palette shapes to ensure they visually match `spawnSize`
     try {
       const enforced = (window as any).__MENU_DEBUG && (window as any).__MENU_DEBUG.spawnSize ? (window as any).__MENU_DEBUG.spawnSize : null;
@@ -131,7 +145,47 @@ async function createScene() {
           try { sm.mesh.scaling = new Vector3(enforced, enforced, enforced); try { sm.mesh.computeWorldMatrix(true); } catch (e) {} sm.mesh.refreshBoundingInfo(true); } catch (e) {}
         }
       }
+        // Ensure scaling is visually enforced for a few frames in case other code
+        // asynchronously modifies meshes after menu creation. Apply scaling for
+        // up to 8 frames then remove observer.
+        try {
+          if (enforced && Array.isArray(menuShapeModels)) {
+            let frames = 0;
+            const handle = scene.onBeforeRenderObservable.add(() => {
+              frames++;
+              for (const sm of menuShapeModels) {
+                try { sm.mesh.scaling = new Vector3(enforced, enforced, enforced); sm.mesh.refreshBoundingInfo(true); } catch (e) {}
+              }
+              if (frames > 8) {
+                try { scene.onBeforeRenderObservable.remove(handle); } catch (e) {}
+              }
+            });
+          }
+        } catch (e) {}
     } catch (e) {}
+      try {
+        // If the menu did not publish a spawnSize, compute a conservative default
+        // based on the menu layout so we can enforce reasonable runtime scaling.
+        let enforced = (window as any).__MENU_DEBUG && (window as any).__MENU_DEBUG.spawnSize ? (window as any).__MENU_DEBUG.spawnSize : null;
+        if (!enforced) {
+          const menuSize = 0.5;
+          const menuPadding = 0.03;
+          const innerSide = menuSize - menuPadding * 2;
+          const cols = 3, rows = 3, layers = 3;
+          const xSpacing = cols > 1 ? innerSide / (cols - 1) : 0;
+          const ySpacing = rows > 1 ? innerSide / (rows - 1) : 0;
+          const zSpacing = layers > 1 ? innerSide / (layers - 1) : 0;
+          const minSpacing = Math.min(xSpacing || 0.08, ySpacing || 0.08, zSpacing || 0.08);
+          const slotMarkerSize = Math.max(0.018, Math.min(0.05, minSpacing * 0.4));
+          enforced = Math.max(0.01, slotMarkerSize * 0.25);
+          try { (window as any).__MENU_DEBUG = (window as any).__MENU_DEBUG || {}; (window as any).__MENU_DEBUG.spawnSize = enforced; } catch (e) {}
+        }
+        if (enforced && Array.isArray(menuShapeModels)) {
+          for (const sm of menuShapeModels) {
+            try { sm.mesh.scaling = new Vector3(enforced, enforced, enforced); try { sm.mesh.computeWorldMatrix(true); } catch (e) {} sm.mesh.refreshBoundingInfo(true); } catch (e) {}
+          }
+        }
+      } catch (e) {}
 
     // ensure a runtime spawnSize is available (fallback inference from menu models)
     try {

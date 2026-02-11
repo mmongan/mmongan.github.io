@@ -65,11 +65,14 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
 
   const paletteColors = ['#98D8C8','#FF6B6B','#45B7D1','#FFA07A','#F6C9E2','#D4A5FF','#FFB86B','#B0E57C','#9AD0FF','#E3E66D','#C0C0C0','#FF9FB4','#8FD3C7','#D9B8FF','#FFD7A6'];
   const shapesList: Array<{label:string, shape:ShapeType, color:string}> = [];
-  for (let i = 0; i < 15; i++) {
-    shapesList.push({ label: `Poly${i}`, shape: (`poly${i}` as ShapeType), color: paletteColors[i % paletteColors.length] });
-  }
-  shapesList.push({ label: 'Sphere', shape: 'sphere', color: '#FFD166' });
-  shapesList.push({ label: 'Cube', shape: 'cube', color: '#4ECDC4' });
+  // remove all palette entries to ensure no shapes are created here
+  // (user requested proof of editing by removing shapes)
+  // shapesList intentionally left empty
+  // for (let i = 0; i < 15; i++) {
+  //   shapesList.push({ label: `Poly${i}`, shape: (`poly${i}` as ShapeType), color: paletteColors[i % paletteColors.length] });
+  // }
+  // shapesList.push({ label: 'Sphere', shape: 'sphere', color: '#FFD166' });
+  // shapesList.push({ label: 'Cube', shape: 'cube', color: '#4ECDC4' });
 
   const innerSide = menuSize - menuPadding * 2;
   const xSpacing = cols > 1 ? innerSide / (cols - 1) : 0;
@@ -82,7 +85,9 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
   // reduce marker and model sizes slightly so palette items do not touch each other
   const slotMarkerSize = Math.max(0.018, Math.min(0.05, minSpacing * 0.4));
   // set model size to a smaller fraction of the slot marker so models reliably fit inside
-  const shapeSize = Math.max(0.015, slotMarkerSize * 0.45); // smaller fraction to avoid touching
+  // make shapes noticeably smaller to reliably fit inside each slot
+  // use a smaller fraction of the slot marker and a conservative minimum
+  const shapeSize = Math.max(0.01, slotMarkerSize * 0.25);
   // expose recommended spawn size for runtime spawns and debugging
   try { (window as any).__MENU_DEBUG = (window as any).__MENU_DEBUG || {}; (window as any).__MENU_DEBUG.spawnSize = shapeSize; } catch (e) {}
 
@@ -179,27 +184,10 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
       try { (wire as any).color = Color3.FromHexString('#00FFEA'); } catch (er) {}
     } catch (er) {}
 
-    try {
-      const markerSize = slotMarkerSize; // match marker size with the computed slot marker
-      for (let L = 0; L < layers; L++) {
-        for (let R = 0; R < rows; R++) {
-          for (let C = 0; C < cols; C++) {
-            const x = -innerSide / 2 + C * xSpacing;
-            const y = innerSide / 2 - R * ySpacing;
-            const z = -innerSide / 2 + L * zSpacing;
-            const dbgSphere = MeshBuilder.CreateSphere(`debug-slot-${L}-${R}-${C}`, { diameter: markerSize }, scene);
-            const dbgMat = new StandardMaterial(`debug-slot-mat-${L}-${R}-${C}`, scene);
-            // bright neon color for visibility
-            dbgMat.emissiveColor = Color3.FromHexString('#00FF7F');
-            dbgMat.alpha = 1.0;
-            dbgSphere.material = dbgMat;
-            dbgSphere.parent = menuBox;
-            dbgSphere.position = new Vector3(x, y, z);
-            dbgSphere.isPickable = false;
-          }
-        }
-      }
-    } catch (er) {}
+      try {
+        // Debug slot markers removed per user request — no debug spheres will be created
+        // (left intentionally empty so menu slots remain but no extra meshes are added)
+      } catch (er) {}
   }
 
   const createPaletteShape = (label: string, shape: ShapeType, color: string, gridRow: number, gridCol: number, layerIdx: number) => {
@@ -210,32 +198,33 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
     let shapeModel: AbstractMesh | null = null;
 
       try {
-        // create unit-sized primitives then scale them to the desired `shapeSize`
+        // create primitives sized directly to `shapeSize` so they occupy the intended
+        // real-world scale without needing post-creation scaling/baking
         if (shape === 'sphere') {
-          shapeModel = MeshBuilder.CreateSphere(label + "-shape", { diameter: 1 }, scene);
+          shapeModel = MeshBuilder.CreateSphere(label + "-shape", { diameter: shapeSize }, scene);
         } else if (shape === 'cube') {
-          shapeModel = MeshBuilder.CreateBox(label + "-shape", { size: 1 }, scene);
+          shapeModel = MeshBuilder.CreateBox(label + "-shape", { size: shapeSize }, scene);
         } else if ((shape as string).startsWith('poly')) {
           const idx = parseInt((shape as string).replace('poly', ''), 10);
           try {
-            shapeModel = MeshBuilder.CreatePolyhedron(label + "-shape", { type: idx, size: 1 }, scene);
+            shapeModel = MeshBuilder.CreatePolyhedron(label + "-shape", { type: idx, size: shapeSize }, scene);
           } catch (e) {
             console.warn('poly creation failed for', label, 'index', idx, e);
-            shapeModel = MeshBuilder.CreateBox(label + "-shape", { size: 1 }, scene);
+            shapeModel = MeshBuilder.CreateBox(label + "-shape", { size: shapeSize }, scene);
           }
         } else {
         switch (shape) {
           case "tetrahedron":
-            shapeModel = MeshBuilder.CreatePolyhedron(label + "-shape", { type: 0, size: 1 }, scene);
+            shapeModel = MeshBuilder.CreatePolyhedron(label + "-shape", { type: 0, size: shapeSize }, scene);
             break;
           case "octahedron":
-            shapeModel = MeshBuilder.CreatePolyhedron(label + "-shape", { type: 1, size: 1 }, scene);
+            shapeModel = MeshBuilder.CreatePolyhedron(label + "-shape", { type: 1, size: shapeSize }, scene);
             break;
           case "dodecahedron":
-            shapeModel = MeshBuilder.CreatePolyhedron(label + "-shape", { type: 2, size: 1 }, scene);
+            shapeModel = MeshBuilder.CreatePolyhedron(label + "-shape", { type: 2, size: shapeSize }, scene);
             break;
           case "icosahedron":
-            shapeModel = MeshBuilder.CreatePolyhedron(label + "-shape", { type: 3, size: 1 }, scene);
+            shapeModel = MeshBuilder.CreatePolyhedron(label + "-shape", { type: 3, size: shapeSize }, scene);
             break;
         }
       }
@@ -255,12 +244,27 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
       shapeModel.isVisible = true;
       shapeModel.isPickable = true;
 
-      // Scale the unit primitive so its world size matches `shapeSize` and refresh bounds.
+      // Scale the unit primitive so its world size matches `shapeSize` reliably.
       try {
-        shapeModel.scaling = new Vector3(shapeSize, shapeSize, shapeSize);
+        // compute the mesh's unscaled bounding box size
         try { shapeModel.computeWorldMatrix(true); } catch (e) {}
+        let bb = null;
+        try { bb = (shapeModel.getBoundingInfo && shapeModel.getBoundingInfo().boundingBox) || null; } catch (e) { bb = null; }
+        if (bb) {
+          const currentSizeX = bb.maximum.x - bb.minimum.x;
+          const currentSizeY = bb.maximum.y - bb.minimum.y;
+          const currentSizeZ = bb.maximum.z - bb.minimum.z;
+          const currentMax = Math.max(currentSizeX, currentSizeY, currentSizeZ, 1e-6);
+          const scaleFactor = shapeSize / currentMax;
+          shapeModel.scaling = new Vector3(scaleFactor, scaleFactor, scaleFactor);
+          try { console.log('SHAPE_SCALE_DEBUG', label, 'currentMax=', currentMax, 'scaleFactor=', scaleFactor); } catch (e) {}
+        } else {
+          // fallback to absolute scaling if bounding info unavailable
+          shapeModel.scaling = new Vector3(shapeSize, shapeSize, shapeSize);
+          try { console.log('SHAPE_SCALE_DEBUG', label, 'fallback scale to', shapeSize); } catch (e) {}
+        }
         try { if ((shapeModel as any).bakeCurrentTransformIntoVertices) { (shapeModel as any).bakeCurrentTransformIntoVertices(); shapeModel.scaling = new Vector3(1,1,1); } } catch (e) {}
-        try { shapeModel.refreshBoundingInfo(true); } catch (e) {}
+        try { shapeModel.refreshBoundingInfo(true); const bb2 = shapeModel.getBoundingInfo().boundingBox; const sizeX2 = bb2.maximum.x - bb2.minimum.x; const sizeY2 = bb2.maximum.y - bb2.minimum.y; const sizeZ2 = bb2.maximum.z - bb2.minimum.z; try { console.log('SHAPE_SCALE_DEBUG_POST', label, 'postSize=', { x: sizeX2, y: sizeY2, z: sizeZ2 }); } catch (e) {} } catch (e) {}
       } catch (e) {}
 
       shapeModel.parent = menuBox;
