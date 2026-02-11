@@ -182,8 +182,26 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
     } catch (er) {}
 
       try {
-        // Debug slot markers removed per user request — no debug spheres will be created
-        // (left intentionally empty so menu slots remain but no extra meshes are added)
+        // Light crosshair markers at each grid slot position
+        const markerLen = slotMarkerSize * 0.5; // half-length of each axis line
+        const slotLines: Vector3[][] = [];
+        for (let li = 0; li < layers; li++) {
+          for (let ri = 0; ri < rows; ri++) {
+            for (let ci = 0; ci < cols; ci++) {
+              const cx = -innerSide / 2 + ci * xSpacing;
+              const cy =  innerSide / 2 - ri * ySpacing;
+              const cz = -innerSide / 2 + li * zSpacing;
+              // three short axis lines per slot
+              slotLines.push([new Vector3(cx - markerLen, cy, cz), new Vector3(cx + markerLen, cy, cz)]);
+              slotLines.push([new Vector3(cx, cy - markerLen, cz), new Vector3(cx, cy + markerLen, cz)]);
+              slotLines.push([new Vector3(cx, cy, cz - markerLen), new Vector3(cx, cy, cz + markerLen)]);
+            }
+          }
+        }
+        const slotWire = MeshBuilder.CreateLineSystem('menuSlotMarkers', { lines: slotLines }, scene);
+        slotWire.parent = menuBox;
+        try { (slotWire as any).color = Color3.FromHexString('#FFFFFF'); } catch (er) {}
+        try { (slotWire as any).alpha = 0.6; } catch (er) {}
       } catch (er) {}
   }
 
