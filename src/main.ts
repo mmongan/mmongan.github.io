@@ -84,6 +84,54 @@ async function createScene() {
   reticle.rotation.x = Math.PI / 2;
   reticle.isVisible = false;
 
+  // shape spawning
+  function spawnShapeInScene(shapeType: ShapeType, pos: Vector3, size = 0.1) {
+    try {
+      let shape: any;
+      const mat = new StandardMaterial("shapeMat", scene);
+      mat.diffuseColor = Color3.FromHexString("#888888");
+      
+      switch (shapeType) {
+        case "tetrahedron":
+          shape = MeshBuilder.CreatePolyhedron("tetrahedron", { type: 0, size }, scene);
+          break;
+        case "cube":
+          shape = MeshBuilder.CreateBox("cube", { size }, scene);
+          break;
+        case "sphere":
+          shape = MeshBuilder.CreateSphere("sphere", { diameter: size }, scene);
+          break;
+        case "octahedron":
+          shape = MeshBuilder.CreatePolyhedron("octahedron", { type: 1, size }, scene);
+          break;
+        case "dodecahedron":
+          shape = MeshBuilder.CreatePolyhedron("dodecahedron", { type: 2, size }, scene);
+          break;
+        case "icosahedron":
+          shape = MeshBuilder.CreatePolyhedron("icosahedron", { type: 3, size }, scene);
+          break;
+        default:
+          // handle polyNN naming (poly0..poly14)
+          try {
+            if ((shapeType as string).startsWith("poly")) {
+              const idx = parseInt((shapeType as string).replace("poly",""), 10);
+              if (!isNaN(idx)) {
+                shape = MeshBuilder.CreatePolyhedron(shapeType as string, { type: idx, size }, scene);
+                break;
+              }
+            }
+          } catch (e) {}
+          return;
+      }
+      
+      shape.material = mat;
+      shape.position = pos;
+      spawnedShapes.push(shape);
+    } catch (e) {
+      console.warn('failed to spawn shape', e);
+    }
+  }
+
   // create the floating menu (shapes hidden, grid visible)
   try {
     const parentCamera = (xr && xr.baseExperience && (xr.baseExperience as any).camera) ? (xr.baseExperience as any).camera : (function() { try { return new TransformNode('menuDebugParent', scene); } catch { return null; } })();
@@ -130,7 +178,8 @@ async function createScene() {
 
   // Detect and log Quest-like controllers when they connect so we can verify controller profiles
   try {
-    xr.input.onControllerAddedObservable.add((xrController: any) => {
+    if (xr) {
+      xr.input.onControllerAddedObservable.add((xrController: any) => {
       xrController.onMotionControllerInitObservable.add((motionController: any) => {
         const profile = motionController.profileId || motionController._profileId || "";
         const gamepadId = (xrController as any).browserGamepad?.id || "";
@@ -142,13 +191,15 @@ async function createScene() {
         }
       });
     });
+    }
   } catch (e) {
     // ignore controller-detection errors
   }
 
   // allow grabbing spawned shapes and menu with controller grip button
   try {
-    xr.input.onControllerAddedObservable.add((xrController: any) => {
+    if (xr) {
+      xr.input.onControllerAddedObservable.add((xrController: any) => {
       xrController.onMotionControllerInitObservable.add((motionController: any) => {
         const mainComponent = motionController.getMainComponent ? motionController.getMainComponent() : null;
         if (mainComponent && mainComponent.onButtonStateChangedObservable) {
@@ -272,11 +323,13 @@ async function createScene() {
         }
       });
     });
+    }
 
     // cleanup: if a controller is removed while holding something, release it
-    try {
-      xr.input.onControllerRemovedObservable.add((xrController: any) => {
-        try {
+    if (xr) {
+      try {
+        xr.input.onControllerRemovedObservable.add((xrController: any) => {
+          try {
           const ctrlState = xrController as any;
           if (ctrlState._heldShape) {
             try { (ctrlState._heldShape as any)._heldBy = null; } catch (_) {}
@@ -301,63 +354,16 @@ async function createScene() {
             ctrlState._menuGrabbed = false;
           }
         } catch (e) {}
-      });
-    } catch (e) {
-      // ignore
+        });
+      } catch (e) {
+        // ignore
+      }
     }
   } catch (e) {
     // ignore
   }
 
   // No hit-test updates; reticle remains unused in this mode.
-  
-  // shape spawning
-  function spawnShapeInScene(shapeType: ShapeType, pos: Vector3, size = 0.1) {
-    try {
-      let shape: any;
-      const mat = new StandardMaterial("shapeMat", scene);
-      mat.diffuseColor = Color3.FromHexString("#888888");
-      
-      switch (shapeType) {
-        case "tetrahedron":
-          shape = MeshBuilder.CreatePolyhedron("tetrahedron", { type: 0, size }, scene);
-          break;
-        case "cube":
-          shape = MeshBuilder.CreateBox("cube", { size }, scene);
-          break;
-        case "sphere":
-          shape = MeshBuilder.CreateSphere("sphere", { diameter: size }, scene);
-          break;
-        case "octahedron":
-          shape = MeshBuilder.CreatePolyhedron("octahedron", { type: 1, size }, scene);
-          break;
-        case "dodecahedron":
-          shape = MeshBuilder.CreatePolyhedron("dodecahedron", { type: 2, size }, scene);
-          break;
-        case "icosahedron":
-          shape = MeshBuilder.CreatePolyhedron("icosahedron", { type: 3, size }, scene);
-          break;
-        default:
-          // handle polyNN naming (poly0..poly14)
-          try {
-            if ((shapeType as string).startsWith("poly")) {
-              const idx = parseInt((shapeType as string).replace("poly",""), 10);
-              if (!isNaN(idx)) {
-                shape = MeshBuilder.CreatePolyhedron(shapeType as string, { type: idx, size }, scene);
-                break;
-              }
-            }
-          } catch (e) {}
-          return;
-      }
-      
-      shape.material = mat;
-      shape.position = pos;
-      spawnedShapes.push(shape);
-    } catch (e) {
-      console.warn('failed to spawn shape', e);
-    }
-  }
 
   engine.runRenderLoop(() => {
     scene.render();
