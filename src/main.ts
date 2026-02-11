@@ -79,14 +79,8 @@ async function createScene() {
   reticle.rotation.x = Math.PI / 2;
   reticle.isVisible = false;
 
-  // ── Menu removed ──────────────────────────────────────────────────────
-  // The floating menu has been intentionally removed.  menuMesh, menuRoot
-  // and menuShapeModels remain initialised to their defaults (null / [])
-  // so controller‑interaction code (which is guarded by null‑checks and
-  // try/catch) continues to work without errors.
-  if (false as boolean) {  // dead‑code block kept for reference only
-
-    // fallback: if XR not available, create a simple TransformNode to parent the menu so it appears in non-XR testing
+  // create the floating menu (shapes hidden, grid visible)
+  try {
     const parentCamera = (xr && xr.baseExperience && (xr.baseExperience as any).camera) ? (xr.baseExperience as any).camera : (function() { try { return new TransformNode('menuDebugParent', scene); } catch { return null; } })();
 
     const menuResult = await createFloatingMenu(parentCamera as any, scene, (shape: ShapeType, spawnPos?: Vector3, spawnSize?: number) => {
@@ -112,111 +106,21 @@ async function createScene() {
     menuMesh = menuResult.menu;
     menuShapeModels = menuResult.shapeModels;
 
-    // For verification: dispose and clear any palette shapes created by the menu
-    // This proves the runtime is using the current code path and allows quick checks.
-    try {
-      if (menuResult && Array.isArray(menuResult.shapeModels) && menuResult.shapeModels.length) {
-        for (const sm of menuResult.shapeModels) {
-          try { if (sm && sm.mesh && typeof sm.mesh.dispose === 'function') { sm.mesh.dispose(true); } } catch (_) {}
-        }
-        menuResult.shapeModels.length = 0;
-        menuShapeModels = [];
-        try { (window as any).__MENU_DEBUG = (window as any).__MENU_DEBUG || {}; (window as any).__MENU_DEBUG.shapeModels = []; } catch (e) {}
-        try { console.log('MENU_VERIFICATION: disposed and cleared palette shapes'); } catch (e) {}
-      }
-    } catch (e) {}
-
-    // enforce runtime scaling for palette shapes to ensure they visually match `spawnSize`
-    try {
-      const enforced = (window as any).__MENU_DEBUG && (window as any).__MENU_DEBUG.spawnSize ? (window as any).__MENU_DEBUG.spawnSize : null;
-      if (enforced && Array.isArray(menuShapeModels)) {
-        for (const sm of menuShapeModels) {
-          try { sm.mesh.scaling = new Vector3(enforced, enforced, enforced); try { sm.mesh.computeWorldMatrix(true); } catch (e) {} sm.mesh.refreshBoundingInfo(true); } catch (e) {}
-        }
-      }
-        // Ensure scaling is visually enforced for a few frames in case other code
-        // asynchronously modifies meshes after menu creation. Apply scaling for
-        // up to 8 frames then remove observer.
-        try {
-          if (enforced && Array.isArray(menuShapeModels)) {
-            let frames = 0;
-            const handle = scene.onBeforeRenderObservable.add(() => {
-              frames++;
-              for (const sm of menuShapeModels) {
-                try { sm.mesh.scaling = new Vector3(enforced, enforced, enforced); sm.mesh.refreshBoundingInfo(true); } catch (e) {}
-              }
-              if (frames > 8) {
-                try { scene.onBeforeRenderObservable.remove(handle); } catch (e) {}
-              }
-            });
-          }
-        } catch (e) {}
-    } catch (e) {}
-      try {
-        // If the menu did not publish a spawnSize, compute a conservative default
-        // based on the menu layout so we can enforce reasonable runtime scaling.
-        let enforced = (window as any).__MENU_DEBUG && (window as any).__MENU_DEBUG.spawnSize ? (window as any).__MENU_DEBUG.spawnSize : null;
-        if (!enforced) {
-          const menuSize = 0.5;
-          const menuPadding = 0.03;
-          const innerSide = menuSize - menuPadding * 2;
-          const cols = 3, rows = 3, layers = 3;
-          const xSpacing = cols > 1 ? innerSide / (cols - 1) : 0;
-          const ySpacing = rows > 1 ? innerSide / (rows - 1) : 0;
-          const zSpacing = layers > 1 ? innerSide / (layers - 1) : 0;
-          const minSpacing = Math.min(xSpacing || 0.08, ySpacing || 0.08, zSpacing || 0.08);
-          const slotMarkerSize = Math.max(0.018, Math.min(0.05, minSpacing * 0.4));
-          enforced = Math.max(0.01, slotMarkerSize * 0.25);
-          try { (window as any).__MENU_DEBUG = (window as any).__MENU_DEBUG || {}; (window as any).__MENU_DEBUG.spawnSize = enforced; } catch (e) {}
-        }
-        if (enforced && Array.isArray(menuShapeModels)) {
-          for (const sm of menuShapeModels) {
-            try { sm.mesh.scaling = new Vector3(enforced, enforced, enforced); try { sm.mesh.computeWorldMatrix(true); } catch (e) {} sm.mesh.refreshBoundingInfo(true); } catch (e) {}
-          }
-        }
-      } catch (e) {}
-
-    // ensure a runtime spawnSize is available (fallback inference from menu models)
-    try {
-      (window as any).__MENU_DEBUG = (window as any).__MENU_DEBUG || {};
-      if (!(window as any).__MENU_DEBUG.spawnSize) {
-        const first = menuShapeModels && menuShapeModels[0];
-        if (first && first.mesh && first.mesh.getBoundingInfo) {
-          const ext = first.mesh.getBoundingInfo().boundingBox.extendSize;
-          const inferred = Math.max(0.02, Math.min(0.1, Math.max(ext.x, ext.y, ext.z) * 2));
-          (window as any).__MENU_DEBUG.spawnSize = inferred;
-        }
-      }
-    } catch (e) {}
-
-    // Backwards-compat: remove any legacy edge handles or corner spheres left in compiled chunks
-    try {
-      const handlePattern = /^(leftHandle|rightHandle|topHandle|bottomHandle|edgeZone|cornerSphere\d+)$/;
-      const childMeshes = (menuMesh && typeof menuMesh.getChildMeshes === 'function') ? menuMesh.getChildMeshes(true) : scene.meshes;
-      const removed: string[] = [];
-      (childMeshes || []).forEach((m: any) => {
-        if (m && m.name && handlePattern.test(m.name)) {
-          try { m.dispose(true); removed.push(m.name); } catch (e) {}
-        }
-      });
-      if (removed.length) try { console.log('removed legacy menu handles:', removed.join(', ')); } catch (e) {}
-    } catch (e) {}
-
-
     // create a world-locked root to hold the menu so we can parent/unparent easily
     try { menuRoot = new TransformNode("menuRoot", scene); } catch (_) { menuRoot = null; }
     if (menuRoot && menuMesh) {
       try {
         const abs = menuMesh.getAbsolutePosition();
         try { menuMesh.setParent(menuRoot); } catch (_) { menuMesh.parent = menuRoot; }
-        // reset local position to origin since offset is already in absolute position
         try { menuMesh.position.set(0, 0, 0); } catch (_) {}
         try { (menuRoot as any).setAbsolutePosition(abs); } catch (_) { (menuRoot as any).position = abs; }
       } catch (e) {
         try { menuMesh.setParent(null); } catch (_) {}
       }
     }
-  } // end dead-code block
+  } catch (e) {
+    console.warn('failed to create floating menu', e);
+  }
 
 
   // Detect and log Quest-like controllers when they connect so we can verify controller profiles

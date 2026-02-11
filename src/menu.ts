@@ -65,14 +65,11 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
 
   const paletteColors = ['#98D8C8','#FF6B6B','#45B7D1','#FFA07A','#F6C9E2','#D4A5FF','#FFB86B','#B0E57C','#9AD0FF','#E3E66D','#C0C0C0','#FF9FB4','#8FD3C7','#D9B8FF','#FFD7A6'];
   const shapesList: Array<{label:string, shape:ShapeType, color:string}> = [];
-  // remove all palette entries to ensure no shapes are created here
-  // (user requested proof of editing by removing shapes)
-  // shapesList intentionally left empty
-  // for (let i = 0; i < 15; i++) {
-  //   shapesList.push({ label: `Poly${i}`, shape: (`poly${i}` as ShapeType), color: paletteColors[i % paletteColors.length] });
-  // }
-  // shapesList.push({ label: 'Sphere', shape: 'sphere', color: '#FFD166' });
-  // shapesList.push({ label: 'Cube', shape: 'cube', color: '#4ECDC4' });
+  for (let i = 0; i < 15; i++) {
+    shapesList.push({ label: `Poly${i}`, shape: (`poly${i}` as ShapeType), color: paletteColors[i % paletteColors.length] });
+  }
+  shapesList.push({ label: 'Sphere', shape: 'sphere', color: '#FFD166' });
+  shapesList.push({ label: 'Cube', shape: 'cube', color: '#4ECDC4' });
 
   const innerSide = menuSize - menuPadding * 2;
   const xSpacing = cols > 1 ? innerSide / (cols - 1) : 0;
@@ -241,8 +238,8 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
       mat.specularColor = Color3.Black();
       mat.backFaceCulling = false;
       shapeModel.material = mat;
-      shapeModel.isVisible = true;
-      shapeModel.isPickable = true;
+      shapeModel.isVisible = false;  // shapes hidden per user request
+      shapeModel.isPickable = false;
 
       // Scale the unit primitive so its world size matches `shapeSize` reliably.
       try {
@@ -282,6 +279,7 @@ export default async function createFloatingMenu(parentCamera: TransformNode, sc
         labelPlane.position = new Vector3(xOffset, yOffset - shapeSize * 0.9, zOffset + 0.002);
         labelPlane.material = labelMat;
         labelPlane.isPickable = false;
+        labelPlane.isVisible = false;  // hidden along with shapes
       } catch (e) {}
 
       // pointer pick -> call onPick with spawn position computed near parent camera
