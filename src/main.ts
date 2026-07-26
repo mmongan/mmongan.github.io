@@ -9,21 +9,11 @@
  */
 
 import {
-  Engine,
-  Scene,
-  ArcRotateCamera,
-  Vector3,
-  HemisphericLight,
-  PointLight,
-  MeshBuilder,
-  StandardMaterial,
-  Color3,
-  Color4,
-  WebXRDefaultExperience,
-  WebXRHitTest,
-  WebXRFeatureName,
-  AbstractMesh,
-  Quaternion,
+  Engine, Scene, ArcRotateCamera, Vector3, Quaternion,
+  Color3, Color4, HemisphericLight, PointLight,
+  MeshBuilder, Mesh, StandardMaterial,
+  WebXRDefaultExperience, WebXRHitTest,
+  WebXRFeatureName, WebXRState,
 } from "@babylonjs/core";
 
 // ─── DOM references ──────────────────────────────────────────────────────────
@@ -97,7 +87,7 @@ reticle.material = reticleMat;
 
 // ─── Placed objects collection ────────────────────────────────────────────────
 
-const placedMeshes: AbstractMesh[] = [];
+const placedMeshes: Mesh[] = [];
 
 function placeObject(position: Vector3, normal: Vector3): void {
   const sphere = MeshBuilder.CreateSphere(
@@ -156,7 +146,7 @@ async function initXR(): Promise<void> {
   // ── Hit-test feature ──────────────────────────────────────────────────────
   let hitTestFeature: WebXRHitTest | undefined;
 
-  xrHelper.baseExperience.onStateChangedObservable.add((state) => {
+  xrHelper.baseExperience.onStateChangedObservable.add((state: WebXRState) => {
     // XRState: 0 = NOT_IN_XR, 2 = IN_XR, 3 = ENTERING_XR, 4 = EXITING_XR
     const InXR = 2;
     if (state === InXR) {
