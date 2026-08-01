@@ -57,31 +57,6 @@
         text-align: center;
       }
 
-      #enter-ar-btn {
-        pointer-events: auto;
-        background: #6c63ff;
-        color: #fff;
-        border: none;
-        padding: 14px 32px;
-        border-radius: 32px;
-        font-size: 1rem;
-        font-weight: 600;
-        cursor: pointer;
-        box-shadow: 0 4px 20px rgba(108, 99, 255, 0.5);
-        transition: background 0.2s, transform 0.1s;
-      }
-
-      #enter-ar-btn:active {
-        transform: scale(0.97);
-        background: #5549e8;
-      }
-
-      #enter-ar-btn:disabled {
-        background: #555;
-        box-shadow: none;
-        cursor: not-allowed;
-      }
-
       #build-info {
         position: fixed;
         top: 12px;
@@ -97,16 +72,14 @@
       }
 
     </style>
-    <script type="module" crossorigin src="/assets/index-DvztkGY8.js"></script>
+    <script type="module" crossorigin src="/assets/index-BdRF2z-W.js"></script>
   </head>
   <body>
     <canvas id="render-canvas"></canvas>
     <div id="build-info">Loading build…</div>
 
-    <!-- Minimal AR overlay: status label + Enter AR button -->
     <div id="overlay">
       <span id="status">Initialising…</span>
-      <button id="enter-ar-btn" disabled>Enter AR</button>
     </div>
 
   </body>
