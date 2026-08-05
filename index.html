@@ -57,6 +57,23 @@
         text-align: center;
       }
 
+      .xr-button {
+        pointer-events: auto;
+        border: none;
+        border-radius: 999px;
+        padding: 10px 16px;
+        font-size: 1rem;
+        font-weight: 600;
+        color: #07111f;
+        background: linear-gradient(135deg, #72f0ff, #7cffb4);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+      }
+
+      .xr-button:disabled {
+        opacity: 0.7;
+        cursor: wait;
+      }
+
       #build-info {
         position: fixed;
         top: 12px;
@@ -72,13 +89,17 @@
       }
 
     </style>
-    <script type="module" crossorigin src="/assets/index-eqQQPD2Y.js"></script>
+    <script type="module" crossorigin src="/assets/index-CqI2spCt.js"></script>
   </head>
   <body>
     <canvas id="render-canvas"></canvas>
     <div id="build-info">Loading build…</div>
 
     <div id="overlay">
+      <div style="display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;">
+        <button id="enter-ar-button" class="xr-button" type="button">Enter Quest 3 AR</button>
+        <button id="enter-vr-button" class="xr-button" type="button">Enter VR</button>
+      </div>
       <span id="status">Initialising…</span>
     </div>
 
