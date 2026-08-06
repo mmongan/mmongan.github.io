@@ -88,8 +88,47 @@
         backdrop-filter: blur(6px);
       }
 
+      #controller-palette {
+        position: fixed;
+        left: 50%;
+        bottom: 24px;
+        transform: translateX(-50%);
+        display: none;
+        flex-wrap: wrap;
+        gap: 10px;
+        max-width: min(92vw, 620px);
+        padding: 12px 14px;
+        border-radius: 18px;
+        background: rgba(7, 17, 31, 0.9);
+        border: 1px solid rgba(114, 240, 255, 0.35);
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+        backdrop-filter: blur(8px);
+        z-index: 10000;
+        pointer-events: auto;
+      }
+
+      #controller-palette.visible {
+        display: flex;
+      }
+
+      .palette-button {
+        border: none;
+        border-radius: 999px;
+        padding: 8px 12px;
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: #07111f;
+        background: linear-gradient(135deg, #72f0ff, #7cffb4);
+        cursor: pointer;
+      }
+
+      .palette-button.active {
+        outline: 2px solid #fff;
+        background: linear-gradient(135deg, #7cffb4, #72f0ff);
+      }
+
     </style>
-    <script type="module" crossorigin src="/assets/index-C0lBx42t.js"></script>
+    <script type="module" crossorigin src="/assets/index-qNurfTSm.js"></script>
   </head>
   <body>
     <canvas id="render-canvas"></canvas>
@@ -101,6 +140,14 @@
         <button id="enter-vr-button" class="xr-button" type="button">Enter VR</button>
       </div>
       <span id="status">Initialising…</span>
+    </div>
+
+    <div id="controller-palette" aria-live="polite">
+      <button class="palette-button" type="button" data-action="neuron-excitatory">Excitatory</button>
+      <button class="palette-button" type="button" data-action="neuron-inhibitory">Inhibitory</button>
+      <button class="palette-button" type="button" data-action="neuron-interneuron">Interneuron</button>
+      <button class="palette-button" type="button" data-action="neuron-motor">Motor</button>
+      <button class="palette-button" type="button" data-action="neuron-sensory">Sensory</button>
     </div>
 
   </body>
