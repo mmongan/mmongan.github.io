@@ -1,0 +1,2 @@
+import{aE as i,aF as t}from"./package-BPWUai0R.js";class m extends i{constructor(s){super();const o=s.glTF,r=o.animations?.map(a=>a._babylonAnimationGroup)||[];this.animationGroups=this.registerDataOutput("animationGroups",t,r);const n=o.nodes?.map(a=>a._babylonTransformNode)||[];this.nodes=this.registerDataOutput("nodes",t,n)}getClassName(){return"FlowGraphGLTFDataProvider"}}export{m as FlowGraphGLTFDataProvider};
+//# sourceMappingURL=flowGraphGLTFDataProvider-Chuv6IYu.js.map
