@@ -45,6 +45,13 @@
         gap: 12px;
       }
 
+      #xr-button-row {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 10px;
+      }
+
       #status {
         pointer-events: none;
         background: rgba(0, 0, 0, 0.55);
@@ -127,15 +134,65 @@
         background: linear-gradient(135deg, #7cffb4, #72f0ff);
       }
 
+      #editor-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 20000;
+        display: grid;
+        grid-template-rows: 48px minmax(0, 1fr);
+        background: #101417;
+        pointer-events: auto;
+      }
+
+      #editor-overlay[hidden] {
+        display: none;
+      }
+
+      #editor-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        padding: 7px 10px;
+        border-bottom: 1px solid #31404a;
+        background: #182025;
+        color: #d8e7ec;
+      }
+
+      #editor-title {
+        min-width: 0;
+        flex: 1;
+        overflow: hidden;
+        font: 600 14px/1.2 "Segoe UI", sans-serif;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .editor-command {
+        min-height: 34px;
+        border: 1px solid #49616d;
+        border-radius: 4px;
+        padding: 5px 12px;
+        background: #243139;
+        color: #e8f5f7;
+        font: 600 13px/1 "Segoe UI", sans-serif;
+      }
+
+      #source-editor {
+        min-width: 0;
+        min-height: 0;
+      }
+
     </style>
-    <script type="module" crossorigin src="/assets/index-CPzCYf8L.js"></script>
+    <script type="module" crossorigin src="/assets/index-BAn6LOt2.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DIPB3Vbg.css">
   </head>
   <body>
     <canvas id="render-canvas"></canvas>
     <div id="build-info">Loading build…</div>
 
     <div id="overlay">
-      <div style="display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;">
+      <div id="xr-button-row">
         <button id="enter-ar-button" class="xr-button" type="button">Enter Quest 3 AR</button>
         <button id="enter-vr-button" class="xr-button" type="button">Enter VR</button>
       </div>
@@ -149,6 +206,15 @@
       <button class="palette-button" type="button" data-action="node-activation">Activation</button>
       <button class="palette-button" type="button" data-action="node-embedding">Embedding</button>
     </div>
+
+    <section id="editor-overlay" aria-label="TypeScript source editor" hidden>
+      <header id="editor-toolbar">
+        <strong id="editor-title">src/main.ts</strong>
+        <button id="download-source-button" class="editor-command" type="button">Download</button>
+        <button id="close-editor-button" class="editor-command" type="button">Close</button>
+      </header>
+      <div id="source-editor"></div>
+    </section>
 
   </body>
 </html>
