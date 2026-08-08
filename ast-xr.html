@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Permissions-Policy" content="xr-spatial-tracking=(*)" />
+    <title>AST XR</title>
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      html, body, #render-canvas { width: 100%; height: 100%; overflow: hidden; }
+      body { background: #000; font-family: sans-serif; }
+      #render-canvas { display: block; touch-action: none; }
+      #build-info, #status { background: rgba(0, 0, 0, 0.66); color: #fff; padding: 7px 11px; }
+      #build-info { position: fixed; right: 12px; top: 12px; border-radius: 4px; }
+      #overlay { position: fixed; inset: 0; display: flex; align-items: center; flex-direction: column; justify-content: flex-end; gap: 10px; padding: 20px; pointer-events: none; }
+      #xr-button-row { display: flex; gap: 8px; }
+      button { border: 0; border-radius: 4px; background: #72f0ff; color: #07111f; font-weight: 700; padding: 10px 14px; pointer-events: auto; }
+      button:disabled { opacity: 0.55; }
+      #controller-palette { display: none; }
+    </style>
+    <script type="module" crossorigin src="/assets/astXr-RhJ9GEOJ.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/package-GlnsmtwN.js">
+  </head>
+  <body>
+    <canvas id="render-canvas"></canvas>
+    <div id="build-info">Loading AST XR…</div>
+    <div id="overlay">
+      <div id="xr-button-row">
+        <button id="enter-ar-button" type="button">Enter Quest 3 AR</button>
+        <button id="enter-vr-button" type="button">Enter VR</button>
+      </div>
+      <span id="status">Initialising AST graph…</span>
+    </div>
+    <div id="controller-palette"></div>
+  </body>
+</html>
