@@ -1,0 +1,21 @@
+{
+  "title": "Stars and Stripes 16-Measure Drill",
+  "midi": "the-stars-and-stripes-forever.mid",
+  "source": "Mutopia Project public-domain edition of J. P. Sousa's The Stars and Stripes Forever",
+  "cues": [
+    { "measure": 1, "formation": "block", "transitionMeasures": 0, "label": "Opening Block" },
+    { "measure": 17, "formation": "company-front", "transitionMeasures": 8, "label": "Company Front" },
+    { "measure": 33, "formation": "chevron", "transitionMeasures": 8, "label": "Forward Chevron" },
+    { "measure": 49, "formation": "arc", "transitionMeasures": 8, "label": "Concert Arc" },
+    { "measure": 65, "formation": "diamond", "transitionMeasures": 8, "label": "Sousa Diamond" },
+    { "measure": 81, "formation": "circle", "transitionMeasures": 8, "label": "Liberty Wheel" },
+    { "measure": 97, "formation": "spiral", "transitionMeasures": 12, "label": "Spiral In" },
+    { "measure": 113, "formation": "block", "transitionMeasures": 8, "label": "Trio Block" },
+    { "measure": 129, "formation": "arc", "transitionMeasures": 8, "label": "Grand Arc" },
+    { "measure": 145, "formation": "chevron", "transitionMeasures": 8, "label": "Chevron Reprise" },
+    { "measure": 161, "formation": "company-front", "transitionMeasures": 8, "label": "Full Front" },
+    { "measure": 177, "formation": "diamond", "transitionMeasures": 8, "label": "Final Diamond" },
+    { "measure": 193, "formation": "circle", "transitionMeasures": 8, "label": "Closing Wheel" },
+    { "measure": 209, "formation": "company-front", "transitionMeasures": 4, "label": "Final Company Front" }
+  ]
+}
