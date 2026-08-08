@@ -1,2 +1,0 @@
-import{an as i,ao as t}from"./package-CLSGvKBu.js";class m extends i{constructor(s){super();const o=s.glTF,n=o.animations?.map(a=>a._babylonAnimationGroup)||[];this.animationGroups=this.registerDataOutput("animationGroups",t,n);const r=o.nodes?.map(a=>a._babylonTransformNode)||[];this.nodes=this.registerDataOutput("nodes",t,r)}getClassName(){return"FlowGraphGLTFDataProvider"}}export{m as FlowGraphGLTFDataProvider};
-//# sourceMappingURL=flowGraphGLTFDataProvider-QUAutErX.js.map
