@@ -7,7 +7,7 @@
       http-equiv="Permissions-Policy"
       content="xr-spatial-tracking=(*)"
     />
-    <title>Babylon.js WebXR AR</title>
+    <title>American Marching Field XR</title>
     <style>
       /* Fill the full viewport with no scroll bars */
       * {
@@ -21,8 +21,8 @@
         width: 100%;
         height: 100%;
         overflow: hidden;
-        background: #000;
-        font-family: system-ui, sans-serif;
+        background: #07130d;
+        font-family: Georgia, "Times New Roman", serif;
       }
 
       #render-canvas {
@@ -58,7 +58,7 @@
         color: #fff;
         font-size: 0.85rem;
         padding: 6px 14px;
-        border-radius: 20px;
+        border-radius: 6px;
         backdrop-filter: blur(6px);
         max-width: 90vw;
         text-align: center;
@@ -67,12 +67,12 @@
       .xr-button {
         pointer-events: auto;
         border: none;
-        border-radius: 999px;
+        border-radius: 4px;
         padding: 10px 16px;
         font-size: 1rem;
         font-weight: 600;
         color: #07111f;
-        background: linear-gradient(135deg, #72f0ff, #7cffb4);
+        background: #f5f0df;
         box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
       }
 
@@ -91,7 +91,7 @@
         color: #fff;
         font-size: 0.8rem;
         padding: 6px 10px;
-        border-radius: 999px;
+        border-radius: 4px;
         backdrop-filter: blur(6px);
       }
 
@@ -135,26 +135,19 @@
       }
 
     </style>
-    <script type="module" crossorigin src="/assets/index-IG9eQwML.js"></script>
+    <script type="module" crossorigin src="/assets/field-DANvh5mN.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/package-CLSGvKBu.js">
   </head>
   <body>
     <canvas id="render-canvas"></canvas>
-    <div id="build-info">Loading build…</div>
+    <div id="build-info">Loading field…</div>
 
     <div id="overlay">
       <div id="xr-button-row">
-        <button id="enter-ar-button" class="xr-button" type="button">Enter Quest 3 AR</button>
-        <button id="enter-vr-button" class="xr-button" type="button">Enter VR</button>
+        <button id="enter-ar-button" class="xr-button" type="button">Enter Field AR</button>
+        <button id="enter-vr-button" class="xr-button" type="button">Enter Stadium VR</button>
       </div>
-      <span id="status">Initialising…</span>
-    </div>
-
-    <div id="controller-palette" aria-live="polite">
-      <button class="palette-button" type="button" data-action="node-input">Input</button>
-      <button class="palette-button" type="button" data-action="node-hidden">Hidden</button>
-      <button class="palette-button" type="button" data-action="node-output">Output</button>
-      <button class="palette-button" type="button" data-action="node-activation">Activation</button>
-      <button class="palette-button" type="button" data-action="node-embedding">Embedding</button>
+      <span id="status">Preparing the field…</span>
     </div>
 
   </body>
