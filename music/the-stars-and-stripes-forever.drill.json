@@ -1,7 +1,7 @@
 {
-  "title": "Stars and Stripes Shapes and Alphabet Show",
-  "midi": "the-stars-and-stripes-forever.mid",
-  "source": "Mutopia Project public-domain edition of J. P. Sousa's The Stars and Stripes Forever",
+  "title": "Tenth Regiment Shapes and Alphabet Show",
+  "midi": "tenth-regiment-march.mid",
+  "source": "Mutopia Project public-domain concert-band edition of R. B. Hall's Tenth Regiment March (Carl Fischer, 1895)",
   "spacing": "Four-step intervals (7.5 feet at 8-to-5)",
   "cues": [
     { "measure": 1, "formation": "box", "gait": "stand", "facing": 180, "readingDirection": 180, "transition": "direct", "transitionMeasures": 0, "label": "Opening Box" },
