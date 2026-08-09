@@ -1,22 +1,22 @@
 {
-  "title": "Stars and Stripes Regulation 8-to-5 Drill",
+  "title": "Stars and Stripes Four-Step Field Show",
   "midi": "the-stars-and-stripes-forever.mid",
   "source": "Mutopia Project public-domain edition of J. P. Sousa's The Stars and Stripes Forever",
-  "spacing": "8-to-5 (22.5-inch intervals)",
+  "spacing": "Four-step intervals (7.5 feet at 8-to-5)",
   "cues": [
-    { "measure": 1, "formation": "block", "gait": "mark-time", "facing": 180, "transitionMeasures": 0, "label": "8-to-5 Opening Block" },
-    { "measure": 17, "formation": "company-front", "gait": "march", "facing": 165, "transitionMeasures": 8, "label": "49-Yard Company Front" },
-    { "measure": 33, "formation": "chevron", "gait": "high-step", "facing": 135, "transitionMeasures": 8, "label": "Forward Chevron" },
-    { "measure": 49, "formation": "arc", "gait": "glide", "facing": 0, "transitionMeasures": 8, "label": "Concert Arc" },
-    { "measure": 65, "formation": "diamond", "gait": "march", "facing": 285, "transitionMeasures": 8, "label": "Sousa Diamond" },
-    { "measure": 81, "formation": "circle", "gait": "glide", "facing": 330, "transitionMeasures": 8, "label": "Liberty Wheel" },
-    { "measure": 97, "formation": "spiral", "gait": "jazz-run", "facing": 75, "transitionMeasures": 12, "label": "Spiral In" },
-    { "measure": 113, "formation": "block", "gait": "mark-time", "facing": 210, "transitionMeasures": 8, "label": "Trio Block" },
-    { "measure": 129, "formation": "arc", "gait": "glide", "facing": 30, "transitionMeasures": 8, "label": "Grand Arc" },
-    { "measure": 145, "formation": "chevron", "gait": "high-step", "facing": 300, "transitionMeasures": 8, "label": "Chevron Reprise" },
-    { "measure": 161, "formation": "company-front", "gait": "march", "facing": 195, "transitionMeasures": 8, "label": "Full Front" },
-    { "measure": 177, "formation": "diamond", "gait": "high-step", "facing": 120, "transitionMeasures": 8, "label": "Final Diamond" },
-    { "measure": 193, "formation": "circle", "gait": "glide", "facing": 15, "transitionMeasures": 8, "label": "Closing Wheel" },
-    { "measure": 209, "formation": "company-front", "gait": "march", "facing": 180, "transitionMeasures": 4, "label": "Final Company Front" }
+    { "measure": 1, "formation": "block", "gait": "stand", "facing": 180, "transitionMeasures": 0, "label": "Four-Step Opening Block" },
+    { "measure": 17, "formation": "chevron", "gait": "march", "facing": 150, "transitionMeasures": 8, "label": "Diagonal Push" },
+    { "measure": 33, "formation": "company-front", "gait": "high-step", "facing": 120, "transitionMeasures": 8, "label": "Two-Rank Power Front" },
+    { "measure": 49, "formation": "arc", "gait": "glide", "facing": 45, "transitionMeasures": 8, "label": "Rising Concert Arc" },
+    { "measure": 65, "formation": "diamond", "gait": "march", "facing": 315, "transitionMeasures": 8, "label": "Liberty Diamond" },
+    { "measure": 81, "formation": "spiral", "gait": "jazz-run", "facing": 270, "transitionMeasures": 12, "label": "Countermarch Spiral" },
+    { "measure": 97, "formation": "circle", "gait": "glide", "facing": 210, "transitionMeasures": 8, "label": "Trio Wheel" },
+    { "measure": 113, "formation": "block", "gait": "mark-time", "facing": 180, "transitionMeasures": 8, "label": "Four-Step Trio Block" },
+    { "measure": 129, "formation": "chevron", "gait": "high-step", "facing": 225, "transitionMeasures": 8, "label": "Westward Chevron" },
+    { "measure": 145, "formation": "arc", "gait": "glide", "facing": 300, "transitionMeasures": 8, "label": "Expanding Grand Arc" },
+    { "measure": 161, "formation": "spiral", "gait": "jazz-run", "facing": 60, "transitionMeasures": 12, "label": "Final Strain Spiral" },
+    { "measure": 177, "formation": "diamond", "gait": "high-step", "facing": 135, "transitionMeasures": 8, "label": "Cross-Field Diamond" },
+    { "measure": 193, "formation": "circle", "gait": "march", "facing": 0, "transitionMeasures": 8, "label": "Closing Liberty Wheel" },
+    { "measure": 209, "formation": "company-front", "gait": "stand", "facing": 180, "transitionMeasures": 4, "label": "Four-Step Finale Front" }
   ]
 }
