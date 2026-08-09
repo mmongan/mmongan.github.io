@@ -54,7 +54,7 @@
 
       #music-panel {
         pointer-events: auto;
-        display: grid;
+        display: none !important;
         grid-template-columns: auto auto auto auto minmax(120px, 260px);
         align-items: center;
         gap: 8px;
@@ -99,7 +99,7 @@
       }
 
       #status {
-        pointer-events: none;
+        display: none;
         background: rgba(0, 0, 0, 0.55);
         color: #fff;
         font-size: 0.85rem;
@@ -128,6 +128,7 @@
       }
 
       #build-info {
+        display: none;
         position: fixed;
         top: 12px;
         right: 12px;
@@ -191,8 +192,8 @@
       }
 
     </style>
-    <script type="module" crossorigin src="/assets/field-BxpNTwqE.js"></script>
-    <link rel="modulepreload" crossorigin href="/assets/package-DDk5QU78.js">
+    <script type="module" crossorigin src="/assets/field-DBWEWTbe.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/package-D5dur5JI.js">
   </head>
   <body>
     <canvas id="render-canvas"></canvas>
