@@ -1,0 +1,2 @@
+import{I as i,J as e}from"./package-CrXyH5cV.js";class o extends i{constructor(t){super(t),this.config=t,this.executionFunction=this.registerDataInput("function",e),this.value=this.registerDataInput("value",e),this.result=this.registerDataOutput("result",e)}_updateOutputs(t){const s=this.executionFunction.getValue(t),u=this.value.getValue(t);s&&this.result.setValue(s(u,t),t)}getClassName(){return"FlowGraphCodeExecutionBlock"}}export{o as FlowGraphCodeExecutionBlock};
+//# sourceMappingURL=flowGraphCodeExecutionBlock-DTL62Qht.js.map
