@@ -1,10 +1,11 @@
 {
-  "title": "Stars and Stripes 16-Measure Drill",
+  "title": "Stars and Stripes Regulation 8-to-5 Drill",
   "midi": "the-stars-and-stripes-forever.mid",
   "source": "Mutopia Project public-domain edition of J. P. Sousa's The Stars and Stripes Forever",
+  "spacing": "8-to-5 (22.5-inch intervals)",
   "cues": [
-    { "measure": 1, "formation": "block", "gait": "mark-time", "transitionMeasures": 0, "label": "Opening Block" },
-    { "measure": 17, "formation": "company-front", "gait": "march", "transitionMeasures": 8, "label": "Company Front" },
+    { "measure": 1, "formation": "block", "gait": "mark-time", "transitionMeasures": 0, "label": "8-to-5 Opening Block" },
+    { "measure": 17, "formation": "company-front", "gait": "march", "transitionMeasures": 8, "label": "49-Yard Company Front" },
     { "measure": 33, "formation": "chevron", "gait": "high-step", "transitionMeasures": 8, "label": "Forward Chevron" },
     { "measure": 49, "formation": "arc", "gait": "glide", "transitionMeasures": 8, "label": "Concert Arc" },
     { "measure": 65, "formation": "diamond", "gait": "march", "transitionMeasures": 8, "label": "Sousa Diamond" },
