@@ -3,218 +3,168 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta
-      http-equiv="Permissions-Policy"
-      content="xr-spatial-tracking=(*)"
-    />
-    <title>ChartXR</title>
+    <title>XR Experiences</title>
+    <script>
+      if (new URLSearchParams(location.search).has("performance-test")) {
+        location.replace(`./chart-xr.html${location.search}`);
+      }
+    </script>
     <style>
-      /* Fill the full viewport with no scroll bars */
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
+      :root {
+        color-scheme: dark;
+        --ink: #f3f0e7;
+        --muted: #aeb9b2;
+        --line: rgba(243, 240, 231, 0.2);
+        --field: #1f7049;
+        --graph: #1aa9bd;
       }
 
-      html,
+      * { box-sizing: border-box; }
+
+      html, body { min-height: 100%; margin: 0; }
+
       body {
-        width: 100%;
-        height: 100%;
-        overflow: hidden;
-        background: #07130d;
+        background: #07110d;
+        color: var(--ink);
         font-family: Georgia, "Times New Roman", serif;
       }
 
-      #render-canvas {
-        width: 100%;
-        height: 100%;
-        touch-action: none; /* prevent scroll-hijack on touch devices */
-        display: block;
+      main {
+        min-height: 100vh;
+        display: grid;
+        grid-template-rows: auto 1fr;
       }
 
-      /* ── AR overlay UI ──────────────────────────────────────────────── */
-      #overlay {
-        position: fixed;
-        inset: 0;
-        pointer-events: none;
+      header {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 24px;
+        padding: 28px clamp(22px, 5vw, 72px);
+        border-bottom: 1px solid var(--line);
+      }
+
+      h1 { margin: 0; font-size: clamp(1.45rem, 3vw, 2.2rem); font-weight: 500; }
+      header p { margin: 0; color: var(--muted); font: 0.78rem/1.4 "Trebuchet MS", sans-serif; text-transform: uppercase; }
+
+      .experiences {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        min-height: 0;
+      }
+
+      .experience {
+        position: relative;
+        min-height: 520px;
+        padding: clamp(28px, 5vw, 72px);
         display: flex;
         flex-direction: column;
-        align-items: center;
-        justify-content: flex-end;
-        padding-bottom: env(safe-area-inset-bottom, 24px);
-        gap: 12px;
-      }
-
-      #xr-button-row {
-        display: flex;
-        flex-wrap: wrap;
-        justify-content: center;
-        gap: 10px;
-      }
-
-      #music-panel {
-        pointer-events: auto;
-        display: none !important;
-        grid-template-columns: auto auto auto auto minmax(120px, 260px);
-        align-items: center;
-        gap: 8px;
-        width: min(94vw, 760px);
-        padding: 10px;
-        border: 1px solid rgba(245, 240, 223, 0.35);
-        border-radius: 6px;
-        background: rgba(7, 19, 13, 0.88);
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-        backdrop-filter: blur(8px);
-      }
-
-      #music-panel button,
-      #music-panel label {
-        min-height: 36px;
-        border: 0;
-        border-radius: 4px;
-        padding: 8px 12px;
-        background: #f5f0df;
-        color: #07130d;
-        font: 700 0.85rem Georgia, "Times New Roman", serif;
-        cursor: pointer;
-        text-align: center;
-      }
-
-      #music-panel button:disabled {
-        cursor: default;
-        opacity: 0.45;
-      }
-
-      #music-position {
-        width: 100%;
-        accent-color: #c92532;
-      }
-
-      .file-input {
-        position: absolute;
-        width: 1px;
-        height: 1px;
+        justify-content: space-between;
         overflow: hidden;
-        clip: rect(0, 0, 0, 0);
+        color: inherit;
+        text-decoration: none;
+        isolation: isolate;
       }
 
-      #status {
-        display: none;
-        background: rgba(0, 0, 0, 0.55);
-        color: #fff;
-        font-size: 0.85rem;
-        padding: 6px 14px;
-        border-radius: 6px;
-        backdrop-filter: blur(6px);
-        max-width: 90vw;
-        text-align: center;
+      .experience + .experience { border-left: 1px solid var(--line); }
+
+      .experience::before,
+      .experience::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        z-index: -1;
+        transition: transform 320ms ease, opacity 320ms ease;
       }
 
-      .xr-button {
-        pointer-events: auto;
-        border: none;
-        border-radius: 4px;
-        padding: 10px 16px;
-        font-size: 1rem;
-        font-weight: 600;
-        color: #07111f;
-        background: #f5f0df;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+      .chart::before {
+        background:
+          linear-gradient(90deg, transparent 49.7%, rgba(255,255,255,0.22) 49.7% 50.3%, transparent 50.3%),
+          repeating-linear-gradient(90deg, transparent 0 9.7%, rgba(255,255,255,0.13) 9.7% 10%),
+          linear-gradient(145deg, #164f36, #092018 70%);
       }
 
-      .xr-button:disabled {
-        opacity: 0.7;
-        cursor: wait;
+      .chart::after {
+        inset: 18% 10%;
+        opacity: 0.65;
+        background-image: radial-gradient(circle, #f1eee3 0 3px, transparent 4px);
+        background-size: 38px 38px;
+        transform: rotate(-5deg);
       }
 
-      #build-info {
-        display: none;
-        position: fixed;
-        top: 12px;
-        right: 12px;
-        z-index: 9999;
-        pointer-events: none;
-        background: rgba(0, 0, 0, 0.6);
-        color: #fff;
-        font-size: 0.8rem;
-        padding: 6px 10px;
-        border-radius: 4px;
-        backdrop-filter: blur(6px);
+      .ast::before {
+        background:
+          linear-gradient(rgba(6, 18, 25, 0.15), rgba(4, 13, 18, 0.85)),
+          repeating-linear-gradient(35deg, transparent 0 42px, rgba(26,169,189,0.12) 43px 44px),
+          #081b24;
       }
 
-      #controller-palette {
-        position: fixed;
-        left: 50%;
-        bottom: 24px;
-        transform: translateX(-50%);
-        display: none;
-        flex-wrap: wrap;
-        gap: 10px;
-        max-width: min(92vw, 620px);
-        padding: 12px 14px;
-        border-radius: 18px;
-        background: rgba(7, 17, 31, 0.9);
-        border: 1px solid rgba(114, 240, 255, 0.35);
-        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
-        backdrop-filter: blur(8px);
-        z-index: 10000;
-        pointer-events: auto;
+      .ast::after {
+        inset: 14% 12%;
+        opacity: 0.75;
+        background-image:
+          radial-gradient(circle, #6ee7f2 0 5px, transparent 6px),
+          radial-gradient(circle, #d7a34c 0 4px, transparent 5px);
+        background-position: 0 0, 28px 28px;
+        background-size: 56px 56px;
+        transform: rotate(7deg);
       }
 
-      #controller-palette.visible {
-        display: flex;
+      .experience:hover::after,
+      .experience:focus-visible::after { transform: scale(1.06) rotate(0); opacity: 0.95; }
+      .experience:focus-visible { outline: 3px solid var(--ink); outline-offset: -3px; }
+
+      .number { color: var(--muted); font: 0.78rem/1 "Trebuchet MS", sans-serif; }
+      .copy { max-width: 560px; }
+      h2 { margin: 0 0 14px; font-size: clamp(2.7rem, 7vw, 6.4rem); line-height: 0.9; font-weight: 500; }
+      .copy p { margin: 0 0 28px; max-width: 42ch; color: #d7ddd8; font: 1rem/1.65 "Trebuchet MS", sans-serif; }
+
+      .launch {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        border-top: 1px solid currentColor;
+        padding-top: 12px;
+        font: 700 0.82rem/1 "Trebuchet MS", sans-serif;
+        text-transform: uppercase;
       }
 
-      .palette-button {
-        border: none;
-        border-radius: 999px;
-        padding: 8px 12px;
-        font-size: 0.95rem;
-        font-weight: 600;
-        color: #07111f;
-        background: linear-gradient(135deg, #72f0ff, #7cffb4);
-        cursor: pointer;
+      .launch::after { content: "\2192"; font-size: 1.35rem; }
+      .chart .launch { color: #b9efca; }
+      .ast .launch { color: #8debf2; }
+
+      @media (max-width: 760px) {
+        header { align-items: flex-start; flex-direction: column; }
+        .experiences { grid-template-columns: 1fr; }
+        .experience { min-height: 430px; }
+        .experience + .experience { border-left: 0; border-top: 1px solid var(--line); }
       }
-
-      .palette-button.active {
-        outline: 2px solid #fff;
-        background: linear-gradient(135deg, #7cffb4, #72f0ff);
-      }
-
-      @media (max-width: 620px) {
-        #music-panel {
-          grid-template-columns: repeat(4, 1fr);
-        }
-
-        #music-position {
-          grid-column: 1 / -1;
-        }
-      }
-
     </style>
-    <script type="module" crossorigin src="/assets/field-DSrQzHqR.js"></script>
-    <link rel="modulepreload" crossorigin href="/assets/package-C19L1QBo.js">
   </head>
   <body>
-    <canvas id="render-canvas"></canvas>
-    <div id="build-info">Loading field…</div>
-
-    <div id="overlay">
-      <div id="music-panel" aria-label="MIDI transport">
-        <label for="midi-file">Load MIDI</label>
-        <input id="midi-file" class="file-input" type="file" accept=".mid,.midi,audio/midi,audio/x-midi" />
-        <label for="drill-file">Load Drill</label>
-        <input id="drill-file" class="file-input" type="file" accept=".shw,.viewer,.json,application/json" />
-        <button id="play-button" type="button" disabled>Play</button>
-        <button id="stop-button" type="button" disabled>Stop</button>
-        <input id="music-position" type="range" min="0" max="1" step="0.001" value="0" aria-label="Music position" disabled />
-      </div>
-      <div id="xr-button-row">
-        <button id="enter-ar-button" class="xr-button" type="button">Enter Field AR</button>
-        <button id="enter-vr-button" class="xr-button" type="button">Enter Stadium VR</button>
-      </div>
-      <span id="status">Preparing the field…</span>
-    </div>
-
+    <main>
+      <header>
+        <h1>Choose an XR experience</h1>
+        <p>Browser preview / Meta Quest 3</p>
+      </header>
+      <section class="experiences" aria-label="Available XR experiences">
+        <a class="experience chart" href="./chart-xr.html">
+          <span class="number">01 / Marching field</span>
+          <div class="copy">
+            <h2>ChartXR</h2>
+            <p>Explore CalChart drill, synchronized music, and 208 animated performers on a regulation field.</p>
+            <span class="launch">Open ChartXR</span>
+          </div>
+        </a>
+        <a class="experience ast" href="./ast-xr.html">
+          <span class="number">02 / Spatial code graph</span>
+          <div class="copy">
+            <h2>AST XR</h2>
+            <p>Navigate and manipulate a spatial TypeScript syntax graph with Quest controllers.</p>
+            <span class="launch">Open AST XR</span>
+          </div>
+        </a>
+      </section>
+    </main>
   </body>
 </html>
