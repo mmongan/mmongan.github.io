@@ -6,7 +6,7 @@
     <title>XR Experiences</title>
     <script>
       if (new URLSearchParams(location.search).has("performance-test")) {
-        location.replace(`./chart-xr.html${location.search}`);
+        location.replace(`./src/chart-xr/${location.search}`);
       }
     </script>
     <style>
@@ -148,7 +148,7 @@
         <p>Browser preview / Meta Quest 3</p>
       </header>
       <section class="experiences" aria-label="Available XR experiences">
-        <a class="experience chart" href="./chart-xr.html">
+        <a class="experience chart" href="./src/chart-xr/">
           <span class="number">01 / Marching field</span>
           <div class="copy">
             <h2>ChartXR</h2>
@@ -156,7 +156,7 @@
             <span class="launch">Open ChartXR</span>
           </div>
         </a>
-        <a class="experience ast" href="./ast-xr.html">
+        <a class="experience ast" href="./src/ast-xr/">
           <span class="number">02 / Spatial code graph</span>
           <div class="copy">
             <h2>AST XR</h2>
