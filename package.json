@@ -1,0 +1,21 @@
+{
+  "name": "mmongan.github.io",
+  "version": "1.0.0",
+  "description": "This project is a simple Babylon.js scene that supports both VR and AR sessions for a Meta Quest 3 headset.",
+  "homepage": "https://github.com/mmongan/mmongan.github.io#readme",
+  "bugs": {
+    "url": "https://github.com/mmongan/mmongan.github.io/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mmongan/mmongan.github.io.git"
+  },
+  "license": "ISC",
+  "author": "",
+  "type": "commonjs",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "devDependencies": {}
+}

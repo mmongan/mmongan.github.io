@@ -1,0 +1,122 @@
+:root {
+  --bg: #070b14;
+  --panel: rgba(12, 20, 33, 0.72);
+  --panel-border: rgba(134, 169, 255, 0.45);
+  --text: #edf4ff;
+  --accent: #70a8ff;
+  --accent-strong: #3f7cf7;
+  --shadow: rgba(0, 0, 0, 0.38);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+body {
+  position: relative;
+}
+
+#renderCanvas {
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  display: block;
+}
+
+.hud {
+  position: absolute;
+  left: 20px;
+  right: 20px;
+  top: 20px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  pointer-events: none;
+}
+
+.title-panel, .button-row {
+  pointer-events: auto;
+  backdrop-filter: blur(8px);
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 16px;
+  box-shadow: 0 10px 30px var(--shadow);
+}
+
+.title-panel {
+  padding: 12px 16px;
+}
+
+.title-panel h1 {
+  margin: 0;
+  font-size: clamp(1.1rem, 2vw, 1.8rem);
+  line-height: 1.1;
+}
+
+.title-panel p {
+  margin: 6px 0 0;
+  font-size: 0.85rem;
+  color: rgba(237, 244, 255, 0.8);
+}
+
+.button-row {
+  display: flex;
+  gap: 10px;
+  padding: 12px;
+}
+
+.xr-button {
+  border: none;
+  border-radius: 12px;
+  padding: 0.9rem 1.35rem;
+  font-size: 1rem;
+  font-weight: 700;
+  color: white;
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  box-shadow: 0 12px 28px rgba(63, 124, 247, 0.45);
+  cursor: pointer;
+  transition: transform 0.14s ease, filter 0.14s ease;
+}
+
+.xr-button.secondary {
+  background: linear-gradient(135deg, #7f8dd5, #5263d9);
+  box-shadow: 0 12px 28px rgba(82, 99, 217, 0.34);
+}
+
+.xr-button:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+
+.xr-button:active {
+  transform: translateY(0);
+}
+
+@media (max-width: 680px) {
+  .hud {
+    left: 12px;
+    right: 12px;
+    top: 12px;
+  }
+
+  .button-row {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .xr-button {
+    flex: 1;
+  }
+}
