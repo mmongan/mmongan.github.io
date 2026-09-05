@@ -8,8 +8,8 @@
       content="Babylon.js WebXR VR and AR demo for Meta Quest 3"
     />
     <title>Babylon.js Quest 3 VR/AR</title>
-    <script type="module" crossorigin src="/assets/index-brSZycdp.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-Sn1xVXD3.css">
+    <script type="module" crossorigin src="/assets/index-BoNyBAKe.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-C1oQjRew.css">
   </head>
   <body>
     <canvas id="renderCanvas"></canvas>
@@ -18,6 +18,19 @@
       <div class="title-panel">
         <h1>Quest 3 WebXR</h1>
         <p>Babylon.js VR / AR demo</p>
+      </div>
+
+      <div class="status-panel">
+        <span id="statusText">Trigger a controller to select an object.</span>
+      </div>
+
+      <div class="field-level-row">
+        <label for="fieldLevelSelect">Field markings:</label>
+        <select id="fieldLevelSelect">
+          <option value="highschool">High School</option>
+          <option value="college">College</option>
+          <option value="nfl" selected>NFL</option>
+        </select>
       </div>
 
       <div class="button-row">
