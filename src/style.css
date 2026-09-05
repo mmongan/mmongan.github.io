@@ -109,6 +109,56 @@ body {
   color: var(--text);
 }
 
+.settings-overlay {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(3, 6, 12, 0.55);
+  z-index: 10;
+}
+
+.settings-overlay.open {
+  display: flex;
+}
+
+.settings-panel {
+  pointer-events: auto;
+  backdrop-filter: blur(10px);
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 16px;
+  box-shadow: 0 20px 50px var(--shadow);
+  min-width: min(320px, 85vw);
+  padding: 16px 18px;
+}
+
+.settings-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+
+.settings-close-button {
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.settings-panel .field-level-row {
+  padding: 0;
+  background: none;
+  border: none;
+  box-shadow: none;
+}
+
 .xr-button {
   border: none;
   border-radius: 12px;

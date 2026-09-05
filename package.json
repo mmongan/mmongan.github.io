@@ -16,13 +16,17 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
-    "preview": "vite preview --host 0.0.0.0"
+    "preview": "vite preview --host 0.0.0.0",
+    "deploy": "vite build && node scripts/deploy.mjs"
   },
   "keywords": [],
   "dependencies": {
     "babylonjs": "^9.25.0",
     "vite": "^8.2.2"
   },
-  "main": "app.js",
-  "type": "module"
+  "main": "src/scene.ts",
+  "type": "module",
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  }
 }

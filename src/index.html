@@ -7,37 +7,38 @@
       name="description"
       content="Babylon.js WebXR VR and AR demo for Meta Quest 3"
     />
-    <title>Babylon.js Quest 3 VR/AR</title>
-    <script type="module" crossorigin src="/assets/index-C521QlB6.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-DG6ptBG5.css">
+    <title>Chartxr</title>
+    <link rel="stylesheet" href="style.css" />
   </head>
   <body>
     <canvas id="renderCanvas"></canvas>
 
     <div class="hud">
-      <div class="title-panel">
-        <h1>Quest 3 WebXR</h1>
-        <p>Babylon.js VR / AR demo</p>
-      </div>
-
-      <div class="status-panel">
-        <span id="statusText">Trigger a controller to select an object.</span>
-      </div>
-
-      <div class="field-level-row">
-        <label for="fieldLevelSelect">Field markings:</label>
-        <select id="fieldLevelSelect">
-          <option value="highschool" selected>High School</option>
-          <option value="college">College</option>
-          <option value="nfl">NFL</option>
-        </select>
-      </div>
-
       <div class="button-row">
         <button id="vrButton" class="xr-button">Enter VR</button>
         <button id="arButton" class="xr-button secondary">Enter AR</button>
+        <button id="settingsButton" class="xr-button secondary">Settings</button>
       </div>
     </div>
-
+
+    <div class="settings-overlay" id="settingsOverlay">
+      <div class="settings-panel">
+        <div class="settings-panel-header">
+          <span>Settings</span>
+          <button id="settingsCloseButton" class="settings-close-button">&times;</button>
+        </div>
+        <div class="field-level-row">
+          <label for="fieldLevelSelect">Field markings:</label>
+          <select id="fieldLevelSelect">
+            <option value="highschool" selected>High School</option>
+            <option value="college">College</option>
+            <option value="nfl">NFL</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/scene.ts"></script>
   </body>
 </html>
+

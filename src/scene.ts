@@ -1,10 +1,33 @@
 import * as BABYLON from 'babylonjs';
 
-const canvas = document.getElementById("renderCanvas");
-const vrButton = document.getElementById("vrButton");
-const arButton = document.getElementById("arButton");
+const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
+const vrButton = document.getElementById("vrButton") as HTMLButtonElement;
+const arButton = document.getElementById("arButton") as HTMLButtonElement;
 const statusText = document.getElementById("statusText");
-const fieldLevelSelect = document.getElementById("fieldLevelSelect");
+const fieldLevelSelect = document.getElementById("fieldLevelSelect") as HTMLSelectElement | null;
+const settingsButton = document.getElementById("settingsButton");
+const settingsOverlay = document.getElementById("settingsOverlay");
+const settingsCloseButton = document.getElementById("settingsCloseButton");
+
+if (settingsButton && settingsOverlay) {
+  settingsButton.addEventListener("click", () => {
+    settingsOverlay.classList.add("open");
+  });
+}
+
+if (settingsCloseButton && settingsOverlay) {
+  settingsCloseButton.addEventListener("click", () => {
+    settingsOverlay.classList.remove("open");
+  });
+}
+
+if (settingsOverlay) {
+  settingsOverlay.addEventListener("click", (event) => {
+    if (event.target === settingsOverlay) {
+      settingsOverlay.classList.remove("open");
+    }
+  });
+}
 
 const engine = new BABYLON.Engine(canvas, true, {
   preserveDrawingBuffer: true,
@@ -41,9 +64,16 @@ camera.minZ = 0.1;
 camera.maxZ = 2000;
 camera.inertia = 0.7;
 
+// Physically block the fly camera from passing through the ground or the
+// bleachers, instead of just clamping altitude.
+scene.collisionsEnabled = true;
+camera.checkCollisions = true;
+camera.ellipsoid = new BABYLON.Vector3(0.4, 0.9, 0.4);
+camera.ellipsoidOffset = new BABYLON.Vector3(0, 0, 0);
+
 // Arrow keys turn/look around (yaw with left/right, pitch with up/down),
 // same idea as mouse-look but for keyboard-only navigation.
-const turnKeysHeld = {};
+const turnKeysHeld: Record<string, boolean> = {};
 window.addEventListener("keydown", (event) => {
   if (event.key.startsWith("Arrow")) {
     turnKeysHeld[event.key] = true;
@@ -58,6 +88,15 @@ window.addEventListener("keyup", (event) => {
 const TURN_SPEED = 1.6; // radians per second
 const PITCH_LIMIT = 1.5;
 
+// Keep the player off the field's outer apron/void, and stop them before the
+// bleachers' near edge (fieldWidthYards/2 + 4 ≈ 30.67) entirely — cheaper and
+// simpler than colliding with every individual riser/bench mesh.
+const STADIUM_BOUNDARY_X = 29;
+const STADIUM_BOUNDARY_Z = 65;
+// Floor clamp instead of turf collision — the field mesh doesn't need
+// checkCollisions just to keep the camera from dropping below it.
+const FIELD_FLOOR_Y = -0.3;
+
 scene.onBeforeRenderObservable.add(() => {
   const turnAmount = (TURN_SPEED * engine.getDeltaTime()) / 1000;
   if (turnKeysHeld["ArrowLeft"]) camera.rotation.y -= turnAmount;
@@ -65,6 +104,10 @@ scene.onBeforeRenderObservable.add(() => {
   if (turnKeysHeld["ArrowUp"]) camera.rotation.x -= turnAmount;
   if (turnKeysHeld["ArrowDown"]) camera.rotation.x += turnAmount;
   camera.rotation.x = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, camera.rotation.x));
+
+  camera.position.x = Math.max(-STADIUM_BOUNDARY_X, Math.min(STADIUM_BOUNDARY_X, camera.position.x));
+  camera.position.z = Math.max(-STADIUM_BOUNDARY_Z, Math.min(STADIUM_BOUNDARY_Z, camera.position.z));
+  camera.position.y = Math.max(FIELD_FLOOR_Y, camera.position.y);
 });
 
 const hemiLight = new BABYLON.HemisphericLight(
@@ -85,7 +128,7 @@ dirLight.intensity = 0.8;
 const skyCanvas = document.createElement("canvas");
 skyCanvas.width = 512;
 skyCanvas.height = 512;
-const skyCtx = skyCanvas.getContext("2d");
+const skyCtx = skyCanvas.getContext("2d")!;
 const skyGradient = skyCtx.createLinearGradient(0, 0, 0, skyCanvas.height);
 skyGradient.addColorStop(0, "#1a3d8f");
 skyGradient.addColorStop(0.45, "#4d8fd6");
@@ -95,7 +138,7 @@ skyCtx.fillStyle = skyGradient;
 skyCtx.fillRect(0, 0, skyCanvas.width, skyCanvas.height);
 
 // Scatter soft, fluffy cloud clumps in the blue-sky band (avoids the zenith and the horizon glow).
-function drawCloudPuff(cx, cy, radius, alpha) {
+function drawCloudPuff(cx: number, cy: number, radius: number, alpha: number) {
   // Draw wrapped copies too so clouds near the left/right edge don't create a seam
   // where the sphere's UV wraps from x=width back to x=0.
   const offsets = [0];
@@ -167,30 +210,20 @@ horizonGroundMat.diffuseColor = new BABYLON.Color3(0.22, 0.32, 0.16);
 horizonGroundMat.specularColor = new BABYLON.Color3(0.05, 0.05, 0.05);
 horizonGroundMat.backFaceCulling = false;
 horizonGround.material = horizonGroundMat;
-
-const ground = BABYLON.MeshBuilder.CreateGround(
-  "ground",
-  { width: 80, height: 120 },
-  scene
-);
-ground.position.y = -0.51;
-
-ground.material = new BABYLON.StandardMaterial("groundMat", scene);
-ground.material.diffuseColor = new BABYLON.Color3(0.12, 0.18, 0.22);
-ground.material.specularColor = new BABYLON.Color3(0.1, 0.1, 0.1);
+horizonGround.checkCollisions = true;
 
 function createFootballField() {
   const fieldLengthYards = 120;
   const fieldWidthYards = 53.333;
   const endZoneDepthYards = 10;
   // Distance from the field's centerline to each hash mark, by level of play.
-  const HASH_OFFSETS_YARDS = {
+  const HASH_OFFSETS_YARDS: Record<string, number> = {
     nfl: 3.0833,
     college: 6.6667,
     highschool: 8.8889,
   };
   // Distance between goalpost uprights, by level of play.
-  const GOAL_POST_WIDTH_YARDS = {
+  const GOAL_POST_WIDTH_YARDS: Record<string, number> = {
     nfl: 6.1667,
     college: 6.1667,
     highschool: 7.7778,
@@ -206,11 +239,12 @@ function createFootballField() {
   const outerBaseMat = new BABYLON.StandardMaterial("outerBaseMat", scene);
   outerBaseMat.diffuseColor = new BABYLON.Color3(0.18, 0.2, 0.22);
   outerBase.material = outerBaseMat;
+  outerBase.checkCollisions = true;
 
   const turfCanvas = document.createElement("canvas");
   turfCanvas.width = 512;
   turfCanvas.height = 512;
-  const turfCtx = turfCanvas.getContext("2d");
+  const turfCtx = turfCanvas.getContext("2d")!;
 
   const baseGradient = turfCtx.createLinearGradient(0, 0, turfCanvas.width, turfCanvas.height);
   baseGradient.addColorStop(0, "rgb(48, 116, 52)");
@@ -287,7 +321,7 @@ function createFootballField() {
   const yardsPerBand = 5;
   const bandCount = fieldLengthYards / yardsPerBand;
   stripeCanvas.height = bandCount * 4;
-  const stripeCtx = stripeCanvas.getContext("2d");
+  const stripeCtx = stripeCanvas.getContext("2d")!;
   for (let band = 0; band < bandCount; band++) {
     stripeCtx.fillStyle = band % 2 === 0 ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.12)";
     stripeCtx.fillRect(0, band * 4, stripeCanvas.width, 4);
@@ -315,7 +349,7 @@ function createFootballField() {
     { width: fieldWidthYards, height: fieldLengthYards, subdivisions: 24 },
     scene
   );
-  mowStripes.position.y = -0.499;
+  mowStripes.position.y = -0.49;
   mowStripes.material = stripeMaterial;
 
   const whiteMaterial = new BABYLON.StandardMaterial("fieldLineMat", scene);
@@ -323,12 +357,12 @@ function createFootballField() {
   whiteMaterial.specularColor = new BABYLON.Color3(0.2, 0.2, 0.2);
 
   const endZoneMatLeft = new BABYLON.StandardMaterial("endZoneMatLeft", scene);
-  endZoneMatLeft.diffuseColor = new BABYLON.Color3(0.16, 0.34, 0.78);
-  endZoneMatLeft.specularColor = new BABYLON.Color3(0.08, 0.08, 0.08);
+  endZoneMatLeft.diffuseColor = new BABYLON.Color3(0.26, 0.2, 0.03);
+  endZoneMatLeft.specularColor = new BABYLON.Color3(0.05, 0.05, 0.05);
 
   const endZoneMatRight = new BABYLON.StandardMaterial("endZoneMatRight", scene);
-  endZoneMatRight.diffuseColor = new BABYLON.Color3(0.75, 0.16, 0.18);
-  endZoneMatRight.specularColor = new BABYLON.Color3(0.08, 0.08, 0.08);
+  endZoneMatRight.diffuseColor = new BABYLON.Color3(0.24, 0.05, 0.06);
+  endZoneMatRight.specularColor = new BABYLON.Color3(0.05, 0.05, 0.05);
 
   const leftEndZone = BABYLON.MeshBuilder.CreateBox(
     "leftEndZone",
@@ -351,7 +385,7 @@ function createFootballField() {
   for (let z = -50; z <= 50; z += 5) {
     const line = BABYLON.MeshBuilder.CreateBox(
       `yardLine${z}`,
-      { width: fieldWidthYards, height: 0.05, depth: 0.18 },
+      { width: fieldWidthYards, height: 0.015, depth: 0.18 },
       scene
     );
     line.position = new BABYLON.Vector3(0, -0.48, z);
@@ -365,27 +399,34 @@ function createFootballField() {
 
   const hashMarksGroup = new BABYLON.Mesh("hashMarks", scene);
 
-  function updateHashMarks(level) {
+  function updateHashMarks(level: string) {
     const offset = HASH_OFFSETS_YARDS[level] ?? HASH_OFFSETS_YARDS.nfl;
     hashMarksGroup.getChildMeshes().forEach((mesh) => mesh.dispose());
 
+    // Build all the individual tick marks, then merge them into a single mesh
+    // — hundreds of tiny separate boxes is a lot of draw calls for no reason.
+    const hashBoxes: BABYLON.Mesh[] = [];
     for (let z = -49; z <= 49; z += 1) {
       for (const x of [-offset, offset]) {
         const hashMark = BABYLON.MeshBuilder.CreateBox(
           `hashMark${z}_${x}`,
-          { width: 0.7, height: 0.04, depth: 0.18 },
+          { width: 0.7, height: 0.012, depth: 0.18 },
           scene
         );
         hashMark.position = new BABYLON.Vector3(x, -0.48, z);
-        hashMark.material = whiteMaterial;
-        hashMark.parent = hashMarksGroup;
+        hashBoxes.push(hashMark);
       }
     }
+
+    const mergedHashMarks = BABYLON.Mesh.MergeMeshes(hashBoxes, true, true, undefined, false, true)!;
+    mergedHashMarks.name = `hashMarksMerged_${level}`;
+    mergedHashMarks.material = whiteMaterial;
+    mergedHashMarks.parent = hashMarksGroup;
   }
 
   const midfieldLine = BABYLON.MeshBuilder.CreateBox(
     "midfieldLine",
-    { width: fieldWidthYards, height: 0.05, depth: 0.32 },
+    { width: fieldWidthYards, height: 0.015, depth: 0.32 },
     scene
   );
   midfieldLine.position = new BABYLON.Vector3(0, -0.48, 0);
@@ -394,7 +435,7 @@ function createFootballField() {
 
   const goalLineNorth = BABYLON.MeshBuilder.CreateBox(
     "goalLineNorth",
-    { width: fieldWidthYards, height: 0.05, depth: 0.26 },
+    { width: fieldWidthYards, height: 0.015, depth: 0.26 },
     scene
   );
   goalLineNorth.position = new BABYLON.Vector3(0, -0.48, -60);
@@ -402,7 +443,7 @@ function createFootballField() {
 
   const goalLineSouth = BABYLON.MeshBuilder.CreateBox(
     "goalLineSouth",
-    { width: fieldWidthYards, height: 0.05, depth: 0.26 },
+    { width: fieldWidthYards, height: 0.015, depth: 0.26 },
     scene
   );
   goalLineSouth.position = new BABYLON.Vector3(0, -0.48, 60);
@@ -413,7 +454,7 @@ function createFootballField() {
 
   const leftSideline = BABYLON.MeshBuilder.CreateBox(
     "leftSideline",
-    { width: 0.2, height: 0.05, depth: fieldLengthYards },
+    { width: 0.2, height: 0.015, depth: fieldLengthYards },
     scene
   );
   leftSideline.position = new BABYLON.Vector3(-fieldWidthYards / 2, -0.48, 0);
@@ -421,7 +462,7 @@ function createFootballField() {
 
   const rightSideline = BABYLON.MeshBuilder.CreateBox(
     "rightSideline",
-    { width: 0.2, height: 0.05, depth: fieldLengthYards },
+    { width: 0.2, height: 0.015, depth: fieldLengthYards },
     scene
   );
   rightSideline.position = new BABYLON.Vector3(fieldWidthYards / 2, -0.48, 0);
@@ -431,9 +472,9 @@ function createFootballField() {
   const numberCanvas = document.createElement("canvas");
   numberCanvas.width = 256;
   numberCanvas.height = 256;
-  const numberCtx = numberCanvas.getContext("2d");
+  const numberCtx = numberCanvas.getContext("2d")!;
 
-  function createYardNumberTexture(label) {
+  function createYardNumberTexture(label: string) {
     numberCtx.clearRect(0, 0, numberCanvas.width, numberCanvas.height);
     numberCtx.fillStyle = "white";
     numberCtx.font = "bold 200px Arial";
@@ -498,7 +539,15 @@ function createFootballField() {
   supportMat.specularColor = new BABYLON.Color3(0.1, 0.1, 0.1);
 
   // Bleacher tier counts and proportions differ a lot by level of play.
-  const STAND_CONFIGS = {
+  type StandConfig = {
+    rows: number;
+    standLength: number;
+    offset: number;
+    hasUpperDeck: boolean;
+    upperRows?: number;
+    upperStandLength?: number;
+  };
+  const STAND_CONFIGS: Record<string, StandConfig> = {
     highschool: {
       rows: 6,
       standLength: fieldLengthYards * 0.55,
@@ -530,7 +579,14 @@ function createFootballField() {
 
   // Builds one terraced tier as a hollow staircase profile (riser face + tread),
   // not a solid filled wedge, so it reads as bleacher steps instead of a building.
-  function buildBleacherTier(side, rows, standLength, baseOffset, startY, parent) {
+  function buildBleacherTier(
+    side: number,
+    rows: number,
+    standLength: number,
+    baseOffset: number,
+    startY: number,
+    parent: BABYLON.Mesh
+  ): number {
     for (let row = 0; row < rows; row++) {
       const stepFrontOffset = baseOffset + row * ROW_DEPTH;
       const riserCenterX = side * (fieldWidthYards / 2 + stepFrontOffset);
@@ -580,7 +636,7 @@ function createFootballField() {
     return tierTopY;
   }
 
-  function updateStands(level) {
+  function updateStands(level: string) {
     const config = STAND_CONFIGS[level] ?? STAND_CONFIGS.nfl;
     standsGroup.getChildMeshes().forEach((mesh) => mesh.dispose());
 
@@ -598,11 +654,11 @@ function createFootballField() {
         // Upper deck starts right where the lower bowl's footprint ends, so the
         // concourse wall below it lines up flush with the lower tier's back wall.
         const upperBaseOffset = config.offset + config.rows * ROW_DEPTH;
-        const upperSpan = config.upperRows * ROW_DEPTH;
+        const upperSpan = config.upperRows! * ROW_DEPTH;
 
         const concourseWall = BABYLON.MeshBuilder.CreateBox(
           `concourseWall${side}`,
-          { width: upperSpan, height: CONCOURSE_GAP, depth: config.upperStandLength },
+          { width: upperSpan, height: CONCOURSE_GAP, depth: config.upperStandLength! },
           scene
         );
         concourseWall.position = new BABYLON.Vector3(
@@ -615,8 +671,8 @@ function createFootballField() {
 
         buildBleacherTier(
           side,
-          config.upperRows,
-          config.upperStandLength,
+          config.upperRows!,
+          config.upperStandLength!,
           upperBaseOffset,
           lowerTopY + CONCOURSE_GAP,
           standsGroup
@@ -627,7 +683,7 @@ function createFootballField() {
 
   const goalPosts = new BABYLON.Mesh("goalPosts", scene);
 
-  function updateGoalPosts(level) {
+  function updateGoalPosts(level: string) {
     const postHalfWidth = (GOAL_POST_WIDTH_YARDS[level] ?? GOAL_POST_WIDTH_YARDS.nfl) / 2;
     goalPosts.getChildMeshes().forEach((mesh) => mesh.dispose());
 
@@ -638,7 +694,7 @@ function createFootballField() {
           { diameter: 0.12, height: 1.6 },
           scene
         );
-        upright.position = new BABYLON.Vector3(i * postHalfWidth, 3.4, goalZ);
+        upright.position = new BABYLON.Vector3(i * postHalfWidth, 2.9, goalZ);
         upright.material = sidelineMat;
         upright.parent = goalPosts;
       }
@@ -648,7 +704,7 @@ function createFootballField() {
         { width: postHalfWidth * 2, height: 0.12, depth: 0.12 },
         scene
       );
-      crossbar.position = new BABYLON.Vector3(0, 2.6, goalZ);
+      crossbar.position = new BABYLON.Vector3(0, 2.1, goalZ);
       crossbar.material = sidelineMat;
       crossbar.parent = goalPosts;
 
@@ -657,7 +713,7 @@ function createFootballField() {
         { diameter: 0.16, height: 2.6 },
         scene
       );
-      supportPost.position = new BABYLON.Vector3(0, 1.3, goalZ);
+      supportPost.position = new BABYLON.Vector3(0, 0.8, goalZ);
       supportPost.material = sidelineMat;
       supportPost.parent = goalPosts;
     }
@@ -672,7 +728,7 @@ function createFootballField() {
     const boardCanvas = document.createElement("canvas");
     boardCanvas.width = 512;
     boardCanvas.height = 256;
-    const boardCtx = boardCanvas.getContext("2d");
+    const boardCtx = boardCanvas.getContext("2d")!;
 
     boardCtx.fillStyle = "#0a0f0a";
     boardCtx.fillRect(0, 0, boardCanvas.width, boardCanvas.height);
@@ -735,13 +791,16 @@ function createFootballField() {
     const poleMaterial = new BABYLON.StandardMaterial("scoreboardPoleMaterial", scene);
     poleMaterial.diffuseColor = new BABYLON.Color3(0.2, 0.21, 0.23);
 
+    // Poles run from the actual field surface (y=-0.5) up to the board frame.
+    const scoreboardPoleTopY = boardY - boardHeight / 2 + 0.3;
+    const scoreboardPoleHeight = scoreboardPoleTopY - -0.5;
     for (const x of [-3, 3]) {
       const pole = BABYLON.MeshBuilder.CreateCylinder(
         `scoreboardPole${x}`,
-        { diameter: 0.5, height: boardY - boardHeight / 2 + 0.3 },
+        { diameter: 0.5, height: scoreboardPoleHeight },
         scene
       );
-      pole.position = new BABYLON.Vector3(x, (boardY - boardHeight / 2 + 0.3) / 2, boardZ);
+      pole.position = new BABYLON.Vector3(x, -0.5 + scoreboardPoleHeight / 2, boardZ);
       pole.material = poleMaterial;
     }
   }
@@ -755,7 +814,7 @@ function createFootballField() {
     const videoCanvas = document.createElement("canvas");
     videoCanvas.width = 640;
     videoCanvas.height = 360;
-    const videoCtx = videoCanvas.getContext("2d");
+    const videoCtx = videoCanvas.getContext("2d")!;
 
     const bgGradient = videoCtx.createLinearGradient(0, 0, videoCanvas.width, videoCanvas.height);
     bgGradient.addColorStop(0, "#0b1a3d");
@@ -772,7 +831,7 @@ function createFootballField() {
     videoCtx.font = "bold 78px 'Segoe UI', Arial";
     videoCtx.textAlign = "center";
     videoCtx.textBaseline = "middle";
-    videoCtx.fillText("GAME DAY", videoCanvas.width / 2, videoCanvas.height * 0.5);
+    videoCtx.fillText("Chartxr", videoCanvas.width / 2, videoCanvas.height * 0.5);
 
     const barColors = ["#e63946", "#f1a208", "#2a9d8f", "#457b9d", "#e63946"];
     const barWidth = videoCanvas.width / barColors.length;
@@ -820,13 +879,16 @@ function createFootballField() {
     const poleMaterial = new BABYLON.StandardMaterial("videoBoardPoleMaterial", scene);
     poleMaterial.diffuseColor = new BABYLON.Color3(0.2, 0.21, 0.23);
 
+    // Poles run from the actual field surface (y=-0.5) up to the board frame.
+    const videoBoardPoleTopY = boardY - boardHeight / 2 + 0.3;
+    const videoBoardPoleHeight = videoBoardPoleTopY - -0.5;
     for (const x of [-4.5, 4.5]) {
       const pole = BABYLON.MeshBuilder.CreateCylinder(
         `videoBoardPole${x}`,
-        { diameter: 0.6, height: boardY - boardHeight / 2 + 0.3 },
+        { diameter: 0.6, height: videoBoardPoleHeight },
         scene
       );
-      pole.position = new BABYLON.Vector3(x, (boardY - boardHeight / 2 + 0.3) / 2, boardZ);
+      pole.position = new BABYLON.Vector3(x, -0.5 + videoBoardPoleHeight / 2, boardZ);
       pole.material = poleMaterial;
     }
   }
@@ -834,7 +896,7 @@ function createFootballField() {
   createScoreboard();
   createVideoBoard();
 
-  function setFieldLevel(level) {
+  function setFieldLevel(level: string) {
     updateHashMarks(level);
     updateGoalPosts(level);
     updateStands(level);
@@ -849,7 +911,7 @@ const footballField = createFootballField();
 
 if (fieldLevelSelect) {
   fieldLevelSelect.addEventListener("change", (event) => {
-    footballField.setFieldLevel(event.target.value);
+    footballField.setFieldLevel((event.target as HTMLSelectElement).value);
   });
 }
 
@@ -927,7 +989,7 @@ const interactiveObjects = [
 
 // AR tabletop mode: shrink the whole stadium onto a table and hide the
 // world-scale sky/ground, which only make sense for the full-scale VR view.
-const AR_HIDDEN_MESH_NAMES = new Set(["skyBox", "horizonGround", "ground"]);
+const AR_HIDDEN_MESH_NAMES = new Set(["skyBox", "horizonGround"]);
 const AR_SCALE = 0.02;
 const contentRootMeshes = scene.meshes.filter((mesh) => !mesh.parent);
 const arRoot = new BABYLON.TransformNode("arRoot", scene);
@@ -961,14 +1023,14 @@ function exitARTabletopMode() {
   arRoot.position.setAll(0);
 }
 
-const selectedState = {
+const selectedState: { current: BABYLON.Mesh | null; previous: BABYLON.Mesh | null } = {
   current: null,
   previous: null,
 };
 
-let activeController = null;
+let activeController: BABYLON.WebXRInputSource | null = null;
 
-function applySelection(mesh, label) {
+function applySelection(mesh: BABYLON.Mesh | null, label: string) {
   if (!mesh) {
     return;
   }
@@ -980,7 +1042,9 @@ function applySelection(mesh, label) {
   selectedState.current = mesh;
   selectedState.previous = mesh;
   mesh.scaling = new BABYLON.Vector3(1.18, 1.18, 1.18);
-  statusText.textContent = `Selected: ${label} — rotate with the controller`;
+  if (statusText) {
+    statusText.textContent = `Selected: ${label} — rotate with the controller`;
+  }
 }
 
 function attachSelectionActions() {
@@ -1023,7 +1087,7 @@ scene.registerBeforeRender(() => {
   }
 });
 
-async function checkSessionSupport(mode) {
+async function checkSessionSupport(mode: XRSessionMode) {
   if (!navigator.xr) {
     alert("WebXR is not available in this browser. Use Meta Quest Browser or another WebXR-enabled browser.");
     return false;
@@ -1042,7 +1106,7 @@ async function checkSessionSupport(mode) {
 const teleportGridCanvas = document.createElement("canvas");
 teleportGridCanvas.width = 64;
 teleportGridCanvas.height = 64;
-const teleportGridCtx = teleportGridCanvas.getContext("2d");
+const teleportGridCtx = teleportGridCanvas.getContext("2d")!;
 teleportGridCtx.clearRect(0, 0, 64, 64);
 teleportGridCtx.strokeStyle = "rgba(120, 220, 255, 0.9)";
 teleportGridCtx.lineWidth = 2;
@@ -1081,13 +1145,13 @@ teleportGrid.material = teleportGridMaterial;
 teleportGrid.isPickable = false;
 teleportGrid.setEnabled(false);
 
-async function startXR(mode) {
+async function startXR(mode: XRSessionMode) {
   if (!(await checkSessionSupport(mode))) {
     return;
   }
 
   try {
-    const teleportFloorMeshes = ["ground", "field", "horizonGround", "outerBase"]
+    const teleportFloorMeshes = ["field", "horizonGround", "outerBase"]
       .map((name) => scene.getMeshByName(name))
       .filter((mesh) => mesh !== null);
 
@@ -1095,7 +1159,6 @@ async function startXR(mode) {
       uiOptions: {
         sessionMode: mode,
         referenceSpaceType: "local-floor",
-        ignoreNativeCamera: false,
       },
       optionalFeatures: true,
       floorMeshes: teleportFloorMeshes,
@@ -1107,7 +1170,7 @@ async function startXR(mode) {
 
     const teleportation = xrExperience.teleportation;
     if (teleportation) {
-      let gridHideTimeout = null;
+      let gridHideTimeout: ReturnType<typeof setTimeout> | undefined;
       teleportation.onTargetMeshPositionUpdatedObservable.add(() => {
         teleportGrid.setEnabled(true);
         clearTimeout(gridHideTimeout);
