@@ -728,7 +728,7 @@ function createFootballField() {
       { width: boardWidth, height: boardHeight },
       scene
     );
-    screen.position = new BABYLON.Vector3(0, boardY, boardZ + 0.31);
+    screen.position = new BABYLON.Vector3(0, boardY, boardZ + 0.4);
     screen.rotation.y = Math.PI;
     screen.material = boardMaterial;
 
@@ -814,7 +814,7 @@ function createFootballField() {
       { width: boardWidth, height: boardHeight },
       scene
     );
-    screen.position = new BABYLON.Vector3(0, boardY, boardZ - 0.36);
+    screen.position = new BABYLON.Vector3(0, boardY, boardZ - 0.45);
     screen.material = videoMaterial;
 
     const poleMaterial = new BABYLON.StandardMaterial("videoBoardPoleMaterial", scene);
