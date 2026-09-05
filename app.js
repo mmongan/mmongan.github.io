@@ -1115,9 +1115,14 @@ async function startXR(mode) {
       });
     }
 
+    if (mode === "immersive-ar") {
+      enterARTabletopMode();
+    }
+
     xrExperience.baseExperience.onStateChangedObservable.add((state) => {
       if (state === BABYLON.WebXRState.NOT_IN_XR) {
         teleportGrid.setEnabled(false);
+        exitARTabletopMode();
       }
     });
 
