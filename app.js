@@ -1,3 +1,5 @@
+import * as BABYLON from 'babylonjs';
+
 const canvas = document.getElementById("renderCanvas");
 const vrButton = document.getElementById("vrButton");
 const arButton = document.getElementById("arButton");

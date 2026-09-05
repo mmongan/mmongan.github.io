@@ -1,7 +1,8 @@
 {
   "name": "mmongan.github.io",
+  "private": true,
   "version": "1.0.0",
-  "description": "This project is a simple Babylon.js scene that supports both VR and AR sessions for a Meta Quest 3 headset.",
+  "description": "Babylon.js WebXR VR/AR demo for Quest 3",
   "homepage": "https://github.com/mmongan/mmongan.github.io#readme",
   "bugs": {
     "url": "https://github.com/mmongan/mmongan.github.io/issues"
@@ -12,10 +13,14 @@
   },
   "license": "ISC",
   "author": "",
-  "type": "commonjs",
-  "main": "app.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0"
   },
-  "devDependencies": {}
+  "keywords": [],
+  "dependencies": {
+    "babylonjs": "^9.25.0",
+    "vite": "^8.2.2"
+  }
 }
