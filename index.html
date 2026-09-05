@@ -8,16 +8,14 @@
       content="Babylon.js WebXR VR and AR demo for Meta Quest 3"
     />
     <title>Chartxr</title>
-    <script type="module" crossorigin src="/assets/index-CAm7Eyih.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-Do5yqIvg.css">
+    <script type="module" crossorigin src="/assets/index-CLElfQy7.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-CCqY_1Xb.css">
   </head>
   <body>
     <canvas id="renderCanvas"></canvas>
 
     <div class="hud">
       <div class="button-row">
-        <button id="vrButton" class="xr-button">Enter VR</button>
-        <button id="arButton" class="xr-button secondary">Enter AR</button>
         <button id="settingsButton" class="xr-button secondary">Settings</button>
       </div>
     </div>
@@ -28,14 +26,40 @@
           <span>Settings</span>
           <button id="settingsCloseButton" class="settings-close-button">&times;</button>
         </div>
-        <div class="field-level-row">
-          <label for="fieldLevelSelect">Field markings:</label>
-          <select id="fieldLevelSelect">
-            <option value="highschool" selected>High School</option>
-            <option value="college">College</option>
-            <option value="nfl">NFL</option>
-          </select>
+
+        <div class="settings-group">
+          <label class="settings-label">XR mode</label>
+          <div class="radio-row">
+            <label class="radio-option">
+              <input type="radio" name="xrMode" value="immersive-vr" checked />
+              <span>VR</span>
+            </label>
+            <label class="radio-option">
+              <input type="radio" name="xrMode" value="immersive-ar" />
+              <span>AR</span>
+            </label>
+          </div>
         </div>
+
+        <div class="settings-group">
+          <label class="settings-label">Field markings</label>
+          <div class="radio-row">
+            <label class="radio-option">
+              <input type="radio" name="fieldLevel" value="highschool" checked />
+              <span>High School</span>
+            </label>
+            <label class="radio-option">
+              <input type="radio" name="fieldLevel" value="college" />
+              <span>College</span>
+            </label>
+            <label class="radio-option">
+              <input type="radio" name="fieldLevel" value="nfl" />
+              <span>NFL</span>
+            </label>
+          </div>
+        </div>
+
+        <button id="launchXRButton" class="xr-button">Launch selected mode</button>
       </div>
     </div>
 
