@@ -46,7 +46,7 @@ body {
   pointer-events: none;
 }
 
-.title-panel, .status-panel, .button-row {
+.title-panel, .status-panel, .button-row, .field-level-row {
   pointer-events: auto;
   backdrop-filter: blur(8px);
   background: var(--panel);
@@ -83,6 +83,30 @@ body {
   display: flex;
   gap: 10px;
   padding: 12px;
+}
+
+.field-level-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  font-size: 0.85rem;
+  color: rgba(237, 244, 255, 0.9);
+}
+
+.field-level-row select {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.field-level-row select option {
+  background-color: #0c1421;
+  color: var(--text);
 }
 
 .xr-button {

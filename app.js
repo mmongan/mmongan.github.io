@@ -15,18 +15,57 @@ const engine = new BABYLON.Engine(canvas, true, {
 const scene = new BABYLON.Scene(engine);
 scene.clearColor = new BABYLON.Color4(0.03, 0.05, 0.09, 1);
 
-const camera = new BABYLON.ArcRotateCamera(
+// Distance haze so the horizon ground fades out instead of ending at a hard edge.
+scene.fogMode = BABYLON.Scene.FOGMODE_LINEAR;
+scene.fogColor = new BABYLON.Color3(0.75, 0.88, 0.95);
+scene.fogStart = 90;
+scene.fogEnd = 260;
+
+// FPS-style fly camera: mouse-drag looks around, WASD moves in the direction
+// you're actually facing (including up/down when looking up or down) — the
+// standard control scheme for a free-fly/spectator camera in most games.
+const camera = new BABYLON.UniversalCamera(
   "camera",
-  -Math.PI / 2,
-  Math.PI / 3,
-  45,
-  new BABYLON.Vector3(0, 1.4, 0),
+  new BABYLON.Vector3(0, 5, -45),
   scene
 );
+camera.setTarget(new BABYLON.Vector3(0, 1.4, 0));
 camera.attachControl(canvas, true);
-camera.lowerRadiusLimit = 4;
-camera.upperRadiusLimit = 140;
-camera.wheelPrecision = 8;
+camera.keysUp = [87]; // W
+camera.keysDown = [83]; // S
+camera.keysLeft = [65]; // A
+camera.keysRight = [68]; // D
+camera.speed = 0.6;
+camera.angularSensibility = 4000;
+camera.minZ = 0.1;
+camera.maxZ = 2000;
+camera.inertia = 0.7;
+
+// Arrow keys turn/look around (yaw with left/right, pitch with up/down),
+// same idea as mouse-look but for keyboard-only navigation.
+const turnKeysHeld = {};
+window.addEventListener("keydown", (event) => {
+  if (event.key.startsWith("Arrow")) {
+    turnKeysHeld[event.key] = true;
+  }
+});
+window.addEventListener("keyup", (event) => {
+  if (event.key.startsWith("Arrow")) {
+    turnKeysHeld[event.key] = false;
+  }
+});
+
+const TURN_SPEED = 1.6; // radians per second
+const PITCH_LIMIT = 1.5;
+
+scene.onBeforeRenderObservable.add(() => {
+  const turnAmount = (TURN_SPEED * engine.getDeltaTime()) / 1000;
+  if (turnKeysHeld["ArrowLeft"]) camera.rotation.y -= turnAmount;
+  if (turnKeysHeld["ArrowRight"]) camera.rotation.y += turnAmount;
+  if (turnKeysHeld["ArrowUp"]) camera.rotation.x -= turnAmount;
+  if (turnKeysHeld["ArrowDown"]) camera.rotation.x += turnAmount;
+  camera.rotation.x = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, camera.rotation.x));
+});
 
 const hemiLight = new BABYLON.HemisphericLight(
   "hemiLight",
@@ -41,6 +80,93 @@ const dirLight = new BABYLON.DirectionalLight(
   scene
 );
 dirLight.intensity = 0.8;
+
+// Procedural gradient skybox with soft clouds (day sky, no external texture assets needed).
+const skyCanvas = document.createElement("canvas");
+skyCanvas.width = 512;
+skyCanvas.height = 512;
+const skyCtx = skyCanvas.getContext("2d");
+const skyGradient = skyCtx.createLinearGradient(0, 0, 0, skyCanvas.height);
+skyGradient.addColorStop(0, "#1a3d8f");
+skyGradient.addColorStop(0.45, "#4d8fd6");
+skyGradient.addColorStop(0.75, "#bfe0f2");
+skyGradient.addColorStop(1, "#eaf6ff");
+skyCtx.fillStyle = skyGradient;
+skyCtx.fillRect(0, 0, skyCanvas.width, skyCanvas.height);
+
+// Scatter soft, fluffy cloud clumps in the blue-sky band (avoids the zenith and the horizon glow).
+function drawCloudPuff(cx, cy, radius, alpha) {
+  // Draw wrapped copies too so clouds near the left/right edge don't create a seam
+  // where the sphere's UV wraps from x=width back to x=0.
+  const offsets = [0];
+  if (cx - radius < 0) offsets.push(skyCanvas.width);
+  if (cx + radius > skyCanvas.width) offsets.push(-skyCanvas.width);
+
+  for (const dx of offsets) {
+    const puffGradient = skyCtx.createRadialGradient(cx + dx, cy, 0, cx + dx, cy, radius);
+    puffGradient.addColorStop(0, `rgba(255, 255, 255, ${alpha})`);
+    puffGradient.addColorStop(1, "rgba(255, 255, 255, 0)");
+    skyCtx.fillStyle = puffGradient;
+    skyCtx.beginPath();
+    skyCtx.arc(cx + dx, cy, radius, 0, Math.PI * 2);
+    skyCtx.fill();
+  }
+}
+
+const cloudCount = 14;
+for (let i = 0; i < cloudCount; i++) {
+  const clusterX = Math.random() * skyCanvas.width;
+  const clusterY = skyCanvas.height * (0.16 + Math.random() * 0.38);
+  const puffs = 4 + Math.floor(Math.random() * 4);
+  for (let p = 0; p < puffs; p++) {
+    const offsetX = (Math.random() - 0.5) * 70;
+    const offsetY = (Math.random() - 0.5) * 18;
+    const radius = 18 + Math.random() * 26;
+    drawCloudPuff(clusterX + offsetX, clusterY + offsetY, radius, 0.35 + Math.random() * 0.3);
+  }
+}
+
+const skyTexture = new BABYLON.DynamicTexture(
+  "skyTexture",
+  skyCanvas,
+  scene,
+  false,
+  BABYLON.Texture.TRILINEAR_SAMPLINGMODE
+);
+skyTexture.update(false);
+skyTexture.wrapU = BABYLON.Texture.WRAP_ADDRESSMODE;
+skyTexture.wrapV = BABYLON.Texture.CLAMP_ADDRESSMODE;
+
+const skyMaterial = new BABYLON.StandardMaterial("skyMaterial", scene);
+skyMaterial.diffuseTexture = skyTexture;
+skyMaterial.emissiveColor = new BABYLON.Color3(1, 1, 1);
+skyMaterial.disableLighting = true;
+skyMaterial.specularColor = new BABYLON.Color3(0, 0, 0);
+skyMaterial.backFaceCulling = false;
+// Never let the huge sky sphere win the depth test and occlude real geometry.
+skyMaterial.disableDepthWrite = true;
+
+const skyBox = BABYLON.MeshBuilder.CreateSphere("skyBox", { diameter: 900, segments: 16 }, scene);
+skyBox.material = skyMaterial;
+skyBox.infiniteDistance = true;
+skyBox.applyFog = false;
+skyBox.renderingGroupId = 0;
+
+// Large horizon ground so the terrain doesn't just stop at a visible edge.
+// A circular disc (radius kept inside the fog-out distance) avoids visible
+// square corners poking through the haze at the horizon.
+const horizonGround = BABYLON.MeshBuilder.CreateDisc(
+  "horizonGround",
+  { radius: 240, tessellation: 64 },
+  scene
+);
+horizonGround.rotation.x = Math.PI / 2;
+horizonGround.position.y = -0.9;
+const horizonGroundMat = new BABYLON.StandardMaterial("horizonGroundMat", scene);
+horizonGroundMat.diffuseColor = new BABYLON.Color3(0.22, 0.32, 0.16);
+horizonGroundMat.specularColor = new BABYLON.Color3(0.05, 0.05, 0.05);
+horizonGroundMat.backFaceCulling = false;
+horizonGround.material = horizonGroundMat;
 
 const ground = BABYLON.MeshBuilder.CreateGround(
   "ground",
@@ -62,6 +188,12 @@ function createFootballField() {
     nfl: 3.0833,
     college: 6.6667,
     highschool: 8.8889,
+  };
+  // Distance between goalpost uprights, by level of play.
+  const GOAL_POST_WIDTH_YARDS = {
+    nfl: 6.1667,
+    college: 6.1667,
+    highschool: 7.7778,
   };
 
   const outerBase = BABYLON.MeshBuilder.CreateGround(
@@ -233,7 +365,7 @@ function createFootballField() {
 
   const hashMarksGroup = new BABYLON.Mesh("hashMarks", scene);
 
-  function setHashMarkLevel(level) {
+  function updateHashMarks(level) {
     const offset = HASH_OFFSETS_YARDS[level] ?? HASH_OFFSETS_YARDS.nfl;
     hashMarksGroup.getChildMeshes().forEach((mesh) => mesh.dispose());
 
@@ -250,8 +382,6 @@ function createFootballField() {
       }
     }
   }
-
-  setHashMarkLevel("nfl");
 
   const midfieldLine = BABYLON.MeshBuilder.CreateBox(
     "midfieldLine",
@@ -356,110 +486,370 @@ function createFootballField() {
   }
 
   const standsMat = new BABYLON.StandardMaterial("standsMat", scene);
-  standsMat.diffuseColor = new BABYLON.Color3(0.7, 0.71, 0.75);
-  standsMat.specularColor = new BABYLON.Color3(0.2, 0.2, 0.2);
+  standsMat.diffuseColor = new BABYLON.Color3(0.62, 0.63, 0.67);
+  standsMat.specularColor = new BABYLON.Color3(0.15, 0.15, 0.15);
 
-  const leftStand = BABYLON.MeshBuilder.CreateBox(
-    "leftStand",
-    { width: 12, height: 3.5, depth: fieldLengthYards + 18 },
-    scene
-  );
-  leftStand.position = new BABYLON.Vector3(-fieldWidthYards / 2 - 8, 1.25, 0);
-  leftStand.material = standsMat;
+  const benchMat = new BABYLON.StandardMaterial("benchMat", scene);
+  benchMat.diffuseColor = new BABYLON.Color3(0.78, 0.79, 0.82);
+  benchMat.specularColor = new BABYLON.Color3(0.2, 0.2, 0.2);
 
-  const rightStand = BABYLON.MeshBuilder.CreateBox(
-    "rightStand",
-    { width: 12, height: 3.5, depth: fieldLengthYards + 18 },
-    scene
-  );
-  rightStand.position = new BABYLON.Vector3(fieldWidthYards / 2 + 8, 1.25, 0);
-  rightStand.material = standsMat;
+  const supportMat = new BABYLON.StandardMaterial("supportMat", scene);
+  supportMat.diffuseColor = new BABYLON.Color3(0.28, 0.29, 0.32);
+  supportMat.specularColor = new BABYLON.Color3(0.1, 0.1, 0.1);
 
-  const upperDeckLeft = BABYLON.MeshBuilder.CreateBox(
-    "upperDeckLeft",
-    { width: 14, height: 2.4, depth: fieldLengthYards + 20 },
-    scene
-  );
-  upperDeckLeft.position = new BABYLON.Vector3(-fieldWidthYards / 2 - 9.8, 3.8, 0);
-  upperDeckLeft.material = standsMat;
+  // Bleacher tier counts and proportions differ a lot by level of play.
+  const STAND_CONFIGS = {
+    highschool: {
+      rows: 6,
+      standLength: fieldLengthYards * 0.55,
+      offset: 4,
+      hasUpperDeck: false,
+    },
+    college: {
+      rows: 11,
+      standLength: fieldLengthYards + 4,
+      offset: 4,
+      hasUpperDeck: false,
+    },
+    nfl: {
+      rows: 13,
+      standLength: fieldLengthYards + 18,
+      offset: 4,
+      hasUpperDeck: true,
+      upperRows: 9,
+      upperStandLength: fieldLengthYards + 20,
+    },
+  };
 
-  const upperDeckRight = BABYLON.MeshBuilder.CreateBox(
-    "upperDeckRight",
-    { width: 14, height: 2.4, depth: fieldLengthYards + 20 },
-    scene
-  );
-  upperDeckRight.position = new BABYLON.Vector3(fieldWidthYards / 2 + 9.8, 3.8, 0);
-  upperDeckRight.material = standsMat;
+  const ROW_HEIGHT = 0.35;
+  const ROW_DEPTH = 0.65;
+  const CONCOURSE_GAP = 0.9;
+  const STAND_GROUND_Y = -0.51;
+
+  const standsGroup = new BABYLON.Mesh("stands", scene);
+
+  // Builds one terraced tier as a hollow staircase profile (riser face + tread),
+  // not a solid filled wedge, so it reads as bleacher steps instead of a building.
+  function buildBleacherTier(side, rows, standLength, baseOffset, startY, parent) {
+    for (let row = 0; row < rows; row++) {
+      const stepFrontOffset = baseOffset + row * ROW_DEPTH;
+      const riserCenterX = side * (fieldWidthYards / 2 + stepFrontOffset);
+      const treadCenterX = side * (fieldWidthYards / 2 + stepFrontOffset + ROW_DEPTH / 2);
+      const riserTopY = startY + (row + 1) * ROW_HEIGHT;
+
+      const riser = BABYLON.MeshBuilder.CreateBox(
+        `standRiser${side}_${startY}_${row}`,
+        { width: 0.06, height: ROW_HEIGHT, depth: standLength },
+        scene
+      );
+      riser.position = new BABYLON.Vector3(
+        riserCenterX,
+        STAND_GROUND_Y + riserTopY - ROW_HEIGHT / 2,
+        0
+      );
+      riser.material = supportMat;
+      riser.parent = parent;
+
+      const bench = BABYLON.MeshBuilder.CreateBox(
+        `standBench${side}_${startY}_${row}`,
+        { width: ROW_DEPTH, height: 0.08, depth: standLength },
+        scene
+      );
+      bench.position = new BABYLON.Vector3(treadCenterX, STAND_GROUND_Y + riserTopY, 0);
+      bench.material = row % 2 === 0 ? benchMat : standsMat;
+      bench.parent = parent;
+    }
+
+    // Solid back wall behind the top row so the stand reads as an enclosed
+    // structure from outside instead of showing open space under the seats.
+    const tierTopY = startY + rows * ROW_HEIGHT;
+    const backWallCenterX = side * (fieldWidthYards / 2 + baseOffset + rows * ROW_DEPTH + 0.1);
+    const backWall = BABYLON.MeshBuilder.CreateBox(
+      `standBackWall${side}_${startY}`,
+      { width: 0.2, height: tierTopY - startY, depth: standLength },
+      scene
+    );
+    backWall.position = new BABYLON.Vector3(
+      backWallCenterX,
+      STAND_GROUND_Y + startY + (tierTopY - startY) / 2,
+      0
+    );
+    backWall.material = supportMat;
+    backWall.parent = parent;
+
+    return tierTopY;
+  }
+
+  function updateStands(level) {
+    const config = STAND_CONFIGS[level] ?? STAND_CONFIGS.nfl;
+    standsGroup.getChildMeshes().forEach((mesh) => mesh.dispose());
+
+    for (const side of [-1, 1]) {
+      const lowerTopY = buildBleacherTier(
+        side,
+        config.rows,
+        config.standLength,
+        config.offset,
+        0,
+        standsGroup
+      );
+
+      if (config.hasUpperDeck) {
+        // Upper deck starts right where the lower bowl's footprint ends, so the
+        // concourse wall below it lines up flush with the lower tier's back wall.
+        const upperBaseOffset = config.offset + config.rows * ROW_DEPTH;
+        const upperSpan = config.upperRows * ROW_DEPTH;
+
+        const concourseWall = BABYLON.MeshBuilder.CreateBox(
+          `concourseWall${side}`,
+          { width: upperSpan, height: CONCOURSE_GAP, depth: config.upperStandLength },
+          scene
+        );
+        concourseWall.position = new BABYLON.Vector3(
+          side * (fieldWidthYards / 2 + upperBaseOffset + upperSpan / 2),
+          STAND_GROUND_Y + lowerTopY + CONCOURSE_GAP / 2,
+          0
+        );
+        concourseWall.material = supportMat;
+        concourseWall.parent = standsGroup;
+
+        buildBleacherTier(
+          side,
+          config.upperRows,
+          config.upperStandLength,
+          upperBaseOffset,
+          lowerTopY + CONCOURSE_GAP,
+          standsGroup
+        );
+      }
+    }
+  }
 
   const goalPosts = new BABYLON.Mesh("goalPosts", scene);
-  for (let i = -1; i <= 1; i += 2) {
-    const postLeft = BABYLON.MeshBuilder.CreateCylinder(
-      `goalPostLeft${i}`,
-      { diameter: 0.12, height: 3.3 },
-      scene
-    );
-    postLeft.position = new BABYLON.Vector3(i * 18.5, 1.65, -60);
-    postLeft.material = sidelineMat;
-    postLeft.parent = goalPosts;
 
-    const postRight = BABYLON.MeshBuilder.CreateCylinder(
-      `goalPostRight${i}`,
-      { diameter: 0.12, height: 3.3 },
-      scene
-    );
-    postRight.position = new BABYLON.Vector3(i * 18.5, 1.65, 60);
-    postRight.material = sidelineMat;
-    postRight.parent = goalPosts;
+  function updateGoalPosts(level) {
+    const postHalfWidth = (GOAL_POST_WIDTH_YARDS[level] ?? GOAL_POST_WIDTH_YARDS.nfl) / 2;
+    goalPosts.getChildMeshes().forEach((mesh) => mesh.dispose());
 
-    const crossbar = BABYLON.MeshBuilder.CreateBox(
-      `crossbar${i}`,
-      { width: 3.3, height: 0.12, depth: 0.12 },
-      scene
-    );
-    crossbar.position = new BABYLON.Vector3(i * 18.5, 3.2, -60);
-    crossbar.material = sidelineMat;
-    crossbar.parent = goalPosts;
+    for (const goalZ of [-60, 60]) {
+      for (const i of [-1, 1]) {
+        const upright = BABYLON.MeshBuilder.CreateCylinder(
+          `goalUpright${goalZ}_${i}`,
+          { diameter: 0.12, height: 1.6 },
+          scene
+        );
+        upright.position = new BABYLON.Vector3(i * postHalfWidth, 3.4, goalZ);
+        upright.material = sidelineMat;
+        upright.parent = goalPosts;
+      }
 
-    const crossbar2 = BABYLON.MeshBuilder.CreateBox(
-      `crossbar2${i}`,
-      { width: 3.3, height: 0.12, depth: 0.12 },
-      scene
-    );
-    crossbar2.position = new BABYLON.Vector3(i * 18.5, 3.2, 60);
-    crossbar2.material = sidelineMat;
-    crossbar2.parent = goalPosts;
+      const crossbar = BABYLON.MeshBuilder.CreateBox(
+        `goalCrossbar${goalZ}`,
+        { width: postHalfWidth * 2, height: 0.12, depth: 0.12 },
+        scene
+      );
+      crossbar.position = new BABYLON.Vector3(0, 2.6, goalZ);
+      crossbar.material = sidelineMat;
+      crossbar.parent = goalPosts;
+
+      const supportPost = BABYLON.MeshBuilder.CreateCylinder(
+        `goalSupportPost${goalZ}`,
+        { diameter: 0.16, height: 2.6 },
+        scene
+      );
+      supportPost.position = new BABYLON.Vector3(0, 1.3, goalZ);
+      supportPost.material = sidelineMat;
+      supportPost.parent = goalPosts;
+    }
   }
 
-  const lightMat = new BABYLON.StandardMaterial("lightMat", scene);
-  lightMat.emissiveColor = new BABYLON.Color3(1, 1, 0.9);
-  lightMat.diffuseColor = new BABYLON.Color3(0.9, 0.9, 0.9);
+  function createScoreboard() {
+    const boardWidth = 16;
+    const boardHeight = 8;
+    const boardZ = -68;
+    const boardY = 12;
 
-  for (const x of [-30, 0, 30]) {
-    const light = BABYLON.MeshBuilder.CreateCylinder(
-      `stadiumLight${x}`,
-      { diameter: 0.6, height: 10 },
+    const boardCanvas = document.createElement("canvas");
+    boardCanvas.width = 512;
+    boardCanvas.height = 256;
+    const boardCtx = boardCanvas.getContext("2d");
+
+    boardCtx.fillStyle = "#0a0f0a";
+    boardCtx.fillRect(0, 0, boardCanvas.width, boardCanvas.height);
+    boardCtx.strokeStyle = "#3a4a3a";
+    boardCtx.lineWidth = 6;
+    boardCtx.strokeRect(3, 3, boardCanvas.width - 6, boardCanvas.height - 6);
+
+    boardCtx.fillStyle = "#ff9d1f";
+    boardCtx.font = "bold 34px 'Segoe UI', Arial";
+    boardCtx.textAlign = "center";
+    boardCtx.fillText("HOME", boardCanvas.width * 0.22, 70);
+    boardCtx.fillText("GUEST", boardCanvas.width * 0.78, 70);
+
+    boardCtx.fillStyle = "#f5fff5";
+    boardCtx.font = "bold 96px 'Segoe UI', Arial";
+    boardCtx.fillText("0", boardCanvas.width * 0.22, 170);
+    boardCtx.fillText("0", boardCanvas.width * 0.78, 170);
+
+    boardCtx.fillStyle = "#7fffb0";
+    boardCtx.font = "bold 28px 'Segoe UI', Arial";
+    boardCtx.fillText("1ST QTR", boardCanvas.width * 0.5, 110);
+    boardCtx.fillText("15:00", boardCanvas.width * 0.5, 160);
+
+    const boardTexture = new BABYLON.DynamicTexture(
+      "scoreboardTexture",
+      boardCanvas,
+      scene,
+      false,
+      BABYLON.Texture.TRILINEAR_SAMPLINGMODE
+    );
+    boardTexture.update(true);
+
+    const boardMaterial = new BABYLON.StandardMaterial("scoreboardMaterial", scene);
+    boardMaterial.diffuseTexture = boardTexture;
+    boardMaterial.emissiveColor = new BABYLON.Color3(0.9, 0.9, 0.9);
+    boardMaterial.disableLighting = true;
+    boardMaterial.specularColor = new BABYLON.Color3(0, 0, 0);
+
+    const frameMaterial = new BABYLON.StandardMaterial("scoreboardFrameMaterial", scene);
+    frameMaterial.diffuseColor = new BABYLON.Color3(0.15, 0.16, 0.18);
+    frameMaterial.specularColor = new BABYLON.Color3(0.1, 0.1, 0.1);
+
+    const frame = BABYLON.MeshBuilder.CreateBox(
+      "scoreboardFrame",
+      { width: boardWidth + 0.6, height: boardHeight + 0.6, depth: 0.6 },
       scene
     );
-    light.position = new BABYLON.Vector3(x, 6, -68);
-    light.material = lightMat;
+    frame.position = new BABYLON.Vector3(0, boardY, boardZ);
+    frame.material = frameMaterial;
 
-    const light2 = BABYLON.MeshBuilder.CreateCylinder(
-      `stadiumLight2${x}`,
-      { diameter: 0.6, height: 10 },
+    const screen = BABYLON.MeshBuilder.CreatePlane(
+      "scoreboardScreen",
+      { width: boardWidth, height: boardHeight },
       scene
     );
-    light2.position = new BABYLON.Vector3(x, 6, 68);
-    light2.material = lightMat;
+    screen.position = new BABYLON.Vector3(0, boardY, boardZ + 0.31);
+    screen.rotation.y = Math.PI;
+    screen.material = boardMaterial;
+
+    const poleMaterial = new BABYLON.StandardMaterial("scoreboardPoleMaterial", scene);
+    poleMaterial.diffuseColor = new BABYLON.Color3(0.2, 0.21, 0.23);
+
+    for (const x of [-3, 3]) {
+      const pole = BABYLON.MeshBuilder.CreateCylinder(
+        `scoreboardPole${x}`,
+        { diameter: 0.5, height: boardY - boardHeight / 2 + 0.3 },
+        scene
+      );
+      pole.position = new BABYLON.Vector3(x, (boardY - boardHeight / 2 + 0.3) / 2, boardZ);
+      pole.material = poleMaterial;
+    }
   }
 
-  return { setHashMarkLevel };
+  function createVideoBoard() {
+    const boardWidth = 24;
+    const boardHeight = 13;
+    const boardZ = 68;
+    const boardY = 14;
+
+    const videoCanvas = document.createElement("canvas");
+    videoCanvas.width = 640;
+    videoCanvas.height = 360;
+    const videoCtx = videoCanvas.getContext("2d");
+
+    const bgGradient = videoCtx.createLinearGradient(0, 0, videoCanvas.width, videoCanvas.height);
+    bgGradient.addColorStop(0, "#0b1a3d");
+    bgGradient.addColorStop(0.5, "#123a6b");
+    bgGradient.addColorStop(1, "#0b1a3d");
+    videoCtx.fillStyle = bgGradient;
+    videoCtx.fillRect(0, 0, videoCanvas.width, videoCanvas.height);
+
+    videoCtx.strokeStyle = "#1c2a4a";
+    videoCtx.lineWidth = 8;
+    videoCtx.strokeRect(4, 4, videoCanvas.width - 8, videoCanvas.height - 8);
+
+    videoCtx.fillStyle = "#ffcf40";
+    videoCtx.font = "bold 78px 'Segoe UI', Arial";
+    videoCtx.textAlign = "center";
+    videoCtx.textBaseline = "middle";
+    videoCtx.fillText("GAME DAY", videoCanvas.width / 2, videoCanvas.height * 0.5);
+
+    const barColors = ["#e63946", "#f1a208", "#2a9d8f", "#457b9d", "#e63946"];
+    const barWidth = videoCanvas.width / barColors.length;
+    for (let i = 0; i < barColors.length; i++) {
+      videoCtx.fillStyle = barColors[i];
+      videoCtx.fillRect(i * barWidth, videoCanvas.height - 24, barWidth, 24);
+    }
+
+    const videoTexture = new BABYLON.DynamicTexture(
+      "videoBoardTexture",
+      videoCanvas,
+      scene,
+      false,
+      BABYLON.Texture.TRILINEAR_SAMPLINGMODE
+    );
+    videoTexture.update(true);
+
+    const videoMaterial = new BABYLON.StandardMaterial("videoBoardMaterial", scene);
+    videoMaterial.diffuseTexture = videoTexture;
+    videoMaterial.emissiveColor = new BABYLON.Color3(0.95, 0.95, 0.95);
+    videoMaterial.disableLighting = true;
+    videoMaterial.specularColor = new BABYLON.Color3(0, 0, 0);
+    videoMaterial.backFaceCulling = false;
+
+    const frameMaterial = new BABYLON.StandardMaterial("videoBoardFrameMaterial", scene);
+    frameMaterial.diffuseColor = new BABYLON.Color3(0.15, 0.16, 0.18);
+    frameMaterial.specularColor = new BABYLON.Color3(0.1, 0.1, 0.1);
+
+    const frame = BABYLON.MeshBuilder.CreateBox(
+      "videoBoardFrame",
+      { width: boardWidth + 0.8, height: boardHeight + 0.8, depth: 0.7 },
+      scene
+    );
+    frame.position = new BABYLON.Vector3(0, boardY, boardZ);
+    frame.material = frameMaterial;
+
+    const screen = BABYLON.MeshBuilder.CreatePlane(
+      "videoBoardScreen",
+      { width: boardWidth, height: boardHeight },
+      scene
+    );
+    screen.position = new BABYLON.Vector3(0, boardY, boardZ - 0.36);
+    screen.material = videoMaterial;
+
+    const poleMaterial = new BABYLON.StandardMaterial("videoBoardPoleMaterial", scene);
+    poleMaterial.diffuseColor = new BABYLON.Color3(0.2, 0.21, 0.23);
+
+    for (const x of [-4.5, 4.5]) {
+      const pole = BABYLON.MeshBuilder.CreateCylinder(
+        `videoBoardPole${x}`,
+        { diameter: 0.6, height: boardY - boardHeight / 2 + 0.3 },
+        scene
+      );
+      pole.position = new BABYLON.Vector3(x, (boardY - boardHeight / 2 + 0.3) / 2, boardZ);
+      pole.material = poleMaterial;
+    }
+  }
+
+  createScoreboard();
+  createVideoBoard();
+
+  function setFieldLevel(level) {
+    updateHashMarks(level);
+    updateGoalPosts(level);
+    updateStands(level);
+  }
+
+  setFieldLevel("highschool");
+
+  return { setFieldLevel };
 }
 
 const footballField = createFootballField();
 
 if (fieldLevelSelect) {
   fieldLevelSelect.addEventListener("change", (event) => {
-    footballField.setHashMarkLevel(event.target.value);
+    footballField.setFieldLevel(event.target.value);
   });
 }
 
@@ -534,6 +924,42 @@ const interactiveObjects = [
   { mesh: moon, label: "Lunar Orb" },
   { mesh: globe, label: "Crystal Sphere" },
 ];
+
+// AR tabletop mode: shrink the whole stadium onto a table and hide the
+// world-scale sky/ground, which only make sense for the full-scale VR view.
+const AR_HIDDEN_MESH_NAMES = new Set(["skyBox", "horizonGround", "ground"]);
+const AR_SCALE = 0.02;
+const contentRootMeshes = scene.meshes.filter((mesh) => !mesh.parent);
+const arRoot = new BABYLON.TransformNode("arRoot", scene);
+let arTabletopModeActive = false;
+
+function enterARTabletopMode() {
+  if (arTabletopModeActive) return;
+  arTabletopModeActive = true;
+  contentRootMeshes.forEach((mesh) => {
+    if (AR_HIDDEN_MESH_NAMES.has(mesh.name)) {
+      mesh.setEnabled(false);
+    } else {
+      mesh.setParent(arRoot);
+    }
+  });
+  arRoot.scaling.setAll(AR_SCALE);
+  arRoot.position = new BABYLON.Vector3(0, 0, 0.6);
+}
+
+function exitARTabletopMode() {
+  if (!arTabletopModeActive) return;
+  arTabletopModeActive = false;
+  contentRootMeshes.forEach((mesh) => {
+    if (AR_HIDDEN_MESH_NAMES.has(mesh.name)) {
+      mesh.setEnabled(true);
+    } else {
+      mesh.setParent(null);
+    }
+  });
+  arRoot.scaling.setAll(1);
+  arRoot.position.setAll(0);
+}
 
 const selectedState = {
   current: null,
@@ -612,12 +1038,59 @@ async function checkSessionSupport(mode) {
   return true;
 }
 
+// Grid overlay shown across the whole floor while aiming to teleport in VR.
+const teleportGridCanvas = document.createElement("canvas");
+teleportGridCanvas.width = 64;
+teleportGridCanvas.height = 64;
+const teleportGridCtx = teleportGridCanvas.getContext("2d");
+teleportGridCtx.clearRect(0, 0, 64, 64);
+teleportGridCtx.strokeStyle = "rgba(120, 220, 255, 0.9)";
+teleportGridCtx.lineWidth = 2;
+teleportGridCtx.strokeRect(0, 0, 64, 64);
+
+const teleportGridTexture = new BABYLON.DynamicTexture(
+  "teleportGridTexture",
+  teleportGridCanvas,
+  scene,
+  false,
+  BABYLON.Texture.TRILINEAR_SAMPLINGMODE
+);
+teleportGridTexture.update(true);
+teleportGridTexture.wrapU = BABYLON.Texture.WRAP_ADDRESSMODE;
+teleportGridTexture.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
+teleportGridTexture.hasAlpha = true;
+teleportGridTexture.uScale = 160;
+teleportGridTexture.vScale = 160;
+
+const teleportGridMaterial = new BABYLON.StandardMaterial("teleportGridMaterial", scene);
+teleportGridMaterial.diffuseTexture = teleportGridTexture;
+teleportGridMaterial.opacityTexture = teleportGridTexture;
+teleportGridMaterial.disableLighting = true;
+teleportGridMaterial.emissiveColor = new BABYLON.Color3(0.5, 0.9, 1);
+teleportGridMaterial.specularColor = new BABYLON.Color3(0, 0, 0);
+teleportGridMaterial.backFaceCulling = false;
+
+const teleportGrid = BABYLON.MeshBuilder.CreateDisc(
+  "teleportGrid",
+  { radius: 240, tessellation: 64 },
+  scene
+);
+teleportGrid.rotation.x = Math.PI / 2;
+teleportGrid.position.y = -0.45;
+teleportGrid.material = teleportGridMaterial;
+teleportGrid.isPickable = false;
+teleportGrid.setEnabled(false);
+
 async function startXR(mode) {
   if (!(await checkSessionSupport(mode))) {
     return;
   }
 
   try {
+    const teleportFloorMeshes = ["ground", "field", "horizonGround", "outerBase"]
+      .map((name) => scene.getMeshByName(name))
+      .filter((mesh) => mesh !== null);
+
     const xrExperience = await scene.createDefaultXRExperienceAsync({
       uiOptions: {
         sessionMode: mode,
@@ -625,12 +1098,27 @@ async function startXR(mode) {
         ignoreNativeCamera: false,
       },
       optionalFeatures: true,
-      floorMeshes: [ground],
-      disableTeleportation: true,
+      floorMeshes: teleportFloorMeshes,
       inputOptions: {
         doNotLoadControllerMeshes: false,
         disableControllerAnimation: false,
       },
+    });
+
+    const teleportation = xrExperience.teleportation;
+    if (teleportation) {
+      let gridHideTimeout = null;
+      teleportation.onTargetMeshPositionUpdatedObservable.add(() => {
+        teleportGrid.setEnabled(true);
+        clearTimeout(gridHideTimeout);
+        gridHideTimeout = setTimeout(() => teleportGrid.setEnabled(false), 150);
+      });
+    }
+
+    xrExperience.baseExperience.onStateChangedObservable.add((state) => {
+      if (state === BABYLON.WebXRState.NOT_IN_XR) {
+        teleportGrid.setEnabled(false);
+      }
     });
 
     xrExperience.input.onControllerAddedObservable.add((controller) => {
