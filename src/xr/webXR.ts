@@ -18,7 +18,7 @@ import { RegisterWebXROculusTouchMotionController } from '@babylonjs/core/XR/mot
 import { RegisterWebXRHandTracking } from '@babylonjs/core/XR/features/WebXRHandTracking.pure';
 import { scene } from '../scene/engine';
 import { xrModeInputs, getSelectedXRMode, floorCalibrationToggle, fullScaleVRButton, tabletopScaleButton } from '../ui/dom';
-import { enterARTabletopMode, exitARTabletopMode, getARScale, getARScaleRange, setARScale } from './ar';
+import { enterARTabletopMode, exitARTabletopMode, getARPosition, getARScale, getARScaleRange, setARPosition, setARScale } from './ar';
 import { setActiveController, removeActiveController, setHandTracking, getActiveControllers, consumeFloorCalibrationGesture, setHandFloorContact } from '../interaction/pathInteraction';
 import { getTrackedPlayerHeight, resetPlayerFloorOffset, setPlayerFloorOffset } from '../camera/playerAvatar';
 
@@ -236,6 +236,19 @@ export function initXR(teleportGrid: Mesh) {
     }
   }
 
+  function getHeadsetFloorY(camera: WebXRCamera): number {
+    camera.computeWorldMatrix();
+    return camera.globalPosition.y - camera.realWorldHeight;
+  }
+
+  function alignFieldFloorTo(floor: AbstractMesh, floorY: number) {
+    floor.computeWorldMatrix(true);
+    const fieldPosition = getARPosition();
+    fieldPosition.y += floorY - floor.getAbsolutePosition().y;
+    setARPosition(fieldPosition);
+    floor.computeWorldMatrix(true);
+  }
+
   function updateFloorCalibration() {
     const baseExperience = xrExperience?.baseExperience;
     const manual = !!floorCalibrationToggle?.checked;
@@ -253,7 +266,10 @@ export function initXR(teleportGrid: Mesh) {
       calibrationPresses.clear();
       return;
     }
-    const floorY = baseExperience.camera.position.y - trackedHeight;
+    const floor = scene.getMeshByName("turfStripe0");
+    if (!floor) return;
+    const floorY = getHeadsetFloorY(baseExperience.camera);
+    if (!Number.isFinite(floorY)) return;
     let captured = false;
     let alignedOnEntry = false;
     const capture = (key: string, pressed: boolean, point: Vector3,
@@ -264,14 +280,13 @@ export function initXR(teleportGrid: Mesh) {
       if (captured || !pressed || (!alignOnEntry && ((confirmation && !wasCalibratingFloor) ||
         (wasPressed && !loweringFloor && (confirmation || getARScale() === getARScaleRange().max))))) return;
       const camera = baseExperience.camera;
-      const eyeHeight = camera.position.y - point.y;
-      const floor = scene.getMeshByName("turfStripe0");
-      if (!floor || !Number.isFinite(eyeHeight) || eyeHeight <= 0 ||
+      camera.computeWorldMatrix();
+      const eyeHeight = camera.globalPosition.y - point.y;
+      if (!Number.isFinite(eyeHeight) || eyeHeight <= 0 ||
         !Number.isFinite(camera.realWorldHeight) || camera.realWorldHeight <= 0) return;
       setARScale(getARScaleRange().max);
-      floor.computeWorldMatrix(true);
       setPlayerFloorOffset(camera.realWorldHeight - eyeHeight);
-      camera.position.y = floor.getAbsolutePosition().y + eyeHeight;
+      alignFieldFloorTo(floor, point.y);
       heightCalibrationPending = false;
       captured = true;
       alignedOnEntry = alignOnEntry;
@@ -403,11 +418,6 @@ export function initXR(teleportGrid: Mesh) {
         heightCalibrationPending = wasFullScaleVR;
         resetPlayerFloorOffset();
         if (preferredMode === "immersive-vr" && savedFloorOffset !== null) setPlayerFloorOffset(savedFloorOffset);
-        if (!wasFullScaleVR) return;
-        const floor = scene.getMeshByName("turfStripe0");
-        if (!floor) return;
-        floor.computeWorldMatrix(true);
-        camera.position.y = floor.getAbsolutePosition().y;
       });
 
       const handTracking = xrExperience.baseExperience.featuresManager.enableFeature(
@@ -562,9 +572,9 @@ export function initXR(teleportGrid: Mesh) {
       if (fullScaleVR && heightCalibrationPending && !floorCalibrationToggle?.checked) {
         const floor = scene.getMeshByName("turfStripe0");
         const eyeHeight = getTrackedPlayerHeight(baseExperience.camera);
-        if (floor && Number.isFinite(eyeHeight) && eyeHeight > 0) {
-          floor.computeWorldMatrix(true);
-          baseExperience.camera.position.y = floor.getAbsolutePosition().y + eyeHeight;
+        const headsetFloorY = getHeadsetFloorY(baseExperience.camera);
+        if (floor && Number.isFinite(eyeHeight) && eyeHeight > 0 && Number.isFinite(headsetFloorY)) {
+          alignFieldFloorTo(floor, headsetFloorY);
           heightCalibrationPending = false;
         }
       }
