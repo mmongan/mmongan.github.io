@@ -15,14 +15,12 @@ import { WebXRFeatureName } from '@babylonjs/core/XR/webXRFeaturesManager';
 import { WebXRState } from '@babylonjs/core/XR/webXRTypes';
 import '@babylonjs/loaders/glTF';
 import { RegisterWebXROculusTouchMotionController } from '@babylonjs/core/XR/motionController/webXROculusTouchMotionController.pure';
-import { RegisterWebXRHandTracking } from '@babylonjs/core/XR/features/WebXRHandTracking.pure';
 import { scene } from '../scene/engine';
 import { xrModeInputs, getSelectedXRMode, floorCalibrationToggle, fullScaleVRButton, tabletopScaleButton } from '../ui/dom';
 import { enterARTabletopMode, exitARTabletopMode, getARPosition, getARScale, getARScaleRange, setARPosition, setARScale } from './ar';
 import { setActiveController, removeActiveController, setHandTracking, getActiveControllers, consumeFloorCalibrationGesture, setHandFloorContact } from '../interaction/pathInteraction';
 
 RegisterWebXROculusTouchMotionController();
-RegisterWebXRHandTracking();
 WebXRMotionControllerManager.PrioritizeOnlineRepository = true;
 
 let playerFloorOffset = 0;
@@ -418,6 +416,13 @@ export function initXR(teleportGrid: Mesh) {
           referenceSpaceType: "local-floor",
         },
         optionalFeatures: true,
+        handSupportOptions: {
+          jointMeshes: { invisible: true },
+          handMeshes: {
+            disableDefaultMeshes: false,
+            disableHandShader: true,
+          },
+        },
         floorMeshes: teleportFloorMeshes,
         disableTeleportation: preferredMode === "immersive-ar",
         inputOptions: {
@@ -435,20 +440,8 @@ export function initXR(teleportGrid: Mesh) {
         if (preferredMode === "immersive-vr" && savedFloorOffset !== null) setPlayerFloorOffset(savedFloorOffset);
       });
 
-      const handTracking = xrExperience.baseExperience.featuresManager.enableFeature(
-        WebXRFeatureName.HAND_TRACKING,
-        'latest',
-        {
-          xrInput: xrExperience.input,
-          jointMeshes: { invisible: true },
-          handMeshes: {
-            disableDefaultMeshes: false,
-            disableHandShader: true,
-          },
-        },
-        true,
-        false
-      );
+      const handTracking = xrExperience.baseExperience.featuresManager
+        .getEnabledFeature(WebXRFeatureName.HAND_TRACKING) ?? null;
       handTrackingFeature = handTracking;
       setHandTracking(handTracking);
 

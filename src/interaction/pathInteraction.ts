@@ -1,4 +1,4 @@
-import { Ray } from '@babylonjs/core/Culling/ray.core';
+import { Ray } from '@babylonjs/core/Culling/ray';
 import { PointerEventTypes } from '@babylonjs/core/Events/pointerEvents';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
 import { Axis } from '@babylonjs/core/Maths/math.axis';
