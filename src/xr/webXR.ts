@@ -4,7 +4,7 @@ import { RegisterWebXROculusTouchMotionController, RegisterWebXRHandTracking } f
 import { scene } from '../scene/engine';
 import { xrModeInputs, getSelectedXRMode, floorCalibrationToggle, fullScaleVRButton, tabletopScaleButton } from '../ui/dom';
 import { enterARTabletopMode, exitARTabletopMode, getARScale, getARScaleRange, setARScale } from './ar';
-import { setActiveController, removeActiveController, setHandTracking, getActiveControllers, consumeFloorCalibrationGesture, setHandFloorContact } from '../interaction/sceneInteraction';
+import { setActiveController, removeActiveController, setHandTracking, getActiveControllers, consumeFloorCalibrationGesture, setHandFloorContact } from '../interaction/pathInteraction';
 import { getTrackedPlayerHeight, resetPlayerFloorOffset, setPlayerFloorOffset } from '../camera/playerAvatar';
 
 RegisterWebXROculusTouchMotionController();

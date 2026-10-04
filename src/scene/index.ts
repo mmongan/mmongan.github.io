@@ -13,7 +13,7 @@ import {
   updateHandPathDrawing,
   getActiveControllers,
   getSelectedRobotProgress,
-} from '../interaction/sceneInteraction';
+} from '../interaction/pathInteraction';
 import { captureContentRootMeshes, attachToARTransform } from '../xr/ar';
 import { createTeleportGrid, initXR } from '../xr/webXR';
 import { updateHandMenu } from '../menu/handMenu';

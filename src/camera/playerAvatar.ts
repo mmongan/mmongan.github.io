@@ -1,7 +1,7 @@
 import * as BABYLON from 'babylonjs';
 import { scene } from '../scene/engine';
 import { getARScale, getARScaleRange } from '../xr/ar';
-import { getActiveControllers } from '../interaction/sceneInteraction';
+import { getActiveControllers } from '../interaction/pathInteraction';
 import { createMarcherAvatar } from '../robot/robot';
 import { isCameraIntroComplete } from './desktopCamera';
 
