@@ -1,4 +1,4 @@
-import { Engine } from '@babylonjs/core/Engines/engine.pure';
+import { Engine } from '@babylonjs/core/Engines/engine';
 import { DirectionalLight } from '@babylonjs/core/Lights/directionalLight.pure';
 import { HemisphericLight } from '@babylonjs/core/Lights/hemisphericLight.pure';
 import { Color3, Color4 } from '@babylonjs/core/Maths/math.color.pure';
