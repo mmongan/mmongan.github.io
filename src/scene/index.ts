@@ -1,6 +1,5 @@
 import { engine, scene } from './engine';
 import '../camera/desktopCamera';
-import '../camera/playerAvatar';
 import { fieldLevelInputs, getSelectedFieldLevel } from '../ui/dom';
 import { createSky } from '../environment/sky';
 import { createHorizonGround } from '../environment/ground';

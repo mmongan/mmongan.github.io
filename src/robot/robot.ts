@@ -162,16 +162,12 @@ export function cycleMarchingGait(direction: -1 | 1): number {
   return selectedMarchingGait;
 }
 
-function createMarcherModel(
-  scene: Scene,
-  gaitIndex: number,
-  registerAsRobot: boolean
-): TransformNode {
-  const robot = new TransformNode(registerAsRobot ? "pathRobot" : "playerAvatar", scene);
-  if (registerAsRobot) allRobots.add(robot);
+function createMarcherModel(scene: Scene, gaitIndex: number): TransformNode {
+  const robot = new TransformNode("pathRobot", scene);
+  allRobots.add(robot);
 
   const color = nextRobotColor();
-  if (registerAsRobot) robotColors.set(robot, color);
+  robotColors.set(robot, color);
 
   const bodyMaterial = new StandardMaterial("robotBodyMaterial", scene);
   bodyMaterial.diffuseColor = color;
@@ -383,59 +379,51 @@ function createMarcherModel(
   const resolvedGaitIndex = Math.min(MARCHING_GAITS.length - 1, Math.max(0, gaitIndex));
   orientMarcherShoes(appendages[0].shoe, appendages[1].shoe, MARCHING_GAITS[resolvedGaitIndex]);
 
-  if (registerAsRobot) {
-    marcherParts.set(robot, {
-      gaitIndex: resolvedGaitIndex,
-      instrumentRestPose: instrumentCarryPose,
-      leftLeg: appendages[0].leg, rightLeg: appendages[1].leg,
-      leftKnee: appendages[0].knee, rightKnee: appendages[1].knee,
-      leftAnkle: appendages[0].ankle, rightAnkle: appendages[1].ankle,
-      leftShoe: appendages[0].shoe, rightShoe: appendages[1].shoe,
-      leftArm: appendages[0].arm, rightArm: appendages[1].arm, horn, body,
-    });
+  marcherParts.set(robot, {
+    gaitIndex: resolvedGaitIndex,
+    instrumentRestPose: instrumentCarryPose,
+    leftLeg: appendages[0].leg, rightLeg: appendages[1].leg,
+    leftKnee: appendages[0].knee, rightKnee: appendages[1].knee,
+    leftAnkle: appendages[0].ankle, rightAnkle: appendages[1].ankle,
+    leftShoe: appendages[0].shoe, rightShoe: appendages[1].shoe,
+    leftArm: appendages[0].arm, rightArm: appendages[1].arm, horn, body,
+  });
 
-    const markerMaterial = new StandardMaterial("robotMarkerMaterial", scene);
-    markerMaterial.diffuseColor = color;
-    markerMaterial.emissiveColor = color;
-    markerMaterial.specularColor = new Color3(0, 0, 0);
-    markerMaterial.disableLighting = true;
-    markerMaterial.backFaceCulling = false;
+  const markerMaterial = new StandardMaterial("robotMarkerMaterial", scene);
+  markerMaterial.diffuseColor = color;
+  markerMaterial.emissiveColor = color;
+  markerMaterial.specularColor = new Color3(0, 0, 0);
+  markerMaterial.disableLighting = true;
+  markerMaterial.backFaceCulling = false;
 
-    const marker = MeshBuilder.CreateDisc(
-      "robotTopDownMarker",
-      { radius: TOP_DOWN_MARKER_DIAMETER_YARDS / 2, tessellation: 16 },
-      scene
-    );
-    marker.rotation.x = -Math.PI / 2;
-    marker.position.y = 1.85 * MARCHER_BODY_SCALE;
-    marker.material = markerMaterial;
-    marker.layerMask = TOP_DOWN_MARKER_LAYER_MASK;
-    marker.isPickable = false;
-    marker.parent = robot;
+  const marker = MeshBuilder.CreateDisc(
+    "robotTopDownMarker",
+    { radius: TOP_DOWN_MARKER_DIAMETER_YARDS / 2, tessellation: 16 },
+    scene
+  );
+  marker.rotation.x = -Math.PI / 2;
+  marker.position.y = 1.85 * MARCHER_BODY_SCALE;
+  marker.material = markerMaterial;
+  marker.layerMask = TOP_DOWN_MARKER_LAYER_MASK;
+  marker.isPickable = false;
+  marker.parent = robot;
 
-    robot.onDisposeObservable.add(() => {
-      allRobots.delete(robot);
-      heldRobots.delete(robot);
-      robotColors.delete(robot);
-      marcherParts.delete(robot);
-      players.delete(robot);
-      recalculateCollisionMarkers(scene);
-    });
+  robot.onDisposeObservable.add(() => {
+    allRobots.delete(robot);
+    heldRobots.delete(robot);
+    robotColors.delete(robot);
+    marcherParts.delete(robot);
+    players.delete(robot);
+    recalculateCollisionMarkers(scene);
+  });
 
-    robot.setEnabled(false);
-  } else {
-    robot.setEnabled(true);
-  }
+  robot.setEnabled(false);
 
   return robot;
 }
 
 export function createLowPolyRobot(scene: Scene, gaitIndex = selectedMarchingGait): TransformNode {
-  return createMarcherModel(scene, gaitIndex, true);
-}
-
-export function createMarcherAvatar(scene: Scene): TransformNode {
-  return createMarcherModel(scene, 0, false);
+  return createMarcherModel(scene, gaitIndex);
 }
 
 // --- Playback control: play/pause, rewind, fast-forward, step, and seeking

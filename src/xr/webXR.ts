@@ -20,11 +20,26 @@ import { scene } from '../scene/engine';
 import { xrModeInputs, getSelectedXRMode, floorCalibrationToggle, fullScaleVRButton, tabletopScaleButton } from '../ui/dom';
 import { enterARTabletopMode, exitARTabletopMode, getARPosition, getARScale, getARScaleRange, setARPosition, setARScale } from './ar';
 import { setActiveController, removeActiveController, setHandTracking, getActiveControllers, consumeFloorCalibrationGesture, setHandFloorContact } from '../interaction/pathInteraction';
-import { getTrackedPlayerHeight, resetPlayerFloorOffset, setPlayerFloorOffset } from '../camera/playerAvatar';
 
 RegisterWebXROculusTouchMotionController();
 RegisterWebXRHandTracking();
 WebXRMotionControllerManager.PrioritizeOnlineRepository = true;
+
+let playerFloorOffset = 0;
+
+function resetPlayerFloorOffset() {
+  playerFloorOffset = 0;
+}
+
+function setPlayerFloorOffset(offset: number) {
+  if (!Number.isFinite(offset)) return false;
+  playerFloorOffset = offset;
+  return true;
+}
+
+function getTrackedPlayerHeight(camera: WebXRCamera) {
+  return camera.realWorldHeight - playerFloorOffset;
+}
 
 // WebXR session detection: this keeps the app from trying to launch unsupported
 // VR/AR modes while still allowing the chosen mode to fail quietly.
