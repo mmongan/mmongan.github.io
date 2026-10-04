@@ -1,5 +1,6 @@
 export const FIELD_LENGTH_YARDS = 120;
 export const FIELD_WIDTH_YARDS = 53.333;
+export const FIELD_SURFACE_Y = -0.48;
 export const END_ZONE_DEPTH_YARDS = 10;
 
 // Distance from the field's centerline to each hash mark, by level of play.

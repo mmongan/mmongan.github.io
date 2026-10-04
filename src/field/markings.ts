@@ -1,5 +1,5 @@
 import * as BABYLON from 'babylonjs';
-import { scene } from '../engineScene';
+import { scene } from '../scene/engine';
 import { FIELD_WIDTH_YARDS, HASH_OFFSETS_YARDS } from './constants';
 
 export function createHashMarks(whiteMaterial: BABYLON.StandardMaterial): {

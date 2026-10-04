@@ -1,17 +1,24 @@
 import * as BABYLON from 'babylonjs';
-import { canvas } from './dom';
-import { engine, scene } from './engineScene';
+import { canvas } from '../ui/dom';
+import { engine, scene } from '../scene/engine';
+import { FIELD_SURFACE_Y } from '../field/constants';
 
 // FPS-style fly camera: mouse-drag looks around, WASD moves in the direction
 // you're actually facing (including up/down when looking up or down) — the
 // standard control scheme for a free-fly/spectator camera in most games.
-export const camera = new BABYLON.UniversalCamera(
-  "camera",
-  new BABYLON.Vector3(0, 5, -45),
-  scene
-);
-camera.setTarget(new BABYLON.Vector3(0, 1.4, 0));
-camera.attachControl(canvas, true);
+// Video board screen center (see field/videoBoard.ts) — the landing shot
+// starts close enough to it that the title fills the screen, then pulls
+// straight back along the same line so it ends the reveal still facing it.
+const INTRO_CAMERA_TARGET = new BABYLON.Vector3(0, 14, 67.55);
+const INTRO_CAMERA_POSITION = new BABYLON.Vector3(0, 14, 52.5);
+export const INTRO_DURATION_MS = 3200;
+
+// Resting spot is the 50 yard line (z=0) at standing eye height, still facing the board.
+const DEFAULT_CAMERA_POSITION = new BABYLON.Vector3(0, FIELD_SURFACE_Y + 1.8, 0);
+const DEFAULT_CAMERA_TARGET = INTRO_CAMERA_TARGET;
+
+export const camera = new BABYLON.UniversalCamera("camera", INTRO_CAMERA_POSITION.clone(), scene);
+camera.setTarget(INTRO_CAMERA_TARGET);
 camera.keysUp = [87]; // W
 camera.keysDown = [83]; // S
 camera.keysLeft = [65]; // A
@@ -24,6 +31,27 @@ camera.inertia = 0.7;
 camera.checkCollisions = true;
 camera.ellipsoid = new BABYLON.Vector3(0.4, 0.9, 0.4);
 camera.ellipsoidOffset = new BABYLON.Vector3(0, 0, 0);
+
+// Dolly back from the title to the normal spectator framing, then hand
+// control to the player — mouse-look is withheld until the reveal finishes
+// so it can't fight the scripted pull-back.
+let introElapsedMs = 0;
+const introObserver = scene.onBeforeRenderObservable.add(() => {
+  introElapsedMs += engine.getDeltaTime();
+  const t = Math.min(1, introElapsedMs / INTRO_DURATION_MS);
+  const eased = 1 - Math.pow(1 - t, 3);
+  BABYLON.Vector3.LerpToRef(INTRO_CAMERA_POSITION, DEFAULT_CAMERA_POSITION, eased, camera.position);
+  camera.setTarget(BABYLON.Vector3.Lerp(INTRO_CAMERA_TARGET, DEFAULT_CAMERA_TARGET, eased));
+
+  if (t >= 1) {
+    scene.onBeforeRenderObservable.remove(introObserver);
+    camera.attachControl(canvas, true);
+  }
+});
+
+export function isCameraIntroComplete(): boolean {
+  return introElapsedMs >= INTRO_DURATION_MS;
+}
 
 // Arrow keys turn/look around (yaw with left/right, pitch with up/down),
 // same idea as mouse-look but for keyboard-only navigation.
@@ -49,7 +77,7 @@ const STADIUM_BOUNDARY_X = 29;
 const STADIUM_BOUNDARY_Z = 65;
 // Floor clamp instead of turf collision — the field mesh doesn't need
 // checkCollisions just to keep the camera from dropping below it.
-const FIELD_FLOOR_Y = -0.3;
+const FIELD_FLOOR_Y = DEFAULT_CAMERA_POSITION.y;
 
 scene.onBeforeRenderObservable.add(() => {
   const turnAmount = (TURN_SPEED * engine.getDeltaTime()) / 1000;
@@ -63,3 +91,4 @@ scene.onBeforeRenderObservable.add(() => {
   camera.position.z = Math.max(-STADIUM_BOUNDARY_Z, Math.min(STADIUM_BOUNDARY_Z, camera.position.z));
   camera.position.y = Math.max(FIELD_FLOOR_Y, camera.position.y);
 });
+

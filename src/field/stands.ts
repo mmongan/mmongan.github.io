@@ -1,5 +1,5 @@
 import * as BABYLON from 'babylonjs';
-import { scene } from '../engineScene';
+import { scene } from '../scene/engine';
 import { FIELD_WIDTH_YARDS, STAND_CONFIGS } from './constants';
 
 const ROW_HEIGHT = 0.35;

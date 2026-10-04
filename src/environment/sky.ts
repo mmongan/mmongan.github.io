@@ -1,5 +1,5 @@
 import * as BABYLON from 'babylonjs';
-import { scene } from '../engineScene';
+import { scene } from '../scene/engine';
 
 // Scatter soft, fluffy cloud clumps in the blue-sky band (avoids the zenith and the horizon glow).
 function drawCloudPuff(

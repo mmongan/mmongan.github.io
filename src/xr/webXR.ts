@@ -1,0 +1,569 @@
+import * as BABYLON from 'babylonjs';
+import 'babylonjs-loaders';
+import { RegisterWebXROculusTouchMotionController, RegisterWebXRHandTracking } from 'babylonjs';
+import { scene } from '../scene/engine';
+import { xrModeInputs, getSelectedXRMode, floorCalibrationToggle, fullScaleVRButton, tabletopScaleButton } from '../ui/dom';
+import { enterARTabletopMode, exitARTabletopMode, getARScale, getARScaleRange, setARScale } from './ar';
+import { setActiveController, removeActiveController, setHandTracking, getActiveControllers, consumeFloorCalibrationGesture, setHandFloorContact } from '../interaction/sceneInteraction';
+import { getTrackedPlayerHeight, resetPlayerFloorOffset, setPlayerFloorOffset } from '../camera/playerAvatar';
+
+RegisterWebXROculusTouchMotionController();
+RegisterWebXRHandTracking();
+BABYLON.WebXRMotionControllerManager.PrioritizeOnlineRepository = true;
+
+// WebXR session detection: this keeps the app from trying to launch unsupported
+// VR/AR modes while still allowing the chosen mode to fail quietly.
+async function checkSessionSupport(mode: XRSessionMode) {
+  if (!navigator.xr) {
+    console.warn("WebXR is not available in this browser.");
+    return false;
+  }
+
+  const supported = await navigator.xr.isSessionSupported(mode);
+  if (!supported) {
+    console.warn(`The ${mode} session mode is not supported on this device or browser.`);
+    return false;
+  }
+
+  return true;
+}
+
+// Grid overlay shown across the whole floor while aiming to teleport in VR.
+export function createTeleportGrid(): BABYLON.Mesh {
+  const teleportGridCanvas = document.createElement("canvas");
+  teleportGridCanvas.width = 64;
+  teleportGridCanvas.height = 64;
+  const teleportGridCtx = teleportGridCanvas.getContext("2d")!;
+  teleportGridCtx.clearRect(0, 0, 64, 64);
+  teleportGridCtx.strokeStyle = "rgba(120, 220, 255, 0.9)";
+  teleportGridCtx.lineWidth = 2;
+  teleportGridCtx.strokeRect(0, 0, 64, 64);
+
+  const teleportGridTexture = new BABYLON.DynamicTexture(
+    "teleportGridTexture",
+    teleportGridCanvas,
+    scene,
+    false,
+    BABYLON.Texture.TRILINEAR_SAMPLINGMODE
+  );
+  teleportGridTexture.update(true);
+  teleportGridTexture.wrapU = BABYLON.Texture.WRAP_ADDRESSMODE;
+  teleportGridTexture.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
+  teleportGridTexture.hasAlpha = true;
+  const teleportGridRadius = 240;
+  // Matches the marching band "8 to 5" step size (8 steps per 5 yards) used
+  // for path-drawing snap in interaction.ts, so the grid lines line up with
+  // where drawn points actually land.
+  const teleportGridCellYards = 0.625;
+  const teleportGridTiles = (teleportGridRadius * 2) / teleportGridCellYards;
+  teleportGridTexture.uScale = teleportGridTiles;
+  teleportGridTexture.vScale = teleportGridTiles;
+
+  const teleportGridMaterial = new BABYLON.StandardMaterial("teleportGridMaterial", scene);
+  teleportGridMaterial.diffuseTexture = teleportGridTexture;
+  teleportGridMaterial.opacityTexture = teleportGridTexture;
+  teleportGridMaterial.disableLighting = true;
+  teleportGridMaterial.emissiveColor = new BABYLON.Color3(0.5, 0.9, 1);
+  teleportGridMaterial.specularColor = new BABYLON.Color3(0, 0, 0);
+  teleportGridMaterial.backFaceCulling = false;
+
+  const teleportGrid = BABYLON.MeshBuilder.CreateDisc(
+    "teleportGrid",
+    { radius: teleportGridRadius, tessellation: 64 },
+    scene
+  );
+  teleportGrid.rotation.x = Math.PI / 2;
+  teleportGrid.position.y = -0.45;
+  teleportGrid.material = teleportGridMaterial;
+  teleportGrid.isPickable = false;
+  teleportGrid.setEnabled(false);
+
+  return teleportGrid;
+}
+
+// Full-scale teleport targets (the field and its surroundings), used whenever
+// the scene isn't shrunk down to tabletop size.
+function getFieldFloorMeshes(): BABYLON.AbstractMesh[] {
+  return ["field", "horizonGround", "outerBase"]
+    .map((name) => scene.getMeshByName(name))
+    .filter((mesh): mesh is BABYLON.AbstractMesh => mesh !== null);
+}
+
+function isTabletopSized(): boolean {
+  return getARScale() <= getARScaleRange().default;
+}
+
+export function initXR(teleportGrid: BABYLON.Mesh) {
+  // Invisible floor used to teleport around the table once the scene is
+  // shrunk down, instead of trying to teleport onto the tiny miniature field.
+  const tabletopTeleportFloor = BABYLON.MeshBuilder.CreateGround(
+    "tabletopTeleportFloor",
+    { width: 10, height: 10 },
+    scene
+  );
+  tabletopTeleportFloor.isVisible = false;
+
+  // Keep the active XR mode in sync with the radio UI while the app runs.
+  let preferredMode: XRSessionMode = getSelectedXRMode();
+  // The default XR experience bakes its Enter button to whatever sessionMode
+  // was passed in at creation time, so switching the radio has to rebuild it —
+  // otherwise "AR" still launches an opaque immersive-vr session (black background).
+  let xrExperience: BABYLON.WebXRDefaultExperience | undefined;
+  let usingTabletopFloor = false;
+  let wasFullScaleVR = false;
+  let heightCalibrationPending = false;
+  let handTrackingFeature: BABYLON.WebXRHandTracking | null = null;
+  let wasCalibratingFloor = false;
+  const calibrationPresses = new Map<string, boolean>();
+  let switchingToFullScaleVR = false;
+  const floorCalibrationStorageKey = "chartxr.floorCalibrationOffset";
+  let savedFloorOffset: number | null = null;
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(floorCalibrationStorageKey) ?? "null");
+    if (typeof value === "number" && Number.isFinite(value)) savedFloorOffset = value;
+  } catch (error) {
+    console.warn("Unable to read saved floor calibration:", error);
+  }
+  let fullScaleNoticeShown = false;
+  let floorResetNotice: BABYLON.Mesh | null = null;
+  let floorResetNoticeTimeout: ReturnType<typeof setTimeout> | undefined;
+
+  function hideFloorResetNotice() {
+    clearTimeout(floorResetNoticeTimeout);
+    floorResetNoticeTimeout = undefined;
+    floorResetNotice?.setEnabled(false);
+  }
+
+  function showFloorResetNotice(camera: BABYLON.WebXRCamera) {
+    if (!floorResetNotice || floorResetNotice.isDisposed()) {
+      const canvas = document.createElement("canvas");
+      canvas.width = 640;
+      canvas.height = 96;
+      const ctx = canvas.getContext("2d")!;
+      ctx.fillStyle = "rgba(18, 22, 32, 0.94)";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "white";
+      ctx.font = "28px 'Segoe UI', Arial";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("Touch the floor to reset your height", canvas.width / 2, canvas.height / 2);
+      const texture = new BABYLON.DynamicTexture("floorResetNoticeTexture", canvas, scene, false);
+      texture.hasAlpha = true;
+      texture.update(true);
+      const material = new BABYLON.StandardMaterial("floorResetNoticeMaterial", scene);
+      material.diffuseTexture = texture;
+      material.opacityTexture = texture;
+      material.emissiveColor = BABYLON.Color3.White();
+      material.disableLighting = true;
+      material.backFaceCulling = false;
+      material.disableDepthWrite = true;
+      floorResetNotice = BABYLON.MeshBuilder.CreatePlane("floorResetNotice", { width: 0.48, height: 0.072 }, scene);
+      floorResetNotice.material = material;
+      floorResetNotice.position.set(0, -0.13, 0.8);
+      floorResetNotice.isPickable = false;
+      floorResetNotice.applyFog = false;
+      floorResetNotice.renderingGroupId = 3;
+      floorResetNotice.onDisposeObservable.add(() => material.dispose(false, true));
+    }
+    floorResetNotice.parent = camera;
+    floorResetNotice.setEnabled(true);
+    clearTimeout(floorResetNoticeTimeout);
+    floorResetNoticeTimeout = setTimeout(hideFloorResetNotice, 8000);
+  }
+
+  async function enterFullScaleVR() {
+    if (switchingToFullScaleVR) return;
+    switchingToFullScaleVR = true;
+    try {
+      setARScale(getARScaleRange().max);
+      heightCalibrationPending = true;
+      if (preferredMode !== "immersive-vr") {
+        if (xrExperience && xrExperience.baseExperience.state !== BABYLON.WebXRState.NOT_IN_XR) {
+          await xrExperience.baseExperience.exitXRAsync();
+        }
+        xrExperience?.dispose();
+        xrExperience = undefined;
+        preferredMode = "immersive-vr";
+        xrModeInputs.forEach((input) => { input.checked = input.value === preferredMode; });
+      }
+      if (!xrExperience) await setupDefaultXRExperience();
+      if (xrExperience?.baseExperience.state === BABYLON.WebXRState.NOT_IN_XR) {
+        await xrExperience.baseExperience.enterXRAsync("immersive-vr", "local-floor");
+      }
+    } catch (error) {
+      console.error("Failed to enter full-scale VR:", error);
+    } finally {
+      switchingToFullScaleVR = false;
+    }
+  }
+
+  fullScaleVRButton?.addEventListener("click", () => { void enterFullScaleVR(); });
+  tabletopScaleButton?.addEventListener("click", () => {
+    if (switchingToFullScaleVR) return;
+    setARScale(getARScaleRange().default);
+    heightCalibrationPending = false;
+    if (floorCalibrationToggle) floorCalibrationToggle.checked = false;
+  });
+
+  function updateTeleportationAvailability() {
+    const teleportation = xrExperience?.teleportation;
+    const enabled = preferredMode === "immersive-vr" && getARScale() === getARScaleRange().max;
+    if (!teleportation) {
+      teleportGrid.setEnabled(false);
+      return;
+    }
+    teleportation.disableAutoAttach = !enabled;
+    if (!enabled) {
+      if (teleportation.attached) teleportation.detach();
+      teleportGrid.setEnabled(false);
+    } else if (xrExperience?.baseExperience.state === BABYLON.WebXRState.IN_XR && !teleportation.attached) {
+      teleportation.attach();
+    }
+  }
+
+  function updateFloorCalibration() {
+    const baseExperience = xrExperience?.baseExperience;
+    const manual = !!floorCalibrationToggle?.checked;
+    const active = baseExperience?.state === BABYLON.WebXRState.IN_XR && preferredMode === "immersive-vr";
+    if (!active || !baseExperience) {
+      setHandFloorContact("left", false);
+      setHandFloorContact("right", false);
+      wasCalibratingFloor = false;
+      calibrationPresses.clear();
+      return;
+    }
+    const trackedHeight = getTrackedPlayerHeight(baseExperience.camera);
+    if (!Number.isFinite(trackedHeight) || trackedHeight <= 0 ||
+      !Number.isFinite(baseExperience.camera.realWorldHeight) || baseExperience.camera.realWorldHeight <= 0) {
+      calibrationPresses.clear();
+      return;
+    }
+    const floorY = baseExperience.camera.position.y - trackedHeight;
+    let captured = false;
+    let alignedOnEntry = false;
+    const capture = (key: string, pressed: boolean, point: BABYLON.Vector3,
+      handedness: string, source: "hand" | "controller", confirmation = false, alignOnEntry = false) => {
+      const wasPressed = calibrationPresses.get(key) ?? (confirmation ? pressed : false);
+      calibrationPresses.set(key, pressed);
+      const loweringFloor = source === "controller" && !confirmation && point.y < floorY - 0.01;
+      if (captured || !pressed || (!alignOnEntry && ((confirmation && !wasCalibratingFloor) ||
+        (wasPressed && !loweringFloor && (confirmation || getARScale() === getARScaleRange().max))))) return;
+      const camera = baseExperience.camera;
+      const eyeHeight = camera.position.y - point.y;
+      const floor = scene.getMeshByName("turfStripe0");
+      if (!floor || !Number.isFinite(eyeHeight) || eyeHeight <= 0 ||
+        !Number.isFinite(camera.realWorldHeight) || camera.realWorldHeight <= 0) return;
+      setARScale(getARScaleRange().max);
+      floor.computeWorldMatrix(true);
+      setPlayerFloorOffset(camera.realWorldHeight - eyeHeight);
+      camera.position.y = floor.getAbsolutePosition().y + eyeHeight;
+      heightCalibrationPending = false;
+      captured = true;
+      alignedOnEntry = alignOnEntry;
+      if (alignOnEntry) calibrationPresses.set(`floor:controller:${handedness}`, true);
+      wasFullScaleVR = true;
+      fullScaleNoticeShown = true;
+      hideFloorResetNotice();
+      if (!alignOnEntry) {
+        consumeFloorCalibrationGesture(handedness, source);
+        if (floorCalibrationToggle) floorCalibrationToggle.checked = false;
+      }
+    };
+    const controllers = [...getActiveControllers().entries()]
+      .filter(([, controller]) => controller.grip && !controller.grip.isDisposed())
+      .map(([handedness, controller]) => {
+      const point = controller.grip!.getAbsolutePosition().clone();
+      const model = controller.motionController?.rootMesh;
+      if (model) {
+        const meshes = [model, ...model.getChildMeshes()].filter((mesh) => mesh.getTotalVertices() > 0);
+        const bottom = Math.min(...meshes.map((mesh) => {
+          mesh.computeWorldMatrix(true);
+          return mesh.getBoundingInfo().boundingBox.minimumWorld.y;
+        }));
+        if (Number.isFinite(bottom)) point.y = bottom;
+      }
+      return { handedness, controller, point };
+    }).sort((first, second) => first.point.y - second.point.y);
+    if (manual && controllers.length > 0) {
+      let confirmation: string | null = null;
+      controllers.forEach(({ handedness, controller }) => {
+        const key = `controller:${handedness}`;
+        const pressed = !!controller.motionController?.getComponentOfType("trigger")?.pressed;
+        const wasPressed = calibrationPresses.get(key) ?? pressed;
+        calibrationPresses.set(key, pressed);
+        if (wasCalibratingFloor && pressed && !wasPressed) confirmation = handedness;
+      });
+      const lowest = controllers[0];
+      capture(`preview:controller:${lowest.handedness}`, true, lowest.point,
+        lowest.handedness, "controller", false, true);
+      if (captured && confirmation !== null) {
+        savedFloorOffset = baseExperience.camera.realWorldHeight - getTrackedPlayerHeight(baseExperience.camera);
+        try {
+          localStorage.setItem(floorCalibrationStorageKey, JSON.stringify(savedFloorOffset));
+        } catch (error) {
+          console.warn("Unable to save floor calibration:", error);
+        }
+        consumeFloorCalibrationGesture(confirmation, "controller");
+        if (floorCalibrationToggle) floorCalibrationToggle.checked = false;
+      }
+      wasCalibratingFloor = !!floorCalibrationToggle?.checked;
+      return;
+    }
+    controllers.forEach(({ handedness, controller, point }) => {
+      if (captured) return;
+      if (manual && !wasCalibratingFloor) {
+        capture(`entry:controller:${handedness}`, true, point, handedness, "controller", false, true);
+        return;
+      }
+      if (controller.motionController?.rootMesh) {
+        const key = `floor:controller:${handedness}`;
+        const touching = point.y - floorY <= (calibrationPresses.get(key) ? 0.04 : 0.025);
+        capture(key, touching, point, handedness, "controller");
+      }
+      const pressed = !!controller.motionController?.getComponentOfType("trigger")?.pressed;
+      if (manual) capture(`controller:${handedness}`, pressed, point, handedness, "controller", true);
+    });
+    for (const handedness of ["left", "right"] as const) {
+      const hand = handTrackingFeature?.getHandByHandedness(handedness);
+      if (!hand) {
+        setHandFloorContact(handedness, false);
+        continue;
+      }
+      const finger = hand.getJointMesh(BABYLON.WebXRHandJoint.INDEX_FINGER_TIP).getAbsolutePosition();
+      const thumb = hand.getJointMesh(BABYLON.WebXRHandJoint.THUMB_TIP).getAbsolutePosition();
+      const key = `hand:${handedness}`;
+      const distance = BABYLON.Vector3.Distance(finger, thumb);
+      if (distance < 0.002) {
+        setHandFloorContact(handedness, false);
+        continue;
+      }
+      const floorKey = `floor:hand:${handedness}`;
+      const touching = Math.abs(finger.y - floorY) <= (calibrationPresses.get(floorKey) ? 0.04 : 0.025);
+      setHandFloorContact(handedness, touching);
+      capture(floorKey, touching, finger, handedness, "hand");
+      const pressed = distance < (calibrationPresses.get(key) ? 0.04 : 0.025);
+      if (manual) capture(key, pressed, finger, handedness, "hand", true);
+    }
+    wasCalibratingFloor = manual && (alignedOnEntry || !captured);
+  }
+
+  xrModeInputs.forEach((input) => {
+    input.addEventListener("change", () => {
+      preferredMode = getSelectedXRMode();
+      if (xrExperience && xrExperience.baseExperience.state === BABYLON.WebXRState.NOT_IN_XR) {
+        xrExperience.dispose();
+        xrExperience = undefined;
+        void setupDefaultXRExperience();
+      }
+    });
+  });
+
+  async function setupDefaultXRExperience() {
+    if (!(await checkSessionSupport(preferredMode))) {
+      return;
+    }
+
+    try {
+      usingTabletopFloor = isTabletopSized();
+      const teleportFloorMeshes = usingTabletopFloor ? [tabletopTeleportFloor] : getFieldFloorMeshes();
+
+      xrExperience = await scene.createDefaultXRExperienceAsync({
+        uiOptions: {
+          sessionMode: preferredMode,
+          referenceSpaceType: "local-floor",
+        },
+        optionalFeatures: true,
+        floorMeshes: teleportFloorMeshes,
+        disableTeleportation: preferredMode === "immersive-ar",
+        inputOptions: {
+          doNotLoadControllerMeshes: false,
+          disableControllerAnimation: false,
+          disableOnlineControllerRepository: false,
+          customControllersRepositoryURL: "https://cdn.jsdelivr.net/npm/@webxr-input-profiles/assets@1.0/dist",
+        },
+      });
+
+      xrExperience.baseExperience.onInitialXRPoseSetObservable.add((camera) => {
+        wasFullScaleVR = preferredMode === "immersive-vr" && getARScale() === getARScaleRange().max;
+        heightCalibrationPending = wasFullScaleVR;
+        resetPlayerFloorOffset();
+        if (preferredMode === "immersive-vr" && savedFloorOffset !== null) setPlayerFloorOffset(savedFloorOffset);
+        if (!wasFullScaleVR) return;
+        const floor = scene.getMeshByName("turfStripe0");
+        if (!floor) return;
+        floor.computeWorldMatrix(true);
+        camera.position.y = floor.getAbsolutePosition().y;
+      });
+
+      const handTracking = xrExperience.baseExperience.featuresManager.enableFeature(
+        BABYLON.WebXRFeatureName.HAND_TRACKING,
+        'latest',
+        {
+          xrInput: xrExperience.input,
+          jointMeshes: { invisible: true },
+          handMeshes: {
+            disableDefaultMeshes: false,
+            disableHandShader: true,
+          },
+        },
+        true,
+        false
+      );
+      handTrackingFeature = handTracking;
+      setHandTracking(handTracking);
+
+      const teleportation = xrExperience.teleportation;
+      updateTeleportationAvailability();
+      if (teleportation) {
+        let teleportHeightCorrection = 0;
+        teleportation.onBeforeCameraTeleport.add(() => {
+          const camera = xrExperience!.baseExperience.camera;
+          const rawHeight = camera.realWorldHeight;
+          const calibratedHeight = getTrackedPlayerHeight(camera);
+          teleportHeightCorrection = Number.isFinite(rawHeight) && Number.isFinite(calibratedHeight) && calibratedHeight > 0
+            ? rawHeight - calibratedHeight
+            : 0;
+        });
+        teleportation.onAfterCameraTeleport.add(() => {
+          xrExperience!.baseExperience.camera.position.y -= teleportHeightCorrection;
+          teleportHeightCorrection = 0;
+        });
+        let gridHideTimeout: ReturnType<typeof setTimeout> | undefined;
+        teleportation.onTargetMeshPositionUpdatedObservable.add(() => {
+          if (preferredMode !== "immersive-vr" || getARScale() < getARScaleRange().max) {
+            teleportGrid.setEnabled(false);
+            return;
+          }
+          teleportGrid.setEnabled(true);
+          clearTimeout(gridHideTimeout);
+          gridHideTimeout = setTimeout(() => teleportGrid.setEnabled(false), 150);
+        });
+      }
+
+      xrExperience.baseExperience.onStateChangedObservable.add((state) => {
+        if (state === BABYLON.WebXRState.ENTERING_XR || state === BABYLON.WebXRState.IN_XR) {
+          if (state === BABYLON.WebXRState.ENTERING_XR) setHandTracking(handTracking);
+          if (preferredMode === "immersive-ar") {
+            scene.clearColor = new BABYLON.Color4(0, 0, 0, 0);
+            scene.autoClear = true;
+            enterARTabletopMode();
+          } else {
+            scene.clearColor = new BABYLON.Color4(0.03, 0.05, 0.09, 1);
+            exitARTabletopMode();
+          }
+          updateTeleportationAvailability();
+          return;
+        }
+
+        if (state === BABYLON.WebXRState.NOT_IN_XR) {
+          fullScaleNoticeShown = false;
+          hideFloorResetNotice();
+          wasFullScaleVR = false;
+          heightCalibrationPending = false;
+          wasCalibratingFloor = false;
+          calibrationPresses.clear();
+          resetPlayerFloorOffset();
+          setHandTracking(null);
+          scene.clearColor = new BABYLON.Color4(0.03, 0.05, 0.09, 1);
+          teleportGrid.setEnabled(false);
+          exitARTabletopMode();
+        }
+      });
+
+      xrExperience.input.onControllerRemovedObservable.add(removeActiveController);
+      xrExperience.input.onControllerAddedObservable.add((controller) => {
+        if (controller.inputSource.hand) return;
+        setActiveController(controller);
+        const handedness = controller.inputSource.handedness || "unknown";
+        console.log(`Quest 3 controller connected: ${handedness}`);
+
+        const pointerMaterial = new BABYLON.StandardMaterial(
+          `pointerMat-${controller.uniqueId}`,
+          scene
+        );
+        pointerMaterial.emissiveColor = new BABYLON.Color3(0.55, 0.9, 1);
+        pointerMaterial.diffuseColor = new BABYLON.Color3(0.15, 0.3, 0.5);
+        controller.pointer.material = pointerMaterial;
+
+        if (controller.grip) {
+          const gripMaterial = new BABYLON.StandardMaterial(
+            `gripMat-${controller.uniqueId}`,
+            scene
+          );
+          gripMaterial.emissiveColor = new BABYLON.Color3(0.8, 0.9, 1);
+          controller.grip.material = gripMaterial;
+        }
+
+        controller.onMotionControllerInitObservable.add((motionController) => {
+          const applyRealControllerScale = () => {
+            const profileId = motionController.profileId || "unknown";
+            const isQuestProfile = profileId.includes("oculus") || profileId.includes("quest");
+
+            if (!isQuestProfile || motionController instanceof BABYLON.WebXRGenericTriggerMotionController) {
+              console.warn(
+                `Quest 3 controller (${handedness}) is using profile "${profileId}"; this is not the real Quest mesh.`
+              );
+              return;
+            }
+
+            motionController.rootMesh?.scaling.setAll(1);
+            console.log(`Loaded real Quest controller mesh for ${handedness}: ${profileId}`);
+          };
+
+          if (motionController.rootMesh) {
+            applyRealControllerScale();
+          } else {
+            motionController.onModelLoadedObservable.addOnce(applyRealControllerScale);
+          }
+        });
+      });
+    } catch (error) {
+      console.error(`Failed to prepare ${preferredMode}:`, error);
+    }
+  }
+
+  void setupDefaultXRExperience();
+
+  // Teleportation is available only in full-scale VR.
+  scene.onBeforeAnimationsObservable.add(() => {
+    updateFloorCalibration();
+    const baseExperience = xrExperience?.baseExperience;
+    if (baseExperience?.state === BABYLON.WebXRState.IN_XR) {
+      const fullScaleVR = preferredMode === "immersive-vr" && getARScale() === getARScaleRange().max;
+      if (fullScaleVR && !fullScaleNoticeShown) {
+        showFloorResetNotice(baseExperience.camera);
+        fullScaleNoticeShown = true;
+      }
+      if (fullScaleVR && floorResetNotice?.isEnabled()) {
+        const horizontalProjection = Math.abs(baseExperience.camera.getProjectionMatrix().m[0]);
+        const availableWidth = 1.6 / Math.max(horizontalProjection, 0.001);
+        floorResetNotice.scaling.setAll(Math.min(1, availableWidth * 0.85 / 0.48));
+      }
+      if (!fullScaleVR) {
+        fullScaleNoticeShown = false;
+        hideFloorResetNotice();
+      }
+      if (fullScaleVR && !wasFullScaleVR) heightCalibrationPending = true;
+      if (fullScaleVR && heightCalibrationPending && !floorCalibrationToggle?.checked) {
+        const floor = scene.getMeshByName("turfStripe0");
+        const eyeHeight = getTrackedPlayerHeight(baseExperience.camera);
+        if (floor && Number.isFinite(eyeHeight) && eyeHeight > 0) {
+          floor.computeWorldMatrix(true);
+          baseExperience.camera.position.y = floor.getAbsolutePosition().y + eyeHeight;
+          heightCalibrationPending = false;
+        }
+      }
+      if (!fullScaleVR) heightCalibrationPending = false;
+      wasFullScaleVR = fullScaleVR;
+    }
+
+    const teleportation = xrExperience?.teleportation;
+    if (teleportation && usingTabletopFloor && preferredMode === "immersive-vr" &&
+      getARScale() === getARScaleRange().max) {
+      teleportation.removeFloorMesh(tabletopTeleportFloor);
+      getFieldFloorMeshes().forEach((mesh) => teleportation.addFloorMesh(mesh));
+      usingTabletopFloor = false;
+    }
+    updateTeleportationAvailability();
+  });
+}

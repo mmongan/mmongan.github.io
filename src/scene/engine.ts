@@ -1,5 +1,5 @@
 import * as BABYLON from 'babylonjs';
-import { canvas } from './dom';
+import { canvas } from '../ui/dom';
 
 export const engine = new BABYLON.Engine(canvas, true, {
   preserveDrawingBuffer: true,
