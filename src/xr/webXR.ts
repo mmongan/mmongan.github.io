@@ -382,7 +382,7 @@ export function initXR(teleportGrid: Mesh) {
       usingTabletopFloor = isTabletopSized();
       const teleportFloorMeshes = usingTabletopFloor ? [tabletopTeleportFloor] : getFieldFloorMeshes();
 
-      xrExperience = await scene.createDefaultXRExperienceAsync({
+      xrExperience = await WebXRDefaultExperience.CreateAsync(scene, {
         uiOptions: {
           sessionMode: preferredMode,
           referenceSpaceType: "local-floor",
