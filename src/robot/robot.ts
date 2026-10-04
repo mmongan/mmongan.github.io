@@ -100,7 +100,7 @@ function applyInstrumentPose(parts: {
   parts.rightArm.position.z = 0;
   parts.leftArm.rotation.x = restPose ? -0.8 : -1.85;
   parts.rightArm.rotation.x = restPose ? -0.8 : -1.85;
-  parts.horn.position.set(0, restPose ? 0.8 : 1.22, restPose ? 0.36 : 0.36);
+  parts.horn.position.set(0, restPose ? 0.8 : 1.22, restPose ? 0.45 : 0.36);
   parts.horn.rotation.set(restPose ? 0 : -Math.PI / 2, 0, 0);
 }
 

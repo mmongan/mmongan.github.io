@@ -14,6 +14,17 @@ function createPlayerBody() {
 
 let playerBody: TransformNode | null = null;
 let playerFloorOffset = 0;
+let playerArmsVisible: boolean | null = null;
+
+function setPlayerArmsVisible(visible: boolean) {
+  if (visible === playerArmsVisible) return;
+  playerArmsVisible = visible;
+  playerBody?.getChildMeshes().forEach((mesh) => {
+    if (mesh.name.startsWith("marcherSleeve") || mesh.name.startsWith("marcherHand")) {
+      mesh.setEnabled(visible);
+    }
+  });
+}
 
 export function resetPlayerFloorOffset() {
   playerFloorOffset = 0;
@@ -40,6 +51,7 @@ scene.onBeforeRenderObservable.add(() => {
 
   playerBody ??= createPlayerBody();
   const isXRCamera = activeCamera instanceof WebXRCamera;
+  setPlayerArmsVisible(!isXRCamera);
   const eyeHeight = isXRCamera ? getTrackedPlayerHeight(activeCamera) : 1.8;
   if (!Number.isFinite(eyeHeight) || eyeHeight <= 0) {
     playerBody.setEnabled(false);
