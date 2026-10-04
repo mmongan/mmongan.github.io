@@ -90,8 +90,12 @@
             <input type="checkbox" id="placementModeToggle" />
             <span>Placement mode (trigger places a standing robot)</span>
           </label>
-          <button id="addRandomRobotsButton" class="xr-button secondary">Add 8 random robots</button>
-          <button id="add100RobotsButton" class="xr-button secondary">Add 100 random robots (stress test)</button>
+          <label class="settings-label" for="marcherCount">Marchers to add</label>
+          <div class="radio-row">
+            <input id="marcherCount" type="range" min="1" max="100" step="1" value="8" />
+            <output id="marcherCountValue" for="marcherCount">8</output>
+          </div>
+          <button id="addRandomRobotsButton" class="xr-button secondary">Add marchers</button>
           <button id="generateDrillButton" class="xr-button secondary">Generate marching band drill</button>
         </div>
       </div>

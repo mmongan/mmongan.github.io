@@ -109,35 +109,20 @@ export function createTeleportGrid(): Mesh {
   return teleportGrid;
 }
 
-// Full-scale teleport targets (the field and its surroundings), used whenever
-// the scene isn't shrunk down to tabletop size.
+// Full-scale teleporting is restricted to the field; the surrounding ground
+// remains scenery, not a valid destination.
 function getFieldFloorMeshes(): AbstractMesh[] {
-  return ["field", "horizonGround", "outerBase"]
-    .map((name) => scene.getMeshByName(name))
-    .filter((mesh): mesh is AbstractMesh => mesh !== null);
-}
-
-function isTabletopSized(): boolean {
-  return getARScale() <= getARScaleRange().default;
+  const field = scene.getMeshByName("field");
+  return field ? [field] : [];
 }
 
 export function initXR(teleportGrid: Mesh) {
-  // Invisible floor used to teleport around the table once the scene is
-  // shrunk down, instead of trying to teleport onto the tiny miniature field.
-  const tabletopTeleportFloor = MeshBuilder.CreateGround(
-    "tabletopTeleportFloor",
-    { width: 10, height: 10 },
-    scene
-  );
-  tabletopTeleportFloor.isVisible = false;
-
   // Keep the active XR mode in sync with the radio UI while the app runs.
   let preferredMode: XRSessionMode = getSelectedXRMode();
   // The default XR experience bakes its Enter button to whatever sessionMode
   // was passed in at creation time, so switching the radio has to rebuild it —
   // otherwise "AR" still launches an opaque immersive-vr session (black background).
   let xrExperience: WebXRDefaultExperience | undefined;
-  let usingTabletopFloor = false;
   let wasFullScaleVR = false;
   let heightCalibrationPending = false;
   let handTrackingFeature: WebXRHandTracking | null = null;
@@ -231,6 +216,7 @@ export function initXR(teleportGrid: Mesh) {
     setARScale(getARScaleRange().default);
     heightCalibrationPending = false;
     if (floorCalibrationToggle) floorCalibrationToggle.checked = false;
+    updateTeleportationAvailability();
   });
 
   function updateTeleportationAvailability() {
@@ -407,9 +393,6 @@ export function initXR(teleportGrid: Mesh) {
     }
 
     try {
-      usingTabletopFloor = isTabletopSized();
-      const teleportFloorMeshes = usingTabletopFloor ? [tabletopTeleportFloor] : getFieldFloorMeshes();
-
       xrExperience = await WebXRDefaultExperience.CreateAsync(scene, {
         uiOptions: {
           sessionMode: preferredMode,
@@ -423,7 +406,7 @@ export function initXR(teleportGrid: Mesh) {
             disableHandShader: true,
           },
         },
-        floorMeshes: teleportFloorMeshes,
+        floorMeshes: getFieldFloorMeshes(),
         disableTeleportation: preferredMode === "immersive-ar",
         inputOptions: {
           doNotLoadControllerMeshes: false,
@@ -590,13 +573,6 @@ export function initXR(teleportGrid: Mesh) {
       wasFullScaleVR = fullScaleVR;
     }
 
-    const teleportation = xrExperience?.teleportation;
-    if (teleportation && usingTabletopFloor && preferredMode === "immersive-vr" &&
-      getARScale() === getARScaleRange().max) {
-      teleportation.removeFloorMesh(tabletopTeleportFloor);
-      getFieldFloorMeshes().forEach((mesh) => teleportation.addFloorMesh(mesh));
-      usingTabletopFloor = false;
-    }
     updateTeleportationAvailability();
   });
 }

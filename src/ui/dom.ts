@@ -16,7 +16,8 @@ export const showAllPathsToggle = document.getElementById("showAllPathsToggle") 
 export const collisionMarkersToggle = document.getElementById("collisionMarkersToggle") as HTMLInputElement | null;
 export const placementModeToggle = document.getElementById("placementModeToggle") as HTMLInputElement | null;
 export const addRandomRobotsButton = document.getElementById("addRandomRobotsButton") as HTMLButtonElement | null;
-export const add100RobotsButton = document.getElementById("add100RobotsButton") as HTMLButtonElement | null;
+export const marcherCountInput = document.getElementById("marcherCount") as HTMLInputElement | null;
+export const marcherCountValue = document.getElementById("marcherCountValue") as HTMLOutputElement | null;
 export const generateDrillButton = document.getElementById("generateDrillButton") as HTMLButtonElement | null;
 
 export function getSelectedXRMode(): XRSessionMode {

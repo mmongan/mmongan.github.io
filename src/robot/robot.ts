@@ -119,10 +119,6 @@ export const MARCHING_GAITS = [
   { name: "Backward High Step", lift: 0.2, kneeBend: 0.65, ankleFlex: 0.28, stanceTravel: 1, tempoFactor: 1, facingOffset: Math.PI, legFacingOffset: 0, inPlace: false },
 ] as const;
 
-export const RANDOM_MARCHING_GAIT_INDICES = MARCHING_GAITS
-  .map((gait, index) => gait.tempoFactor === 1 ? index : -1)
-  .filter((index) => index >= 0);
-
 let selectedMarchingGait = 0;
 let instrumentCarryPose = false;
 

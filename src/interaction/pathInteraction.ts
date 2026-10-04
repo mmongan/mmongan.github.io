@@ -58,8 +58,6 @@ import {
   resetRobotSchedule,
   disposeAllRobots,
   walkRobotAlongCounts,
-  RANDOM_MARCHING_GAIT_INDICES,
-  setMarcherInstrumentRestPose,
 } from '../robot/robot';
 import { getHandMenuHit, isHandMenuVisible, isMenuControl } from '../menu/handMenu';
 import { createHandInteraction } from './handInteraction';
@@ -72,7 +70,7 @@ import {
   updateScoreboardHornPoseFromPick,
   updateScoreboardTempoFromPick,
 } from '../field/scoreboard';
-import { canvas, collisionMarkersToggle, floorCalibrationToggle, fullScaleVRButton, tabletopScaleButton, showAllPathsToggle, placementModeToggle, addRandomRobotsButton, add100RobotsButton, generateDrillButton } from '../ui/dom';
+import { canvas, collisionMarkersToggle, floorCalibrationToggle, fullScaleVRButton, tabletopScaleButton, showAllPathsToggle, placementModeToggle, addRandomRobotsButton, marcherCountInput, marcherCountValue, generateDrillButton } from '../ui/dom';
 import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS, FIELD_SURFACE_Y } from '../field/constants';
 import { FORMATION_SPACING_YARDS, generateMarchingDrillPaths, MARCH_STEP_YARDS } from '../robot/drill';
 
@@ -162,12 +160,13 @@ export function removeActiveController(controller: WebXRInputSource) {
     placementDrafts.delete(handedness);
     cornerDrags.delete(handedness);
     triggerHeld.delete(handedness);
+    gripHeld.delete(handedness);
     stopRotationHandleDrag(handedness);
   });
 }
 
 export function updateARResizeFromControllers() {
-  resizeFromControllers(cornerDrags.size > 0);
+  resizeFromControllers(cornerDrags.size > 0 || marcherGrabs.size > 0);
 }
 
 // The path/robot live under the shared AR transform so they scale, move, and
@@ -962,6 +961,7 @@ let reshapingStepHandle: { robot: TransformNode; index: number } | null = null;
 // the shared timeline to whichever of its own steps is nearest the laser.
 let scrubbingRobot: TransformNode | null = null;
 const triggerHeld = new Map<string, boolean>();
+const gripHeld = new Map<string, boolean>();
 const tempoControllerDrags = new Set<string>();
 let tempoPointerDragging = false;
 // True while a controller's trigger-down landed on the hand menu, so the rest
@@ -1145,6 +1145,9 @@ export function updateRobotPathFromControllers() {
 
   controllerRegistry.forEach((controller, handedness) => {
     if (controller.inputSource.hand) return;
+    const gripPressed = isGripPressed(controller);
+    const wasGripPressed = gripHeld.get(handedness) ?? false;
+    gripHeld.set(handedness, gripPressed);
     const isPressed = getTriggerPressed(controller);
     const wasPressed = triggerHeld.get(handedness) ?? false;
     triggerHeld.set(handedness, isPressed);
@@ -1152,12 +1155,29 @@ export function updateRobotPathFromControllers() {
     const marcherGrab = marcherGrabs.get(handedness);
     if (marcherGrab?.source === "hand") return;
     if (marcherGrab?.source === "controller") {
-      if (!isPressed) finishMarcherGrab(handedness, true);
+      if (!gripPressed) finishMarcherGrab(handedness, true);
       else {
         const ray = getControllerRay(controller);
         moveMarcherGrab(handedness, ray.origin.add(ray.direction.scale(marcherGrab.rayDistance)));
       }
       return;
+    }
+
+    if (gripPressed && !wasGripPressed && isTabletopInteractionMode() && cornerDrags.size === 0 &&
+      !menuInteractionHeld.get(handedness)) {
+      const ray = getControllerRay(controller);
+      const pick = scene.pickWithRay(ray, (mesh) => findRobotRoot(mesh) !== null);
+      const robot = pick?.hit ? findRobotRoot(pick.pickedMesh) : null;
+      if (robot && pick?.pickedPoint) {
+        beginMarcherGrab(
+          handedness,
+          robot,
+          pick.pickedPoint,
+          "controller",
+          Vector3.Distance(ray.origin, pick.pickedPoint)
+        );
+        return;
+      }
     }
 
     if (!isPressed && wasPressed && tempoControllerDrags.delete(handedness)) return;
@@ -1221,14 +1241,6 @@ export function updateRobotPathFromControllers() {
       menuInteractionHeld.set(handedness, false);
 
       const pick = scene.pickWithRay(getControllerRay(controller));
-
-      const tabletopRobot = isTabletopInteractionMode() && pick?.hit ? findRobotRoot(pick.pickedMesh) : null;
-      if (tabletopRobot && pick?.pickedPoint) {
-        const ray = getControllerRay(controller);
-        beginMarcherGrab(handedness, tabletopRobot, pick.pickedPoint, "controller",
-          Vector3.Distance(ray.origin, pick.pickedPoint));
-        return;
-      }
 
       if (pick?.hit && pick.pickedMesh && seekToCollisionMarker(pick.pickedMesh)) {
         return;
@@ -1554,29 +1566,13 @@ function generateRandomPath(): Vector3[] {
   return buildCurvePoints(points);
 }
 
-// Spawns a batch of robots on random walking routes, e.g. for stress-testing
-// playback/collision behavior with a crowd on the field.
-function spawnRandomRobots(count: number, randomizeGaits = false) {
+// Spawns a batch of robots on random walking routes.
+function spawnRandomRobots(count: number) {
   for (let i = 0; i < count; i++) {
-    const isResting = randomizeGaits && i % 10 === 0;
-    const points = isResting ? null : generateRandomPath();
-    if (points && points.length < 2) continue;
-    const gaitIndex = randomizeGaits
-      ? RANDOM_MARCHING_GAIT_INDICES[Math.floor(Math.random() * RANDOM_MARCHING_GAIT_INDICES.length)]
-      : undefined;
-    const robotPrimitives = createLowPolyRobot(scene, gaitIndex);
+    const points = generateRandomPath();
+    if (points.length < 2) continue;
+    const robotPrimitives = createLowPolyRobot(scene);
     robotPrimitives.parent = pathRoot;
-    if (isResting) {
-      setMarcherInstrumentRestPose(robotPrimitives, true);
-      robotPrimitives.position.copyFrom(randomFieldPoint());
-      robotPrimitives.rotation.y = Math.random() * Math.PI * 2;
-      robotPrimitives.setEnabled(true);
-      continue;
-    }
-    if (randomizeGaits) {
-      setMarcherInstrumentRestPose(robotPrimitives, Math.random() < 0.5);
-    }
-    if (!points) continue;
     robotPaths.set(robotPrimitives, points);
     updateRobotPathLine(robotPrimitives, points);
     walkRobotAlongPath(robotPrimitives, points, scene, MARCH_STEP_YARDS);
@@ -1642,8 +1638,13 @@ function spawnMarchingDrill() {
 }
 
 export function initInteraction() {
-  addRandomRobotsButton?.addEventListener("click", () => spawnRandomRobots(8));
-  add100RobotsButton?.addEventListener("click", () => spawnRandomRobots(100, true));
+  const getMarcherCount = () => Math.max(1, Math.min(100, Math.round(Number(marcherCountInput?.value) || 8)));
+  const updateMarcherCountValue = () => {
+    if (marcherCountValue) marcherCountValue.value = String(getMarcherCount());
+  };
+  marcherCountInput?.addEventListener("input", updateMarcherCountValue);
+  updateMarcherCountValue();
+  addRandomRobotsButton?.addEventListener("click", () => spawnRandomRobots(getMarcherCount()));
   generateDrillButton?.addEventListener("click", () => spawnMarchingDrill());
   collisionMarkersToggle?.addEventListener("change", () => {
     setCollisionMarkersVisible(!!collisionMarkersToggle?.checked);
