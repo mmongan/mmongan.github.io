@@ -1,6 +1,21 @@
-import * as BABYLON from 'babylonjs';
-import 'babylonjs-loaders';
-import { RegisterWebXROculusTouchMotionController, RegisterWebXRHandTracking } from 'babylonjs';
+import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
+import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.pure';
+import { Texture } from '@babylonjs/core/Materials/Textures/texture.pure';
+import { Color3, Color4 } from '@babylonjs/core/Maths/math.color.pure';
+import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
+import { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.pure';
+import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
+import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
+import { WebXRHandJoint, WebXRHandTracking } from '@babylonjs/core/XR/features/WebXRHandTracking.pure';
+import { WebXRGenericTriggerMotionController } from '@babylonjs/core/XR/motionController/webXRGenericMotionController';
+import { WebXRMotionControllerManager } from '@babylonjs/core/XR/motionController/webXRMotionControllerManager.pure';
+import { WebXRCamera } from '@babylonjs/core/XR/webXRCamera';
+import { WebXRDefaultExperience } from '@babylonjs/core/XR/webXRDefaultExperience';
+import { WebXRFeatureName } from '@babylonjs/core/XR/webXRFeaturesManager';
+import { WebXRState } from '@babylonjs/core/XR/webXRTypes';
+import '@babylonjs/loaders/glTF';
+import { RegisterWebXROculusTouchMotionController } from '@babylonjs/core/XR/motionController/webXROculusTouchMotionController.pure';
+import { RegisterWebXRHandTracking } from '@babylonjs/core/XR/features/WebXRHandTracking.pure';
 import { scene } from '../scene/engine';
 import { xrModeInputs, getSelectedXRMode, floorCalibrationToggle, fullScaleVRButton, tabletopScaleButton } from '../ui/dom';
 import { enterARTabletopMode, exitARTabletopMode, getARScale, getARScaleRange, setARScale } from './ar';
@@ -9,7 +24,7 @@ import { getTrackedPlayerHeight, resetPlayerFloorOffset, setPlayerFloorOffset } 
 
 RegisterWebXROculusTouchMotionController();
 RegisterWebXRHandTracking();
-BABYLON.WebXRMotionControllerManager.PrioritizeOnlineRepository = true;
+WebXRMotionControllerManager.PrioritizeOnlineRepository = true;
 
 // WebXR session detection: this keeps the app from trying to launch unsupported
 // VR/AR modes while still allowing the chosen mode to fail quietly.
@@ -29,7 +44,7 @@ async function checkSessionSupport(mode: XRSessionMode) {
 }
 
 // Grid overlay shown across the whole floor while aiming to teleport in VR.
-export function createTeleportGrid(): BABYLON.Mesh {
+export function createTeleportGrid(): Mesh {
   const teleportGridCanvas = document.createElement("canvas");
   teleportGridCanvas.width = 64;
   teleportGridCanvas.height = 64;
@@ -39,16 +54,16 @@ export function createTeleportGrid(): BABYLON.Mesh {
   teleportGridCtx.lineWidth = 2;
   teleportGridCtx.strokeRect(0, 0, 64, 64);
 
-  const teleportGridTexture = new BABYLON.DynamicTexture(
+  const teleportGridTexture = new DynamicTexture(
     "teleportGridTexture",
     teleportGridCanvas,
     scene,
     false,
-    BABYLON.Texture.TRILINEAR_SAMPLINGMODE
+    Texture.TRILINEAR_SAMPLINGMODE
   );
   teleportGridTexture.update(true);
-  teleportGridTexture.wrapU = BABYLON.Texture.WRAP_ADDRESSMODE;
-  teleportGridTexture.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
+  teleportGridTexture.wrapU = Texture.WRAP_ADDRESSMODE;
+  teleportGridTexture.wrapV = Texture.WRAP_ADDRESSMODE;
   teleportGridTexture.hasAlpha = true;
   const teleportGridRadius = 240;
   // Matches the marching band "8 to 5" step size (8 steps per 5 yards) used
@@ -59,15 +74,15 @@ export function createTeleportGrid(): BABYLON.Mesh {
   teleportGridTexture.uScale = teleportGridTiles;
   teleportGridTexture.vScale = teleportGridTiles;
 
-  const teleportGridMaterial = new BABYLON.StandardMaterial("teleportGridMaterial", scene);
+  const teleportGridMaterial = new StandardMaterial("teleportGridMaterial", scene);
   teleportGridMaterial.diffuseTexture = teleportGridTexture;
   teleportGridMaterial.opacityTexture = teleportGridTexture;
   teleportGridMaterial.disableLighting = true;
-  teleportGridMaterial.emissiveColor = new BABYLON.Color3(0.5, 0.9, 1);
-  teleportGridMaterial.specularColor = new BABYLON.Color3(0, 0, 0);
+  teleportGridMaterial.emissiveColor = new Color3(0.5, 0.9, 1);
+  teleportGridMaterial.specularColor = new Color3(0, 0, 0);
   teleportGridMaterial.backFaceCulling = false;
 
-  const teleportGrid = BABYLON.MeshBuilder.CreateDisc(
+  const teleportGrid = MeshBuilder.CreateDisc(
     "teleportGrid",
     { radius: teleportGridRadius, tessellation: 64 },
     scene
@@ -83,20 +98,20 @@ export function createTeleportGrid(): BABYLON.Mesh {
 
 // Full-scale teleport targets (the field and its surroundings), used whenever
 // the scene isn't shrunk down to tabletop size.
-function getFieldFloorMeshes(): BABYLON.AbstractMesh[] {
+function getFieldFloorMeshes(): AbstractMesh[] {
   return ["field", "horizonGround", "outerBase"]
     .map((name) => scene.getMeshByName(name))
-    .filter((mesh): mesh is BABYLON.AbstractMesh => mesh !== null);
+    .filter((mesh): mesh is AbstractMesh => mesh !== null);
 }
 
 function isTabletopSized(): boolean {
   return getARScale() <= getARScaleRange().default;
 }
 
-export function initXR(teleportGrid: BABYLON.Mesh) {
+export function initXR(teleportGrid: Mesh) {
   // Invisible floor used to teleport around the table once the scene is
   // shrunk down, instead of trying to teleport onto the tiny miniature field.
-  const tabletopTeleportFloor = BABYLON.MeshBuilder.CreateGround(
+  const tabletopTeleportFloor = MeshBuilder.CreateGround(
     "tabletopTeleportFloor",
     { width: 10, height: 10 },
     scene
@@ -108,11 +123,11 @@ export function initXR(teleportGrid: BABYLON.Mesh) {
   // The default XR experience bakes its Enter button to whatever sessionMode
   // was passed in at creation time, so switching the radio has to rebuild it —
   // otherwise "AR" still launches an opaque immersive-vr session (black background).
-  let xrExperience: BABYLON.WebXRDefaultExperience | undefined;
+  let xrExperience: WebXRDefaultExperience | undefined;
   let usingTabletopFloor = false;
   let wasFullScaleVR = false;
   let heightCalibrationPending = false;
-  let handTrackingFeature: BABYLON.WebXRHandTracking | null = null;
+  let handTrackingFeature: WebXRHandTracking | null = null;
   let wasCalibratingFloor = false;
   const calibrationPresses = new Map<string, boolean>();
   let switchingToFullScaleVR = false;
@@ -125,7 +140,7 @@ export function initXR(teleportGrid: BABYLON.Mesh) {
     console.warn("Unable to read saved floor calibration:", error);
   }
   let fullScaleNoticeShown = false;
-  let floorResetNotice: BABYLON.Mesh | null = null;
+  let floorResetNotice: Mesh | null = null;
   let floorResetNoticeTimeout: ReturnType<typeof setTimeout> | undefined;
 
   function hideFloorResetNotice() {
@@ -134,7 +149,7 @@ export function initXR(teleportGrid: BABYLON.Mesh) {
     floorResetNotice?.setEnabled(false);
   }
 
-  function showFloorResetNotice(camera: BABYLON.WebXRCamera) {
+  function showFloorResetNotice(camera: WebXRCamera) {
     if (!floorResetNotice || floorResetNotice.isDisposed()) {
       const canvas = document.createElement("canvas");
       canvas.width = 640;
@@ -147,17 +162,17 @@ export function initXR(teleportGrid: BABYLON.Mesh) {
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText("Touch the floor to reset your height", canvas.width / 2, canvas.height / 2);
-      const texture = new BABYLON.DynamicTexture("floorResetNoticeTexture", canvas, scene, false);
+      const texture = new DynamicTexture("floorResetNoticeTexture", canvas, scene, false);
       texture.hasAlpha = true;
       texture.update(true);
-      const material = new BABYLON.StandardMaterial("floorResetNoticeMaterial", scene);
+      const material = new StandardMaterial("floorResetNoticeMaterial", scene);
       material.diffuseTexture = texture;
       material.opacityTexture = texture;
-      material.emissiveColor = BABYLON.Color3.White();
+      material.emissiveColor = Color3.White();
       material.disableLighting = true;
       material.backFaceCulling = false;
       material.disableDepthWrite = true;
-      floorResetNotice = BABYLON.MeshBuilder.CreatePlane("floorResetNotice", { width: 0.48, height: 0.072 }, scene);
+      floorResetNotice = MeshBuilder.CreatePlane("floorResetNotice", { width: 0.48, height: 0.072 }, scene);
       floorResetNotice.material = material;
       floorResetNotice.position.set(0, -0.13, 0.8);
       floorResetNotice.isPickable = false;
@@ -178,7 +193,7 @@ export function initXR(teleportGrid: BABYLON.Mesh) {
       setARScale(getARScaleRange().max);
       heightCalibrationPending = true;
       if (preferredMode !== "immersive-vr") {
-        if (xrExperience && xrExperience.baseExperience.state !== BABYLON.WebXRState.NOT_IN_XR) {
+        if (xrExperience && xrExperience.baseExperience.state !== WebXRState.NOT_IN_XR) {
           await xrExperience.baseExperience.exitXRAsync();
         }
         xrExperience?.dispose();
@@ -187,7 +202,7 @@ export function initXR(teleportGrid: BABYLON.Mesh) {
         xrModeInputs.forEach((input) => { input.checked = input.value === preferredMode; });
       }
       if (!xrExperience) await setupDefaultXRExperience();
-      if (xrExperience?.baseExperience.state === BABYLON.WebXRState.NOT_IN_XR) {
+      if (xrExperience?.baseExperience.state === WebXRState.NOT_IN_XR) {
         await xrExperience.baseExperience.enterXRAsync("immersive-vr", "local-floor");
       }
     } catch (error) {
@@ -216,7 +231,7 @@ export function initXR(teleportGrid: BABYLON.Mesh) {
     if (!enabled) {
       if (teleportation.attached) teleportation.detach();
       teleportGrid.setEnabled(false);
-    } else if (xrExperience?.baseExperience.state === BABYLON.WebXRState.IN_XR && !teleportation.attached) {
+    } else if (xrExperience?.baseExperience.state === WebXRState.IN_XR && !teleportation.attached) {
       teleportation.attach();
     }
   }
@@ -224,7 +239,7 @@ export function initXR(teleportGrid: BABYLON.Mesh) {
   function updateFloorCalibration() {
     const baseExperience = xrExperience?.baseExperience;
     const manual = !!floorCalibrationToggle?.checked;
-    const active = baseExperience?.state === BABYLON.WebXRState.IN_XR && preferredMode === "immersive-vr";
+    const active = baseExperience?.state === WebXRState.IN_XR && preferredMode === "immersive-vr";
     if (!active || !baseExperience) {
       setHandFloorContact("left", false);
       setHandFloorContact("right", false);
@@ -241,7 +256,7 @@ export function initXR(teleportGrid: BABYLON.Mesh) {
     const floorY = baseExperience.camera.position.y - trackedHeight;
     let captured = false;
     let alignedOnEntry = false;
-    const capture = (key: string, pressed: boolean, point: BABYLON.Vector3,
+    const capture = (key: string, pressed: boolean, point: Vector3,
       handedness: string, source: "hand" | "controller", confirmation = false, alignOnEntry = false) => {
       const wasPressed = calibrationPresses.get(key) ?? (confirmation ? pressed : false);
       calibrationPresses.set(key, pressed);
@@ -329,10 +344,10 @@ export function initXR(teleportGrid: BABYLON.Mesh) {
         setHandFloorContact(handedness, false);
         continue;
       }
-      const finger = hand.getJointMesh(BABYLON.WebXRHandJoint.INDEX_FINGER_TIP).getAbsolutePosition();
-      const thumb = hand.getJointMesh(BABYLON.WebXRHandJoint.THUMB_TIP).getAbsolutePosition();
+      const finger = hand.getJointMesh(WebXRHandJoint.INDEX_FINGER_TIP).getAbsolutePosition();
+      const thumb = hand.getJointMesh(WebXRHandJoint.THUMB_TIP).getAbsolutePosition();
       const key = `hand:${handedness}`;
-      const distance = BABYLON.Vector3.Distance(finger, thumb);
+      const distance = Vector3.Distance(finger, thumb);
       if (distance < 0.002) {
         setHandFloorContact(handedness, false);
         continue;
@@ -350,7 +365,7 @@ export function initXR(teleportGrid: BABYLON.Mesh) {
   xrModeInputs.forEach((input) => {
     input.addEventListener("change", () => {
       preferredMode = getSelectedXRMode();
-      if (xrExperience && xrExperience.baseExperience.state === BABYLON.WebXRState.NOT_IN_XR) {
+      if (xrExperience && xrExperience.baseExperience.state === WebXRState.NOT_IN_XR) {
         xrExperience.dispose();
         xrExperience = undefined;
         void setupDefaultXRExperience();
@@ -396,7 +411,7 @@ export function initXR(teleportGrid: BABYLON.Mesh) {
       });
 
       const handTracking = xrExperience.baseExperience.featuresManager.enableFeature(
-        BABYLON.WebXRFeatureName.HAND_TRACKING,
+        WebXRFeatureName.HAND_TRACKING,
         'latest',
         {
           xrInput: xrExperience.input,
@@ -441,21 +456,21 @@ export function initXR(teleportGrid: BABYLON.Mesh) {
       }
 
       xrExperience.baseExperience.onStateChangedObservable.add((state) => {
-        if (state === BABYLON.WebXRState.ENTERING_XR || state === BABYLON.WebXRState.IN_XR) {
-          if (state === BABYLON.WebXRState.ENTERING_XR) setHandTracking(handTracking);
+        if (state === WebXRState.ENTERING_XR || state === WebXRState.IN_XR) {
+          if (state === WebXRState.ENTERING_XR) setHandTracking(handTracking);
           if (preferredMode === "immersive-ar") {
-            scene.clearColor = new BABYLON.Color4(0, 0, 0, 0);
+            scene.clearColor = new Color4(0, 0, 0, 0);
             scene.autoClear = true;
             enterARTabletopMode();
           } else {
-            scene.clearColor = new BABYLON.Color4(0.03, 0.05, 0.09, 1);
+            scene.clearColor = new Color4(0.03, 0.05, 0.09, 1);
             exitARTabletopMode();
           }
           updateTeleportationAvailability();
           return;
         }
 
-        if (state === BABYLON.WebXRState.NOT_IN_XR) {
+        if (state === WebXRState.NOT_IN_XR) {
           fullScaleNoticeShown = false;
           hideFloorResetNotice();
           wasFullScaleVR = false;
@@ -464,7 +479,7 @@ export function initXR(teleportGrid: BABYLON.Mesh) {
           calibrationPresses.clear();
           resetPlayerFloorOffset();
           setHandTracking(null);
-          scene.clearColor = new BABYLON.Color4(0.03, 0.05, 0.09, 1);
+          scene.clearColor = new Color4(0.03, 0.05, 0.09, 1);
           teleportGrid.setEnabled(false);
           exitARTabletopMode();
         }
@@ -477,20 +492,20 @@ export function initXR(teleportGrid: BABYLON.Mesh) {
         const handedness = controller.inputSource.handedness || "unknown";
         console.log(`Quest 3 controller connected: ${handedness}`);
 
-        const pointerMaterial = new BABYLON.StandardMaterial(
+        const pointerMaterial = new StandardMaterial(
           `pointerMat-${controller.uniqueId}`,
           scene
         );
-        pointerMaterial.emissiveColor = new BABYLON.Color3(0.55, 0.9, 1);
-        pointerMaterial.diffuseColor = new BABYLON.Color3(0.15, 0.3, 0.5);
+        pointerMaterial.emissiveColor = new Color3(0.55, 0.9, 1);
+        pointerMaterial.diffuseColor = new Color3(0.15, 0.3, 0.5);
         controller.pointer.material = pointerMaterial;
 
         if (controller.grip) {
-          const gripMaterial = new BABYLON.StandardMaterial(
+          const gripMaterial = new StandardMaterial(
             `gripMat-${controller.uniqueId}`,
             scene
           );
-          gripMaterial.emissiveColor = new BABYLON.Color3(0.8, 0.9, 1);
+          gripMaterial.emissiveColor = new Color3(0.8, 0.9, 1);
           controller.grip.material = gripMaterial;
         }
 
@@ -499,7 +514,7 @@ export function initXR(teleportGrid: BABYLON.Mesh) {
             const profileId = motionController.profileId || "unknown";
             const isQuestProfile = profileId.includes("oculus") || profileId.includes("quest");
 
-            if (!isQuestProfile || motionController instanceof BABYLON.WebXRGenericTriggerMotionController) {
+            if (!isQuestProfile || motionController instanceof WebXRGenericTriggerMotionController) {
               console.warn(
                 `Quest 3 controller (${handedness}) is using profile "${profileId}"; this is not the real Quest mesh.`
               );
@@ -528,7 +543,7 @@ export function initXR(teleportGrid: BABYLON.Mesh) {
   scene.onBeforeAnimationsObservable.add(() => {
     updateFloorCalibration();
     const baseExperience = xrExperience?.baseExperience;
-    if (baseExperience?.state === BABYLON.WebXRState.IN_XR) {
+    if (baseExperience?.state === WebXRState.IN_XR) {
       const fullScaleVR = preferredMode === "immersive-vr" && getARScale() === getARScaleRange().max;
       if (fullScaleVR && !fullScaleNoticeShown) {
         showFloorResetNotice(baseExperience.camera);

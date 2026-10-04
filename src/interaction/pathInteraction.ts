@@ -1,4 +1,16 @@
-import * as BABYLON from 'babylonjs';
+import { Ray } from '@babylonjs/core/Culling/ray.core';
+import { PointerEventTypes } from '@babylonjs/core/Events/pointerEvents';
+import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
+import { Axis } from '@babylonjs/core/Maths/math.axis';
+import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
+import { Curve3 } from '@babylonjs/core/Maths/math.path';
+import { Matrix, Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
+import { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.pure';
+import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
+import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
+import { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
+import { WebXRHandTracking } from '@babylonjs/core/XR/features/WebXRHandTracking.pure';
+import { WebXRInputSource } from '@babylonjs/core/XR/webXRInputSource';
 import {
   getARPosition,
   getARScale,
@@ -34,6 +46,7 @@ import {
   scrubBy,
   getRobotColor,
   setCollisionMarkerParent,
+  setCollisionMarkersVisible,
   seekToCollisionMarker,
   getGlobalProgress,
   getRobotCounts,
@@ -59,7 +72,7 @@ import {
   updateScoreboardHornPoseFromPick,
   updateScoreboardTempoFromPick,
 } from '../field/scoreboard';
-import { canvas, floorCalibrationToggle, fullScaleVRButton, tabletopScaleButton, showAllPathsToggle, placementModeToggle, addRandomRobotsButton, add100RobotsButton, generateDrillButton } from '../ui/dom';
+import { canvas, collisionMarkersToggle, floorCalibrationToggle, fullScaleVRButton, tabletopScaleButton, showAllPathsToggle, placementModeToggle, addRandomRobotsButton, add100RobotsButton, generateDrillButton } from '../ui/dom';
 import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS, FIELD_SURFACE_Y } from '../field/constants';
 import { FORMATION_SPACING_YARDS, generateMarchingDrillPaths, MARCH_STEP_YARDS } from '../robot/drill';
 
@@ -76,7 +89,7 @@ const pinchState = {
   scaleExponent: SCALE_EXPONENT_AT_MIN,
   // The grabbed point, expressed in the content's local (unscaled) space, so
   // scale/rotation changes stay anchored under the grip midpoint.
-  localAnchor: new BABYLON.Vector3(),
+  localAnchor: new Vector3(),
   startYaw: 0,
   startRotation: 0,
 };
@@ -86,7 +99,7 @@ function resetPinchState() {
   pinchState.startDistance = 0;
   pinchState.startScale = 1;
   pinchState.scaleExponent = SCALE_EXPONENT_AT_MIN;
-  pinchState.localAnchor = new BABYLON.Vector3();
+  pinchState.localAnchor = new Vector3();
   pinchState.startYaw = 0;
   pinchState.startRotation = 0;
 }
@@ -101,11 +114,11 @@ function getScaleExponentFor(scale: number): number {
   return SCALE_EXPONENT_AT_MIN + (SCALE_EXPONENT_AT_MAX - SCALE_EXPONENT_AT_MIN) * clampedT;
 }
 
-function rotateAroundY(vector: BABYLON.Vector3, angle: number): BABYLON.Vector3 {
-  return BABYLON.Vector3.TransformCoordinates(vector, BABYLON.Matrix.RotationY(angle));
+function rotateAroundY(vector: Vector3, angle: number): Vector3 {
+  return Vector3.TransformCoordinates(vector, Matrix.RotationY(angle));
 }
 
-function isGripPressed(controller: BABYLON.WebXRInputSource): boolean {
+function isGripPressed(controller: WebXRInputSource): boolean {
   const motionController = controller.motionController;
   if (!motionController) {
     return false;
@@ -118,7 +131,7 @@ function isGripPressed(controller: BABYLON.WebXRInputSource): boolean {
   return !!controller.inputSource.gamepad?.buttons?.[1]?.pressed;
 }
 
-function getControllerPosition(controller: BABYLON.WebXRInputSource) {
+function getControllerPosition(controller: WebXRInputSource) {
   // Use the physical grip mesh if present; otherwise fall back to the pointer.
   return controller.grip ?? controller.pointer;
 }
@@ -132,23 +145,24 @@ function getScaleFromControllerDistance(distance: number) {
   return Math.min(max, Math.max(min, relativeScale));
 }
 
-function getControllerYaw(leftPosition: BABYLON.Vector3, rightPosition: BABYLON.Vector3) {
+function getControllerYaw(leftPosition: Vector3, rightPosition: Vector3) {
   const dx = rightPosition.x - leftPosition.x;
   const dz = rightPosition.z - leftPosition.z;
   return Math.atan2(dx, dz);
 }
 
-export function setActiveController(controller: BABYLON.WebXRInputSource) {
+export function setActiveController(controller: WebXRInputSource) {
   registerActiveController(controller);
 }
 
-export function removeActiveController(controller: BABYLON.WebXRInputSource) {
+export function removeActiveController(controller: WebXRInputSource) {
   unregisterActiveController(controller, (handedness) => {
     finishMarcherGrab(handedness, false);
     placementDrafts.get(handedness)?.dispose();
     placementDrafts.delete(handedness);
     cornerDrags.delete(handedness);
     triggerHeld.delete(handedness);
+    stopRotationHandleDrag(handedness);
   });
 }
 
@@ -158,7 +172,7 @@ export function updateARResizeFromControllers() {
 
 // The path/robot live under the shared AR transform so they scale, move, and
 // rotate together with the field instead of staying world-scale.
-const pathRoot = new BABYLON.TransformNode("robotPathRoot", scene);
+const pathRoot = new TransformNode("robotPathRoot", scene);
 attachToARTransform(pathRoot);
 setCollisionMarkerParent(pathRoot);
 
@@ -171,19 +185,19 @@ const PATH_UNSELECTED_ALPHA = 0.25;
 
 type StoredPoint = [number, number, number];
 
-function loadStoredPaths(): BABYLON.Vector3[][] {
+function loadStoredPaths(): Vector3[][] {
   // try {
   //   const raw = localStorage.getItem(ROBOT_PATHS_STORAGE_KEY);
   //   if (!raw) return [];
   //   const parsed = JSON.parse(raw) as StoredPoint[][];
-  //   return parsed.map((path) => path.map(([x, y, z]) => new BABYLON.Vector3(x, y, z)));
+  //   return parsed.map((path) => path.map(([x, y, z]) => new Vector3(x, y, z)));
   // } catch {
   //   return [];
   // }
   return [];
 }
 
-function saveStoredPaths(paths: BABYLON.Vector3[][]) {
+function saveStoredPaths(paths: Vector3[][]) {
   // try {
   //   const serialized: StoredPoint[][] = paths
   //     .slice(-MAX_STORED_PATHS)
@@ -194,16 +208,16 @@ function saveStoredPaths(paths: BABYLON.Vector3[][]) {
   // }
 }
 
-const storedPaths: BABYLON.Vector3[][] = loadStoredPaths();
+const storedPaths: Vector3[][] = loadStoredPaths();
 
 
 // Full path history and persistent path line per robot (a robot's line covers
 // its whole route so far, including any extensions, not just the last segment).
-const robotPaths = new Map<BABYLON.TransformNode, BABYLON.Vector3[]>();
-const robotPathLines = new Map<BABYLON.TransformNode, BABYLON.Mesh>();
+const robotPaths = new Map<TransformNode, Vector3[]>();
+const robotPathLines = new Map<TransformNode, Mesh>();
 // Reverse lookup so clicking/triggering a drawn path line selects its robot.
-const pathLineOwner = new Map<BABYLON.AbstractMesh, BABYLON.TransformNode>();
-let selectedRobot: BABYLON.TransformNode | null = null;
+const pathLineOwner = new Map<AbstractMesh, TransformNode>();
+let selectedRobot: TransformNode | null = null;
 let showAllPaths = !!showAllPathsToggle?.checked;
 
 // Paths/segments are drawn as tubes connecting the grab-point balls instead
@@ -211,25 +225,25 @@ let showAllPaths = !!showAllPathsToggle?.checked;
 const PATH_TUBE_RADIUS_YARDS = 0.05;
 const PATH_TUBE_TESSELLATION = 8;
 
-function createTubeLine(name: string, points: BABYLON.Vector3[], color: BABYLON.Color3, existingMaterial?: BABYLON.StandardMaterial): BABYLON.Mesh {
-  const tube = BABYLON.MeshBuilder.CreateTube(
+function createTubeLine(name: string, points: Vector3[], color: Color3, existingMaterial?: StandardMaterial): Mesh {
+  const tube = MeshBuilder.CreateTube(
     name,
     { path: points, radius: PATH_TUBE_RADIUS_YARDS, tessellation: PATH_TUBE_TESSELLATION },
     scene
   );
-  const material = existingMaterial ?? new BABYLON.StandardMaterial(`${name}Material`, scene);
+  const material = existingMaterial ?? new StandardMaterial(`${name}Material`, scene);
   if (!existingMaterial) {
     material.diffuseColor = color;
     material.emissiveColor = color.scale(0.5);
-    material.specularColor = new BABYLON.Color3(0, 0, 0);
+    material.specularColor = new Color3(0, 0, 0);
   }
   tube.material = material;
   tube.parent = pathRoot;
   return tube;
 }
 
-function setTubeLineAppearance(tube: BABYLON.Mesh, color: BABYLON.Color3, alpha: number) {
-  const material = tube.material as BABYLON.StandardMaterial;
+function setTubeLineAppearance(tube: Mesh, color: Color3, alpha: number) {
+  const material = tube.material as StandardMaterial;
   material.diffuseColor = color;
   material.emissiveColor = color.scale(0.5);
   material.alpha = alpha;
@@ -247,7 +261,7 @@ function refreshPathLineAppearance() {
   });
 }
 
-function selectRobot(robot: BABYLON.TransformNode | null) {
+function selectRobot(robot: TransformNode | null) {
   selectedRobot = robot;
   refreshPathLineAppearance();
   refreshStepHandles();
@@ -260,14 +274,14 @@ function selectRobot(robot: BABYLON.TransformNode | null) {
 // the left/right edge of the path tube to indicate which foot each step is.
 const STEP_HANDLE_SIZE = 0.18;
 const STEP_HANDLE_SIDE_OFFSET = PATH_TUBE_RADIUS_YARDS + STEP_HANDLE_SIZE / 2;
-let stepHandles: BABYLON.Mesh[] = [];
-const stepHandleOwner = new Map<BABYLON.AbstractMesh, { robot: BABYLON.TransformNode; index: number }>();
+let stepHandles: Mesh[] = [];
+const stepHandleOwner = new Map<AbstractMesh, { robot: TransformNode; index: number }>();
 
 // Offsets a step's center-line position sideways onto the tube's edge,
 // alternating side by step index (even = right foot, odd = left foot).
-function stepHandlePosition(position: BABYLON.Vector3, rotationY: number, index: number): BABYLON.Vector3 {
+function stepHandlePosition(position: Vector3, rotationY: number, index: number): Vector3 {
   const side = index % 2 === 0 ? 1 : -1;
-  const right = new BABYLON.Vector3(Math.cos(rotationY), 0, -Math.sin(rotationY));
+  const right = new Vector3(Math.cos(rotationY), 0, -Math.sin(rotationY));
   const offset = position.add(right.scale(STEP_HANDLE_SIDE_OFFSET * side));
   offset.y += 0.05;
   return offset;
@@ -287,15 +301,15 @@ function refreshStepHandles() {
   const counts = getRobotCounts(selectedRobot);
   if (!counts) return;
 
-  const material = scene.getMaterialByName("stepHandleMaterial") as BABYLON.StandardMaterial | null
-    ?? new BABYLON.StandardMaterial("stepHandleMaterial", scene);
+  const material = scene.getMaterialByName("stepHandleMaterial") as StandardMaterial | null
+    ?? new StandardMaterial("stepHandleMaterial", scene);
   const color = getRobotColor(selectedRobot);
   material.diffuseColor = color;
   material.emissiveColor = color.scale(0.6);
-  material.specularColor = new BABYLON.Color3(0, 0, 0);
+  material.specularColor = new Color3(0, 0, 0);
 
   counts.forEach((count, index) => {
-    const handle = BABYLON.MeshBuilder.CreateSphere("stepHandle", { diameter: STEP_HANDLE_SIZE, segments: 8 }, scene);
+    const handle = MeshBuilder.CreateSphere("stepHandle", { diameter: STEP_HANDLE_SIZE, segments: 8 }, scene);
     handle.material = material;
     handle.parent = pathRoot;
     handle.position.copyFrom(stepHandlePosition(count.position, count.rotationY, index));
@@ -335,9 +349,9 @@ function updateShowAllPathsToggleFromControllers() {
 // no walking) at the aimed point instead of drawing/extending a route —
 // for laying out a formation one member at a time.
 let placementMode = !!placementModeToggle?.checked;
-const placementDrafts = new Map<string, BABYLON.TransformNode>();
+const placementDrafts = new Map<string, TransformNode>();
 
-function createStandingMarcher(position: BABYLON.Vector3) {
+function createStandingMarcher(position: Vector3) {
   const robot = createLowPolyRobot(scene);
   robot.parent = pathRoot;
   robot.position.copyFrom(position);
@@ -417,7 +431,7 @@ function updateScrubFromControllers(deltaSeconds: number) {
   }
 }
 
-function updateRobotPathLine(robot: BABYLON.TransformNode, points: BABYLON.Vector3[]) {
+function updateRobotPathLine(robot: TransformNode, points: Vector3[]) {
   const oldLine = robotPathLines.get(robot);
   if (oldLine) pathLineOwner.delete(oldLine);
   oldLine?.dispose(false, true);
@@ -433,9 +447,9 @@ function updateRobotPathLine(robot: BABYLON.TransformNode, points: BABYLON.Vecto
 // The 8 standard facing directions (45° increments), so drawn angles snap to drill grid.
 const ANGLE_SNAP_RADIANS = Math.PI / 4;
 
-function snapToStepGrid(point: BABYLON.Vector3): BABYLON.Vector3 {
+function snapToStepGrid(point: Vector3): Vector3 {
   return point;
-  // return new BABYLON.Vector3(
+  // return new Vector3(
   //   Math.round(point.x / MARCH_STEP_YARDS) * MARCH_STEP_YARDS,
   //   point.y,
   //   Math.round(point.z / MARCH_STEP_YARDS) * MARCH_STEP_YARDS
@@ -447,13 +461,13 @@ function snapAngle(angle: number): number {
   //return Math.round(angle / ANGLE_SNAP_RADIANS) * ANGLE_SNAP_RADIANS;
 }
 
-function resampleLineEvenly(points: BABYLON.Vector3[], spacingYards: number): BABYLON.Vector3[] {
-  const segmentLengths = points.slice(1).map((point, i) => BABYLON.Vector3.Distance(points[i], point));
+function resampleLineEvenly(points: Vector3[], spacingYards: number): Vector3[] {
+  const segmentLengths = points.slice(1).map((point, i) => Vector3.Distance(points[i], point));
   const totalLength = segmentLengths.reduce((sum, length) => sum + length, 0);
   if (totalLength <= 0.001) return [points[0].clone()];
 
   const count = Math.max(1, Math.round(totalLength / spacingYards));
-  const resampled: BABYLON.Vector3[] = [];
+  const resampled: Vector3[] = [];
   for (let i = 0; i <= count; i++) {
     const distance = Math.min(totalLength, (i / count) * totalLength);
     let remaining = distance;
@@ -466,7 +480,7 @@ function resampleLineEvenly(points: BABYLON.Vector3[], spacingYards: number): BA
     const segmentEnd = points[segmentIndex + 1];
     const segmentLength = segmentLengths[segmentIndex] || 0.001;
     const t = Math.min(1, remaining / segmentLength);
-    resampled.push(BABYLON.Vector3.Lerp(segmentStart, segmentEnd, t));
+    resampled.push(Vector3.Lerp(segmentStart, segmentEnd, t));
   }
   return resampled;
 }
@@ -480,23 +494,25 @@ type SegmentKind = "formation" | "path";
 
 interface Segment {
   kind: SegmentKind;
-  controlPoints: BABYLON.Vector3[];
-  line: BABYLON.Mesh;
-  moveHandle: BABYLON.Mesh;
-  pointHandles: BABYLON.Mesh[];
+  controlPoints: Vector3[];
+  line: Mesh;
+  moveHandle: Mesh;
+  pointHandles: Mesh[];
+  rotationHandles: Mesh[];
   // Formation-only: tap to copy this formation's curve into a path segment
   // so a robot marches single file through the same positions.
-  copyHandle: BABYLON.Mesh | null;
-  robots: BABYLON.TransformNode[]; // formation: every robot in the rank; path: the one marching robot
+  copyHandle: Mesh | null;
+  robots: TransformNode[]; // formation: every robot in the rank; path: the one marching robot
 }
 
 const segments: Segment[] = [];
-const segmentPointHandleOwner = new Map<BABYLON.AbstractMesh, { segment: Segment; index: number }>();
-const segmentMoveHandleOwner = new Map<BABYLON.AbstractMesh, Segment>();
-const segmentCopyHandleOwner = new Map<BABYLON.AbstractMesh, Segment>();
+const segmentPointHandleOwner = new Map<AbstractMesh, { segment: Segment; index: number }>();
+const segmentMoveHandleOwner = new Map<AbstractMesh, Segment>();
+const segmentRotationHandleOwner = new Map<AbstractMesh, Segment>();
+const segmentCopyHandleOwner = new Map<AbstractMesh, Segment>();
 // Looks up the path segment (if any) already recorded for a given robot, so
 // extending its route reshapes/grows the same segment instead of a new one.
-const pathSegmentByRobot = new Map<BABYLON.TransformNode, Segment>();
+const pathSegmentByRobot = new Map<TransformNode, Segment>();
 
 // A connector between two robots that are actual, authored neighbors in a
 // formation's rank order — NOT just whichever robots happen to be nearby.
@@ -509,20 +525,20 @@ const FORMATION_CONNECTION_RADIUS_YARDS = 0.02;
 const FORMATION_CONNECTION_UPDATE_INTERVAL_FRAMES = 6;
 
 interface FormationConnection {
-  mesh: BABYLON.Mesh;
-  robotA: BABYLON.TransformNode;
-  robotB: BABYLON.TransformNode;
+  mesh: Mesh;
+  robotA: TransformNode;
+  robotB: TransformNode;
 }
 const formationConnectionsBySegment = new Map<Segment, FormationConnection[]>();
-let formationConnectionMaterial: BABYLON.StandardMaterial | null = null;
+let formationConnectionMaterial: StandardMaterial | null = null;
 let formationConnectionFrameCounter = 0;
 
-function getFormationConnectionMaterial(): BABYLON.StandardMaterial {
+function getFormationConnectionMaterial(): StandardMaterial {
   if (!formationConnectionMaterial) {
-    formationConnectionMaterial = new BABYLON.StandardMaterial("formationConnectionMaterial", scene);
-    formationConnectionMaterial.diffuseColor = new BABYLON.Color3(0.85, 0.9, 0.95);
-    formationConnectionMaterial.emissiveColor = new BABYLON.Color3(0.55, 0.6, 0.65);
-    formationConnectionMaterial.specularColor = new BABYLON.Color3(0, 0, 0);
+    formationConnectionMaterial = new StandardMaterial("formationConnectionMaterial", scene);
+    formationConnectionMaterial.diffuseColor = new Color3(0.85, 0.9, 0.95);
+    formationConnectionMaterial.emissiveColor = new Color3(0.55, 0.6, 0.65);
+    formationConnectionMaterial.specularColor = new Color3(0, 0, 0);
     formationConnectionMaterial.disableLighting = true;
     formationConnectionMaterial.alpha = 0.5;
   }
@@ -542,7 +558,7 @@ function rebuildFormationConnections(segment: Segment) {
   for (let i = 0; i < segment.robots.length - 1; i++) {
     const robotA = segment.robots[i];
     const robotB = segment.robots[i + 1];
-    const mesh = BABYLON.MeshBuilder.CreateTube(
+    const mesh = MeshBuilder.CreateTube(
       "formationConnection",
       { path: [robotA.position, robotB.position], radius: FORMATION_CONNECTION_RADIUS_YARDS, tessellation: 6, updatable: true },
       scene
@@ -561,12 +577,12 @@ function rebuildFormationConnections(segment: Segment) {
 function updateFormationConnections() {
   formationConnectionsBySegment.forEach((connections, segment) => {
     const stillConnected = connections.filter((connection) => {
-      const distanceSq = BABYLON.Vector3.DistanceSquared(connection.robotA.position, connection.robotB.position);
+      const distanceSq = Vector3.DistanceSquared(connection.robotA.position, connection.robotB.position);
       if (distanceSq > FORMATION_CONNECTION_BREAK_DISTANCE_SQUARED) {
         connection.mesh.dispose(false, true);
         return false;
       }
-      BABYLON.MeshBuilder.CreateTube("formationConnection", {
+      MeshBuilder.CreateTube("formationConnection", {
         path: [connection.robotA.position, connection.robotB.position],
         instance: connection.mesh,
       });
@@ -576,30 +592,31 @@ function updateFormationConnections() {
   });
 }
 
-const SEGMENT_COLORS: Record<SegmentKind, BABYLON.Color3> = {
-  formation: new BABYLON.Color3(0.4, 0.9, 1),
-  path: new BABYLON.Color3(1, 0.85, 0.2),
+const SEGMENT_COLORS: Record<SegmentKind, Color3> = {
+  formation: new Color3(0.4, 0.9, 1),
+  path: new Color3(1, 0.85, 0.2),
 };
 const SEGMENT_POINT_HANDLE_SIZE = 0.3;
 const SEGMENT_MOVE_HANDLE_SIZE = 0.45;
+const SEGMENT_ROTATION_HANDLE_COLOR = new Color3(0.95, 0.3, 0.65);
 const CURVE_SAMPLES_PER_SPAN = 8;
 
 // Smooths raw drawn/dragged control points into a curved line (Catmull-Rom
 // spline) instead of a raw straight-segment polyline between them.
-function buildCurvePoints(controlPoints: BABYLON.Vector3[]): BABYLON.Vector3[] {
+function buildCurvePoints(controlPoints: Vector3[]): Vector3[] {
   if (controlPoints.length < 3) return controlPoints;
-  return BABYLON.Curve3.CreateCatmullRomSpline(controlPoints, CURVE_SAMPLES_PER_SPAN, false).getPoints();
+  return Curve3.CreateCatmullRomSpline(controlPoints, CURVE_SAMPLES_PER_SPAN, false).getPoints();
 }
 
-function createSegmentHandle(name: string, size: number, color: BABYLON.Color3): BABYLON.Mesh {
-  const handle = BABYLON.MeshBuilder.CreateSphere(name, { diameter: size, segments: 8 }, scene);
+function createSegmentHandle(name: string, size: number, color: Color3): Mesh {
+  const handle = MeshBuilder.CreateSphere(name, { diameter: size, segments: 8 }, scene);
   const materialName = `${name}Material-${color.toHexString()}`;
-  let material = scene.getMaterialByName(materialName) as BABYLON.StandardMaterial | null;
+  let material = scene.getMaterialByName(materialName) as StandardMaterial | null;
   if (!material) {
-    material = new BABYLON.StandardMaterial(materialName, scene);
+    material = new StandardMaterial(materialName, scene);
     material.diffuseColor = color;
     material.emissiveColor = color.scale(0.5);
-    material.specularColor = new BABYLON.Color3(0, 0, 0);
+    material.specularColor = new Color3(0, 0, 0);
   }
   handle.material = material;
   handle.parent = pathRoot;
@@ -621,7 +638,129 @@ function updateSegmentHandleVisibility(segment: Segment) {
   const visible = selectedRobot !== null && segment.robots.includes(selectedRobot);
   segment.moveHandle.setEnabled(visible);
   segment.pointHandles.forEach((handle) => handle.setEnabled(visible));
+  segment.rotationHandles.forEach((handle) => handle.setEnabled(visible));
   segment.copyHandle?.setEnabled(visible);
+}
+
+function getSegmentCenter(points: Vector3[]): Vector3 {
+  const center = Vector3.Zero();
+  points.forEach((point) => center.addInPlace(point));
+  return center.scaleInPlace(1 / points.length);
+}
+
+function rotatePointAroundSegmentCenter(
+  point: Vector3,
+  center: Vector3,
+  rotation: number
+): Vector3 {
+  return rotateAroundY(point.subtract(center), rotation).addInPlace(center);
+}
+
+function startRotationHandleDrag(
+  handedness: string,
+  segment: Segment,
+  handleIndex: number,
+  point: Vector3
+): boolean {
+  if (rotationHandleDrags.size > 0) {
+    const existing = rotationHandleDrags.values().next().value as RotationHandleDrag | undefined;
+    if (!existing || existing.segment !== segment || existing.handleIndex === handleIndex) return false;
+  }
+
+  const drag = { segment, handleIndex, point: point.clone() };
+  rotationHandleDrags.set(handedness, drag);
+  if (rotationHandleDrags.size === 2) {
+    const [first, second] = [...rotationHandleDrags.values()];
+    const center = getSegmentCenter(segment.controlPoints);
+    const startMidpoint = first.point.add(second.point).scale(0.5);
+    const dx = second.point.x - first.point.x;
+    const dz = second.point.z - first.point.z;
+    twoHandPathManipulation = {
+      segment,
+      center,
+      startMidpoint,
+      startDistance: Math.max(0.001, Math.hypot(dx, dz)),
+      startAngle: Math.atan2(dx, dz),
+      originalControlPoints: segment.controlPoints.map((controlPoint) => controlPoint.clone()),
+    };
+    rotatingSegment = null;
+  } else {
+    const center = getSegmentCenter(segment.controlPoints);
+    rotatingSegment = {
+      segment,
+      center,
+      startAngle: Math.atan2(point.x - center.x, point.z - center.z),
+      originalControlPoints: segment.controlPoints.map((controlPoint) => controlPoint.clone()),
+    };
+    twoHandPathManipulation = null;
+  }
+  return true;
+}
+
+function updateRotationHandleDrag(handedness: string, point: Vector3) {
+  const drag = rotationHandleDrags.get(handedness);
+  if (!drag) return;
+  drag.point.copyFrom(point);
+
+  if (twoHandPathManipulation && rotationHandleDrags.size === 2) {
+    const [first, second] = [...rotationHandleDrags.values()];
+    if (first.segment !== twoHandPathManipulation.segment || second.segment !== twoHandPathManipulation.segment) return;
+    const midpoint = first.point.add(second.point).scale(0.5);
+    const dx = second.point.x - first.point.x;
+    const dz = second.point.z - first.point.z;
+    const distance = Math.hypot(dx, dz);
+    if (distance <= 0.001) return;
+    const angle = Math.atan2(dx, dz);
+    const rotation = Math.atan2(
+      Math.sin(angle - twoHandPathManipulation.startAngle),
+      Math.cos(angle - twoHandPathManipulation.startAngle)
+    );
+    const scale = distance / twoHandPathManipulation.startDistance;
+    const translation = new Vector3(
+      midpoint.x - twoHandPathManipulation.startMidpoint.x,
+      0,
+      midpoint.z - twoHandPathManipulation.startMidpoint.z
+    );
+    twoHandPathManipulation.segment.controlPoints = twoHandPathManipulation.originalControlPoints.map((controlPoint) =>
+      rotatePointAroundSegmentCenter(controlPoint, twoHandPathManipulation!.center, rotation)
+        .subtractInPlace(twoHandPathManipulation!.center)
+        .scaleInPlace(scale)
+        .addInPlace(twoHandPathManipulation!.center)
+        .addInPlace(translation)
+    );
+    rebuildSegmentContent(twoHandPathManipulation.segment);
+    refreshSegmentVisuals(twoHandPathManipulation.segment);
+    return;
+  }
+
+  if (!rotatingSegment) return;
+  const angle = Math.atan2(point.x - rotatingSegment.center.x, point.z - rotatingSegment.center.z);
+  const rotation = Math.atan2(
+    Math.sin(angle - rotatingSegment.startAngle),
+    Math.cos(angle - rotatingSegment.startAngle)
+  );
+  rotatingSegment.segment.controlPoints = rotatingSegment.originalControlPoints.map((controlPoint) =>
+    rotatePointAroundSegmentCenter(controlPoint, rotatingSegment!.center, rotation)
+  );
+  rebuildSegmentContent(rotatingSegment.segment);
+  refreshSegmentVisuals(rotatingSegment.segment);
+}
+
+function stopRotationHandleDrag(handedness: string) {
+  rotationHandleDrags.delete(handedness);
+  twoHandPathManipulation = null;
+  if (rotationHandleDrags.size === 1) {
+    const remaining = rotationHandleDrags.values().next().value as RotationHandleDrag;
+    const center = getSegmentCenter(remaining.segment.controlPoints);
+    rotatingSegment = {
+      segment: remaining.segment,
+      center,
+      startAngle: Math.atan2(remaining.point.x - center.x, remaining.point.z - center.z),
+      originalControlPoints: remaining.segment.controlPoints.map((controlPoint) => controlPoint.clone()),
+    };
+  } else {
+    rotatingSegment = null;
+  }
 }
 
 // Redraws a segment's curve line and repositions its move/point handles to
@@ -652,6 +791,17 @@ function refreshSegmentVisuals(segment: Segment) {
   if (segment.copyHandle) {
     segment.copyHandle.position.copyFrom(segment.controlPoints[0]);
     segment.copyHandle.position.y += 0.5;
+  }
+  if (segment.rotationHandles.length > 0) {
+    const center = getSegmentCenter(segment.controlPoints);
+    const extent = segment.controlPoints.reduce((maximum, point) => Math.max(
+      maximum,
+      Math.hypot(point.x - center.x, point.z - center.z)
+    ), 0);
+    const radius = Math.max(0.6, extent + 0.35);
+    segment.rotationHandles.forEach((handle, index) => {
+      handle.position.set(center.x + (index === 0 ? -radius : radius), center.y + 0.5, center.z);
+    });
   }
   updateSegmentHandleVisibility(segment);
 }
@@ -699,25 +849,33 @@ function rebuildSegmentContent(segment: Segment) {
 // builds its robot(s), curve line, and grab handles, and registers the handles
 // for picking. robots is the initial robot list for a "path" segment (its one
 // marching robot); pass [] for a "formation" segment (rebuilt below instead).
-function createSegment(kind: SegmentKind, controlPoints: BABYLON.Vector3[], robots: BABYLON.TransformNode[]): Segment {
+function createSegment(kind: SegmentKind, controlPoints: Vector3[], robots: TransformNode[]): Segment {
   const line = createTubeLine("segmentLine", controlPoints, SEGMENT_COLORS[kind]);
 
   const moveHandle = createSegmentHandle(
     "segmentMoveHandle",
     SEGMENT_MOVE_HANDLE_SIZE,
-    new BABYLON.Color3(1, 0.5, 0.2)
+    new Color3(1, 0.5, 0.2)
   );
   const pointHandles = controlPoints.map(() =>
     createSegmentHandle("segmentPointHandle", SEGMENT_POINT_HANDLE_SIZE, SEGMENT_COLORS[kind])
   );
+  const rotationHandles = kind === "path"
+    ? [-1, 1].map(() => createSegmentHandle(
+      "segmentRotationHandle",
+      SEGMENT_MOVE_HANDLE_SIZE,
+      SEGMENT_ROTATION_HANDLE_COLOR
+    ))
+    : [];
   const copyHandle =
     kind === "formation"
-      ? createSegmentHandle("segmentCopyHandle", SEGMENT_MOVE_HANDLE_SIZE, new BABYLON.Color3(0.3, 0.9, 0.4))
+      ? createSegmentHandle("segmentCopyHandle", SEGMENT_MOVE_HANDLE_SIZE, new Color3(0.3, 0.9, 0.4))
       : null;
 
-  const segment: Segment = { kind, controlPoints, line, moveHandle, pointHandles, copyHandle, robots };
+  const segment: Segment = { kind, controlPoints, line, moveHandle, pointHandles, rotationHandles, copyHandle, robots };
   pointHandles.forEach((handle, index) => segmentPointHandleOwner.set(handle, { segment, index }));
   segmentMoveHandleOwner.set(moveHandle, segment);
+  rotationHandles.forEach((handle) => segmentRotationHandleOwner.set(handle, segment));
   if (copyHandle) segmentCopyHandleOwner.set(copyHandle, segment);
 
   rebuildSegmentContent(segment);
@@ -744,7 +902,7 @@ function copyFormationToPathSegment(formation: Segment) {
   selectRobot(robot);
 }
 
-function spawnRobotForPath(points: BABYLON.Vector3[]) {
+function spawnRobotForPath(points: Vector3[]) {
   const robot = createLowPolyRobot(scene);
   robot.parent = pathRoot;
   robotPaths.set(robot, points);
@@ -757,31 +915,52 @@ storedPaths.forEach(spawnRobotForPath);
 
 const PATH_POINT_MIN_DISTANCE = 0.4; // yards between recorded points
 const ROBOT_TOUCH_DISTANCE = 1; // yards — how close the laser must land to a selected robot's feet
-let currentPathPoints: BABYLON.Vector3[] = [];
-let pathLine: BABYLON.Mesh | null = null;
+let currentPathPoints: Vector3[] = [];
+let pathLine: Mesh | null = null;
 let pathPreviewUpdateTime = -Infinity;
 let pathPreviewPointCount = 0;
 // Set when the trigger-down aim landed on an existing robot, so the drawn
 // points extend that robot's route instead of spawning a new one.
-let extendingRobot: BABYLON.TransformNode | null = null;
+let extendingRobot: TransformNode | null = null;
 // The robot actively being dragged along by the drawing itself — either the
 // extended robot, or a freshly spawned one for a brand-new path.
-let drawingRobot: BABYLON.TransformNode | null = null;
+let drawingRobot: TransformNode | null = null;
 // True right after selecting a robot until the laser has come down to touch
 // its feet, so drawing doesn't jump it wherever the laser first happened to aim.
 let awaitingFeetTouch = false;
 // The segment currently being dragged as a whole (via its move handle), and
 // the last field point seen while dragging it (to move by incremental delta).
 let movingSegment: Segment | null = null;
-let lastMovePoint: BABYLON.Vector3 | null = null;
+let lastMovePoint: Vector3 | null = null;
 // The segment + control point index currently being reshaped (via a point handle).
 let reshapingSegment: { segment: Segment; index: number } | null = null;
+interface RotationHandleDrag {
+  segment: Segment;
+  handleIndex: number;
+  point: Vector3;
+}
+
+let rotatingSegment: {
+  segment: Segment;
+  center: Vector3;
+  startAngle: number;
+  originalControlPoints: Vector3[];
+} | null = null;
+const rotationHandleDrags = new Map<string, RotationHandleDrag>();
+let twoHandPathManipulation: {
+  segment: Segment;
+  center: Vector3;
+  startMidpoint: Vector3;
+  startDistance: number;
+  startAngle: number;
+  originalControlPoints: Vector3[];
+} | null = null;
 // The selected robot's marching step (count index) currently being dragged
 // via its own per-step handle.
-let reshapingStepHandle: { robot: BABYLON.TransformNode; index: number } | null = null;
+let reshapingStepHandle: { robot: TransformNode; index: number } | null = null;
 // A robot grabbed directly by its body (not a handle) — dragging it scrubs
 // the shared timeline to whichever of its own steps is nearest the laser.
-let scrubbingRobot: BABYLON.TransformNode | null = null;
+let scrubbingRobot: TransformNode | null = null;
 const triggerHeld = new Map<string, boolean>();
 const tempoControllerDrags = new Set<string>();
 let tempoPointerDragging = false;
@@ -818,14 +997,14 @@ function executeMenuAction(hit: NonNullable<ReturnType<typeof getHandMenuHit>>) 
   }
 }
 type CornerDrag = {
-  opposite: BABYLON.Vector3;
-  diagonal: BABYLON.Vector3;
-  localOpposite: BABYLON.Vector3;
-  localCorner: BABYLON.Vector3;
-  point: BABYLON.Vector3;
+  opposite: Vector3;
+  diagonal: Vector3;
+  localOpposite: Vector3;
+  localCorner: Vector3;
+  point: Vector3;
   source: "hand" | "controller";
   rayDistance: number;
-  offset: BABYLON.Vector3;
+  offset: Vector3;
 };
 const handInteraction = createHandInteraction({
   pathRoot,
@@ -861,7 +1040,7 @@ const handInteraction = createHandInteraction({
 });
 const { cornerDrags, marcherGrabs } = handInteraction;
 
-export function setHandTracking(tracking: BABYLON.WebXRHandTracking | null) {
+export function setHandTracking(tracking: WebXRHandTracking | null) {
   handInteraction.setHandTracking(tracking);
 }
 
@@ -871,15 +1050,15 @@ function isTabletopInteractionMode() {
 
 function beginMarcherGrab(
   handedness: string,
-  robot: BABYLON.TransformNode,
-  point: BABYLON.Vector3,
+  robot: TransformNode,
+  point: Vector3,
   source: "hand" | "controller",
   rayDistance = 0
 ) {
   handInteraction.beginMarcherGrab(handedness, robot, point, source, rayDistance);
 }
 
-function moveMarcherGrab(handedness: string, point: BABYLON.Vector3) {
+function moveMarcherGrab(handedness: string, point: Vector3) {
   handInteraction.moveMarcherGrab(handedness, point);
 }
 
@@ -889,15 +1068,15 @@ function finishMarcherGrab(handedness: string, commit: boolean) {
 
 function beginCornerDrag(
   handedness: string,
-  handle: BABYLON.AbstractMesh,
-  point: BABYLON.Vector3,
+  handle: AbstractMesh,
+  point: Vector3,
   source: "hand" | "controller",
   rayDistance = 0
 ) {
   handInteraction.beginCornerDrag(handedness, handle, point, source, rayDistance);
 }
 
-function moveCornerDrag(drag: CornerDrag, point: BABYLON.Vector3) {
+function moveCornerDrag(drag: CornerDrag, point: Vector3) {
   handInteraction.moveCornerDrag(drag, point);
 }
 
@@ -917,30 +1096,30 @@ export function updateHandPathDrawing() {
   handInteraction.updateHandPathDrawing();
 }
 
-function getTriggerPressed(controller: BABYLON.WebXRInputSource): boolean {
+function getTriggerPressed(controller: WebXRInputSource): boolean {
   const trigger = controller.motionController?.getComponentOfType('trigger');
   return !!trigger?.pressed;
 }
 
-function getControllerRay(controller: BABYLON.WebXRInputSource): BABYLON.Ray {
+function getControllerRay(controller: WebXRInputSource): Ray {
   const pointer = controller.pointer;
-  const forward = pointer.getDirection(BABYLON.Axis.Z);
-  return new BABYLON.Ray(pointer.absolutePosition, forward, 100);
+  const forward = pointer.getDirection(Axis.Z);
+  return new Ray(pointer.absolutePosition, forward, 100);
 }
 
 // Raycasts from the controller pointer to the field and returns the hit
 // point converted into the path root's local space (so it tracks the field
 // if it's later moved/scaled/rotated), or null if the pointer isn't aiming at it.
-function getFieldPointFromController(controller: BABYLON.WebXRInputSource): BABYLON.Vector3 | null {
+function getFieldPointFromController(controller: WebXRInputSource): Vector3 | null {
   const pick = scene.pickWithRay(getControllerRay(controller), (mesh) => mesh.name === "field");
   if (!pick?.hit || !pick.pickedPoint) {
     return null;
   }
 
   pathRoot.computeWorldMatrix(true);
-  const localPoint = BABYLON.Vector3.TransformCoordinates(
+  const localPoint = Vector3.TransformCoordinates(
     pick.pickedPoint,
-    BABYLON.Matrix.Invert(pathRoot.getWorldMatrix())
+    Matrix.Invert(pathRoot.getWorldMatrix())
   );
   localPoint.y += 0.02; // lift slightly above the turf so the line doesn't z-fight
   return snapToStepGrid(localPoint);
@@ -1023,7 +1202,7 @@ export function updateRobotPathFromControllers() {
           cornerPick.pickedMesh,
           cornerPick.pickedPoint,
           "controller",
-          BABYLON.Vector3.Distance(ray.origin, cornerPick.pickedPoint)
+          Vector3.Distance(ray.origin, cornerPick.pickedPoint)
         );
         return;
       }
@@ -1047,7 +1226,7 @@ export function updateRobotPathFromControllers() {
       if (tabletopRobot && pick?.pickedPoint) {
         const ray = getControllerRay(controller);
         beginMarcherGrab(handedness, tabletopRobot, pick.pickedPoint, "controller",
-          BABYLON.Vector3.Distance(ray.origin, pick.pickedPoint));
+          Vector3.Distance(ray.origin, pick.pickedPoint));
         return;
       }
 
@@ -1065,6 +1244,18 @@ export function updateRobotPathFromControllers() {
       if (stepOwner) {
         reshapingStepHandle = stepOwner;
         seekToCount(stepOwner.index);
+        return;
+      }
+
+      const rotationOwner = pick?.hit && pick.pickedMesh
+        ? segmentRotationHandleOwner.get(pick.pickedMesh)
+        : undefined;
+      if (rotationOwner) {
+        const point = getFieldPointFromController(controller);
+        const handleIndex = pick?.pickedMesh
+          ? rotationOwner.rotationHandles.indexOf(pick.pickedMesh as Mesh)
+          : -1;
+        if (point && handleIndex >= 0) startRotationHandleDrag(handedness, rotationOwner, handleIndex, point);
         return;
       }
 
@@ -1132,7 +1323,7 @@ export function updateRobotPathFromControllers() {
           let nearestIndex = 0;
           let nearestDistanceSq = Infinity;
           counts.forEach((count, index) => {
-            const distanceSq = BABYLON.Vector3.DistanceSquared(count.position, point);
+            const distanceSq = Vector3.DistanceSquared(count.position, point);
             if (distanceSq < nearestDistanceSq) {
               nearestDistanceSq = distanceSq;
               nearestIndex = index;
@@ -1153,6 +1344,12 @@ export function updateRobotPathFromControllers() {
             handle.position.copyFrom(stepHandlePosition(count.position, count.rotationY, reshapingStepHandle.index));
           }
         }
+        return;
+      }
+
+      if (rotationHandleDrags.has(handedness)) {
+        const point = getFieldPointFromController(controller);
+        if (point) updateRotationHandleDrag(handedness, point);
         return;
       }
 
@@ -1193,7 +1390,7 @@ export function updateRobotPathFromControllers() {
       const point = getFieldPointFromController(controller);
       if (point) {
         if (extendingRobot && awaitingFeetTouch) {
-          if (BABYLON.Vector3.Distance(point, extendingRobot.position) > ROBOT_TOUCH_DISTANCE) {
+          if (Vector3.Distance(point, extendingRobot.position) > ROBOT_TOUCH_DISTANCE) {
             return; // keep waiting for the laser to reach the robot's feet
           }
           awaitingFeetTouch = false;
@@ -1217,15 +1414,15 @@ export function updateRobotPathFromControllers() {
         drawingRobot.position.copyFrom(point);
 
         const lastPoint = currentPathPoints[currentPathPoints.length - 1];
-        if (!lastPoint || BABYLON.Vector3.Distance(lastPoint, point) >= PATH_POINT_MIN_DISTANCE) {
+        if (!lastPoint || Vector3.Distance(lastPoint, point) >= PATH_POINT_MIN_DISTANCE) {
           currentPathPoints.push(point);
         }
         const now = performance.now();
         if (currentPathPoints.length >= 2 && currentPathPoints.length !== pathPreviewPointCount &&
           (!pathLine || !isARTabletopModeActive() || now - pathPreviewUpdateTime >= 1000 / 30)) {
-          const material = pathLine?.material as BABYLON.StandardMaterial | undefined;
+          const material = pathLine?.material as StandardMaterial | undefined;
           pathLine?.dispose(false, false);
-          pathLine = createTubeLine("robotPathLine", currentPathPoints, new BABYLON.Color3(1, 0.85, 0.2), material);
+          pathLine = createTubeLine("robotPathLine", currentPathPoints, new Color3(1, 0.85, 0.2), material);
           pathPreviewUpdateTime = now;
           pathPreviewPointCount = currentPathPoints.length;
         }
@@ -1245,6 +1442,11 @@ export function updateRobotPathFromControllers() {
 
       if (reshapingStepHandle) {
         reshapingStepHandle = null;
+        return;
+      }
+
+      if (rotationHandleDrags.has(handedness)) {
+        stopRotationHandleDrag(handedness);
         return;
       }
 
@@ -1311,7 +1513,7 @@ export function updateRobotPathFromControllers() {
 
 // Read-only access for other modules (e.g. the palm-up hand menu) that need
 // to know which controllers are live without duplicating controller tracking.
-export function getActiveControllers(): ReadonlyMap<string, BABYLON.WebXRInputSource> {
+export function getActiveControllers(): ReadonlyMap<string, WebXRInputSource> {
   return getRegisteredControllers();
 }
 
@@ -1338,16 +1540,16 @@ const RANDOM_PATH_MARGIN_YARDS = 4;
 const RANDOM_PATH_MIN_POINTS = 2;
 const RANDOM_PATH_MAX_POINTS = 4;
 
-function randomFieldPoint(): BABYLON.Vector3 {
+function randomFieldPoint(): Vector3 {
   const x = (Math.random() * 2 - 1) * (FIELD_WIDTH_YARDS / 2 - RANDOM_PATH_MARGIN_YARDS);
   const z = (Math.random() * 2 - 1) * (FIELD_LENGTH_YARDS / 2 - RANDOM_PATH_MARGIN_YARDS);
-  return new BABYLON.Vector3(x, FIELD_SURFACE_Y, z);
+  return new Vector3(x, FIELD_SURFACE_Y, z);
 }
 
-function generateRandomPath(): BABYLON.Vector3[] {
+function generateRandomPath(): Vector3[] {
   const pointCount =
     RANDOM_PATH_MIN_POINTS + Math.floor(Math.random() * (RANDOM_PATH_MAX_POINTS - RANDOM_PATH_MIN_POINTS + 1));
-  const points: BABYLON.Vector3[] = [];
+  const points: Vector3[] = [];
   for (let i = 0; i < pointCount; i++) points.push(randomFieldPoint());
   return buildCurvePoints(points);
 }
@@ -1401,13 +1603,18 @@ function clearAllRobots() {
     segment.line.dispose(false, true);
     segment.moveHandle.dispose();
     segment.pointHandles.forEach((handle) => handle.dispose());
+    segment.rotationHandles.forEach((handle) => handle.dispose());
     segment.copyHandle?.dispose();
   });
   segments.length = 0;
   segmentPointHandleOwner.clear();
   segmentMoveHandleOwner.clear();
+  segmentRotationHandleOwner.clear();
   segmentCopyHandleOwner.clear();
   pathSegmentByRobot.clear();
+  rotatingSegment = null;
+  rotationHandleDrags.clear();
+  twoHandPathManipulation = null;
 
   formationConnectionsBySegment.forEach((connections) =>
     connections.forEach((connection) => connection.mesh.dispose(false, true))
@@ -1438,21 +1645,25 @@ export function initInteraction() {
   addRandomRobotsButton?.addEventListener("click", () => spawnRandomRobots(8));
   add100RobotsButton?.addEventListener("click", () => spawnRandomRobots(100, true));
   generateDrillButton?.addEventListener("click", () => spawnMarchingDrill());
+  collisionMarkersToggle?.addEventListener("change", () => {
+    setCollisionMarkersVisible(!!collisionMarkersToggle?.checked);
+  });
+  setCollisionMarkersVisible(collisionMarkersToggle?.checked ?? true);
 
   // Desktop/browser testing has no VR trigger, so a plain mouse click is
   // wired to the same collision-marker preview and robot selection the VR
   // trigger dispatches to.
   scene.onPointerObservable.add((pointerInfo) => {
-    if (pointerInfo.type === BABYLON.PointerEventTypes.POINTERDOWN) {
+    if (pointerInfo.type === PointerEventTypes.POINTERDOWN) {
       const tempoPick = scene.pick(scene.pointerX, scene.pointerY, isScoreboardTempoScreen);
       tempoPointerDragging = !!tempoPick?.hit && updateScoreboardTempoFromPick(tempoPick);
       if (tempoPointerDragging) return;
     }
-    if (pointerInfo.type === BABYLON.PointerEventTypes.POINTERUP) {
+    if (pointerInfo.type === PointerEventTypes.POINTERUP) {
       tempoPointerDragging = false;
       return;
     }
-    if (pointerInfo.type === BABYLON.PointerEventTypes.POINTERMOVE) {
+    if (pointerInfo.type === PointerEventTypes.POINTERMOVE) {
       if (tempoPointerDragging) {
         const tempoPick = scene.pick(scene.pointerX, scene.pointerY, isScoreboardTempoScreen);
         if (tempoPick?.hit) updateScoreboardTempoFromPick(tempoPick);
@@ -1469,7 +1680,7 @@ export function initInteraction() {
       ) ? "pointer" : "";
       return;
     }
-    if (pointerInfo.type !== BABYLON.PointerEventTypes.POINTERTAP) return;
+    if (pointerInfo.type !== PointerEventTypes.POINTERTAP) return;
     const tempoPick = scene.pick(scene.pointerX, scene.pointerY, isScoreboardTempoScreen);
     if (tempoPick?.hit && updateScoreboardTempoFromPick(tempoPick)) return;
     if (tempoPick?.hit && updateScoreboardGaitFromPick(tempoPick)) return;

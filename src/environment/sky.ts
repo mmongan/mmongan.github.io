@@ -1,4 +1,9 @@
-import * as BABYLON from 'babylonjs';
+import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
+import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.pure';
+import { Texture } from '@babylonjs/core/Materials/Textures/texture.pure';
+import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
+import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
+import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
 import { scene } from '../scene/engine';
 
 // Scatter soft, fluffy cloud clumps in the blue-sky band (avoids the zenith and the horizon glow).
@@ -28,7 +33,7 @@ function drawCloudPuff(
 }
 
 // Procedural gradient skybox with soft clouds (day sky, no external texture assets needed).
-export function createSky(): BABYLON.Mesh {
+export function createSky(): Mesh {
   const skyCanvas = document.createElement("canvas");
   skyCanvas.width = 512;
   skyCanvas.height = 512;
@@ -54,27 +59,27 @@ export function createSky(): BABYLON.Mesh {
     }
   }
 
-  const skyTexture = new BABYLON.DynamicTexture(
+  const skyTexture = new DynamicTexture(
     "skyTexture",
     skyCanvas,
     scene,
     false,
-    BABYLON.Texture.TRILINEAR_SAMPLINGMODE
+    Texture.TRILINEAR_SAMPLINGMODE
   );
   skyTexture.update(false);
-  skyTexture.wrapU = BABYLON.Texture.WRAP_ADDRESSMODE;
-  skyTexture.wrapV = BABYLON.Texture.CLAMP_ADDRESSMODE;
+  skyTexture.wrapU = Texture.WRAP_ADDRESSMODE;
+  skyTexture.wrapV = Texture.CLAMP_ADDRESSMODE;
 
-  const skyMaterial = new BABYLON.StandardMaterial("skyMaterial", scene);
+  const skyMaterial = new StandardMaterial("skyMaterial", scene);
   skyMaterial.diffuseTexture = skyTexture;
-  skyMaterial.emissiveColor = new BABYLON.Color3(1, 1, 1);
+  skyMaterial.emissiveColor = new Color3(1, 1, 1);
   skyMaterial.disableLighting = true;
-  skyMaterial.specularColor = new BABYLON.Color3(0, 0, 0);
+  skyMaterial.specularColor = new Color3(0, 0, 0);
   skyMaterial.backFaceCulling = false;
   // Never let the huge sky sphere win the depth test and occlude real geometry.
   skyMaterial.disableDepthWrite = true;
 
-  const skyBox = BABYLON.MeshBuilder.CreateSphere("skyBox", { diameter: 900, segments: 16 }, scene);
+  const skyBox = MeshBuilder.CreateSphere("skyBox", { diameter: 900, segments: 16 }, scene);
   skyBox.material = skyMaterial;
   skyBox.infiniteDistance = true;
   skyBox.applyFog = false;

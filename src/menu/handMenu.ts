@@ -1,4 +1,14 @@
-import * as BABYLON from 'babylonjs';
+import { PickingInfo } from '@babylonjs/core/Collisions/pickingInfo';
+import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
+import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.pure';
+import { Texture } from '@babylonjs/core/Materials/Textures/texture.pure';
+import { Axis } from '@babylonjs/core/Maths/math.axis';
+import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
+import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
+import { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.pure';
+import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
+import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
+import { WebXRInputSource } from '@babylonjs/core/XR/webXRInputSource';
 import { scene } from '../scene/engine';
 
 // How closely the controller's local "up" must line up with world up to
@@ -33,7 +43,7 @@ function roundedRect(
   ctx.closePath();
 }
 
-function drawProgressBar(ctx: CanvasRenderingContext2D, texture: BABYLON.DynamicTexture, progress: number) {
+function drawProgressBar(ctx: CanvasRenderingContext2D, texture: DynamicTexture, progress: number) {
   ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
   const trackX = 8;
@@ -66,24 +76,24 @@ function createProgressBarPlane() {
   canvas.height = CANVAS_HEIGHT;
   const ctx = canvas.getContext("2d")!;
 
-  const texture = new BABYLON.DynamicTexture(
+  const texture = new DynamicTexture(
     "handProgressBarTexture",
     canvas,
     scene,
     false,
-    BABYLON.Texture.TRILINEAR_SAMPLINGMODE
+    Texture.TRILINEAR_SAMPLINGMODE
   );
   texture.hasAlpha = true;
 
-  const material = new BABYLON.StandardMaterial("handProgressBarMaterial", scene);
+  const material = new StandardMaterial("handProgressBarMaterial", scene);
   material.diffuseTexture = texture;
   material.opacityTexture = texture;
-  material.emissiveColor = new BABYLON.Color3(1, 1, 1);
+  material.emissiveColor = new Color3(1, 1, 1);
   material.disableLighting = true;
-  material.specularColor = new BABYLON.Color3(0, 0, 0);
+  material.specularColor = new Color3(0, 0, 0);
   material.backFaceCulling = false;
 
-  const plane = BABYLON.MeshBuilder.CreatePlane(
+  const plane = MeshBuilder.CreatePlane(
     "handProgressBarPlane",
     { width: BAR_WIDTH, height: BAR_HEIGHT },
     scene
@@ -97,7 +107,7 @@ function createProgressBarPlane() {
   return { plane, texture, ctx };
 }
 
-function createButton(label: string, x: number, action: HandMenuHit): BABYLON.Mesh {
+function createButton(label: string, x: number, action: HandMenuHit): Mesh {
   const canvas = document.createElement("canvas");
   canvas.width = 64;
   canvas.height = 64;
@@ -111,19 +121,19 @@ function createButton(label: string, x: number, action: HandMenuHit): BABYLON.Me
   ctx.textBaseline = "middle";
   ctx.fillText(label, 32, 34);
 
-  const texture = new BABYLON.DynamicTexture(`handMenuButtonTexture-${label}`, canvas, scene, false);
+  const texture = new DynamicTexture(`handMenuButtonTexture-${label}`, canvas, scene, false);
   texture.hasAlpha = true;
   texture.update(true);
 
-  const material = new BABYLON.StandardMaterial(`handMenuButtonMaterial-${label}`, scene);
+  const material = new StandardMaterial(`handMenuButtonMaterial-${label}`, scene);
   material.diffuseTexture = texture;
   material.opacityTexture = texture;
-  material.emissiveColor = new BABYLON.Color3(1, 1, 1);
+  material.emissiveColor = new Color3(1, 1, 1);
   material.disableLighting = true;
-  material.specularColor = new BABYLON.Color3(0, 0, 0);
+  material.specularColor = new Color3(0, 0, 0);
   material.backFaceCulling = false;
 
-  const button = BABYLON.MeshBuilder.CreatePlane(
+  const button = MeshBuilder.CreatePlane(
     `handMenuButton-${label}`,
     { width: BUTTON_SIZE, height: BUTTON_SIZE },
     scene
@@ -131,32 +141,32 @@ function createButton(label: string, x: number, action: HandMenuHit): BABYLON.Me
   button.material = material;
   button.setEnabled(false);
   button.rotation.x = Math.PI / 2;
-  button.position = new BABYLON.Vector3(x, BUTTON_Y, 0);
+  button.position = new Vector3(x, BUTTON_Y, 0);
 
   buttonActions.set(button, action);
   return button;
 }
 
-function isPalmUp(controller: BABYLON.WebXRInputSource): boolean {
+function isPalmUp(controller: WebXRInputSource): boolean {
   const grip = controller.grip;
   if (!grip) return false;
-  const localUp = grip.getDirection(BABYLON.Axis.Y);
-  return BABYLON.Vector3.Dot(localUp, BABYLON.Vector3.Up()) < PALM_UP_DOT_THRESHOLD;
+  const localUp = grip.getDirection(Axis.Y);
+  return Vector3.Dot(localUp, Vector3.Up()) < PALM_UP_DOT_THRESHOLD;
 }
 
-const buttonActions = new Map<BABYLON.AbstractMesh, HandMenuHit>();
+const buttonActions = new Map<AbstractMesh, HandMenuHit>();
 let progressBar: ReturnType<typeof createProgressBarPlane> | null = null;
-let buttons: BABYLON.Mesh[] = [];
-let attachedTo: BABYLON.AbstractMesh | null = null;
+let buttons: Mesh[] = [];
+let attachedTo: AbstractMesh | null = null;
 let lastDrawnProgress = -1;
 
 // Lets other menus (e.g. the stadium video board) reuse the same trigger-pick
 // dispatch in interaction.ts, by tagging any mesh with a hand-menu action.
-export function registerMenuButton(mesh: BABYLON.AbstractMesh, action: HandMenuHit) {
+export function registerMenuButton(mesh: AbstractMesh, action: HandMenuHit) {
   buttonActions.set(mesh, action);
 }
 
-export function isMenuControl(mesh: BABYLON.AbstractMesh): boolean {
+export function isMenuControl(mesh: AbstractMesh): boolean {
   return buttonActions.has(mesh) || mesh === progressBar?.plane;
 }
 
@@ -186,13 +196,13 @@ function ensureMenuMeshes() {
 // controls, tracking the selected robot's walk progress) hovering over
 // whichever hand is currently turned palm-up.
 export function updateHandMenu(
-  controllers: ReadonlyMap<string, BABYLON.WebXRInputSource>,
+  controllers: ReadonlyMap<string, WebXRInputSource>,
   progress: number | null
 ) {
   ensureMenuMeshes();
   if (!progressBar) return;
 
-  let palmUpGrip: BABYLON.AbstractMesh | null = null;
+  let palmUpGrip: AbstractMesh | null = null;
   for (const controller of controllers.values()) {
     if (controller.grip && isPalmUp(controller)) {
       palmUpGrip = controller.grip;
@@ -212,7 +222,7 @@ export function updateHandMenu(
     progressBar.plane.parent = palmUpGrip;
     buttons.forEach((button) => (button.parent = palmUpGrip));
   }
-  const menuHeight = palmUpGrip.getDirection(BABYLON.Axis.Y).y < 0 ? -BUTTON_Y : BUTTON_Y;
+  const menuHeight = palmUpGrip.getDirection(Axis.Y).y < 0 ? -BUTTON_Y : BUTTON_Y;
   const menuRotation = menuHeight < 0 ? -Math.PI / 2 : Math.PI / 2;
   progressBar.plane.position.y = menuHeight;
   progressBar.plane.rotation.x = menuRotation;
@@ -232,7 +242,7 @@ export function updateHandMenu(
 
 // Resolves a pick against the hand menu (a button, or a tap along the
 // progress bar's track for seeking) into an action, or null if it missed.
-export function getHandMenuHit(pick: BABYLON.PickingInfo): HandMenuHit | null {
+export function getHandMenuHit(pick: PickingInfo): HandMenuHit | null {
   const mesh = pick.pickedMesh;
   if (!mesh) return null;
 

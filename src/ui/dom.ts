@@ -13,6 +13,7 @@ export const floorCalibrationToggle = document.getElementById("floorCalibrationT
 export const fullScaleVRButton = document.getElementById("fullScaleVRButton") as HTMLButtonElement | null;
 export const tabletopScaleButton = document.getElementById("tabletopScaleButton") as HTMLButtonElement | null;
 export const showAllPathsToggle = document.getElementById("showAllPathsToggle") as HTMLInputElement | null;
+export const collisionMarkersToggle = document.getElementById("collisionMarkersToggle") as HTMLInputElement | null;
 export const placementModeToggle = document.getElementById("placementModeToggle") as HTMLInputElement | null;
 export const addRandomRobotsButton = document.getElementById("addRandomRobotsButton") as HTMLButtonElement | null;
 export const add100RobotsButton = document.getElementById("add100RobotsButton") as HTMLButtonElement | null;

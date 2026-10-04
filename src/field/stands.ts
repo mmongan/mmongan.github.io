@@ -1,4 +1,8 @@
-import * as BABYLON from 'babylonjs';
+import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
+import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
+import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
+import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
+import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
 import { scene } from '../scene/engine';
 import { FIELD_WIDTH_YARDS, STAND_CONFIGS } from './constants';
 
@@ -8,19 +12,19 @@ const CONCOURSE_GAP = 0.9;
 const STAND_GROUND_Y = -0.51;
 
 export function createStands(): { updateStands: (level: string) => void } {
-  const standsMat = new BABYLON.StandardMaterial("standsMat", scene);
-  standsMat.diffuseColor = new BABYLON.Color3(0.62, 0.63, 0.67);
-  standsMat.specularColor = new BABYLON.Color3(0.15, 0.15, 0.15);
+  const standsMat = new StandardMaterial("standsMat", scene);
+  standsMat.diffuseColor = new Color3(0.62, 0.63, 0.67);
+  standsMat.specularColor = new Color3(0.15, 0.15, 0.15);
 
-  const benchMat = new BABYLON.StandardMaterial("benchMat", scene);
-  benchMat.diffuseColor = new BABYLON.Color3(0.78, 0.79, 0.82);
-  benchMat.specularColor = new BABYLON.Color3(0.2, 0.2, 0.2);
+  const benchMat = new StandardMaterial("benchMat", scene);
+  benchMat.diffuseColor = new Color3(0.78, 0.79, 0.82);
+  benchMat.specularColor = new Color3(0.2, 0.2, 0.2);
 
-  const supportMat = new BABYLON.StandardMaterial("supportMat", scene);
-  supportMat.diffuseColor = new BABYLON.Color3(0.28, 0.29, 0.32);
-  supportMat.specularColor = new BABYLON.Color3(0.1, 0.1, 0.1);
+  const supportMat = new StandardMaterial("supportMat", scene);
+  supportMat.diffuseColor = new Color3(0.28, 0.29, 0.32);
+  supportMat.specularColor = new Color3(0.1, 0.1, 0.1);
 
-  const standsGroup = new BABYLON.Mesh("stands", scene);
+  const standsGroup = new Mesh("stands", scene);
 
   // Builds one terraced tier as a hollow staircase profile (riser face + tread),
   // not a solid filled wedge, so it reads as bleacher steps instead of a building.
@@ -30,7 +34,7 @@ export function createStands(): { updateStands: (level: string) => void } {
     standLength: number,
     baseOffset: number,
     startY: number,
-    parent: BABYLON.Mesh
+    parent: Mesh
   ): number {
     for (let row = 0; row < rows; row++) {
       const stepFrontOffset = baseOffset + row * ROW_DEPTH;
@@ -38,12 +42,12 @@ export function createStands(): { updateStands: (level: string) => void } {
       const treadCenterX = side * (FIELD_WIDTH_YARDS / 2 + stepFrontOffset + ROW_DEPTH / 2);
       const riserTopY = startY + (row + 1) * ROW_HEIGHT;
 
-      const riser = BABYLON.MeshBuilder.CreateBox(
+      const riser = MeshBuilder.CreateBox(
         `standRiser${side}_${startY}_${row}`,
         { width: 0.06, height: ROW_HEIGHT, depth: standLength },
         scene
       );
-      riser.position = new BABYLON.Vector3(
+      riser.position = new Vector3(
         riserCenterX,
         STAND_GROUND_Y + riserTopY - ROW_HEIGHT / 2,
         0
@@ -51,12 +55,12 @@ export function createStands(): { updateStands: (level: string) => void } {
       riser.material = supportMat;
       riser.parent = parent;
 
-      const bench = BABYLON.MeshBuilder.CreateBox(
+      const bench = MeshBuilder.CreateBox(
         `standBench${side}_${startY}_${row}`,
         { width: ROW_DEPTH, height: 0.08, depth: standLength },
         scene
       );
-      bench.position = new BABYLON.Vector3(treadCenterX, STAND_GROUND_Y + riserTopY, 0);
+      bench.position = new Vector3(treadCenterX, STAND_GROUND_Y + riserTopY, 0);
       bench.material = row % 2 === 0 ? benchMat : standsMat;
       bench.parent = parent;
     }
@@ -65,12 +69,12 @@ export function createStands(): { updateStands: (level: string) => void } {
     // structure from outside instead of showing open space under the seats.
     const tierTopY = startY + rows * ROW_HEIGHT;
     const backWallCenterX = side * (FIELD_WIDTH_YARDS / 2 + baseOffset + rows * ROW_DEPTH + 0.1);
-    const backWall = BABYLON.MeshBuilder.CreateBox(
+    const backWall = MeshBuilder.CreateBox(
       `standBackWall${side}_${startY}`,
       { width: 0.2, height: tierTopY - startY, depth: standLength },
       scene
     );
-    backWall.position = new BABYLON.Vector3(
+    backWall.position = new Vector3(
       backWallCenterX,
       STAND_GROUND_Y + startY + (tierTopY - startY) / 2,
       0
@@ -101,12 +105,12 @@ export function createStands(): { updateStands: (level: string) => void } {
         const upperBaseOffset = config.offset + config.rows * ROW_DEPTH;
         const upperSpan = config.upperRows! * ROW_DEPTH;
 
-        const concourseWall = BABYLON.MeshBuilder.CreateBox(
+        const concourseWall = MeshBuilder.CreateBox(
           `concourseWall${side}`,
           { width: upperSpan, height: CONCOURSE_GAP, depth: config.upperStandLength! },
           scene
         );
-        concourseWall.position = new BABYLON.Vector3(
+        concourseWall.position = new Vector3(
           side * (FIELD_WIDTH_YARDS / 2 + upperBaseOffset + upperSpan / 2),
           STAND_GROUND_Y + lowerTopY + CONCOURSE_GAP / 2,
           0

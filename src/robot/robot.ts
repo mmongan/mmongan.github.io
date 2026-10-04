@@ -1,10 +1,19 @@
-import * as BABYLON from 'babylonjs';
+import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
+import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
+import { Matrix, Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
+import { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.pure';
+import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
+import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
+import { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
+import { Observer } from '@babylonjs/core/Misc/observable.pure';
+import { Node } from '@babylonjs/core/node';
+import { Scene } from '@babylonjs/core/scene.pure';
 import { createCollisionMarkerManager, COLLISION_MARKER_RADIUS_YARDS } from './collisionMarkers';
 
 export { COLLISION_MARKER_RADIUS_YARDS } from './collisionMarkers';
 
-const allRobots = new Set<BABYLON.TransformNode>();
-const heldRobots = new Set<BABYLON.TransformNode>();
+const allRobots = new Set<TransformNode>();
+const heldRobots = new Set<TransformNode>();
 const MARCHER_MODEL_EYE_HEIGHT = 1.28;
 const MARCHER_BUILD_SCALE = 0.75;
 const MARCHER_HEIGHT_METERS = 1.8;
@@ -14,10 +23,10 @@ const MARCHER_MODEL_HEIGHT_YARDS = 1.78;
 const MARCHER_BODY_SCALE = MARCHER_HEIGHT_YARDS / MARCHER_MODEL_HEIGHT_YARDS;
 
 // Walks up from a picked mesh/node to find which spawned robot (if any) owns it.
-export function findRobotRoot(node: BABYLON.Node | null): BABYLON.TransformNode | null {
-  let current: BABYLON.Node | null = node;
+export function findRobotRoot(node: Node | null): TransformNode | null {
+  let current: Node | null = node;
   while (current) {
-    if (current instanceof BABYLON.TransformNode && allRobots.has(current)) {
+    if (current instanceof TransformNode && allRobots.has(current)) {
       return current;
     }
     current = current.parent;
@@ -36,15 +45,15 @@ export function disposeAllRobots() {
 // step) so it can be told apart from the crowd and matched to its path line.
 const ROBOT_COLOR_GOLDEN_ANGLE_DEGREES = 137.508;
 let robotColorCounter = 0;
-const robotColors = new Map<BABYLON.TransformNode, BABYLON.Color3>();
+const robotColors = new Map<TransformNode, Color3>();
 
-function nextRobotColor(): BABYLON.Color3 {
+function nextRobotColor(): Color3 {
   const hue = (robotColorCounter++ * ROBOT_COLOR_GOLDEN_ANGLE_DEGREES) % 360;
-  return BABYLON.Color3.FromHSV(hue, 0.65, 0.95);
+  return Color3.FromHSV(hue, 0.65, 0.95);
 }
 
-export function getRobotColor(robot: BABYLON.TransformNode): BABYLON.Color3 {
-  return robotColors.get(robot) ?? BABYLON.Color3.White();
+export function getRobotColor(robot: TransformNode): Color3 {
+  return robotColors.get(robot) ?? Color3.White();
 }
 
 // Robots are tiny relative to the whole field, so the top-down monitor draws
@@ -55,24 +64,24 @@ export function getRobotColor(robot: BABYLON.TransformNode): BABYLON.Color3 {
 export const TOP_DOWN_MARKER_LAYER_MASK = 0x10000000;
 const TOP_DOWN_MARKER_DIAMETER_YARDS = 2.2;
 const MAX_KNEE_BEND_RADIANS = 1.35;
-const marcherParts = new Map<BABYLON.TransformNode, {
+const marcherParts = new Map<TransformNode, {
   gaitIndex: number;
   instrumentRestPose: boolean;
-  leftLeg: BABYLON.TransformNode;
-  rightLeg: BABYLON.TransformNode;
-  leftKnee: BABYLON.TransformNode;
-  rightKnee: BABYLON.TransformNode;
-  leftAnkle: BABYLON.TransformNode;
-  rightAnkle: BABYLON.TransformNode;
-  leftShoe: BABYLON.Mesh;
-  rightShoe: BABYLON.Mesh;
-  leftArm: BABYLON.TransformNode;
-  rightArm: BABYLON.TransformNode;
-  horn: BABYLON.Mesh;
-  body: BABYLON.TransformNode;
+  leftLeg: TransformNode;
+  rightLeg: TransformNode;
+  leftKnee: TransformNode;
+  rightKnee: TransformNode;
+  leftAnkle: TransformNode;
+  rightAnkle: TransformNode;
+  leftShoe: Mesh;
+  rightShoe: Mesh;
+  leftArm: TransformNode;
+  rightArm: TransformNode;
+  horn: Mesh;
+  body: TransformNode;
 }>();
 
-function orientMarcherShoes(leftShoe: BABYLON.Mesh, rightShoe: BABYLON.Mesh, gait: (typeof MARCHING_GAITS)[number]) {
+function orientMarcherShoes(leftShoe: Mesh, rightShoe: Mesh, gait: (typeof MARCHING_GAITS)[number]) {
   const legFacingOffset = "legFacingOffset" in gait ? gait.legFacingOffset : 0;
   const shoeFacing = -legFacingOffset;
   for (const shoe of [leftShoe, rightShoe]) {
@@ -83,9 +92,9 @@ function orientMarcherShoes(leftShoe: BABYLON.Mesh, rightShoe: BABYLON.Mesh, gai
 }
 
 function applyInstrumentPose(parts: {
-  leftArm: BABYLON.TransformNode;
-  rightArm: BABYLON.TransformNode;
-  horn: BABYLON.Mesh;
+  leftArm: TransformNode;
+  rightArm: TransformNode;
+  horn: Mesh;
 }, restPose: boolean) {
   parts.leftArm.position.z = 0;
   parts.rightArm.position.z = 0;
@@ -138,7 +147,7 @@ export function toggleInstrumentCarryPose(): boolean {
   return instrumentCarryPose;
 }
 
-export function setMarcherInstrumentRestPose(robot: BABYLON.TransformNode, restPose: boolean) {
+export function setMarcherInstrumentRestPose(robot: TransformNode, restPose: boolean) {
   const parts = marcherParts.get(robot);
   if (!parts) return;
   parts.instrumentRestPose = restPose;
@@ -154,75 +163,75 @@ export function cycleMarchingGait(direction: -1 | 1): number {
 }
 
 function createMarcherModel(
-  scene: BABYLON.Scene,
+  scene: Scene,
   gaitIndex: number,
   registerAsRobot: boolean
-): BABYLON.TransformNode {
-  const robot = new BABYLON.TransformNode(registerAsRobot ? "pathRobot" : "playerAvatar", scene);
+): TransformNode {
+  const robot = new TransformNode(registerAsRobot ? "pathRobot" : "playerAvatar", scene);
   if (registerAsRobot) allRobots.add(robot);
 
   const color = nextRobotColor();
   if (registerAsRobot) robotColors.set(robot, color);
 
-  const bodyMaterial = new BABYLON.StandardMaterial("robotBodyMaterial", scene);
+  const bodyMaterial = new StandardMaterial("robotBodyMaterial", scene);
   bodyMaterial.diffuseColor = color;
-  bodyMaterial.specularColor = new BABYLON.Color3(0.25, 0.25, 0.25);
-  const makeMaterial = (name: string, tint: BABYLON.Color3) => {
-    const material = new BABYLON.StandardMaterial(name, scene);
+  bodyMaterial.specularColor = new Color3(0.25, 0.25, 0.25);
+  const makeMaterial = (name: string, tint: Color3) => {
+    const material = new StandardMaterial(name, scene);
     material.diffuseColor = tint;
     return material;
   };
-  const dark = makeMaterial("marcherTrousers", new BABYLON.Color3(0.06, 0.1, 0.17));
-  const trim = makeMaterial("marcherTrim", new BABYLON.Color3(0.95, 0.85, 0.54));
-  const skin = makeMaterial("marcherSkin", new BABYLON.Color3(0.7, 0.44, 0.31));
-  const brass = makeMaterial("marcherBrass", new BABYLON.Color3(0.88, 0.64, 0.15));
-  const boot = makeMaterial("marcherBoot", new BABYLON.Color3(0.025, 0.035, 0.045));
-  const white = makeMaterial("marcherGlove", new BABYLON.Color3(0.9, 0.92, 0.88));
-  const body = new BABYLON.TransformNode("marcherBody", scene);
+  const dark = makeMaterial("marcherTrousers", new Color3(0.06, 0.1, 0.17));
+  const trim = makeMaterial("marcherTrim", new Color3(0.95, 0.85, 0.54));
+  const skin = makeMaterial("marcherSkin", new Color3(0.7, 0.44, 0.31));
+  const brass = makeMaterial("marcherBrass", new Color3(0.88, 0.64, 0.15));
+  const boot = makeMaterial("marcherBoot", new Color3(0.025, 0.035, 0.045));
+  const white = makeMaterial("marcherGlove", new Color3(0.9, 0.92, 0.88));
+  const body = new TransformNode("marcherBody", scene);
   body.parent = robot;
   body.scaling.set(MARCHER_BODY_SCALE * MARCHER_BUILD_SCALE, MARCHER_BODY_SCALE, MARCHER_BODY_SCALE * MARCHER_BUILD_SCALE);
 
-  const jacket = BABYLON.MeshBuilder.CreateLathe("marcherJacket", {
+  const jacket = MeshBuilder.CreateLathe("marcherJacket", {
     shape: [
-      new BABYLON.Vector3(0, 0.61, 0),
-      new BABYLON.Vector3(0.14, 0.61, 0),
-      new BABYLON.Vector3(0.17, 0.63, 0),
-      new BABYLON.Vector3(0.17, 0.66, 0),
-      new BABYLON.Vector3(0.18, 0.7, 0),
-      new BABYLON.Vector3(0.19, 0.75, 0),
-      new BABYLON.Vector3(0.185, 0.82, 0),
-      new BABYLON.Vector3(0.2, 0.93, 0),
-      new BABYLON.Vector3(0.19, 1.02, 0),
-      new BABYLON.Vector3(0.125, 1.06, 0),
-      new BABYLON.Vector3(0, 1.06, 0),
+      new Vector3(0, 0.61, 0),
+      new Vector3(0.14, 0.61, 0),
+      new Vector3(0.17, 0.63, 0),
+      new Vector3(0.17, 0.66, 0),
+      new Vector3(0.18, 0.7, 0),
+      new Vector3(0.19, 0.75, 0),
+      new Vector3(0.185, 0.82, 0),
+      new Vector3(0.2, 0.93, 0),
+      new Vector3(0.19, 1.02, 0),
+      new Vector3(0.125, 1.06, 0),
+      new Vector3(0, 1.06, 0),
     ],
     tessellation: 10,
-    cap: BABYLON.Mesh.CAP_ALL,
+    cap: Mesh.CAP_ALL,
   }, scene);
   jacket.scaling.x = 1.1;
   jacket.scaling.z = 1.1;
   jacket.material = bodyMaterial;
   jacket.parent = body;
 
-  const pelvis = BABYLON.MeshBuilder.CreateLathe("marcherPelvis", {
+  const pelvis = MeshBuilder.CreateLathe("marcherPelvis", {
     shape: [
-      new BABYLON.Vector3(0, 0.48, 0),
-      new BABYLON.Vector3(0.1, 0.48, 0),
-      new BABYLON.Vector3(0.12, 0.5, 0),
-      new BABYLON.Vector3(0.14, 0.54, 0),
-      new BABYLON.Vector3(0.15, 0.58, 0),
-      new BABYLON.Vector3(0.145, 0.62, 0),
-      new BABYLON.Vector3(0.12, 0.66, 0),
-      new BABYLON.Vector3(0.09, 0.69, 0),
-      new BABYLON.Vector3(0, 0.7, 0),
+      new Vector3(0, 0.48, 0),
+      new Vector3(0.1, 0.48, 0),
+      new Vector3(0.12, 0.5, 0),
+      new Vector3(0.14, 0.54, 0),
+      new Vector3(0.15, 0.58, 0),
+      new Vector3(0.145, 0.62, 0),
+      new Vector3(0.12, 0.66, 0),
+      new Vector3(0.09, 0.69, 0),
+      new Vector3(0, 0.7, 0),
     ],
     tessellation: 10,
-    cap: BABYLON.Mesh.CAP_ALL,
+    cap: Mesh.CAP_ALL,
   }, scene);
   pelvis.material = dark;
   pelvis.parent = body;
 
-  const belt = BABYLON.MeshBuilder.CreateTorus("marcherBelt", {
+  const belt = MeshBuilder.CreateTorus("marcherBelt", {
     diameter: 0.32,
     thickness: 0.025,
     tessellation: 10,
@@ -231,101 +240,101 @@ function createMarcherModel(
   belt.material = trim;
   belt.parent = body;
 
-  const neck = BABYLON.MeshBuilder.CreateLathe("marcherNeck", {
+  const neck = MeshBuilder.CreateLathe("marcherNeck", {
     shape: [
-      new BABYLON.Vector3(0, -0.06, 0),
-      new BABYLON.Vector3(0.05, -0.06, 0),
-      new BABYLON.Vector3(0.06, -0.04, 0),
-      new BABYLON.Vector3(0.06, 0.04, 0),
-      new BABYLON.Vector3(0.05, 0.06, 0),
-      new BABYLON.Vector3(0, 0.06, 0),
+      new Vector3(0, -0.06, 0),
+      new Vector3(0.05, -0.06, 0),
+      new Vector3(0.06, -0.04, 0),
+      new Vector3(0.06, 0.04, 0),
+      new Vector3(0.05, 0.06, 0),
+      new Vector3(0, 0.06, 0),
     ],
     tessellation: 10,
-    cap: BABYLON.Mesh.CAP_ALL,
+    cap: Mesh.CAP_ALL,
   }, scene);
   neck.position.y = 1.12;
   neck.material = skin;
   neck.parent = body;
-  const head = BABYLON.MeshBuilder.CreateSphere("robotHead", { diameter: 0.25, segments: 10 }, scene);
+  const head = MeshBuilder.CreateSphere("robotHead", { diameter: 0.25, segments: 10 }, scene);
   head.position.y = MARCHER_MODEL_EYE_HEIGHT;
   head.material = skin;
   head.parent = body;
 
-  const hat = BABYLON.MeshBuilder.CreateLathe("marcherShako", {
+  const hat = MeshBuilder.CreateLathe("marcherShako", {
     shape: [
-      new BABYLON.Vector3(0, 1.36, 0),
-      new BABYLON.Vector3(0.125, 1.36, 0),
-      new BABYLON.Vector3(0.14, 1.39, 0),
-      new BABYLON.Vector3(0.13, 1.43, 0),
-      new BABYLON.Vector3(0.13, 1.58, 0),
-      new BABYLON.Vector3(0.12, 1.62, 0),
-      new BABYLON.Vector3(0.105, 1.64, 0),
-      new BABYLON.Vector3(0, 1.64, 0),
+      new Vector3(0, 1.36, 0),
+      new Vector3(0.125, 1.36, 0),
+      new Vector3(0.14, 1.39, 0),
+      new Vector3(0.13, 1.43, 0),
+      new Vector3(0.13, 1.58, 0),
+      new Vector3(0.12, 1.62, 0),
+      new Vector3(0.105, 1.64, 0),
+      new Vector3(0, 1.64, 0),
     ],
     tessellation: 10,
-    cap: BABYLON.Mesh.CAP_ALL,
+    cap: Mesh.CAP_ALL,
   }, scene);
   hat.material = dark;
   hat.parent = body;
-  const plume = BABYLON.MeshBuilder.CreateSphere("marcherPlume", { diameter: 0.16, segments: 8 }, scene);
+  const plume = MeshBuilder.CreateSphere("marcherPlume", { diameter: 0.16, segments: 8 }, scene);
   plume.position.set(0, 1.7, 0);
   plume.material = white;
   plume.parent = body;
 
   const appendages = ([-1, 1] as const).map((side) => {
-    const leg = new BABYLON.TransformNode("marcherLeg", scene);
+    const leg = new TransformNode("marcherLeg", scene);
     leg.position.set(side * 0.09, 0.69, 0);
     leg.parent = body;
-    const thigh = BABYLON.MeshBuilder.CreateLathe("marcherThigh", {
+    const thigh = MeshBuilder.CreateLathe("marcherThigh", {
       shape: [
-        new BABYLON.Vector3(0, -0.22, 0),
-        new BABYLON.Vector3(0.082, -0.22, 0),
-        new BABYLON.Vector3(0.088, -0.2, 0),
-        new BABYLON.Vector3(0.087, -0.17, 0),
-        new BABYLON.Vector3(0.078, -0.12, 0),
-        new BABYLON.Vector3(0.085, -0.06, 0),
-        new BABYLON.Vector3(0.08, 0, 0),
-        new BABYLON.Vector3(0.07, 0.04, 0),
-        new BABYLON.Vector3(0.06, 0.1, 0),
-        new BABYLON.Vector3(0.045, 0.16, 0),
-        new BABYLON.Vector3(0, 0.16, 0),
+        new Vector3(0, -0.22, 0),
+        new Vector3(0.082, -0.22, 0),
+        new Vector3(0.088, -0.2, 0),
+        new Vector3(0.087, -0.17, 0),
+        new Vector3(0.078, -0.12, 0),
+        new Vector3(0.085, -0.06, 0),
+        new Vector3(0.08, 0, 0),
+        new Vector3(0.07, 0.04, 0),
+        new Vector3(0.06, 0.1, 0),
+        new Vector3(0.045, 0.16, 0),
+        new Vector3(0, 0.16, 0),
       ],
       tessellation: 10,
-      cap: BABYLON.Mesh.CAP_ALL,
+      cap: Mesh.CAP_ALL,
     }, scene);
     thigh.position.y = -0.16;
     thigh.material = dark;
     thigh.parent = leg;
 
-    const knee = new BABYLON.TransformNode("marcherKnee", scene);
+    const knee = new TransformNode("marcherKnee", scene);
     knee.position.y = -0.37;
     knee.parent = leg;
-    const calf = BABYLON.MeshBuilder.CreateLathe("marcherCalf", {
+    const calf = MeshBuilder.CreateLathe("marcherCalf", {
       shape: [
-        new BABYLON.Vector3(0, -0.25, 0),
-        new BABYLON.Vector3(0.065, -0.25, 0),
-        new BABYLON.Vector3(0.079, -0.23, 0),
-        new BABYLON.Vector3(0.067, -0.2, 0),
-        new BABYLON.Vector3(0.07, -0.13, 0),
-        new BABYLON.Vector3(0.078, -0.07, 0),
-        new BABYLON.Vector3(0.087, -0.025, 0),
-        new BABYLON.Vector3(0.087, 0, 0),
-        new BABYLON.Vector3(0, 0, 0),
+        new Vector3(0, -0.25, 0),
+        new Vector3(0.065, -0.25, 0),
+        new Vector3(0.079, -0.23, 0),
+        new Vector3(0.067, -0.2, 0),
+        new Vector3(0.07, -0.13, 0),
+        new Vector3(0.078, -0.07, 0),
+        new Vector3(0.087, -0.025, 0),
+        new Vector3(0.087, 0, 0),
+        new Vector3(0, 0, 0),
       ],
       tessellation: 10,
-      cap: BABYLON.Mesh.CAP_ALL,
+      cap: Mesh.CAP_ALL,
     }, scene);
     calf.material = dark;
     calf.parent = knee;
 
-    const ankle = new BABYLON.TransformNode("marcherAnkle", scene);
+    const ankle = new TransformNode("marcherAnkle", scene);
     ankle.position.y = -0.2;
     ankle.parent = knee;
 
-    const shoe = BABYLON.MeshBuilder.CreateCapsule("marcherShoe", {
+    const shoe = MeshBuilder.CreateCapsule("marcherShoe", {
       height: 0.27,
       radius: 0.06,
-      orientation: BABYLON.Vector3.Forward(),
+      orientation: Vector3.Forward(),
       tessellation: 10,
       subdivisions: 1,
       capSubdivisions: 2,
@@ -335,36 +344,36 @@ function createMarcherModel(
     shoe.material = boot;
     shoe.parent = ankle;
 
-    const arm = new BABYLON.TransformNode("marcherArm", scene);
+    const arm = new TransformNode("marcherArm", scene);
     arm.position.set(side * 0.16, 1.02, 0);
     arm.rotation.x = 0;
     arm.parent = body;
-    const sleeve = BABYLON.MeshBuilder.CreateLathe("marcherSleeve", {
+    const sleeve = MeshBuilder.CreateLathe("marcherSleeve", {
       shape: [
-        new BABYLON.Vector3(0, -0.44, 0),
-        new BABYLON.Vector3(0.05, -0.44, 0),
-        new BABYLON.Vector3(0.06, -0.42, 0),
-        new BABYLON.Vector3(0.06, -0.3, 0),
-        new BABYLON.Vector3(0.07, -0.22, 0),
-        new BABYLON.Vector3(0.082, -0.08, 0),
-        new BABYLON.Vector3(0.09, -0.02, 0),
-        new BABYLON.Vector3(0.09, 0, 0),
-        new BABYLON.Vector3(0, 0, 0),
+        new Vector3(0, -0.44, 0),
+        new Vector3(0.05, -0.44, 0),
+        new Vector3(0.06, -0.42, 0),
+        new Vector3(0.06, -0.3, 0),
+        new Vector3(0.07, -0.22, 0),
+        new Vector3(0.082, -0.08, 0),
+        new Vector3(0.09, -0.02, 0),
+        new Vector3(0.09, 0, 0),
+        new Vector3(0, 0, 0),
       ],
       tessellation: 8,
-      cap: BABYLON.Mesh.CAP_ALL,
+      cap: Mesh.CAP_ALL,
     }, scene);
     sleeve.position.x = -side * 0.04;
     sleeve.material = bodyMaterial;
     sleeve.parent = arm;
-    const glove = BABYLON.MeshBuilder.CreateSphere("marcherHand", { diameter: 0.12, segments: 8 }, scene);
+    const glove = MeshBuilder.CreateSphere("marcherHand", { diameter: 0.12, segments: 8 }, scene);
     glove.position.set(-side * 0.1, -0.44, 0);
     glove.material = white;
     glove.parent = arm;
     return { leg, knee, ankle, shoe, arm };
   });
 
-  const horn = BABYLON.MeshBuilder.CreateCylinder("marcherHorn", {
+  const horn = MeshBuilder.CreateCylinder("marcherHorn", {
     diameterTop: 0.07, diameterBottom: 0.24, height: 0.5, tessellation: 12,
   }, scene);
   horn.position.set(0, 0.8, 0.1);
@@ -385,14 +394,14 @@ function createMarcherModel(
       leftArm: appendages[0].arm, rightArm: appendages[1].arm, horn, body,
     });
 
-    const markerMaterial = new BABYLON.StandardMaterial("robotMarkerMaterial", scene);
+    const markerMaterial = new StandardMaterial("robotMarkerMaterial", scene);
     markerMaterial.diffuseColor = color;
     markerMaterial.emissiveColor = color;
-    markerMaterial.specularColor = new BABYLON.Color3(0, 0, 0);
+    markerMaterial.specularColor = new Color3(0, 0, 0);
     markerMaterial.disableLighting = true;
     markerMaterial.backFaceCulling = false;
 
-    const marker = BABYLON.MeshBuilder.CreateDisc(
+    const marker = MeshBuilder.CreateDisc(
       "robotTopDownMarker",
       { radius: TOP_DOWN_MARKER_DIAMETER_YARDS / 2, tessellation: 16 },
       scene
@@ -421,11 +430,11 @@ function createMarcherModel(
   return robot;
 }
 
-export function createLowPolyRobot(scene: BABYLON.Scene, gaitIndex = selectedMarchingGait): BABYLON.TransformNode {
+export function createLowPolyRobot(scene: Scene, gaitIndex = selectedMarchingGait): TransformNode {
   return createMarcherModel(scene, gaitIndex, true);
 }
 
-export function createMarcherAvatar(scene: BABYLON.Scene): BABYLON.TransformNode {
+export function createMarcherAvatar(scene: Scene): TransformNode {
   return createMarcherModel(scene, 0, false);
 }
 
@@ -436,14 +445,14 @@ export function createMarcherAvatar(scene: BABYLON.Scene): BABYLON.TransformNode
 // footfall still lands exactly on a precalculated drill count.
 
 interface RobotCount {
-  position: BABYLON.Vector3;
+  position: Vector3;
   rotationY: number;
 }
 
 // Each robot keeps only its own route/table; the playback transport itself
 // (below) is shared by every robot so the whole band marches on one clock.
 interface PlayerState {
-  points: BABYLON.Vector3[];
+  points: Vector3[];
   stepSizeYards: number;
   counts: RobotCount[];
 }
@@ -490,33 +499,37 @@ const globalPlayback: GlobalPlayback = {
   playing: false,
 };
 
-const players = new Map<BABYLON.TransformNode, PlayerState>();
-let sharedScene: BABYLON.Scene | null = null;
-let sharedObserver: BABYLON.Observer<BABYLON.Scene> | null = null;
+const players = new Map<TransformNode, PlayerState>();
+let sharedScene: Scene | null = null;
+let sharedObserver: Observer<Scene> | null = null;
 const collisionMarkerManager = createCollisionMarkerManager((countIndex) => seekToCount(countIndex));
 
-function recalculateCollisionMarkers(scene: BABYLON.Scene) {
+function recalculateCollisionMarkers(scene: Scene) {
   collisionMarkerManager.refresh(
     scene,
     Array.from(players, ([robot, state]) => ({ robot, counts: state.counts }))
   );
 }
 
-export function setCollisionMarkerParent(node: BABYLON.TransformNode) {
+export function setCollisionMarkerParent(node: TransformNode) {
   collisionMarkerManager.setParent(node);
 }
 
-export function seekToCollisionMarker(mesh: BABYLON.AbstractMesh): boolean {
+export function setCollisionMarkersVisible(visible: boolean) {
+  collisionMarkerManager.setVisible(visible);
+}
+
+export function seekToCollisionMarker(mesh: AbstractMesh): boolean {
   return collisionMarkerManager.seekToMarker(mesh);
 }
 
-function computeSegmentLengths(points: BABYLON.Vector3[]): number[] {
-  return points.slice(1).map((point, i) => BABYLON.Vector3.Distance(points[i], point));
+function computeSegmentLengths(points: Vector3[]): number[] {
+  return points.slice(1).map((point, i) => Vector3.Distance(points[i], point));
 }
 
 // Precalculates every position/facing along the path up front, resampled to
 // one count per marching step, so playback is a table lookup, not live math.
-function resamplePathIntoCounts(points: BABYLON.Vector3[], stepSizeYards: number): RobotCount[] {
+function resamplePathIntoCounts(points: Vector3[], stepSizeYards: number): RobotCount[] {
   if (points.length < 2) {
     return points.length === 1 ? [{ position: points[0].clone(), rotationY: 0 }] : [];
   }
@@ -552,7 +565,7 @@ function resamplePathIntoCounts(points: BABYLON.Vector3[], stepSizeYards: number
       lastRotationY = Math.atan2(dx, dz);
     }
 
-    counts.push({ position: BABYLON.Vector3.Lerp(segmentStart, segmentEnd, t), rotationY: lastRotationY });
+    counts.push({ position: Vector3.Lerp(segmentStart, segmentEnd, t), rotationY: lastRotationY });
   }
 
   return counts;
@@ -560,7 +573,7 @@ function resamplePathIntoCounts(points: BABYLON.Vector3[], stepSizeYards: number
 
 // Applies the shared global count (clamped to this robot's own table length,
 // so a shorter route just holds at its last position) to one robot.
-function applyGlobalCount(robot: BABYLON.TransformNode, state: PlayerState) {
+function applyGlobalCount(robot: TransformNode, state: PlayerState) {
   if (heldRobots.has(robot) || state.counts.length === 0) return;
   const index = Math.min(globalPlayback.countIndex, state.counts.length - 1);
   const count = state.counts[index];
@@ -602,11 +615,11 @@ function applyGlobalCount(robot: BABYLON.TransformNode, state: PlayerState) {
     (globalPlayback.tempoMultiplier * gait.tempoFactor);
   const countProgress = Math.min(1, globalPlayback.stepAccumulatorSeconds / countInterval);
   const playbackDirection = globalPlayback.speedMultiplier >= 0 ? 1 : -1;
-  if (!gait.inPlace) BABYLON.Vector3.LerpToRef(count.position, next.position, countProgress, robot.position);
+  if (!gait.inPlace) Vector3.LerpToRef(count.position, next.position, countProgress, robot.position);
   const legWorldRotation = bodyRotation + legFacingOffset;
   const localDisplacement = gait.inPlace
-    ? BABYLON.Vector3.Zero()
-    : BABYLON.Vector3.TransformNormal(displacement, BABYLON.Matrix.RotationY(-legWorldRotation));
+    ? Vector3.Zero()
+    : Vector3.TransformNormal(displacement, Matrix.RotationY(-legWorldRotation));
   const gaitPoses = MARCHING_GAIT_POSES[parts.gaitIndex];
   const gaitProgress = playbackDirection > 0 ? countProgress : 1 - countProgress;
   const frame = gaitProgress * (gaitPoses.length - 1);
@@ -624,9 +637,9 @@ function applyGlobalCount(robot: BABYLON.TransformNode, state: PlayerState) {
   const stanceCount = playbackDirection > 0 ? gaitPhaseCount : gaitPhaseCount - 1;
   const leftStance = stanceCount % 2 === 0;
   const placeLeg = (
-    leg: BABYLON.TransformNode,
-    knee: BABYLON.TransformNode,
-    ankle: BABYLON.TransformNode,
+    leg: TransformNode,
+    knee: TransformNode,
+    ankle: TransformNode,
     side: number,
     offset: number,
     kneeAngle: number,
@@ -679,7 +692,7 @@ function getMaxCountIndex(): number {
 }
 
 
-function ensureSharedObserver(scene: BABYLON.Scene) {
+function ensureSharedObserver(scene: Scene) {
   if (sharedScene === scene && sharedObserver) return;
   if (sharedObserver && sharedScene) {
     sharedScene.onBeforeRenderObservable.remove(sharedObserver);
@@ -715,9 +728,9 @@ function ensureSharedObserver(scene: BABYLON.Scene) {
 // size, or the standard "8 to 5" size for a brand-new robot; pass it
 // explicitly to override per-robot. Position follows the shared global clock.
 export function registerRobotPath(
-  robot: BABYLON.TransformNode,
-  points: BABYLON.Vector3[],
-  scene: BABYLON.Scene,
+  robot: TransformNode,
+  points: Vector3[],
+  scene: Scene,
   stepSizeYards?: number
 ) {
   if (points.length < 2) return;
@@ -733,9 +746,9 @@ export function registerRobotPath(
 // waits at the end. Used for restoring saved paths on load; every restored
 // robot joins the same shared clock and starts marching together.
 export function walkRobotAlongPath(
-  robot: BABYLON.TransformNode,
-  points: BABYLON.Vector3[],
-  scene: BABYLON.Scene,
+  robot: TransformNode,
+  points: Vector3[],
+  scene: Scene,
   stepSizeYards?: number
 ) {
   if (points.length < 2) {
@@ -755,7 +768,7 @@ export function walkRobotAlongPath(
 // multi-robot avoidance pass where every robot must share the same step
 // count and count-for-count timing, which resamplePathIntoCounts can't
 // guarantee since it only knows about one robot's own path/step size.
-export function registerRobotCounts(robot: BABYLON.TransformNode, positions: BABYLON.Vector3[], scene: BABYLON.Scene) {
+export function registerRobotCounts(robot: TransformNode, positions: Vector3[], scene: Scene) {
   if (positions.length < 1) return;
   ensureSharedObserver(scene);
   const counts: RobotCount[] = [];
@@ -775,7 +788,7 @@ export function registerRobotCounts(robot: BABYLON.TransformNode, positions: BAB
 
 // Same as walkRobotAlongPath but for a precomputed per-count position
 // sequence (see registerRobotCounts).
-export function walkRobotAlongCounts(robot: BABYLON.TransformNode, positions: BABYLON.Vector3[], scene: BABYLON.Scene) {
+export function walkRobotAlongCounts(robot: TransformNode, positions: Vector3[], scene: Scene) {
   if (positions.length < 1) {
     robot.setEnabled(false);
     return;
@@ -787,7 +800,7 @@ export function walkRobotAlongCounts(robot: BABYLON.TransformNode, positions: BA
 }
 
 // Re-resamples a robot's existing path at a new step size.
-export function setRobotStepSize(robot: BABYLON.TransformNode, stepSizeYards: number, skipRecalculate = false) {
+export function setRobotStepSize(robot: TransformNode, stepSizeYards: number, skipRecalculate = false) {
   const state = players.get(robot);
   if (!state || stepSizeYards <= 0) return;
   state.stepSizeYards = stepSizeYards;
@@ -802,10 +815,10 @@ export function setRobotStepSize(robot: BABYLON.TransformNode, stepSizeYards: nu
 // wipe out whichever adjustment was made first, since each resamples fresh
 // from the raw path points with no memory of the other's change.
 export function resetRobotSchedule(
-  robot: BABYLON.TransformNode,
+  robot: TransformNode,
   stepSizeYards: number,
   holdCounts: number,
-  scene: BABYLON.Scene,
+  scene: Scene,
   skipRecalculate = false
 ) {
   const state = players.get(robot);
@@ -822,17 +835,17 @@ export function resetRobotSchedule(
   if (!skipRecalculate) recalculateCollisionMarkers(scene);
 }
 
-export function getRobotStepSize(robot: BABYLON.TransformNode): number {
+export function getRobotStepSize(robot: TransformNode): number {
   return players.get(robot)?.stepSizeYards ?? DEFAULT_STEP_SIZE_YARDS;
 }
 
 // Read-only view of a robot's precalculated marching steps, so callers (e.g.
 // per-step grab handles) can position one handle per count.
-export function getRobotCounts(robot: BABYLON.TransformNode): ReadonlyArray<RobotCount> | null {
+export function getRobotCounts(robot: TransformNode): ReadonlyArray<RobotCount> | null {
   return players.get(robot)?.counts ?? null;
 }
 
-export function setRobotHeld(robot: BABYLON.TransformNode, held: boolean) {
+export function setRobotHeld(robot: TransformNode, held: boolean) {
   if (held) {
     heldRobots.add(robot);
   } else {
@@ -842,7 +855,7 @@ export function setRobotHeld(robot: BABYLON.TransformNode, held: boolean) {
   }
 }
 
-export function placeRobot(robot: BABYLON.TransformNode, position: BABYLON.Vector3, scene: BABYLON.Scene) {
+export function placeRobot(robot: TransformNode, position: Vector3, scene: Scene) {
   setRobotHeld(robot, false);
   const delta = position.subtract(robot.position);
   const state = players.get(robot);
@@ -862,10 +875,10 @@ export function placeRobot(robot: BABYLON.TransformNode, position: BABYLON.Vecto
 // the source of truth for playback. Re-derives that step's facing from its
 // neighbors so the turn still looks natural, then refreshes collision previews.
 export function setRobotCountPosition(
-  robot: BABYLON.TransformNode,
+  robot: TransformNode,
   index: number,
-  position: BABYLON.Vector3,
-  scene: BABYLON.Scene
+  position: Vector3,
+  scene: Scene
 ) {
   const state = players.get(robot);
   const count = state?.counts[index];
@@ -890,9 +903,9 @@ export function setRobotCountPosition(
 // skipRecalculate lets a caller staggering many robots in a loop defer the
 // (O(n^2)) collision recalculation to a single call once they're all done.
 export function delayRobotStart(
-  robot: BABYLON.TransformNode,
+  robot: TransformNode,
   holdCounts: number,
-  scene: BABYLON.Scene,
+  scene: Scene,
   skipRecalculate = false
 ) {
   const state = players.get(robot);
@@ -909,7 +922,7 @@ export function delayRobotStart(
 
 // Triggers a fresh collision-marker pass on demand, e.g. once after a batch
 // of delayRobotStart calls that each skipped their own recalculation.
-export function refreshCollisionMarkers(scene: BABYLON.Scene) {
+export function refreshCollisionMarkers(scene: Scene) {
   recalculateCollisionMarkers(scene);
 }
 

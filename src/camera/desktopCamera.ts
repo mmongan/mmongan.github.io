@@ -1,4 +1,5 @@
-import * as BABYLON from 'babylonjs';
+import { UniversalCamera } from '@babylonjs/core/Cameras/universalCamera.pure';
+import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
 import { canvas } from '../ui/dom';
 import { engine, scene } from '../scene/engine';
 import { FIELD_SURFACE_Y } from '../field/constants';
@@ -9,15 +10,15 @@ import { FIELD_SURFACE_Y } from '../field/constants';
 // Video board screen center (see field/videoBoard.ts) — the landing shot
 // starts close enough to it that the title fills the screen, then pulls
 // straight back along the same line so it ends the reveal still facing it.
-const INTRO_CAMERA_TARGET = new BABYLON.Vector3(0, 14, 67.55);
-const INTRO_CAMERA_POSITION = new BABYLON.Vector3(0, 14, 52.5);
+const INTRO_CAMERA_TARGET = new Vector3(0, 14, 67.55);
+const INTRO_CAMERA_POSITION = new Vector3(0, 14, 52.5);
 export const INTRO_DURATION_MS = 3200;
 
 // Resting spot is the 50 yard line (z=0) at standing eye height, still facing the board.
-const DEFAULT_CAMERA_POSITION = new BABYLON.Vector3(0, FIELD_SURFACE_Y + 1.8, 0);
+const DEFAULT_CAMERA_POSITION = new Vector3(0, FIELD_SURFACE_Y + 1.8, 0);
 const DEFAULT_CAMERA_TARGET = INTRO_CAMERA_TARGET;
 
-export const camera = new BABYLON.UniversalCamera("camera", INTRO_CAMERA_POSITION.clone(), scene);
+export const camera = new UniversalCamera("camera", INTRO_CAMERA_POSITION.clone(), scene);
 camera.setTarget(INTRO_CAMERA_TARGET);
 camera.keysUp = [87]; // W
 camera.keysDown = [83]; // S
@@ -29,8 +30,8 @@ camera.minZ = 0.1;
 camera.maxZ = 2000;
 camera.inertia = 0.7;
 camera.checkCollisions = true;
-camera.ellipsoid = new BABYLON.Vector3(0.4, 0.9, 0.4);
-camera.ellipsoidOffset = new BABYLON.Vector3(0, 0, 0);
+camera.ellipsoid = new Vector3(0.4, 0.9, 0.4);
+camera.ellipsoidOffset = new Vector3(0, 0, 0);
 
 // Dolly back from the title to the normal spectator framing, then hand
 // control to the player — mouse-look is withheld until the reveal finishes
@@ -40,8 +41,8 @@ const introObserver = scene.onBeforeRenderObservable.add(() => {
   introElapsedMs += engine.getDeltaTime();
   const t = Math.min(1, introElapsedMs / INTRO_DURATION_MS);
   const eased = 1 - Math.pow(1 - t, 3);
-  BABYLON.Vector3.LerpToRef(INTRO_CAMERA_POSITION, DEFAULT_CAMERA_POSITION, eased, camera.position);
-  camera.setTarget(BABYLON.Vector3.Lerp(INTRO_CAMERA_TARGET, DEFAULT_CAMERA_TARGET, eased));
+  Vector3.LerpToRef(INTRO_CAMERA_POSITION, DEFAULT_CAMERA_POSITION, eased, camera.position);
+  camera.setTarget(Vector3.Lerp(INTRO_CAMERA_TARGET, DEFAULT_CAMERA_TARGET, eased));
 
   if (t >= 1) {
     scene.onBeforeRenderObservable.remove(introObserver);

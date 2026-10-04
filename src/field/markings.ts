@@ -1,11 +1,17 @@
-import * as BABYLON from 'babylonjs';
+import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
+import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.pure';
+import { Texture } from '@babylonjs/core/Materials/Textures/texture.pure';
+import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
+import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
+import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
+import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
 import { scene } from '../scene/engine';
 import { FIELD_WIDTH_YARDS, HASH_OFFSETS_YARDS } from './constants';
 
-export function createHashMarks(whiteMaterial: BABYLON.StandardMaterial): {
+export function createHashMarks(whiteMaterial: StandardMaterial): {
   updateHashMarks: (level: string) => void;
 } {
-  const hashMarksGroup = new BABYLON.Mesh("hashMarks", scene);
+  const hashMarksGroup = new Mesh("hashMarks", scene);
 
   function updateHashMarks(level: string) {
     const offset = HASH_OFFSETS_YARDS[level] ?? HASH_OFFSETS_YARDS.nfl;
@@ -13,20 +19,20 @@ export function createHashMarks(whiteMaterial: BABYLON.StandardMaterial): {
 
     // Build all the individual tick marks, then merge them into a single mesh
     // — hundreds of tiny separate boxes is a lot of draw calls for no reason.
-    const hashBoxes: BABYLON.Mesh[] = [];
+    const hashBoxes: Mesh[] = [];
     for (let z = -49; z <= 49; z += 1) {
       for (const x of [-offset, offset]) {
-        const hashMark = BABYLON.MeshBuilder.CreateBox(
+        const hashMark = MeshBuilder.CreateBox(
           `hashMark${z}_${x}`,
           { width: 0.7, height: 0.012, depth: 0.18 },
           scene
         );
-        hashMark.position = new BABYLON.Vector3(x, -0.48, z);
+        hashMark.position = new Vector3(x, -0.48, z);
         hashBoxes.push(hashMark);
       }
     }
 
-    const mergedHashMarks = BABYLON.Mesh.MergeMeshes(hashBoxes, true, true, undefined, false, true)!;
+    const mergedHashMarks = Mesh.MergeMeshes(hashBoxes, true, true, undefined, false, true)!;
     mergedHashMarks.name = `hashMarksMerged_${level}`;
     mergedHashMarks.material = whiteMaterial;
     mergedHashMarks.parent = hashMarksGroup;
@@ -55,12 +61,12 @@ export function createYardNumbers(): void {
     numberCtx.fillText(label, numberCanvas.width / 2, numberCanvas.height / 2 + 10);
     numberCtx.restore();
 
-    const texture = new BABYLON.DynamicTexture(
+    const texture = new DynamicTexture(
       `yardNumberTexture${label}_${Math.random()}`,
       numberCanvas,
       scene,
       false,
-      BABYLON.Texture.TRILINEAR_SAMPLINGMODE
+      Texture.TRILINEAR_SAMPLINGMODE
     );
     texture.update(false);
     texture.hasAlpha = true;
@@ -74,20 +80,20 @@ export function createYardNumbers(): void {
     const label = String(yardValue);
 
     for (const x of [-numberSideOffset, numberSideOffset]) {
-      const numberMat = new BABYLON.StandardMaterial(`yardNumberMat${z}_${x}`, scene);
+      const numberMat = new StandardMaterial(`yardNumberMat${z}_${x}`, scene);
       numberMat.diffuseTexture = createYardNumberTexture(label);
       numberMat.opacityTexture = numberMat.diffuseTexture;
       numberMat.disableLighting = true;
-      numberMat.emissiveColor = new BABYLON.Color3(1, 1, 1);
-      numberMat.specularColor = new BABYLON.Color3(0, 0, 0);
+      numberMat.emissiveColor = new Color3(1, 1, 1);
+      numberMat.specularColor = new Color3(0, 0, 0);
       numberMat.backFaceCulling = false;
 
-      const numberPlane = BABYLON.MeshBuilder.CreateGround(
+      const numberPlane = MeshBuilder.CreateGround(
         `yardNumber${z}_${x}`,
         { width: 3, height: 4 },
         scene
       );
-      numberPlane.position = new BABYLON.Vector3(x, -0.47, z);
+      numberPlane.position = new Vector3(x, -0.47, z);
       // Numbers face the nearest sideline, readable when facing across the field.
       numberPlane.rotation.y = x < 0 ? -Math.PI / 2 : Math.PI / 2;
       numberPlane.material = numberMat;

@@ -21,8 +21,8 @@
   },
   "keywords": [],
   "dependencies": {
-    "babylonjs": "^9.25.0",
-    "babylonjs-loaders": "^9.25.0",
+    "@babylonjs/core": "^9.29.0",
+    "@babylonjs/loaders": "^9.29.0",
     "vite": "^8.2.2"
   },
   "main": "src/scene/index.ts",

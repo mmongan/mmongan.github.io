@@ -1,23 +1,31 @@
-import * as BABYLON from 'babylonjs';
+import { Camera } from '@babylonjs/core/Cameras/camera.pure';
+import { Material } from '@babylonjs/core/Materials/material.pure';
+import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
+import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.pure';
+import { Texture } from '@babylonjs/core/Materials/Textures/texture.pure';
+import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
+import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
+import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
+import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
 import { scene } from '../scene/engine';
 import { getARScale, getARScaleRange, isARTabletopModeActive } from '../xr/ar';
 import { FIELD_LENGTH_YARDS, FIELD_WIDTH_YARDS, FIELD_SURFACE_Y, END_ZONE_DEPTH_YARDS, HASH_OFFSETS_YARDS } from './constants';
 
 export interface TurfResult {
-  outerBase: BABYLON.Mesh;
-  field: BABYLON.Mesh;
-  fieldLines: BABYLON.Mesh;
-  whiteMaterial: BABYLON.StandardMaterial;
-  sidelineMat: BABYLON.StandardMaterial;
+  outerBase: Mesh;
+  field: Mesh;
+  fieldLines: Mesh;
+  whiteMaterial: StandardMaterial;
+  sidelineMat: StandardMaterial;
   updateFieldLevel: (level: string) => void;
   setTopDownDetailOverride: (enabled: boolean) => void;
 }
 
 interface TurfStripeSection {
   index: number;
-  mesh: BABYLON.Mesh;
-  materials: BABYLON.StandardMaterial[];
-  topDownMaterial: BABYLON.StandardMaterial;
+  mesh: Mesh;
+  materials: StandardMaterial[];
+  topDownMaterial: StandardMaterial;
 }
 
 const YARDS_PER_STRIPE = 5;
@@ -36,7 +44,7 @@ function createStripeMaterial(
   level: string,
   resolution: number,
   yardLineWidthYards = 0.24
-): BABYLON.StandardMaterial {
+): StandardMaterial {
   const height = Math.round((resolution / FIELD_WIDTH_YARDS) * YARDS_PER_STRIPE);
   const canvas = document.createElement("canvas");
   canvas.width = resolution;
@@ -101,33 +109,33 @@ function createStripeMaterial(
     }
   }
 
-  const texture = new BABYLON.DynamicTexture(
+  const texture = new DynamicTexture(
     `turfStripeTexture${stripeIndex}_${resolution}`,
     canvas,
     scene,
     true,
-    BABYLON.Texture.TRILINEAR_SAMPLINGMODE
+    Texture.TRILINEAR_SAMPLINGMODE
   );
   texture.update(false);
   texture.anisotropicFilteringLevel = 16;
 
-  const material = new BABYLON.StandardMaterial(`turfStripeMaterial${stripeIndex}_${resolution}`, scene);
+  const material = new StandardMaterial(`turfStripeMaterial${stripeIndex}_${resolution}`, scene);
   material.diffuseTexture = texture;
-  material.specularColor = new BABYLON.Color3(0.08, 0.14, 0.08);
+  material.specularColor = new Color3(0.08, 0.14, 0.08);
   return material;
 }
 
 export function createTurf(): TurfResult {
   const outerBaseThickness = 0.4;
-  const outerBase = BABYLON.MeshBuilder.CreateBox(
+  const outerBase = MeshBuilder.CreateBox(
     "outerBase",
     { width: FIELD_WIDTH_YARDS + 22, depth: FIELD_LENGTH_YARDS + 16, height: outerBaseThickness },
     scene
   );
   outerBase.position.y = -0.8 - outerBaseThickness / 2;
 
-  const outerBaseMat = new BABYLON.StandardMaterial("outerBaseMat", scene);
-  outerBaseMat.diffuseColor = new BABYLON.Color3(0.18, 0.2, 0.22);
+  const outerBaseMat = new StandardMaterial("outerBaseMat", scene);
+  outerBaseMat.diffuseColor = new Color3(0.18, 0.2, 0.22);
   outerBase.material = outerBaseMat;
   outerBase.checkCollisions = true;
 
@@ -177,27 +185,27 @@ export function createTurf(): TurfResult {
   //   turfCtx.fill();
   // }
 
-  const field = BABYLON.MeshBuilder.CreateGround(
+  const field = MeshBuilder.CreateGround(
     "field",
     { width: FIELD_WIDTH_YARDS, height: FIELD_LENGTH_YARDS, subdivisions: 48 },
     scene
   );
   field.position.y = -0.5;
-  const fieldMaterial = new BABYLON.StandardMaterial("fieldMat", scene);
-  fieldMaterial.diffuseColor = new BABYLON.Color3(0.3, 0.5, 0.25);
-  fieldMaterial.specularColor = new BABYLON.Color3(0.08, 0.14, 0.08);
+  const fieldMaterial = new StandardMaterial("fieldMat", scene);
+  fieldMaterial.diffuseColor = new Color3(0.3, 0.5, 0.25);
+  fieldMaterial.specularColor = new Color3(0.08, 0.14, 0.08);
   field.material = fieldMaterial;
 
   const stripeCount = FIELD_LENGTH_YARDS / YARDS_PER_STRIPE;
   const turfStripeSections: TurfStripeSection[] = [];
 
   for (let index = 0; index < stripeCount; index++) {
-    const mesh = BABYLON.MeshBuilder.CreateGround(
+    const mesh = MeshBuilder.CreateGround(
       `turfStripe${index}`,
       { width: FIELD_WIDTH_YARDS, height: YARDS_PER_STRIPE, subdivisions: 1 },
       scene
     );
-    mesh.position = new BABYLON.Vector3(
+    mesh.position = new Vector3(
       0,
       FIELD_SURFACE_Y,
       -FIELD_LENGTH_YARDS / 2 + (index + 0.5) * YARDS_PER_STRIPE
@@ -217,65 +225,65 @@ export function createTurf(): TurfResult {
     turfStripeSections.push({ index, mesh, materials, topDownMaterial });
   }
 
-  const whiteMaterial = new BABYLON.StandardMaterial("fieldLineMat", scene);
-  whiteMaterial.diffuseColor = new BABYLON.Color3(1, 1, 1);
-  whiteMaterial.specularColor = new BABYLON.Color3(0.2, 0.2, 0.2);
+  const whiteMaterial = new StandardMaterial("fieldLineMat", scene);
+  whiteMaterial.diffuseColor = new Color3(1, 1, 1);
+  whiteMaterial.specularColor = new Color3(0.2, 0.2, 0.2);
 
-  const topDownYardLineMaterial = new BABYLON.StandardMaterial("topDownEmphasizedYardLineMaterial", scene);
-  topDownYardLineMaterial.diffuseColor = BABYLON.Color3.White();
-  topDownYardLineMaterial.emissiveColor = BABYLON.Color3.White();
+  const topDownYardLineMaterial = new StandardMaterial("topDownEmphasizedYardLineMaterial", scene);
+  topDownYardLineMaterial.diffuseColor = Color3.White();
+  topDownYardLineMaterial.emissiveColor = Color3.White();
   topDownYardLineMaterial.disableLighting = true;
-  topDownYardLineMaterial.specularColor = BABYLON.Color3.Black();
+  topDownYardLineMaterial.specularColor = Color3.Black();
   for (let z = -50; z <= 50; z += 5) {
     if ([-25, -15, 15, 25].includes(z)) continue;
-    const line = BABYLON.MeshBuilder.CreateBox(
+    const line = MeshBuilder.CreateBox(
       `topDownYardLine${z}`,
       { width: FIELD_WIDTH_YARDS, height: 0.02, depth: z === 0 ? 0.5 : 0.42 },
       scene
     );
-    line.position = new BABYLON.Vector3(0, -0.44, z);
+    line.position = new Vector3(0, -0.44, z);
     line.material = topDownYardLineMaterial;
     line.layerMask = TOP_DOWN_FIELD_MARKING_LAYER_MASK;
     line.isPickable = false;
   }
   for (const z of [-25, -15, 15, 25]) {
-    const line = BABYLON.MeshBuilder.CreateBox(
+    const line = MeshBuilder.CreateBox(
       `topDownEmphasizedYardLine${z}`,
       { width: FIELD_WIDTH_YARDS, height: 0.02, depth: 0.36 },
       scene
     );
-    line.position = new BABYLON.Vector3(0, -0.44, z);
+    line.position = new Vector3(0, -0.44, z);
     line.material = topDownYardLineMaterial;
     line.layerMask = TOP_DOWN_FIELD_MARKING_LAYER_MASK;
     line.isPickable = false;
   }
 
-  let topDownHashMarks: BABYLON.Mesh | null = null;
+  let topDownHashMarks: Mesh | null = null;
   function updateTopDownHashMarks(level: string) {
     topDownHashMarks?.dispose();
     const offset = HASH_OFFSETS_YARDS[level] ?? HASH_OFFSETS_YARDS.nfl;
-    const hashBoxes: BABYLON.Mesh[] = [];
+    const hashBoxes: Mesh[] = [];
 
     for (let z = -49; z <= 49; z++) {
       for (const x of [-offset, offset]) {
-        const hashMark = BABYLON.MeshBuilder.CreateBox(
+        const hashMark = MeshBuilder.CreateBox(
           `topDownHashMark${z}_${x}`,
           { width: 0.7, height: 0.02, depth: 0.36 },
           scene
         );
-        hashMark.position = new BABYLON.Vector3(x, -0.45, z);
+        hashMark.position = new Vector3(x, -0.45, z);
         hashBoxes.push(hashMark);
       }
     }
 
-    topDownHashMarks = BABYLON.Mesh.MergeMeshes(hashBoxes, true, true, undefined, false, true)!;
+    topDownHashMarks = Mesh.MergeMeshes(hashBoxes, true, true, undefined, false, true)!;
     topDownHashMarks.name = `topDownHashMarks_${level}`;
     topDownHashMarks.material = whiteMaterial;
     topDownHashMarks.layerMask = TOP_DOWN_FIELD_MARKING_LAYER_MASK;
     topDownHashMarks.isPickable = false;
   }
 
-  function createTopDownYardNumberMaterial(label: string): BABYLON.StandardMaterial {
+  function createTopDownYardNumberMaterial(label: string): StandardMaterial {
     const canvas = document.createElement("canvas");
     canvas.width = 256;
     canvas.height = 256;
@@ -290,16 +298,16 @@ export function createTurf(): TurfResult {
     ctx.fillText(label, canvas.width / 2, canvas.height / 2 + 10);
     ctx.restore();
 
-    const texture = new BABYLON.DynamicTexture(`topDownYardNumberTexture${label}`, canvas, scene, false);
+    const texture = new DynamicTexture(`topDownYardNumberTexture${label}`, canvas, scene, false);
     texture.update(false);
     texture.hasAlpha = true;
 
-    const material = new BABYLON.StandardMaterial(`topDownYardNumberMaterial${label}`, scene);
+    const material = new StandardMaterial(`topDownYardNumberMaterial${label}`, scene);
     material.diffuseTexture = texture;
     material.opacityTexture = texture;
-    material.emissiveColor = BABYLON.Color3.White();
+    material.emissiveColor = Color3.White();
     material.disableLighting = true;
-    material.specularColor = BABYLON.Color3.Black();
+    material.specularColor = Color3.Black();
     material.backFaceCulling = false;
     return material;
   }
@@ -311,12 +319,12 @@ export function createTurf(): TurfResult {
 
     const material = createTopDownYardNumberMaterial(String(yardValue));
     for (const x of [-numberSideOffset, numberSideOffset]) {
-      const number = BABYLON.MeshBuilder.CreateGround(
+      const number = MeshBuilder.CreateGround(
         `topDownYardNumber${yardValue}_${x}`,
         { width: 3, height: 4 },
         scene
       );
-      number.position = new BABYLON.Vector3(x, -0.455, z);
+      number.position = new Vector3(x, -0.455, z);
       number.rotation.y = x < 0 ? Math.PI / 2 : -Math.PI / 2;
       number.material = material;
       number.layerMask = TOP_DOWN_FIELD_MARKING_LAYER_MASK;
@@ -325,46 +333,46 @@ export function createTurf(): TurfResult {
   }
   updateTopDownHashMarks("highschool");
 
-  const endZoneMatLeft = new BABYLON.StandardMaterial("endZoneMatLeft", scene);
-  endZoneMatLeft.diffuseColor = new BABYLON.Color3(0.025, 0.07, 0.2);
-  endZoneMatLeft.specularColor = new BABYLON.Color3(0.05, 0.05, 0.05);
+  const endZoneMatLeft = new StandardMaterial("endZoneMatLeft", scene);
+  endZoneMatLeft.diffuseColor = new Color3(0.025, 0.07, 0.2);
+  endZoneMatLeft.specularColor = new Color3(0.05, 0.05, 0.05);
 
-  const endZoneMatRight = new BABYLON.StandardMaterial("endZoneMatRight", scene);
-  endZoneMatRight.diffuseColor = new BABYLON.Color3(0.035, 0.11, 0.29);
-  endZoneMatRight.specularColor = new BABYLON.Color3(0.05, 0.05, 0.05);
+  const endZoneMatRight = new StandardMaterial("endZoneMatRight", scene);
+  endZoneMatRight.diffuseColor = new Color3(0.035, 0.11, 0.29);
+  endZoneMatRight.specularColor = new Color3(0.05, 0.05, 0.05);
 
-  const leftEndZone = BABYLON.MeshBuilder.CreateBox(
+  const leftEndZone = MeshBuilder.CreateBox(
     "leftEndZone",
     { width: FIELD_WIDTH_YARDS, height: 0.06, depth: END_ZONE_DEPTH_YARDS },
     scene
   );
-  leftEndZone.position = new BABYLON.Vector3(0, -0.47, -55);
+  leftEndZone.position = new Vector3(0, -0.47, -55);
   leftEndZone.material = endZoneMatLeft;
 
-  const rightEndZone = BABYLON.MeshBuilder.CreateBox(
+  const rightEndZone = MeshBuilder.CreateBox(
     "rightEndZone",
     { width: FIELD_WIDTH_YARDS, height: 0.06, depth: END_ZONE_DEPTH_YARDS },
     scene
   );
-  rightEndZone.position = new BABYLON.Vector3(0, -0.47, 55);
+  rightEndZone.position = new Vector3(0, -0.47, 55);
   rightEndZone.material = endZoneMatRight;
 
-  const fieldLines = new BABYLON.Mesh("fieldLines", scene);
+  const fieldLines = new Mesh("fieldLines", scene);
 
-  const goalLineNorth = BABYLON.MeshBuilder.CreateBox(
+  const goalLineNorth = MeshBuilder.CreateBox(
     "goalLineNorth",
     { width: FIELD_WIDTH_YARDS, height: 0.015, depth: 0.26 },
     scene
   );
-  goalLineNorth.position = new BABYLON.Vector3(0, -0.48, -60);
+  goalLineNorth.position = new Vector3(0, -0.48, -60);
   goalLineNorth.material = whiteMaterial;
 
-  const goalLineSouth = BABYLON.MeshBuilder.CreateBox(
+  const goalLineSouth = MeshBuilder.CreateBox(
     "goalLineSouth",
     { width: FIELD_WIDTH_YARDS, height: 0.015, depth: 0.26 },
     scene
   );
-  goalLineSouth.position = new BABYLON.Vector3(0, -0.48, 60);
+  goalLineSouth.position = new Vector3(0, -0.48, 60);
   goalLineSouth.material = whiteMaterial;
 
   let currentStripeIndex: number | null = null;
@@ -372,7 +380,7 @@ export function createTurf(): TurfResult {
   let wasInARMode = false;
   let currentFieldLevel = "highschool";
   let topDownDetailOverride = false;
-  let materialsBeforeTopDownOverride: (BABYLON.Material | null)[] | null = null;
+  let materialsBeforeTopDownOverride: (Material | null)[] | null = null;
 
   function updateStripeLod() {
     if (getARScale() < getARScaleRange().max) {
@@ -408,7 +416,7 @@ export function createTurf(): TurfResult {
     const camera = scene.activeCamera;
     if (!camera) return;
 
-    const isDesktopCamera = camera.cameraRigMode === BABYLON.Camera.RIG_MODE_NONE;
+    const isDesktopCamera = camera.cameraRigMode === Camera.RIG_MODE_NONE;
     const cameraPosition = camera.globalPosition;
     let nearestStripeIndex = turfStripeSections[0].index;
     let nearestDistance = Infinity;
@@ -444,11 +452,11 @@ export function createTurf(): TurfResult {
         const dy = Math.max(minimum.y - cameraPosition.y, 0, cameraPosition.y - maximum.y);
         const dz = Math.max(minimum.z - cameraPosition.z, 0, cameraPosition.z - maximum.z);
         const distance = Math.max(camera.minZ, Math.hypot(dx, dy, dz));
-        const pixelsPerWorldUnit = camera.mode === BABYLON.Camera.ORTHOGRAPHIC_CAMERA
+        const pixelsPerWorldUnit = camera.mode === Camera.ORTHOGRAPHIC_CAMERA
           ? focalPixels
           : focalPixels / distance;
         const requiredResolution = (maximum.x - minimum.x) * pixelsPerWorldUnit * 1.25;
-        const activeLod = materials.indexOf(mesh.material as BABYLON.StandardMaterial);
+        const activeLod = materials.indexOf(mesh.material as StandardMaterial);
         const threshold = activeLod === 0 ? 0.8 : 1;
         if (requiredResolution > STRIPE_LOD_RESOLUTIONS[1] * threshold) return 0;
         const mediumThreshold = activeLod === 1 ? 0.8 : 1;
@@ -523,23 +531,23 @@ export function createTurf(): TurfResult {
 
   scene.onBeforeRenderObservable.add(updateStripeLod);
 
-  const sidelineMat = new BABYLON.StandardMaterial("sidelineMat", scene);
-  sidelineMat.diffuseColor = new BABYLON.Color3(0.92, 0.92, 0.92);
+  const sidelineMat = new StandardMaterial("sidelineMat", scene);
+  sidelineMat.diffuseColor = new Color3(0.92, 0.92, 0.92);
 
-  const leftSideline = BABYLON.MeshBuilder.CreateBox(
+  const leftSideline = MeshBuilder.CreateBox(
     "leftSideline",
     { width: 0.2, height: 0.015, depth: FIELD_LENGTH_YARDS },
     scene
   );
-  leftSideline.position = new BABYLON.Vector3(-FIELD_WIDTH_YARDS / 2, -0.48, 0);
+  leftSideline.position = new Vector3(-FIELD_WIDTH_YARDS / 2, -0.48, 0);
   leftSideline.material = whiteMaterial;
 
-  const rightSideline = BABYLON.MeshBuilder.CreateBox(
+  const rightSideline = MeshBuilder.CreateBox(
     "rightSideline",
     { width: 0.2, height: 0.015, depth: FIELD_LENGTH_YARDS },
     scene
   );
-  rightSideline.position = new BABYLON.Vector3(FIELD_WIDTH_YARDS / 2, -0.48, 0);
+  rightSideline.position = new Vector3(FIELD_WIDTH_YARDS / 2, -0.48, 0);
   rightSideline.material = whiteMaterial;
 
   return {

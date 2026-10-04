@@ -1,4 +1,5 @@
-import * as BABYLON from 'babylonjs';
+import { Matrix, Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
+import { WebXRInputSource } from '@babylonjs/core/XR/webXRInputSource';
 import {
   getARPosition,
   getARScale,
@@ -11,7 +12,7 @@ import {
 import { scene } from '../scene/engine';
 import { floorCalibrationToggle } from '../ui/dom';
 
-export const activeControllers = new Map<string, BABYLON.WebXRInputSource>();
+export const activeControllers = new Map<string, WebXRInputSource>();
 
 const SCALE_EXPONENT_AT_MIN = 0.4;
 const SCALE_EXPONENT_AT_MAX = 1.6;
@@ -20,7 +21,7 @@ const pinchState = {
   startDistance: 0,
   startScale: 1,
   scaleExponent: SCALE_EXPONENT_AT_MIN,
-  localAnchor: new BABYLON.Vector3(),
+  localAnchor: new Vector3(),
   startYaw: 0,
   startRotation: 0,
 };
@@ -30,7 +31,7 @@ function resetPinchState() {
   pinchState.startDistance = 0;
   pinchState.startScale = 1;
   pinchState.scaleExponent = SCALE_EXPONENT_AT_MIN;
-  pinchState.localAnchor = new BABYLON.Vector3();
+  pinchState.localAnchor = new Vector3();
   pinchState.startYaw = 0;
   pinchState.startRotation = 0;
 }
@@ -42,18 +43,18 @@ function getScaleExponentFor(scale: number): number {
   return SCALE_EXPONENT_AT_MIN + (SCALE_EXPONENT_AT_MAX - SCALE_EXPONENT_AT_MIN) * clampedT;
 }
 
-export function rotateAroundY(vector: BABYLON.Vector3, angle: number): BABYLON.Vector3 {
-  return BABYLON.Vector3.TransformCoordinates(vector, BABYLON.Matrix.RotationY(angle));
+export function rotateAroundY(vector: Vector3, angle: number): Vector3 {
+  return Vector3.TransformCoordinates(vector, Matrix.RotationY(angle));
 }
 
-function isGripPressed(controller: BABYLON.WebXRInputSource): boolean {
+function isGripPressed(controller: WebXRInputSource): boolean {
   const motionController = controller.motionController;
   if (!motionController) return false;
   const squeeze = motionController.getComponentOfType('squeeze');
   return !!squeeze?.pressed || !!controller.inputSource.gamepad?.buttons?.[1]?.pressed;
 }
 
-function getControllerPosition(controller: BABYLON.WebXRInputSource) {
+function getControllerPosition(controller: WebXRInputSource) {
   return controller.grip ?? controller.pointer;
 }
 
@@ -64,21 +65,21 @@ function getScaleFromControllerDistance(distance: number) {
   return Math.min(max, Math.max(min, pinchState.startScale * easedRatio));
 }
 
-export function getControllerYaw(leftPosition: BABYLON.Vector3, rightPosition: BABYLON.Vector3) {
+export function getControllerYaw(leftPosition: Vector3, rightPosition: Vector3) {
   return Math.atan2(rightPosition.x - leftPosition.x, rightPosition.z - leftPosition.z);
 }
 
-export function setActiveController(controller: BABYLON.WebXRInputSource) {
+export function setActiveController(controller: WebXRInputSource) {
   const handedness = controller.inputSource.handedness || controller.uniqueId;
   activeControllers.set(String(handedness), controller);
 }
 
-export function getActiveControllers(): ReadonlyMap<string, BABYLON.WebXRInputSource> {
+export function getActiveControllers(): ReadonlyMap<string, WebXRInputSource> {
   return activeControllers;
 }
 
 export function removeActiveController(
-  controller: BABYLON.WebXRInputSource,
+  controller: WebXRInputSource,
   cleanup: (handedness: string) => void
 ) {
   const handedness = String(controller.inputSource.handedness || controller.uniqueId);
@@ -103,7 +104,7 @@ export function updateARResizeFromControllers(cornerDragActive: boolean) {
 
   const leftPosition = getControllerPosition(left).getAbsolutePosition();
   const rightPosition = getControllerPosition(right).getAbsolutePosition();
-  const distance = BABYLON.Vector3.Distance(leftPosition, rightPosition);
+  const distance = Vector3.Distance(leftPosition, rightPosition);
   if (distance <= 0.05) return;
 
   const midpoint = leftPosition.add(rightPosition).scale(0.5);

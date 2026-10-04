@@ -1,4 +1,10 @@
-import * as BABYLON from 'babylonjs';
+import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
+import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
+import { Matrix, Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
+import { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.pure';
+import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
+import { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
+import { WebXRHandJoint, WebXRHandTracking } from '@babylonjs/core/XR/features/WebXRHandTracking.pure';
 import {
   getARPosition,
   getARScale,
@@ -19,59 +25,60 @@ import { getControllerYaw, rotateAroundY } from './controllers';
 
 export interface HandSegment {
   kind: 'formation' | 'path';
-  controlPoints: BABYLON.Vector3[];
-  line: BABYLON.Mesh;
-  moveHandle: BABYLON.Mesh;
-  pointHandles: BABYLON.Mesh[];
-  copyHandle: BABYLON.Mesh | null;
-  robots: BABYLON.TransformNode[];
+  controlPoints: Vector3[];
+  line: Mesh;
+  moveHandle: Mesh;
+  pointHandles: Mesh[];
+  rotationHandles: Mesh[];
+  copyHandle: Mesh | null;
+  robots: TransformNode[];
 }
 
 export interface MarcherGrab {
-  robot: BABYLON.TransformNode;
+  robot: TransformNode;
   source: 'hand' | 'controller';
-  offset: BABYLON.Vector3;
-  originalPosition: BABYLON.Vector3;
+  offset: Vector3;
+  originalPosition: Vector3;
   rayDistance: number;
 }
 
 export interface CornerDrag {
-  opposite: BABYLON.Vector3;
-  diagonal: BABYLON.Vector3;
-  localOpposite: BABYLON.Vector3;
-  localCorner: BABYLON.Vector3;
-  point: BABYLON.Vector3;
+  opposite: Vector3;
+  diagonal: Vector3;
+  localOpposite: Vector3;
+  localCorner: Vector3;
+  point: Vector3;
   source: 'hand' | 'controller';
   rayDistance: number;
-  offset: BABYLON.Vector3;
+  offset: Vector3;
 }
 
 export interface HandPathDependencies {
-  pathRoot: BABYLON.TransformNode;
-  robotPaths: Map<BABYLON.TransformNode, BABYLON.Vector3[]>;
-  robotPathLines: Map<BABYLON.TransformNode, BABYLON.Mesh>;
-  storedPaths: BABYLON.Vector3[][];
-  saveStoredPaths: (paths: BABYLON.Vector3[][]) => void;
-  pathSegmentByRobot: ReadonlyMap<BABYLON.TransformNode, HandSegment>;
+  pathRoot: TransformNode;
+  robotPaths: Map<TransformNode, Vector3[]>;
+  robotPathLines: Map<TransformNode, Mesh>;
+  storedPaths: Vector3[][];
+  saveStoredPaths: (paths: Vector3[][]) => void;
+  pathSegmentByRobot: ReadonlyMap<TransformNode, HandSegment>;
   segments: ReadonlyArray<HandSegment>;
-  placementDrafts: Map<string, BABYLON.TransformNode>;
+  placementDrafts: Map<string, TransformNode>;
   pathPointMinDistance: number;
   isPlacementMode: () => boolean;
-  getSelectedRobot: () => BABYLON.TransformNode | null;
-  selectRobot: (robot: BABYLON.TransformNode | null) => void;
-  createStandingMarcher: (position: BABYLON.Vector3) => BABYLON.TransformNode;
-  updateRobotPathLine: (robot: BABYLON.TransformNode, points: BABYLON.Vector3[]) => void;
+  getSelectedRobot: () => TransformNode | null;
+  selectRobot: (robot: TransformNode | null) => void;
+  createStandingMarcher: (position: Vector3) => TransformNode;
+  updateRobotPathLine: (robot: TransformNode, points: Vector3[]) => void;
   createTubeLine: (
     name: string,
-    points: BABYLON.Vector3[],
-    color: BABYLON.Color3,
-    existingMaterial?: BABYLON.StandardMaterial
-  ) => BABYLON.Mesh;
-  createSegment: (kind: 'path', points: BABYLON.Vector3[], robots: BABYLON.TransformNode[]) => HandSegment;
+    points: Vector3[],
+    color: Color3,
+    existingMaterial?: StandardMaterial
+  ) => Mesh;
+  createSegment: (kind: 'path', points: Vector3[], robots: TransformNode[]) => HandSegment;
   refreshSegmentVisuals: (segment: HandSegment) => void;
   rebuildFormationConnections: (segment: HandSegment) => void;
   refreshStepHandles: () => void;
-  snapToStepGrid: (point: BABYLON.Vector3) => BABYLON.Vector3;
+  snapToStepGrid: (point: Vector3) => Vector3;
   cancelControllerPathDrawing: () => void;
 }
 
@@ -108,17 +115,17 @@ export function createHandInteraction(paths: HandPathDependencies) {
     startYaw: number;
     startScale: number;
     startRotation: number;
-    localAnchor: BABYLON.Vector3;
+    localAnchor: Vector3;
   } | null = null;
   const handPinches = new Map<string, boolean>();
   const marcherGrabs = new Map<string, MarcherGrab>();
-  let handTracking: BABYLON.WebXRHandTracking | null = null;
+  let handTracking: WebXRHandTracking | null = null;
   const floorContactHands = new Set<string>();
   let fingerPath: {
     handedness: 'left' | 'right';
-    points: BABYLON.Vector3[];
-    robot: BABYLON.TransformNode | null;
-    line: BABYLON.Mesh | null;
+    points: Vector3[];
+    robot: TransformNode | null;
+    line: Mesh | null;
     placement: boolean;
     previewUpdateTime: number;
     previewPointCount: number;
@@ -130,8 +137,8 @@ export function createHandInteraction(paths: HandPathDependencies) {
 
   function beginMarcherGrab(
     handedness: string,
-    robot: BABYLON.TransformNode,
-    point: BABYLON.Vector3,
+    robot: TransformNode,
+    point: Vector3,
     source: 'hand' | 'controller',
     rayDistance = 0
   ) {
@@ -146,15 +153,15 @@ export function createHandInteraction(paths: HandPathDependencies) {
     selectRobot(robot);
   }
 
-  function moveMarcherGrab(handedness: string, point: BABYLON.Vector3) {
+  function moveMarcherGrab(handedness: string, point: Vector3) {
     const grab = marcherGrabs.get(handedness);
     if (!grab || grab.robot.isDisposed()) {
       marcherGrabs.delete(handedness);
       return;
     }
     pathRoot.computeWorldMatrix(true);
-    grab.robot.position.copyFrom(BABYLON.Vector3.TransformCoordinates(
-      point.add(grab.offset), BABYLON.Matrix.Invert(pathRoot.getWorldMatrix())
+    grab.robot.position.copyFrom(Vector3.TransformCoordinates(
+      point.add(grab.offset), Matrix.Invert(pathRoot.getWorldMatrix())
     ));
   }
 
@@ -171,15 +178,15 @@ export function createHandInteraction(paths: HandPathDependencies) {
     grab.robot.computeWorldMatrix(true);
     field.computeWorldMatrix(true);
     pathRoot.computeWorldMatrix(true);
-    const local = BABYLON.Vector3.TransformCoordinates(
-      grab.robot.getAbsolutePosition(), BABYLON.Matrix.Invert(field.getWorldMatrix())
+    const local = Vector3.TransformCoordinates(
+      grab.robot.getAbsolutePosition(), Matrix.Invert(field.getWorldMatrix())
     );
     local.x = Math.min(FIELD_WIDTH_YARDS / 2, Math.max(-FIELD_WIDTH_YARDS / 2, local.x));
     local.z = Math.min(FIELD_LENGTH_YARDS / 2, Math.max(-FIELD_LENGTH_YARDS / 2, local.z));
     local.y = 0;
-    const position = BABYLON.Vector3.TransformCoordinates(
-      BABYLON.Vector3.TransformCoordinates(local, field.getWorldMatrix()),
-      BABYLON.Matrix.Invert(pathRoot.getWorldMatrix())
+    const position = Vector3.TransformCoordinates(
+      Vector3.TransformCoordinates(local, field.getWorldMatrix()),
+      Matrix.Invert(pathRoot.getWorldMatrix())
     );
     position.y += 0.02;
     const delta = placeRobot(grab.robot, position, scene);
@@ -204,8 +211,8 @@ export function createHandInteraction(paths: HandPathDependencies) {
     if (grab.robot === getSelectedRobot()) refreshStepHandles();
   }
 
-  function findMarcherNearHand(point: BABYLON.Vector3) {
-    let nearest: BABYLON.TransformNode | null = null;
+  function findMarcherNearHand(point: Vector3) {
+    let nearest: TransformNode | null = null;
     let nearestDistance = 0.025;
     scene.meshes.forEach((mesh) => {
       if (!mesh.isEnabled() || !mesh.isVisible || !mesh.isPickable) return;
@@ -228,14 +235,14 @@ export function createHandInteraction(paths: HandPathDependencies) {
 
   function beginCornerDrag(
     handedness: string,
-    handle: BABYLON.AbstractMesh,
-    point: BABYLON.Vector3,
+    handle: AbstractMesh,
+    point: Vector3,
     source: 'hand' | 'controller',
     rayDistance = 0
   ) {
     const corner = getTabletopCorner(handle);
     if (!corner) return;
-    const localOpposite = new BABYLON.Vector3(-corner.x, corner.y, -corner.z);
+    const localOpposite = new Vector3(-corner.x, corner.y, -corner.z);
     const rotation = getARRotation();
     const scale = getARScale();
     const opposite = getARPosition().add(rotateAroundY(localOpposite.scale(scale), rotation));
@@ -252,7 +259,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
     setTabletopCornerHandlesVisible(true);
   }
 
-  function moveCornerDrag(drag: CornerDrag, point: BABYLON.Vector3) {
+  function moveCornerDrag(drag: CornerDrag, point: Vector3) {
     drag.point.copyFrom(point);
   }
 
@@ -300,7 +307,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
     if (!first) return;
     const drag = first;
     const displacement = drag.point.add(drag.offset).subtract(drag.opposite);
-    const scale = BABYLON.Vector3.Dot(displacement, drag.diagonal) / drag.diagonal.lengthSquared();
+    const scale = Vector3.Dot(displacement, drag.diagonal) / drag.diagonal.lengthSquared();
     const clampedScale = setARScale(scale);
     const oppositeOffset = rotateAroundY(drag.localOpposite.scale(clampedScale), getARRotation());
     setARPosition(drag.opposite.subtract(oppositeOffset));
@@ -317,9 +324,9 @@ export function createHandInteraction(paths: HandPathDependencies) {
         if (cornerDrags.get(handedness)?.source === 'hand') cornerDrags.delete(handedness);
         continue;
       }
-      const thumb = hand.getJointMesh(BABYLON.WebXRHandJoint.THUMB_TIP).getAbsolutePosition();
-      const index = hand.getJointMesh(BABYLON.WebXRHandJoint.INDEX_FINGER_TIP).getAbsolutePosition();
-      const distance = BABYLON.Vector3.Distance(thumb, index);
+      const thumb = hand.getJointMesh(WebXRHandJoint.THUMB_TIP).getAbsolutePosition();
+      const index = hand.getJointMesh(WebXRHandJoint.INDEX_FINGER_TIP).getAbsolutePosition();
+      const distance = Vector3.Distance(thumb, index);
       const wasPinching = handPinches.get(handedness) ?? false;
       const pinching = distance < (wasPinching ? 0.04 : 0.025);
       handPinches.set(handedness, pinching);
@@ -340,7 +347,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
         moveCornerDrag(drag, point);
       } else if (!drag && !wasPinching) {
         const pick = scene.meshes.find((mesh) =>
-          getTabletopCorner(mesh) && BABYLON.Vector3.Distance(mesh.getAbsolutePosition(), point) < 0.07
+          getTabletopCorner(mesh) && Vector3.Distance(mesh.getAbsolutePosition(), point) < 0.07
         );
         if (pick) {
           beginCornerDrag(handedness, pick, point, 'hand');
@@ -379,17 +386,17 @@ export function createHandInteraction(paths: HandPathDependencies) {
     const hand = handTracking?.getHandByHandedness(handedness);
     const field = scene.getMeshByName('field');
     if (!hand || !field || !field.isEnabled() || cornerDrags.size > 0 || marcherGrabs.size > 0) return null;
-    const finger = hand.getJointMesh(BABYLON.WebXRHandJoint.INDEX_FINGER_TIP).getAbsolutePosition();
-    const thumb = hand.getJointMesh(BABYLON.WebXRHandJoint.THUMB_TIP).getAbsolutePosition();
-    if (BABYLON.Vector3.Distance(finger, thumb) < 0.04) return null;
+    const finger = hand.getJointMesh(WebXRHandJoint.INDEX_FINGER_TIP).getAbsolutePosition();
+    const thumb = hand.getJointMesh(WebXRHandJoint.THUMB_TIP).getAbsolutePosition();
+    if (Vector3.Distance(finger, thumb) < 0.04) return null;
     field.computeWorldMatrix(true);
-    const local = BABYLON.Vector3.TransformCoordinates(finger, BABYLON.Matrix.Invert(field.getWorldMatrix()));
+    const local = Vector3.TransformCoordinates(finger, Matrix.Invert(field.getWorldMatrix()));
     if (Math.abs(local.x) > FIELD_WIDTH_YARDS / 2 || Math.abs(local.z) > FIELD_LENGTH_YARDS / 2) return null;
     local.y = 0;
-    const contact = BABYLON.Vector3.TransformCoordinates(local, field.getWorldMatrix());
-    if (BABYLON.Vector3.Distance(finger, contact) > (touching ? 0.025 : 0.012)) return null;
+    const contact = Vector3.TransformCoordinates(local, field.getWorldMatrix());
+    if (Vector3.Distance(finger, contact) > (touching ? 0.025 : 0.012)) return null;
     pathRoot.computeWorldMatrix(true);
-    const point = BABYLON.Vector3.TransformCoordinates(contact, BABYLON.Matrix.Invert(pathRoot.getWorldMatrix()));
+    const point = Vector3.TransformCoordinates(contact, Matrix.Invert(pathRoot.getWorldMatrix()));
     point.y += 0.02;
     return snapToStepGrid(point);
   }
@@ -440,20 +447,20 @@ export function createHandInteraction(paths: HandPathDependencies) {
       return;
     }
     const previous = stroke.points[stroke.points.length - 1];
-    if (!previous || BABYLON.Vector3.Distance(previous, point) >= pathPointMinDistance) stroke.points.push(point);
+    if (!previous || Vector3.Distance(previous, point) >= pathPointMinDistance) stroke.points.push(point);
     const now = performance.now();
     if (stroke.points.length >= 2 && stroke.points.length !== stroke.previewPointCount &&
       (!stroke.line || !isARTabletopModeActive() || now - stroke.previewUpdateTime >= 1000 / 30)) {
-      const material = stroke.line?.material as BABYLON.StandardMaterial | undefined;
+      const material = stroke.line?.material as StandardMaterial | undefined;
       stroke.line?.dispose(false, false);
-      stroke.line = createTubeLine('fingerPathPreview', stroke.points, new BABYLON.Color3(1, 0.85, 0.2), material);
+      stroke.line = createTubeLine('fingerPathPreview', stroke.points, new Color3(1, 0.85, 0.2), material);
       stroke.line.isPickable = false;
       stroke.previewUpdateTime = now;
       stroke.previewPointCount = stroke.points.length;
     }
   }
 
-  function setHandTracking(tracking: BABYLON.WebXRHandTracking | null) {
+  function setHandTracking(tracking: WebXRHandTracking | null) {
     finishFingerPath(false);
     floorContactHands.clear();
     [...marcherGrabs.entries()].forEach(([handedness, grab]) => {

@@ -1,4 +1,14 @@
-import * as BABYLON from 'babylonjs';
+import { Camera } from '@babylonjs/core/Cameras/camera.pure';
+import { FreeCamera } from '@babylonjs/core/Cameras/freeCamera';
+import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
+import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.pure';
+import { RenderTargetTexture } from '@babylonjs/core/Materials/Textures/renderTargetTexture.pure';
+import { Texture } from '@babylonjs/core/Materials/Textures/texture.pure';
+import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
+import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
+import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
+import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
+import { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
 import { engine, scene } from '../scene/engine';
 import { attachToARTransform, getARScale, getARScaleRange, isARTabletopModeActive } from '../xr/ar';
 import { registerMenuButton } from '../menu/handMenu';
@@ -62,7 +72,7 @@ function createVideoField() {
   const zAt = (yards: number) => (yards / FIELD_LENGTH_YARDS + 0.5) * canvas.height;
   const yardsX = canvas.width / FIELD_WIDTH_YARDS;
   const yardsZ = canvas.height / FIELD_LENGTH_YARDS;
-  const texture = new BABYLON.DynamicTexture("videoFieldTexture", canvas, scene, false);
+  const texture = new DynamicTexture("videoFieldTexture", canvas, scene, false);
 
   function updateFieldLevel(level: string) {
     ctx.fillStyle = "#3a923f";
@@ -115,11 +125,11 @@ function createVideoField() {
   }
 
   updateFieldLevel("highschool");
-  const material = new BABYLON.StandardMaterial("videoFieldMaterial", scene);
+  const material = new StandardMaterial("videoFieldMaterial", scene);
   material.diffuseTexture = texture;
-  material.emissiveColor = BABYLON.Color3.White();
+  material.emissiveColor = Color3.White();
   material.disableLighting = true;
-  const mesh = BABYLON.MeshBuilder.CreateGround(
+  const mesh = MeshBuilder.CreateGround(
     "videoField",
     { width: FIELD_WIDTH_YARDS, height: FIELD_LENGTH_YARDS },
     scene
@@ -141,13 +151,13 @@ function isTabletopVideoMode() {
 // (its length) maps to the image's horizontal axis, matching the screen's
 // landscape shape instead of running the long edge top-to-bottom.
 function createTopDownFieldTexture(
-  videoField: BABYLON.Mesh,
+  videoField: Mesh,
   refreshIntervalSeconds: number
-): BABYLON.RenderTargetTexture {
-  const camera = new BABYLON.FreeCamera("topDownViewCamera", new BABYLON.Vector3(0, 80, 0), scene);
-  camera.upVector = new BABYLON.Vector3(1, 0, 0);
-  camera.setTarget(new BABYLON.Vector3(0, 0, 0));
-  camera.mode = BABYLON.Camera.ORTHOGRAPHIC_CAMERA;
+): RenderTargetTexture {
+  const camera = new FreeCamera("topDownViewCamera", new Vector3(0, 80, 0), scene);
+  camera.upVector = new Vector3(1, 0, 0);
+  camera.setTarget(new Vector3(0, 0, 0));
+  camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
   // See the normal scene plus each robot's oversized top-down marker disc.
   camera.layerMask |= TOP_DOWN_MARKER_LAYER_MASK;
   const halfWidth = FIELD_WIDTH_YARDS / 2 + 6;
@@ -163,7 +173,7 @@ function createTopDownFieldTexture(
   // itself isn't stretched before it's mapped onto the (differently shaped) screen.
   const textureWidth = 512;
   const textureHeight = Math.round(textureWidth * (halfWidth / halfLength));
-  const rtt = new BABYLON.RenderTargetTexture(
+  const rtt = new RenderTargetTexture(
     "topDownViewTexture",
     { width: textureWidth, height: textureHeight },
     scene,
@@ -245,27 +255,27 @@ export function createVideoBoard(
 
   drawHud(0);
 
-  const hudTexture = new BABYLON.DynamicTexture(
+  const hudTexture = new DynamicTexture(
     "videoBoardHudTexture",
     hudCanvas,
     scene,
     false,
-    BABYLON.Texture.TRILINEAR_SAMPLINGMODE
+    Texture.TRILINEAR_SAMPLINGMODE
   );
   hudTexture.update(true);
 
-  const hudMaterial = new BABYLON.StandardMaterial("videoBoardHudMaterial", scene);
+  const hudMaterial = new StandardMaterial("videoBoardHudMaterial", scene);
   hudMaterial.diffuseTexture = hudTexture;
-  hudMaterial.emissiveColor = new BABYLON.Color3(0.95, 0.95, 0.95);
+  hudMaterial.emissiveColor = new Color3(0.95, 0.95, 0.95);
   hudMaterial.disableLighting = true;
-  hudMaterial.specularColor = new BABYLON.Color3(0, 0, 0);
+  hudMaterial.specularColor = new Color3(0, 0, 0);
   hudMaterial.backFaceCulling = false;
 
-  const feedMaterial = new BABYLON.StandardMaterial("videoBoardMaterial", scene);
+  const feedMaterial = new StandardMaterial("videoBoardMaterial", scene);
   feedMaterial.diffuseTexture = createTopDownFieldTexture(videoField.mesh, refreshIntervalSeconds);
-  feedMaterial.emissiveColor = new BABYLON.Color3(0.95, 0.95, 0.95);
+  feedMaterial.emissiveColor = new Color3(0.95, 0.95, 0.95);
   feedMaterial.disableLighting = true;
-  feedMaterial.specularColor = new BABYLON.Color3(0, 0, 0);
+  feedMaterial.specularColor = new Color3(0, 0, 0);
   feedMaterial.backFaceCulling = false;
 
   // Shown first (matching the intro camera's landing shot on the board),
@@ -289,40 +299,40 @@ export function createVideoBoard(
   titleCtx.textBaseline = "middle";
   titleCtx.fillText("Chartxr", titleCanvas.width / 2, titleCanvas.height / 2);
 
-  const titleTexture = new BABYLON.DynamicTexture(
+  const titleTexture = new DynamicTexture(
     "videoBoardTitleTexture",
     titleCanvas,
     scene,
     false,
-    BABYLON.Texture.TRILINEAR_SAMPLINGMODE
+    Texture.TRILINEAR_SAMPLINGMODE
   );
   titleTexture.update(true);
 
-  const titleMaterial = new BABYLON.StandardMaterial("videoBoardTitleMaterial", scene);
+  const titleMaterial = new StandardMaterial("videoBoardTitleMaterial", scene);
   titleMaterial.diffuseTexture = titleTexture;
-  titleMaterial.emissiveColor = new BABYLON.Color3(0.95, 0.95, 0.95);
+  titleMaterial.emissiveColor = new Color3(0.95, 0.95, 0.95);
   titleMaterial.disableLighting = true;
-  titleMaterial.specularColor = new BABYLON.Color3(0, 0, 0);
+  titleMaterial.specularColor = new Color3(0, 0, 0);
   titleMaterial.backFaceCulling = false;
 
-  const frameMaterial = new BABYLON.StandardMaterial("videoBoardFrameMaterial", scene);
-  frameMaterial.diffuseColor = new BABYLON.Color3(0.15, 0.16, 0.18);
-  frameMaterial.specularColor = new BABYLON.Color3(0.1, 0.1, 0.1);
+  const frameMaterial = new StandardMaterial("videoBoardFrameMaterial", scene);
+  frameMaterial.diffuseColor = new Color3(0.15, 0.16, 0.18);
+  frameMaterial.specularColor = new Color3(0.1, 0.1, 0.1);
 
-  const frame = BABYLON.MeshBuilder.CreateBox(
+  const frame = MeshBuilder.CreateBox(
     "videoBoardFrame",
     { width: boardWidth + 0.8, height: boardHeight + 0.8, depth: 0.7 },
     scene
   );
-  frame.position = new BABYLON.Vector3(0, boardY, boardZ);
+  frame.position = new Vector3(0, boardY, boardZ);
   frame.material = frameMaterial;
 
-  const screen = BABYLON.MeshBuilder.CreatePlane(
+  const screen = MeshBuilder.CreatePlane(
     "videoBoardScreen",
     { width: boardWidth, height: boardHeight },
     scene
   );
-  screen.position = new BABYLON.Vector3(0, boardY, boardZ - 0.45);
+  screen.position = new Vector3(0, boardY, boardZ - 0.45);
   screen.material = titleMaterial;
 
   let introFinished = false;
@@ -339,33 +349,33 @@ export function createVideoBoard(
   }, INTRO_DURATION_MS);
 
   const hudHeight = boardHeight * 0.18;
-  const hud = BABYLON.MeshBuilder.CreatePlane(
+  const hud = MeshBuilder.CreatePlane(
     "videoBoardHud",
     { width: boardWidth, height: hudHeight },
     scene
   );
-  hud.position = new BABYLON.Vector3(0, boardY - boardHeight / 2 + hudHeight / 2, boardZ - 0.47);
+  hud.position = new Vector3(0, boardY - boardHeight / 2 + hudHeight / 2, boardZ - 0.47);
   hud.material = hudMaterial;
 
-  const poleMaterial = new BABYLON.StandardMaterial("videoBoardPoleMaterial", scene);
-  poleMaterial.diffuseColor = new BABYLON.Color3(0.2, 0.21, 0.23);
+  const poleMaterial = new StandardMaterial("videoBoardPoleMaterial", scene);
+  poleMaterial.diffuseColor = new Color3(0.2, 0.21, 0.23);
 
   // Poles run from the actual field surface (y=-0.5) up to the board frame.
   const videoBoardPoleTopY = boardY - boardHeight / 2 + 0.3;
   const videoBoardPoleHeight = videoBoardPoleTopY - -0.5;
   for (const x of [-4.5, 4.5]) {
-    const pole = BABYLON.MeshBuilder.CreateCylinder(
+    const pole = MeshBuilder.CreateCylinder(
       `videoBoardPole${x}`,
       { diameter: 0.6, height: videoBoardPoleHeight },
       scene
     );
-    pole.position = new BABYLON.Vector3(x, -0.5 + videoBoardPoleHeight / 2, boardZ);
+    pole.position = new Vector3(x, -0.5 + videoBoardPoleHeight / 2, boardZ);
     pole.material = poleMaterial;
   }
 
   createVideoBoardButtons(boardY - boardHeight / 2 - 1.2, boardZ - 0.6);
 
-  const boardRoot = new BABYLON.TransformNode("videoBoardRoot", scene);
+  const boardRoot = new TransformNode("videoBoardRoot", scene);
   boardRoot.position.set(0, -0.5, boardZ);
   scene.meshes.slice(boardMeshesStart).forEach((mesh) => {
     if (!mesh.parent) mesh.setParent(boardRoot);
@@ -397,9 +407,9 @@ export function createVideoBoard(
 // backing panel just below the screen, controlling the same selected-robot
 // playback as the palm-up hand menu (tagged via registerMenuButton).
 function createVideoBoardButtons(y: number, z: number) {
-  const buttonMaterial = new BABYLON.StandardMaterial("videoBoardButtonMaterial", scene);
-  buttonMaterial.diffuseColor = new BABYLON.Color3(0.15, 0.16, 0.18);
-  buttonMaterial.specularColor = new BABYLON.Color3(0.1, 0.1, 0.1);
+  const buttonMaterial = new StandardMaterial("videoBoardButtonMaterial", scene);
+  buttonMaterial.diffuseColor = new Color3(0.15, 0.16, 0.18);
+  buttonMaterial.specularColor = new Color3(0.1, 0.1, 0.1);
   buttonMaterial.backFaceCulling = false;
 
   const labels: { text: string; action: "rewind" | "stepBack" | "playPause" | "stepForward" | "fastForward" }[] = [
@@ -416,13 +426,13 @@ function createVideoBoardButtons(y: number, z: number) {
   const panelDepth = 0.3;
   const panelPadding = 0.6;
 
-  const panelMaterial = new BABYLON.StandardMaterial("videoBoardButtonPanelMaterial", scene);
-  panelMaterial.diffuseColor = new BABYLON.Color3(0.12, 0.13, 0.15);
-  panelMaterial.specularColor = new BABYLON.Color3(0.1, 0.1, 0.1);
+  const panelMaterial = new StandardMaterial("videoBoardButtonPanelMaterial", scene);
+  panelMaterial.diffuseColor = new Color3(0.12, 0.13, 0.15);
+  panelMaterial.specularColor = new Color3(0.1, 0.1, 0.1);
 
   const panelWidth = spacing * (labels.length - 1) + buttonSize + panelPadding;
   const panelHeight = buttonSize + panelPadding;
-  const panel = BABYLON.MeshBuilder.CreateBox(
+  const panel = MeshBuilder.CreateBox(
     "videoBoardButtonPanel",
     {
       width: panelWidth,
@@ -431,7 +441,7 @@ function createVideoBoardButtons(y: number, z: number) {
     },
     scene
   );
-  panel.position = new BABYLON.Vector3(0, y, z + panelDepth / 2);
+  panel.position = new Vector3(0, y, z + panelDepth / 2);
   panel.material = panelMaterial;
 
   labels.forEach((label, index) => {
@@ -448,24 +458,24 @@ function createVideoBoardButtons(y: number, z: number) {
     ctx.textBaseline = "middle";
     ctx.fillText(label.text, 64, 68);
 
-    const texture = new BABYLON.DynamicTexture(`videoBoardButtonTexture-${label.action}`, canvas, scene, false);
+    const texture = new DynamicTexture(`videoBoardButtonTexture-${label.action}`, canvas, scene, false);
     texture.hasAlpha = true;
     texture.update(true);
 
     const material = buttonMaterial.clone(`videoBoardButtonMaterial-${label.action}`);
     material.diffuseTexture = texture;
     material.opacityTexture = texture;
-    material.emissiveColor = new BABYLON.Color3(1, 1, 1);
+    material.emissiveColor = new Color3(1, 1, 1);
     material.disableLighting = true;
 
-    const button = BABYLON.MeshBuilder.CreatePlane(
+    const button = MeshBuilder.CreatePlane(
       `videoBoardButton-${label.action}`,
       { width: buttonSize, height: buttonSize },
       scene
     );
     button.material = material;
     button.parent = panel;
-    button.position = new BABYLON.Vector3(startX + index * spacing, 0, -panelDepth / 2 - 0.02);
+    button.position = new Vector3(startX + index * spacing, 0, -panelDepth / 2 - 0.02);
 
     registerMenuButton(button, { action: label.action });
   });
@@ -491,18 +501,18 @@ function createTitleBanner(panelBottomY: number, z: number, width: number) {
   ctx.textBaseline = "middle";
   ctx.fillText("Chartxr", canvas.width / 2, canvas.height / 2);
 
-  const texture = new BABYLON.DynamicTexture("videoBoardBannerTexture", canvas, scene, false);
+  const texture = new DynamicTexture("videoBoardBannerTexture", canvas, scene, false);
   texture.update(true);
 
-  const material = new BABYLON.StandardMaterial("videoBoardBannerMaterial", scene);
+  const material = new StandardMaterial("videoBoardBannerMaterial", scene);
   material.diffuseTexture = texture;
-  material.emissiveColor = new BABYLON.Color3(0.95, 0.95, 0.95);
+  material.emissiveColor = new Color3(0.95, 0.95, 0.95);
   material.disableLighting = true;
-  material.specularColor = new BABYLON.Color3(0, 0, 0);
+  material.specularColor = new Color3(0, 0, 0);
   material.backFaceCulling = false;
 
-  const banner = BABYLON.MeshBuilder.CreatePlane("videoBoardBanner", { width, height: bannerHeight }, scene);
-  banner.position = new BABYLON.Vector3(0, panelBottomY - gap - bannerHeight / 2, z);
+  const banner = MeshBuilder.CreatePlane("videoBoardBanner", { width, height: bannerHeight }, scene);
+  banner.position = new Vector3(0, panelBottomY - gap - bannerHeight / 2, z);
   banner.material = material;
 }
 

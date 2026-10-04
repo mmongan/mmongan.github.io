@@ -1,4 +1,12 @@
-import * as BABYLON from 'babylonjs';
+import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
+import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
+import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
+import { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.pure';
+import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
+import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
+import { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
+import { Observer } from '@babylonjs/core/Misc/observable.pure';
+import { Scene } from '@babylonjs/core/scene.pure';
 
 export const COLLISION_MARKER_RADIUS_YARDS = 0.35;
 
@@ -10,49 +18,51 @@ const COLLISION_CONE_BAND_BOTTOM_FRACTION = 0.72;
 const COLLISION_CONE_BAND_TOP_FRACTION = 0.86;
 
 interface CollisionInfo {
-  robotA: BABYLON.TransformNode;
-  robotB: BABYLON.TransformNode;
+  robotA: TransformNode;
+  robotB: TransformNode;
   countIndexA: number;
   countIndexB: number;
 }
 
 export interface CollisionRobotPath {
-  robot: BABYLON.TransformNode;
-  counts: ReadonlyArray<{ position: BABYLON.Vector3 }>;
+  robot: TransformNode;
+  counts: ReadonlyArray<{ position: Vector3 }>;
 }
 
 export interface CollisionMarkerManager {
-  setParent: (node: BABYLON.TransformNode) => void;
-  seekToMarker: (mesh: BABYLON.AbstractMesh) => boolean;
-  refresh: (scene: BABYLON.Scene, paths: Iterable<CollisionRobotPath>) => void;
+  setParent: (node: TransformNode) => void;
+  setVisible: (visible: boolean) => void;
+  seekToMarker: (mesh: AbstractMesh) => boolean;
+  refresh: (scene: Scene, paths: Iterable<CollisionRobotPath>) => void;
 }
 
 export function createCollisionMarkerManager(seekToCount: (countIndex: number) => void): CollisionMarkerManager {
-  let markers: BABYLON.Mesh[] = [];
-  let markerParent: BABYLON.TransformNode | null = null;
-  let markerMaterial: BABYLON.StandardMaterial | null = null;
-  let markerBandMaterial: BABYLON.StandardMaterial | null = null;
+  let markers: Mesh[] = [];
+  let markerParent: TransformNode | null = null;
+  let markersVisible = true;
+  let markerMaterial: StandardMaterial | null = null;
+  let markerBandMaterial: StandardMaterial | null = null;
   let rebuild: Generator<void> | null = null;
-  let rebuildScene: BABYLON.Scene | null = null;
-  let rebuildObserver: BABYLON.Observer<BABYLON.Scene> | null = null;
-  const markerInfo = new Map<BABYLON.Mesh, CollisionInfo>();
+  let rebuildScene: Scene | null = null;
+  let rebuildObserver: Observer<Scene> | null = null;
+  const markerInfo = new Map<Mesh, CollisionInfo>();
 
-  function getMarkerMaterial(scene: BABYLON.Scene): BABYLON.StandardMaterial {
+  function getMarkerMaterial(scene: Scene): StandardMaterial {
     if (!markerMaterial) {
-      markerMaterial = new BABYLON.StandardMaterial("collisionMarkerMaterial", scene);
-      markerMaterial.diffuseColor = new BABYLON.Color3(1, 0.45, 0);
-      markerMaterial.emissiveColor = new BABYLON.Color3(0.6, 0.27, 0);
-      markerMaterial.specularColor = new BABYLON.Color3(0.1, 0.1, 0.1);
+      markerMaterial = new StandardMaterial("collisionMarkerMaterial", scene);
+      markerMaterial.diffuseColor = new Color3(1, 0.45, 0);
+      markerMaterial.emissiveColor = new Color3(0.6, 0.27, 0);
+      markerMaterial.specularColor = new Color3(0.1, 0.1, 0.1);
     }
     return markerMaterial;
   }
 
-  function getBandMaterial(scene: BABYLON.Scene): BABYLON.StandardMaterial {
+  function getBandMaterial(scene: Scene): StandardMaterial {
     if (!markerBandMaterial) {
-      markerBandMaterial = new BABYLON.StandardMaterial("collisionMarkerBandMaterial", scene);
-      markerBandMaterial.diffuseColor = new BABYLON.Color3(0.95, 0.95, 0.95);
-      markerBandMaterial.emissiveColor = new BABYLON.Color3(0.9, 0.9, 0.9);
-      markerBandMaterial.specularColor = new BABYLON.Color3(0.1, 0.1, 0.1);
+      markerBandMaterial = new StandardMaterial("collisionMarkerBandMaterial", scene);
+      markerBandMaterial.diffuseColor = new Color3(0.95, 0.95, 0.95);
+      markerBandMaterial.emissiveColor = new Color3(0.9, 0.9, 0.9);
+      markerBandMaterial.specularColor = new Color3(0.1, 0.1, 0.1);
     }
     return markerBandMaterial;
   }
@@ -71,15 +81,15 @@ export function createCollisionMarkerManager(seekToCount: (countIndex: number) =
   }
 
   function addMarker(
-    scene: BABYLON.Scene,
-    position: BABYLON.Vector3,
-    robotA: BABYLON.TransformNode,
-    robotB: BABYLON.TransformNode,
+    scene: Scene,
+    position: Vector3,
+    robotA: TransformNode,
+    robotB: TransformNode,
     countIndexA: number,
     countIndexB: number
   ) {
     const info: CollisionInfo = { robotA, robotB, countIndexA, countIndexB };
-    const marker = BABYLON.MeshBuilder.CreateCylinder(
+    const marker = MeshBuilder.CreateCylinder(
       "robotCollisionMarker",
       {
         height: COLLISION_CONE_HEIGHT_YARDS,
@@ -92,13 +102,14 @@ export function createCollisionMarkerManager(seekToCount: (countIndex: number) =
     marker.position.copyFrom(position);
     marker.position.y += COLLISION_CONE_HEIGHT_YARDS / 2;
     marker.material = getMarkerMaterial(scene);
+    marker.setEnabled(markersVisible);
     if (markerParent) marker.parent = markerParent;
     markers.push(marker);
     markerInfo.set(marker, info);
 
     const bandHeight =
       COLLISION_CONE_HEIGHT_YARDS * (COLLISION_CONE_BAND_TOP_FRACTION - COLLISION_CONE_BAND_BOTTOM_FRACTION);
-    const band = BABYLON.MeshBuilder.CreateCylinder(
+    const band = MeshBuilder.CreateCylinder(
       "robotCollisionMarkerBand",
       {
         height: bandHeight,
@@ -112,12 +123,13 @@ export function createCollisionMarkerManager(seekToCount: (countIndex: number) =
     band.position.copyFrom(position);
     band.position.y += COLLISION_CONE_HEIGHT_YARDS * bandCenterFraction;
     band.material = getBandMaterial(scene);
+    band.setEnabled(markersVisible);
     if (markerParent) band.parent = markerParent;
     markers.push(band);
     markerInfo.set(band, info);
   }
 
-  function* rebuildMarkers(scene: BABYLON.Scene, paths: CollisionRobotPath[]): Generator<void> {
+  function* rebuildMarkers(scene: Scene, paths: CollisionRobotPath[]): Generator<void> {
     while (markers.length > 0) {
       const marker = markers.pop()!;
       markerInfo.delete(marker);
@@ -138,9 +150,9 @@ export function createCollisionMarkerManager(seekToCount: (countIndex: number) =
           const positionA = pathA.counts[indexA]?.position;
           const positionB = pathB.counts[indexB]?.position;
           if (!positionA || !positionB) continue;
-          const colliding = BABYLON.Vector3.DistanceSquared(positionA, positionB) < COLLISION_MARKER_RADIUS_SQUARED;
+          const colliding = Vector3.DistanceSquared(positionA, positionB) < COLLISION_MARKER_RADIUS_SQUARED;
           if (colliding && !wasColliding) {
-            addMarker(scene, BABYLON.Vector3.Center(positionA, positionB), pathA.robot, pathB.robot, indexA, indexB);
+            addMarker(scene, Vector3.Center(positionA, positionB), pathA.robot, pathB.robot, indexA, indexB);
           }
           wasColliding = colliding;
           yield;
@@ -149,7 +161,7 @@ export function createCollisionMarkerManager(seekToCount: (countIndex: number) =
     }
   }
 
-  function refresh(scene: BABYLON.Scene, paths: Iterable<CollisionRobotPath>) {
+  function refresh(scene: Scene, paths: Iterable<CollisionRobotPath>) {
     rebuild = rebuildMarkers(scene, Array.from(paths));
     if (rebuildScene === scene && rebuildObserver) return;
     if (rebuildScene && rebuildObserver) {
@@ -168,8 +180,12 @@ export function createCollisionMarkerManager(seekToCount: (countIndex: number) =
     setParent(node) {
       markerParent = node;
     },
+    setVisible(visible) {
+      markersVisible = visible;
+      markers.forEach((marker) => marker.setEnabled(visible));
+    },
     seekToMarker(mesh) {
-      const info = markerInfo.get(mesh as BABYLON.Mesh);
+      const info = markerInfo.get(mesh as Mesh);
       if (!info) return false;
       seekToCount(Math.max(info.countIndexA, info.countIndexB));
       return true;

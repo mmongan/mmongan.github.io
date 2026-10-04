@@ -1,4 +1,11 @@
-import * as BABYLON from 'babylonjs';
+import { PickingInfo } from '@babylonjs/core/Collisions/pickingInfo';
+import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
+import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.pure';
+import { Texture } from '@babylonjs/core/Materials/Textures/texture.pure';
+import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
+import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
+import { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.pure';
+import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
 import { scene } from '../scene/engine';
 import {
   cycleMarchingGait,
@@ -12,45 +19,45 @@ import {
   toggleInstrumentCarryPose,
 } from '../robot/robot';
 
-const TEMPO_SLIDER_SCREENS = new Map<BABYLON.AbstractMesh, (worldX: number) => void>();
-const GAIT_SELECTOR_SCREENS = new Map<BABYLON.AbstractMesh, (worldX: number) => void>();
-const HORN_POSE_SCREENS = new Map<BABYLON.AbstractMesh, () => void>();
+const TEMPO_SLIDER_SCREENS = new Map<AbstractMesh, (worldX: number) => void>();
+const GAIT_SELECTOR_SCREENS = new Map<AbstractMesh, (worldX: number) => void>();
+const HORN_POSE_SCREENS = new Map<AbstractMesh, () => void>();
 const GAIT_SELECTOR_WORLD_Y = 10;
 const HORN_POSE_WORLD_Y = 9.34;
 const TEMPO_TRACK_WORLD_Y = 8.38;
 
-export function isScoreboardTempoScreen(mesh: BABYLON.AbstractMesh): boolean {
+export function isScoreboardTempoScreen(mesh: AbstractMesh): boolean {
   return TEMPO_SLIDER_SCREENS.has(mesh);
 }
 
-export function isScoreboardTempoPick(pick: BABYLON.PickingInfo): boolean {
+export function isScoreboardTempoPick(pick: PickingInfo): boolean {
   return !!pick.pickedMesh && TEMPO_SLIDER_SCREENS.has(pick.pickedMesh) && !!pick.pickedPoint &&
     Math.abs(pick.pickedPoint.y - TEMPO_TRACK_WORLD_Y) <= 0.7;
 }
 
-export function updateScoreboardTempoFromPick(pick: BABYLON.PickingInfo): boolean {
+export function updateScoreboardTempoFromPick(pick: PickingInfo): boolean {
   if (!isScoreboardTempoPick(pick) || !pick.pickedMesh || !pick.pickedPoint) return false;
   TEMPO_SLIDER_SCREENS.get(pick.pickedMesh)!(pick.pickedPoint.x);
   return true;
 }
 
-export function isScoreboardGaitPick(pick: BABYLON.PickingInfo): boolean {
+export function isScoreboardGaitPick(pick: PickingInfo): boolean {
   return !!pick.pickedMesh && GAIT_SELECTOR_SCREENS.has(pick.pickedMesh) && !!pick.pickedPoint &&
     Math.abs(pick.pickedPoint.y - GAIT_SELECTOR_WORLD_Y) <= 0.7;
 }
 
-export function updateScoreboardGaitFromPick(pick: BABYLON.PickingInfo): boolean {
+export function updateScoreboardGaitFromPick(pick: PickingInfo): boolean {
   if (!isScoreboardGaitPick(pick) || !pick.pickedMesh || !pick.pickedPoint) return false;
   GAIT_SELECTOR_SCREENS.get(pick.pickedMesh)!(pick.pickedPoint.x);
   return true;
 }
 
-export function isScoreboardHornPosePick(pick: BABYLON.PickingInfo): boolean {
+export function isScoreboardHornPosePick(pick: PickingInfo): boolean {
   return !!pick.pickedMesh && HORN_POSE_SCREENS.has(pick.pickedMesh) && !!pick.pickedPoint &&
     Math.abs(pick.pickedPoint.y - HORN_POSE_WORLD_Y) <= 0.55;
 }
 
-export function updateScoreboardHornPoseFromPick(pick: BABYLON.PickingInfo): boolean {
+export function updateScoreboardHornPoseFromPick(pick: PickingInfo): boolean {
   if (!isScoreboardHornPosePick(pick) || !pick.pickedMesh) return false;
   HORN_POSE_SCREENS.get(pick.pickedMesh)!();
   return true;
@@ -91,39 +98,39 @@ export function createScoreboard(): void {
   boardCtx.fillText("1ST QTR", boardCanvas.width * 0.5, 110);
   boardCtx.fillText("15:00", boardCanvas.width * 0.5, 160);
 
-  const boardTexture = new BABYLON.DynamicTexture(
+  const boardTexture = new DynamicTexture(
     "scoreboardTexture",
     boardCanvas,
     scene,
     false,
-    BABYLON.Texture.TRILINEAR_SAMPLINGMODE
+    Texture.TRILINEAR_SAMPLINGMODE
   );
   boardTexture.update(true);
 
-  const boardMaterial = new BABYLON.StandardMaterial("scoreboardMaterial", scene);
+  const boardMaterial = new StandardMaterial("scoreboardMaterial", scene);
   boardMaterial.diffuseTexture = boardTexture;
-  boardMaterial.emissiveColor = new BABYLON.Color3(0.9, 0.9, 0.9);
+  boardMaterial.emissiveColor = new Color3(0.9, 0.9, 0.9);
   boardMaterial.disableLighting = true;
-  boardMaterial.specularColor = new BABYLON.Color3(0, 0, 0);
+  boardMaterial.specularColor = new Color3(0, 0, 0);
 
-  const frameMaterial = new BABYLON.StandardMaterial("scoreboardFrameMaterial", scene);
-  frameMaterial.diffuseColor = new BABYLON.Color3(0.15, 0.16, 0.18);
-  frameMaterial.specularColor = new BABYLON.Color3(0.1, 0.1, 0.1);
+  const frameMaterial = new StandardMaterial("scoreboardFrameMaterial", scene);
+  frameMaterial.diffuseColor = new Color3(0.15, 0.16, 0.18);
+  frameMaterial.specularColor = new Color3(0.1, 0.1, 0.1);
 
-  const frame = BABYLON.MeshBuilder.CreateBox(
+  const frame = MeshBuilder.CreateBox(
     "scoreboardFrame",
     { width: boardWidth + 0.6, height: boardHeight + 0.6, depth: 0.6 },
     scene
   );
-  frame.position = new BABYLON.Vector3(0, boardY, boardZ);
+  frame.position = new Vector3(0, boardY, boardZ);
   frame.material = frameMaterial;
 
-  const screen = BABYLON.MeshBuilder.CreatePlane(
+  const screen = MeshBuilder.CreatePlane(
     "scoreboardScreen",
     { width: boardWidth, height: boardHeight },
     scene
   );
-  screen.position = new BABYLON.Vector3(0, boardY, boardZ + 0.4);
+  screen.position = new Vector3(0, boardY, boardZ + 0.4);
   screen.rotation.y = Math.PI;
   screen.material = boardMaterial;
 
@@ -166,19 +173,19 @@ export function createScoreboard(): void {
   });
   drawTempoSlider();
 
-  const poleMaterial = new BABYLON.StandardMaterial("scoreboardPoleMaterial", scene);
-  poleMaterial.diffuseColor = new BABYLON.Color3(0.2, 0.21, 0.23);
+  const poleMaterial = new StandardMaterial("scoreboardPoleMaterial", scene);
+  poleMaterial.diffuseColor = new Color3(0.2, 0.21, 0.23);
 
   // Poles run from the actual field surface (y=-0.5) up to the board frame.
   const scoreboardPoleTopY = boardY - boardHeight / 2 + 0.3;
   const scoreboardPoleHeight = scoreboardPoleTopY - -0.5;
   for (const x of [-3, 3]) {
-    const pole = BABYLON.MeshBuilder.CreateCylinder(
+    const pole = MeshBuilder.CreateCylinder(
       `scoreboardPole${x}`,
       { diameter: 0.5, height: scoreboardPoleHeight },
       scene
     );
-    pole.position = new BABYLON.Vector3(x, -0.5 + scoreboardPoleHeight / 2, boardZ);
+    pole.position = new Vector3(x, -0.5 + scoreboardPoleHeight / 2, boardZ);
     pole.material = poleMaterial;
   }
 }

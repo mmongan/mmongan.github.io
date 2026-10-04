@@ -1,4 +1,4 @@
-import * as BABYLON from 'babylonjs';
+import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
 import { COLLISION_MARKER_RADIUS_YARDS } from './collisionMarkers';
 import { FIELD_SURFACE_Y } from '../field/constants';
 
@@ -15,38 +15,38 @@ const DRILL_PATH_DYNAMIC_CLEARANCE_YARDS = COLLISION_MARKER_RADIUS_YARDS * 1.6;
 const DRILL_PATH_RELAX_ITERATIONS = 400;
 const DRILL_PATH_OBSTACLE_MARGIN_YARDS = 6;
 
-function generateBlockPoints(): BABYLON.Vector3[] {
-  const points: BABYLON.Vector3[] = [];
+function generateBlockPoints(): Vector3[] {
+  const points: Vector3[] = [];
   for (let row = 0; row < DRILL_ROWS; row++) {
     for (let col = 0; col < DRILL_COLS; col++) {
       const x = (col - (DRILL_COLS - 1) / 2) * FORMATION_SPACING_YARDS;
       const z = DRILL_BLOCK_START_Z + row * FORMATION_SPACING_YARDS;
-      points.push(new BABYLON.Vector3(x, FIELD_SURFACE_Y, z));
+      points.push(new Vector3(x, FIELD_SURFACE_Y, z));
     }
   }
   return points;
 }
 
-function generateCirclePoints(count: number): BABYLON.Vector3[] {
-  const points: BABYLON.Vector3[] = [];
+function generateCirclePoints(count: number): Vector3[] {
+  const points: Vector3[] = [];
   for (let index = 0; index < count; index++) {
     const angle = (index / count) * Math.PI * 2;
     const x = Math.cos(angle) * DRILL_CIRCLE_RADIUS_YARDS;
     const z = DRILL_CIRCLE_CENTER_Z + Math.sin(angle) * DRILL_CIRCLE_RADIUS_YARDS;
-    points.push(new BABYLON.Vector3(x, FIELD_SURFACE_Y, z));
+    points.push(new Vector3(x, FIELD_SURFACE_Y, z));
   }
   return points;
 }
 
 // Keep the same atan2(dz, dx) convention as circle point generation so
 // angular pairing remains ordered and paths do not cross through the block.
-function assignTargets(startPoints: BABYLON.Vector3[], targetPoints: BABYLON.Vector3[]): BABYLON.Vector3[] {
-  const circleCenter = new BABYLON.Vector3(0, FIELD_SURFACE_Y, DRILL_CIRCLE_CENTER_Z);
+function assignTargets(startPoints: Vector3[], targetPoints: Vector3[]): Vector3[] {
+  const circleCenter = new Vector3(0, FIELD_SURFACE_Y, DRILL_CIRCLE_CENTER_Z);
   const startOrder = startPoints
     .map((point, index) => ({ index, angle: Math.atan2(point.z - circleCenter.z, point.x - circleCenter.x) }))
     .sort((a, b) => a.angle - b.angle);
 
-  const targets: BABYLON.Vector3[] = new Array(startPoints.length);
+  const targets: Vector3[] = new Array(startPoints.length);
   startOrder.forEach((entry, index) => {
     targets[entry.index] = targetPoints[index];
   });
@@ -55,17 +55,17 @@ function assignTargets(startPoints: BABYLON.Vector3[], targetPoints: BABYLON.Vec
 
 // All routes share one count budget, so avoidance is resolved at matching
 // indices rather than by changing individual robots' departure times.
-function buildSynchronizedPaths(startPoints: BABYLON.Vector3[], targetPoints: BABYLON.Vector3[]): BABYLON.Vector3[][] {
+function buildSynchronizedPaths(startPoints: Vector3[], targetPoints: Vector3[]): Vector3[][] {
   const count = startPoints.length;
   const maxDistance = startPoints.reduce(
-    (max, start, index) => Math.max(max, BABYLON.Vector3.Distance(start, targetPoints[index])),
+    (max, start, index) => Math.max(max, Vector3.Distance(start, targetPoints[index])),
     0
   );
   const stepCount = Math.max(1, Math.round(maxDistance / MARCH_STEP_YARDS));
   const paths = startPoints.map((start, index) => {
-    const points: BABYLON.Vector3[] = [];
+    const points: Vector3[] = [];
     for (let step = 0; step <= stepCount; step++) {
-      points.push(BABYLON.Vector3.Lerp(start, targetPoints[index], step / stepCount));
+      points.push(Vector3.Lerp(start, targetPoints[index], step / stepCount));
     }
     return points;
   });
@@ -131,7 +131,7 @@ function buildSynchronizedPaths(startPoints: BABYLON.Vector3[], targetPoints: BA
   return paths;
 }
 
-export function generateMarchingDrillPaths(): BABYLON.Vector3[][] {
+export function generateMarchingDrillPaths(): Vector3[][] {
   const startPoints = generateBlockPoints();
   const targets = assignTargets(startPoints, generateCirclePoints(startPoints.length));
   return buildSynchronizedPaths(startPoints, targets);

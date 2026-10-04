@@ -1,4 +1,11 @@
-import * as BABYLON from 'babylonjs';
+import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
+import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.pure';
+import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
+import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
+import { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.pure';
+import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
+import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
+import { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
 import { scene } from '../scene/engine';
 import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS } from '../field/constants';
 
@@ -29,13 +36,13 @@ const GROUND_TABLETOP_LENGTH_RATIO =
 
 // The AR scene is manipulated through a pivot so the whole stadium can be
 // translated, rotated, and scaled around a stable local origin.
-const arPivot = new BABYLON.TransformNode("arPivot", scene);
-const arRoot = new BABYLON.TransformNode("arRoot", scene);
-const globalScaleRoot = new BABYLON.TransformNode("globalScaleRoot", scene);
+const arPivot = new TransformNode("arPivot", scene);
+const arRoot = new TransformNode("arRoot", scene);
+const globalScaleRoot = new TransformNode("globalScaleRoot", scene);
 let arTabletopModeActive = false;
 let hasEnteredARTabletopModeBefore = false;
-let contentRootMeshes: BABYLON.AbstractMesh[] = [];
-const cornerHandles = new Map<BABYLON.AbstractMesh, BABYLON.Vector3>();
+let contentRootMeshes: AbstractMesh[] = [];
+const cornerHandles = new Map<AbstractMesh, Vector3>();
 const cornerHandleY = -0.8;
 const cornerHandleHeight = 0.038;
 
@@ -98,14 +105,14 @@ function createCornerHandles() {
       ctx.fillRect(canvas.width * (0.37 + index * 0.052) - 2, laceY - 12, 4, 24);
     }
   }
-  const texture = new BABYLON.DynamicTexture("tabletopFootballTexture", canvas, scene, true);
+  const texture = new DynamicTexture("tabletopFootballTexture", canvas, scene, true);
   texture.update(false);
   texture.anisotropicFilteringLevel = 8;
-  const material = new BABYLON.StandardMaterial("tabletopCornerHandleMaterial", scene);
+  const material = new StandardMaterial("tabletopCornerHandleMaterial", scene);
   material.diffuseTexture = texture;
-  material.emissiveColor = new BABYLON.Color3(0.12, 0.07, 0.03);
-  material.specularColor = new BABYLON.Color3(0.12, 0.12, 0.12);
-  const shape = Array.from({ length: 17 }, (_, index) => new BABYLON.Vector3(
+  material.emissiveColor = new Color3(0.12, 0.07, 0.03);
+  material.specularColor = new Color3(0.12, 0.12, 0.12);
+  const shape = Array.from({ length: 17 }, (_, index) => new Vector3(
     cornerHandleHeight / 2 * Math.sin(Math.PI * index / 16),
     0.09 * (index / 16 - 0.5),
     0
@@ -114,21 +121,21 @@ function createCornerHandles() {
   const halfLength = (FIELD_LENGTH_YARDS + GROUND_TABLETOP_MARGIN_YARDS * 2) / 2;
   for (const x of [-halfWidth, halfWidth]) {
     for (const z of [-halfLength, halfLength]) {
-      const handle = BABYLON.MeshBuilder.CreateLathe(
+      const handle = MeshBuilder.CreateLathe(
         "tabletopCornerHandle",
-        { shape, tessellation: 24, cap: BABYLON.Mesh.NO_CAP },
+        { shape, tessellation: 24, cap: Mesh.NO_CAP },
         scene
       );
       handle.parent = arPivot;
       handle.rotation.z = Math.PI / 2;
       handle.material = material;
       handle.visibility = 0;
-      cornerHandles.set(handle, new BABYLON.Vector3(x, cornerHandleY, z));
+      cornerHandles.set(handle, new Vector3(x, cornerHandleY, z));
     }
   }
 }
 
-export function getTabletopCorner(handle: BABYLON.AbstractMesh | null): BABYLON.Vector3 | null {
+export function getTabletopCorner(handle: AbstractMesh | null): Vector3 | null {
   return arTabletopModeActive && handle?.isEnabled() ? cornerHandles.get(handle)?.clone() ?? null : null;
 }
 
@@ -176,7 +183,7 @@ export function setARScale(scale: number) {
   return clampedScale;
 }
 
-export function setARPosition(position: BABYLON.Vector3) {
+export function setARPosition(position: Vector3) {
   arPivot.position.x = position.x;
   arPivot.position.y = position.y;
   arPivot.position.z = position.z;
@@ -226,7 +233,7 @@ export function enterARTabletopMode() {
   // Only default the height the first time; later entries keep whatever height the user set.
   const height = hasEnteredARTabletopModeBefore ? arPivot.position.y : AR_TABLE_HEIGHT;
   hasEnteredARTabletopModeBefore = true;
-  arPivot.position = new BABYLON.Vector3(0, height, 0.6);
+  arPivot.position = new Vector3(0, height, 0.6);
   arPivot.rotation.setAll(0);
   arRoot.position.setAll(0);
   globalScaleRoot.position.setAll(0);
@@ -259,6 +266,6 @@ export function getARScaleRange() {
 
 // Parents a node (e.g. the teleport grid) under the shared AR transform so it
 // scales/moves/rotates along with the field instead of staying world-scale.
-export function attachToARTransform(node: BABYLON.TransformNode) {
+export function attachToARTransform(node: TransformNode) {
   node.setParent(arRoot);
 }
