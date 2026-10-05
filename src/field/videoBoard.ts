@@ -10,7 +10,7 @@ import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
 import { engine, scene } from '../scene/engine';
-import { attachToARTransform, getARScale, getARScaleRange, isARTabletopModeActive } from '../xr/ar';
+import { attachToARTransform } from '../xr/ar';
 import { registerMenuButton } from '../menu/handMenu';
 import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS, HASH_OFFSETS_YARDS } from './constants';
 import { TOP_DOWN_MARKER_LAYER_MASK, playAll } from '../robot/robot';
@@ -141,10 +141,6 @@ function createVideoField() {
   return { mesh, updateFieldLevel };
 }
 
-function isTabletopVideoMode() {
-  return isARTabletopModeActive() || getARScale() < getARScaleRange().max;
-}
-
 // A straight-down orthographic view of the whole field, rendered live into a
 // texture so the board can show every robot's position from above. The
 // camera's up vector is the field's width axis so the field's long edge
@@ -182,16 +178,28 @@ function createTopDownFieldTexture(
   rtt.activeCamera = camera;
   rtt.renderList = [videoField];
   const refreshInterval = Math.max(0.1, refreshIntervalSeconds);
-  let elapsedSeconds = 0;
+  let elapsedSeconds = refreshInterval;
   scene.onBeforeRenderObservable.add(() => {
-    if (isTabletopVideoMode()) {
-      elapsedSeconds = 0;
-      return;
-    }
     elapsedSeconds += engine.getDeltaTime() / 1000;
     if (elapsedSeconds < refreshInterval) return;
 
     elapsedSeconds %= refreshInterval;
+    videoField.computeWorldMatrix(true);
+    const world = videoField.getWorldMatrix();
+    const scale = Vector3.TransformNormal(Vector3.Up(), world).length();
+    const cameraPosition = Vector3.TransformCoordinates(new Vector3(0, 80, 0), world);
+    camera.position.copyFrom(cameraPosition);
+    camera.upVector = Vector3.TransformNormal(new Vector3(1, 0, 0), world).normalize();
+    const down = Vector3.TransformNormal(Vector3.Down(), world).normalize();
+    camera.setTarget(camera.position.add(down.scale(80)));
+    // setTarget nudges vertical views in Z; keep that offset out of the scaled framing.
+    camera.position.copyFrom(cameraPosition);
+    camera.orthoLeft = -halfLength * scale;
+    camera.orthoRight = halfLength * scale;
+    camera.orthoTop = halfWidth * scale;
+    camera.orthoBottom = -halfWidth * scale;
+    camera.minZ = scale;
+    camera.maxZ = 200 * scale;
     rtt.renderList = [videoField, ...scene.meshes.filter((mesh) => mesh.name === "robotTopDownMarker")];
     rtt.render();
   });
@@ -278,43 +286,6 @@ export function createVideoBoard(
   feedMaterial.specularColor = new Color3(0, 0, 0);
   feedMaterial.backFaceCulling = false;
 
-  // Shown first (matching the intro camera's landing shot on the board),
-  // then swapped for the live feed once the intro finishes and playback starts.
-  const titleCanvas = document.createElement("canvas");
-  titleCanvas.width = 640;
-  titleCanvas.height = 360;
-  const titleCtx = titleCanvas.getContext("2d")!;
-  const titleGradient = titleCtx.createLinearGradient(0, 0, titleCanvas.width, titleCanvas.height);
-  titleGradient.addColorStop(0, "#0b1a3d");
-  titleGradient.addColorStop(0.5, "#123a6b");
-  titleGradient.addColorStop(1, "#0b1a3d");
-  titleCtx.fillStyle = titleGradient;
-  titleCtx.fillRect(0, 0, titleCanvas.width, titleCanvas.height);
-  titleCtx.strokeStyle = "#1c2a4a";
-  titleCtx.lineWidth = 8;
-  titleCtx.strokeRect(4, 4, titleCanvas.width - 8, titleCanvas.height - 8);
-  titleCtx.fillStyle = "#ffcf40";
-  titleCtx.font = "bold 96px 'Segoe UI', Arial";
-  titleCtx.textAlign = "center";
-  titleCtx.textBaseline = "middle";
-  titleCtx.fillText("Chartxr", titleCanvas.width / 2, titleCanvas.height / 2);
-
-  const titleTexture = new DynamicTexture(
-    "videoBoardTitleTexture",
-    titleCanvas,
-    scene,
-    false,
-    Texture.TRILINEAR_SAMPLINGMODE
-  );
-  titleTexture.update(true);
-
-  const titleMaterial = new StandardMaterial("videoBoardTitleMaterial", scene);
-  titleMaterial.diffuseTexture = titleTexture;
-  titleMaterial.emissiveColor = new Color3(0.95, 0.95, 0.95);
-  titleMaterial.disableLighting = true;
-  titleMaterial.specularColor = new Color3(0, 0, 0);
-  titleMaterial.backFaceCulling = false;
-
   const frameMaterial = new StandardMaterial("videoBoardFrameMaterial", scene);
   frameMaterial.diffuseColor = new Color3(0.15, 0.16, 0.18);
   frameMaterial.specularColor = new Color3(0.1, 0.1, 0.1);
@@ -333,18 +304,10 @@ export function createVideoBoard(
     scene
   );
   screen.position = new Vector3(0, boardY, boardZ - 0.45);
-  screen.material = titleMaterial;
+  screen.material = feedMaterial;
 
-  let introFinished = false;
-  scene.onBeforeRenderObservable.add(() => {
-    const material = introFinished && !isTabletopVideoMode() ? feedMaterial : titleMaterial;
-    if (screen.material !== material) screen.material = material;
-  });
-
-  // Once the intro camera move finishes looking at the board, switch to the
-  // live top-down feed and kick off the drill so the band starts marching.
+  // Start marching after the intro camera move finishes.
   setTimeout(() => {
-    introFinished = true;
     playAll();
   }, INTRO_DURATION_MS);
 
@@ -515,5 +478,3 @@ function createTitleBanner(panelBottomY: number, z: number, width: number) {
   banner.position = new Vector3(0, panelBottomY - gap - bannerHeight / 2, z);
   banner.material = material;
 }
-
-

@@ -41,13 +41,14 @@ Builds the project, copies `dist/` into the repository root, then commits and pu
 ## Features
 
 - Stadium environment with turf, field markings, stands, goal posts, scoreboard, and a video board
+- The video board always displays a live orthographic field view, following field movement, rotation, and scale in desktop, VR, and AR modes
 - High school, college, and NFL field-marking layouts
 - Draw robot paths with a controller trigger; extend existing paths, select robots, and edit path or formation segments with in-scene handles
 - Place standing robots, create marching formations, and generate a synchronized marching-band drill
 - Shared count-based playback with play/pause, rewind, fast-forward, single-count stepping, and timeline seeking; playback controls are available on the video board and the palm-up VR controller menu
 - Collision-marker previews and controls for showing paths and testing larger robot groups
 - Immersive VR with teleport locomotion and immersive AR with the stadium scaled to a tabletop
-- When the field is larger than arm's reach (2 m long), point a tracked hand at it and pinch to teleport: VR moves the viewer; AR moves the selected field spot beneath the viewer without moving the headset or changing the field height
+- At any field scale, point a tracked hand at it and pinch to teleport: VR moves the viewer; AR moves the selected field spot beneath the viewer without moving the headset or changing the field height. The controller teleport torus scales with the field; teleport pauses during floor calibration.
 - In VR or AR, use both controllers to move, rotate, and scale the stadium between tabletop and full size
 
 ## Project structure

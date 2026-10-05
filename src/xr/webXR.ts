@@ -17,16 +17,12 @@ import { WebXRState } from '@babylonjs/core/XR/webXRTypes';
 import '@babylonjs/loaders/glTF';
 import { RegisterWebXROculusTouchMotionController } from '@babylonjs/core/XR/motionController/webXROculusTouchMotionController.pure';
 import { scene } from '../scene/engine';
-import { FIELD_LENGTH_YARDS } from '../field/constants';
 import { xrModeInputs, getSelectedXRMode, floorCalibrationToggle, fullScaleVRButton, tabletopScaleButton } from '../ui/dom';
 import { enterARTabletopMode, exitARTabletopMode, getARPosition, getARScale, getARScaleRange, setARPosition, setARScale } from './ar';
 import { setActiveController, removeActiveController, setHandTracking, getActiveControllers, consumeFloorCalibrationGesture, setHandFloorContact } from '../interaction/pathInteraction';
 
 RegisterWebXROculusTouchMotionController();
 WebXRMotionControllerManager.PrioritizeOnlineRepository = true;
-
-const METERS_PER_YARD = 0.9144;
-const TELEPORT_REACH_METERS = 2;
 
 let playerFloorOffset = 0;
 
@@ -42,10 +38,6 @@ function setPlayerFloorOffset(offset: number) {
 
 function getTrackedPlayerHeight(camera: WebXRCamera) {
   return camera.realWorldHeight - playerFloorOffset;
-}
-
-function isTeleportationScaleEnabled() {
-  return FIELD_LENGTH_YARDS * METERS_PER_YARD * getARScale() > TELEPORT_REACH_METERS;
 }
 
 // WebXR session detection: this keeps the app from trying to launch unsupported
@@ -231,7 +223,7 @@ export function initXR(teleportGrid: Mesh) {
 
   function updateTeleportationAvailability() {
     const teleportation = xrExperience?.teleportation;
-    const enabled = isTeleportationScaleEnabled() && !floorCalibrationToggle?.checked;
+    const enabled = !floorCalibrationToggle?.checked;
     if (!teleportation) {
       teleportGrid.setEnabled(false);
       return;
@@ -259,7 +251,6 @@ export function initXR(teleportGrid: Mesh) {
   function updateHandTeleportation() {
     const baseExperience = xrExperience?.baseExperience;
     if (!baseExperience || baseExperience.state !== WebXRState.IN_XR ||
-      !isTeleportationScaleEnabled() ||
       floorCalibrationToggle?.checked || !handTrackingFeature) {
       handTeleportPinches.clear();
       teleportGrid.setEnabled(false);
@@ -546,7 +537,7 @@ export function initXR(teleportGrid: Mesh) {
         });
         let gridHideTimeout: ReturnType<typeof setTimeout> | undefined;
         teleportation.onTargetMeshPositionUpdatedObservable.add(() => {
-          if (!isTeleportationScaleEnabled() || floorCalibrationToggle?.checked) {
+          if (floorCalibrationToggle?.checked) {
             teleportGrid.setEnabled(false);
             return;
           }
