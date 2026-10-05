@@ -47,6 +47,7 @@ Builds the project, copies `dist/` into the repository root, then commits and pu
 - Shared count-based playback with play/pause, rewind, fast-forward, single-count stepping, and timeline seeking; playback controls are available on the video board and the palm-up VR controller menu
 - Collision-marker previews and controls for showing paths and testing larger robot groups
 - Immersive VR with teleport locomotion and immersive AR with the stadium scaled to a tabletop
+- In full-scale VR, point a tracked hand at the field and pinch to teleport
 - In VR or AR, use both controllers to move, rotate, and scale the stadium between tabletop and full size
 
 ## Project structure

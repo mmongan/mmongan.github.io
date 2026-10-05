@@ -3,6 +3,7 @@ import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTextur
 import { Texture } from '@babylonjs/core/Materials/Textures/texture.pure';
 import { Color3, Color4 } from '@babylonjs/core/Maths/math.color.pure';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
+import { Ray } from '@babylonjs/core/Culling/ray';
 import { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.pure';
 import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
@@ -129,6 +130,7 @@ export function initXR(teleportGrid: Mesh) {
   let wasCalibratingFloor = false;
   const calibrationPresses = new Map<string, boolean>();
   let switchingToFullScaleVR = false;
+  const handTeleportPinches = new Map<string, boolean>();
   const floorCalibrationStorageKey = "chartxr.floorCalibrationOffset";
   let savedFloorOffset: number | null = null;
   try {
@@ -233,6 +235,60 @@ export function initXR(teleportGrid: Mesh) {
     } else if (xrExperience?.baseExperience.state === WebXRState.IN_XR && !teleportation.attached) {
       teleportation.attach();
     }
+  }
+
+  function updateHandTeleportation() {
+    const baseExperience = xrExperience?.baseExperience;
+    if (!baseExperience || baseExperience.state !== WebXRState.IN_XR ||
+      preferredMode !== "immersive-vr" || getARScale() !== getARScaleRange().max ||
+      floorCalibrationToggle?.checked || !handTrackingFeature) {
+      handTeleportPinches.clear();
+      teleportGrid.setEnabled(false);
+      return;
+    }
+
+    const field = scene.getMeshByName("field");
+    if (!field) {
+      teleportGrid.setEnabled(false);
+      return;
+    }
+
+    let teleportPick: ReturnType<typeof scene.pickWithRay> = null;
+    for (const handedness of ["left", "right"] as const) {
+      const hand = handTrackingFeature.getHandByHandedness(handedness);
+      if (!hand) {
+        handTeleportPinches.delete(handedness);
+        continue;
+      }
+
+      const thumb = hand.getJointMesh(WebXRHandJoint.THUMB_TIP).getAbsolutePosition();
+      const index = hand.getJointMesh(WebXRHandJoint.INDEX_FINGER_TIP).getAbsolutePosition();
+      const distance = Vector3.Distance(thumb, index);
+      const wasPinching = handTeleportPinches.get(handedness) ?? false;
+      const pinching = distance < (wasPinching ? 0.04 : 0.025);
+      handTeleportPinches.set(handedness, pinching);
+
+      const distal = hand.getJointMesh(WebXRHandJoint.INDEX_FINGER_PHALANX_DISTAL).getAbsolutePosition();
+      const direction = index.subtract(distal);
+      if (direction.lengthSquared() < 0.0001) continue;
+      direction.normalize();
+
+      const pick = scene.pickWithRay(new Ray(index, direction, 200), (mesh) => mesh === field);
+      if (!pick?.hit || !pick.pickedPoint) continue;
+      teleportPick = pick;
+
+      if (pinching && !wasPinching) {
+        const camera = baseExperience.camera;
+        const teleportation = xrExperience?.teleportation;
+        teleportation?.onBeforeCameraTeleport.notifyObservers(camera.position);
+        camera.position.copyFrom(pick.pickedPoint);
+        camera.position.y += camera.realWorldHeight;
+        teleportation?.onAfterCameraTeleport.notifyObservers(camera.position);
+        break;
+      }
+    }
+
+    teleportGrid.setEnabled(!!teleportPick);
   }
 
   function getHeadsetFloorY(camera: WebXRCamera): number {
@@ -542,6 +598,7 @@ export function initXR(teleportGrid: Mesh) {
   // Teleportation is available only in full-scale VR.
   scene.onBeforeAnimationsObservable.add(() => {
     updateFloorCalibration();
+    updateHandTeleportation();
     const baseExperience = xrExperience?.baseExperience;
     if (baseExperience?.state === WebXRState.IN_XR) {
       const fullScaleVR = preferredMode === "immersive-vr" && getARScale() === getARScaleRange().max;
