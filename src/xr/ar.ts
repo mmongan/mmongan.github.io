@@ -18,7 +18,7 @@ const AR_HIDDEN_MESH_NAMES = new Set(["skyBox", "horizonGround"]);
 const AR_SCALE_MIN = 0.002;
 const AR_SCALE_MAX = 1.0;
 const AR_SCALE_DEFAULT = 1 / FIELD_LENGTH_YARDS;
-const AR_TABLE_HEIGHT = 0.15;
+const AR_TABLE_HEIGHT = 1;
 
 // The outer ground plane has generous padding (parking-lot sized) that looks
 // right at full VR scale, but should pull in to a small tabletop-sized
