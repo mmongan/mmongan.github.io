@@ -124,8 +124,6 @@ export function initXR(teleportGrid: Mesh) {
   // was passed in at creation time, so switching the radio has to rebuild it —
   // otherwise "AR" still launches an opaque immersive-vr session (black background).
   let xrExperience: WebXRDefaultExperience | undefined;
-  let wasFullScaleVR = false;
-  let heightCalibrationPending = false;
   let handTrackingFeature: WebXRHandTracking | null = null;
   let wasCalibratingFloor = false;
   const calibrationPresses = new Map<string, boolean>();
@@ -191,7 +189,6 @@ export function initXR(teleportGrid: Mesh) {
     switchingToFullScaleVR = true;
     try {
       setARScale(getARScaleRange().max);
-      heightCalibrationPending = true;
       if (preferredMode !== "immersive-vr") {
         if (xrExperience && xrExperience.baseExperience.state !== WebXRState.NOT_IN_XR) {
           await xrExperience.baseExperience.exitXRAsync();
@@ -216,7 +213,6 @@ export function initXR(teleportGrid: Mesh) {
   tabletopScaleButton?.addEventListener("click", () => {
     if (switchingToFullScaleVR) return;
     setARScale(getARScaleRange().default);
-    heightCalibrationPending = false;
     if (floorCalibrationToggle) floorCalibrationToggle.checked = false;
     updateTeleportationAvailability();
   });
@@ -321,7 +317,7 @@ export function initXR(teleportGrid: Mesh) {
   function updateFloorCalibration() {
     const baseExperience = xrExperience?.baseExperience;
     const manual = !!floorCalibrationToggle?.checked;
-    const active = baseExperience?.state === WebXRState.IN_XR && preferredMode === "immersive-vr";
+    const active = manual && baseExperience?.state === WebXRState.IN_XR && preferredMode === "immersive-vr";
     if (!active || !baseExperience) {
       setHandFloorContact("left", false);
       setHandFloorContact("right", false);
@@ -353,14 +349,12 @@ export function initXR(teleportGrid: Mesh) {
       const eyeHeight = camera.globalPosition.y - point.y;
       if (!Number.isFinite(eyeHeight) || eyeHeight <= 0 ||
         !Number.isFinite(camera.realWorldHeight) || camera.realWorldHeight <= 0) return;
-      setARScale(getARScaleRange().max);
+      if (manual) setARScale(getARScaleRange().max);
       setPlayerFloorOffset(camera.realWorldHeight - eyeHeight);
       alignFieldFloorTo(floor, point.y);
-      heightCalibrationPending = false;
       captured = true;
       alignedOnEntry = alignOnEntry;
       if (alignOnEntry) calibrationPresses.set(`floor:controller:${handedness}`, true);
-      wasFullScaleVR = true;
       fullScaleNoticeShown = true;
       hideFloorResetNotice();
       if (!alignOnEntry) {
@@ -485,8 +479,6 @@ export function initXR(teleportGrid: Mesh) {
       });
 
       xrExperience.baseExperience.onInitialXRPoseSetObservable.add((camera) => {
-        wasFullScaleVR = preferredMode === "immersive-vr" && getARScale() === getARScaleRange().max;
-        heightCalibrationPending = wasFullScaleVR;
         resetPlayerFloorOffset();
         if (preferredMode === "immersive-vr" && savedFloorOffset !== null) setPlayerFloorOffset(savedFloorOffset);
       });
@@ -565,8 +557,6 @@ export function initXR(teleportGrid: Mesh) {
         if (state === WebXRState.NOT_IN_XR) {
           fullScaleNoticeShown = false;
           hideFloorResetNotice();
-          wasFullScaleVR = false;
-          heightCalibrationPending = false;
           wasCalibratingFloor = false;
           calibrationPresses.clear();
           resetPlayerFloorOffset();
@@ -637,32 +627,20 @@ export function initXR(teleportGrid: Mesh) {
     updateHandTeleportation();
     const baseExperience = xrExperience?.baseExperience;
     if (baseExperience?.state === WebXRState.IN_XR) {
-      const fullScaleVR = preferredMode === "immersive-vr" && getARScale() === getARScaleRange().max;
-      if (fullScaleVR && !fullScaleNoticeShown) {
+      const calibratingFloor = preferredMode === "immersive-vr" && !!floorCalibrationToggle?.checked;
+      if (calibratingFloor && !fullScaleNoticeShown) {
         showFloorResetNotice(baseExperience.camera);
         fullScaleNoticeShown = true;
       }
-      if (fullScaleVR && floorResetNotice?.isEnabled()) {
+      if (calibratingFloor && floorResetNotice?.isEnabled()) {
         const horizontalProjection = Math.abs(baseExperience.camera.getProjectionMatrix().m[0]);
         const availableWidth = 1.6 / Math.max(horizontalProjection, 0.001);
         floorResetNotice.scaling.setAll(Math.min(1, availableWidth * 0.85 / 0.48));
       }
-      if (!fullScaleVR) {
+      if (!calibratingFloor) {
         fullScaleNoticeShown = false;
         hideFloorResetNotice();
       }
-      if (fullScaleVR && !wasFullScaleVR) heightCalibrationPending = true;
-      if (fullScaleVR && heightCalibrationPending && !floorCalibrationToggle?.checked) {
-        const floor = scene.getMeshByName("turfStripe0");
-        const eyeHeight = getTrackedPlayerHeight(baseExperience.camera);
-        const headsetFloorY = getHeadsetFloorY(baseExperience.camera);
-        if (floor && Number.isFinite(eyeHeight) && eyeHeight > 0 && Number.isFinite(headsetFloorY)) {
-          alignFieldFloorTo(floor, headsetFloorY);
-          heightCalibrationPending = false;
-        }
-      }
-      if (!fullScaleVR) heightCalibrationPending = false;
-      wasFullScaleVR = fullScaleVR;
     }
 
     updateTeleportationAvailability();
