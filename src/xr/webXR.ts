@@ -400,10 +400,9 @@ export function initXR(teleportGrid: Mesh) {
         },
         optionalFeatures: true,
         handSupportOptions: {
-          jointMeshes: { invisible: true },
+          jointMeshes: { invisible: false },
           handMeshes: {
-            disableDefaultMeshes: false,
-            disableHandShader: true,
+            disableDefaultMeshes: true,
           },
         },
         floorMeshes: getFieldFloorMeshes(),
