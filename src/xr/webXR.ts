@@ -236,6 +236,9 @@ export function initXR(teleportGrid: Mesh) {
       teleportGrid.setEnabled(false);
       return;
     }
+    teleportation.teleportationTargetMesh?.scaling.setAll(
+      getARScale() * xrExperience!.baseExperience.sessionManager.worldScalingFactor
+    );
     teleportation.disableAutoAttach = !enabled;
     if (!enabled) {
       if (teleportation.attached) teleportation.detach();
