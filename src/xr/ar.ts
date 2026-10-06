@@ -212,6 +212,10 @@ export function setFieldHeightMode(mode: "floor" | "table") {
   setARHeight(fieldHeights[mode] - FIELD_SURFACE_Y * getARScale());
 }
 
+export function getFieldHeightMode() {
+  return fieldHeightMode;
+}
+
 export function setFieldHeightSetting(mode: "floor" | "table", height: number) {
   fieldHeights[mode] = height;
   if (fieldHeightMode === mode) setFieldHeightMode(mode);

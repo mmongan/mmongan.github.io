@@ -19,7 +19,7 @@ import { RegisterWebXROculusTouchMotionController } from '@babylonjs/core/XR/mot
 import { scene } from '../scene/engine';
 import { xrModeInputs, getSelectedXRMode, floorCalibrationToggle, fullScaleVRButton, tabletopScaleButton, giantModeButton, roomWidthInput, roomLengthInput, sittingModeToggle } from '../ui/dom';
 import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS } from '../field/constants';
-import { enterARTabletopMode, exitARTabletopMode, getARPosition, getARScale, getARScaleRange, setARPosition, setARScale, setFieldHeightMode } from './ar';
+import { enterARTabletopMode, exitARTabletopMode, getARPosition, getARScale, getARScaleRange, setARPosition, setARScale, setFieldHeightMode, getFieldHeightMode } from './ar';
 import { setActiveController, removeActiveController, setHandTracking, getActiveControllers, consumeFloorCalibrationGesture, setHandFloorContact, isHandMarcherInteraction } from '../interaction/pathInteraction';
 
 RegisterWebXROculusTouchMotionController();
@@ -266,7 +266,7 @@ export function initXR(teleportGrid: Mesh) {
 
   function updateTeleportationAvailability() {
     const teleportation = xrExperience?.teleportation;
-    const enabled = preferredMode === "immersive-vr" && !floorCalibrationToggle?.checked;
+    const enabled = isTeleportationEnabled();
     if (!teleportation) {
       teleportGrid.setEnabled(false);
       return;
@@ -283,11 +283,15 @@ export function initXR(teleportGrid: Mesh) {
     }
   }
 
+  function isTeleportationEnabled() {
+    return preferredMode === "immersive-vr" && getFieldHeightMode() === "floor" &&
+      !floorCalibrationToggle?.checked;
+  }
+
   function updateHandTeleportation() {
     const baseExperience = xrExperience?.baseExperience;
     if (!baseExperience || baseExperience.state !== WebXRState.IN_XR ||
-      preferredMode !== "immersive-vr" ||
-      floorCalibrationToggle?.checked || !handTrackingFeature) {
+      !isTeleportationEnabled() || !handTrackingFeature) {
       handTeleportPinches.clear();
       teleportGrid.setEnabled(false);
       return;
@@ -563,7 +567,7 @@ export function initXR(teleportGrid: Mesh) {
         });
         let gridHideTimeout: ReturnType<typeof setTimeout> | undefined;
         teleportation.onTargetMeshPositionUpdatedObservable.add(() => {
-          if (preferredMode !== "immersive-vr" || floorCalibrationToggle?.checked) {
+          if (!isTeleportationEnabled()) {
             teleportGrid.setEnabled(false);
             return;
           }
