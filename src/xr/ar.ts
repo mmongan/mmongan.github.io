@@ -7,7 +7,7 @@ import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
 import { scene } from '../scene/engine';
-import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS } from '../field/constants';
+import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS, FIELD_SURFACE_Y } from '../field/constants';
 
 // AR tabletop mode: shrink the whole stadium onto a table. The skybox and
 // horizon ground are world-scale backdrops, so they stay out of the AR
@@ -40,7 +40,8 @@ const arPivot = new TransformNode("arPivot", scene);
 const arRoot = new TransformNode("arRoot", scene);
 const globalScaleRoot = new TransformNode("globalScaleRoot", scene);
 let arTabletopModeActive = false;
-let hasEnteredARTabletopModeBefore = false;
+let fieldHeightMode: "floor" | "table" = "floor";
+const fieldHeights = { floor: 0, table: AR_TABLE_HEIGHT };
 let contentRootMeshes: AbstractMesh[] = [];
 const cornerHandles = new Map<AbstractMesh, Vector3>();
 const cornerHandleY = -0.8;
@@ -206,6 +207,16 @@ export function setARHeight(height: number) {
   arPivot.position.y = height;
 }
 
+export function setFieldHeightMode(mode: "floor" | "table") {
+  fieldHeightMode = mode;
+  setARHeight(fieldHeights[mode] - FIELD_SURFACE_Y * getARScale());
+}
+
+export function setFieldHeightSetting(mode: "floor" | "table", height: number) {
+  fieldHeights[mode] = height;
+  if (fieldHeightMode === mode) setFieldHeightMode(mode);
+}
+
 // Must be called once all real scene content exists, but before anything that
 // should stay outside AR's shrink-to-tabletop transform (e.g. the teleport grid).
 // Capture the scene graph before rebasing it under the AR transform roots.
@@ -230,10 +241,9 @@ export function enterARTabletopMode() {
   });
   setARScale(AR_SCALE_DEFAULT);
   setARRotation(0);
-  // Only default the height the first time; later entries keep whatever height the user set.
-  const height = hasEnteredARTabletopModeBefore ? arPivot.position.y : AR_TABLE_HEIGHT;
-  hasEnteredARTabletopModeBefore = true;
-  arPivot.position = new Vector3(0, height, 0.6);
+  setFieldHeightMode("table");
+  arPivot.position.x = 0;
+  arPivot.position.z = 0.6;
   arPivot.rotation.setAll(0);
   arRoot.position.setAll(0);
   globalScaleRoot.position.setAll(0);
@@ -250,6 +260,7 @@ export function exitARTabletopMode() {
   });
   arRoot.scaling.setAll(1);
   globalScaleRoot.scaling.setAll(1);
+  setFieldHeightMode("floor");
   updateGroundFootprint(1);
   updateHiddenMeshVisibility(1);
   setARRotation(0);

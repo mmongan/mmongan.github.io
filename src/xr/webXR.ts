@@ -17,14 +17,16 @@ import { WebXRState } from '@babylonjs/core/XR/webXRTypes';
 import '@babylonjs/loaders/glTF';
 import { RegisterWebXROculusTouchMotionController } from '@babylonjs/core/XR/motionController/webXROculusTouchMotionController.pure';
 import { scene } from '../scene/engine';
-import { xrModeInputs, getSelectedXRMode, floorCalibrationToggle, fullScaleVRButton, tabletopScaleButton } from '../ui/dom';
-import { enterARTabletopMode, exitARTabletopMode, getARPosition, getARScale, getARScaleRange, setARPosition, setARScale } from './ar';
+import { xrModeInputs, getSelectedXRMode, floorCalibrationToggle, fullScaleVRButton, tabletopScaleButton, giantModeButton, roomWidthInput, roomLengthInput, sittingModeToggle } from '../ui/dom';
+import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS } from '../field/constants';
+import { enterARTabletopMode, exitARTabletopMode, getARPosition, getARScale, getARScaleRange, setARPosition, setARScale, setFieldHeightMode } from './ar';
 import { setActiveController, removeActiveController, setHandTracking, getActiveControllers, consumeFloorCalibrationGesture, setHandFloorContact, isHandMarcherInteraction } from '../interaction/pathInteraction';
 
 RegisterWebXROculusTouchMotionController();
 WebXRMotionControllerManager.PrioritizeOnlineRepository = true;
 
 let playerFloorOffset = 0;
+let postureHeightOffset = 0;
 
 function resetPlayerFloorOffset() {
   playerFloorOffset = 0;
@@ -37,7 +39,7 @@ function setPlayerFloorOffset(offset: number) {
 }
 
 function getTrackedPlayerHeight(camera: WebXRCamera) {
-  return camera.realWorldHeight - playerFloorOffset;
+  return camera.realWorldHeight - playerFloorOffset + postureHeightOffset;
 }
 
 // WebXR session detection: this keeps the app from trying to launch unsupported
@@ -128,7 +130,25 @@ export function initXR(teleportGrid: Mesh) {
   let wasCalibratingFloor = false;
   const calibrationPresses = new Map<string, boolean>();
   let switchingToFullScaleVR = false;
+  let giantModeActive = false;
   const handTeleportPinches = new Map<string, boolean>();
+
+  function applyPostureHeight(camera: WebXRCamera) {
+    if (preferredMode !== "immersive-vr") return;
+    const trackedHeight = camera.realWorldHeight;
+    if (!Number.isFinite(trackedHeight) || trackedHeight <= 0) {
+      console.warn("Cannot apply sitting/standing height until a valid XR pose is available.");
+      return;
+    }
+    const newOffset = (sittingModeToggle?.checked ? 1.2 : 1.7) - trackedHeight;
+    camera.position.y += newOffset - postureHeightOffset;
+    postureHeightOffset = newOffset;
+  }
+
+  sittingModeToggle?.addEventListener("change", () => {
+    const baseExperience = xrExperience?.baseExperience;
+    if (baseExperience?.state === WebXRState.IN_XR) applyPostureHeight(baseExperience.camera);
+  });
   const floorCalibrationStorageKey = "chartxr.floorCalibrationOffset";
   let savedFloorOffset: number | null = null;
   try {
@@ -188,7 +208,9 @@ export function initXR(teleportGrid: Mesh) {
     if (switchingToFullScaleVR) return;
     switchingToFullScaleVR = true;
     try {
+      giantModeActive = false;
       setARScale(getARScaleRange().max);
+      setFieldHeightMode("floor");
       if (preferredMode !== "immersive-vr") {
         if (xrExperience && xrExperience.baseExperience.state !== WebXRState.NOT_IN_XR) {
           await xrExperience.baseExperience.exitXRAsync();
@@ -212,10 +234,35 @@ export function initXR(teleportGrid: Mesh) {
   fullScaleVRButton?.addEventListener("click", () => { void enterFullScaleVR(); });
   tabletopScaleButton?.addEventListener("click", () => {
     if (switchingToFullScaleVR) return;
+    giantModeActive = false;
     setARScale(getARScaleRange().default);
+    setFieldHeightMode("table");
     if (floorCalibrationToggle) floorCalibrationToggle.checked = false;
     updateTeleportationAvailability();
   });
+
+  function applyRoomScale() {
+    if (!roomWidthInput || !roomLengthInput) return;
+    if (!roomWidthInput.reportValidity() || !roomLengthInput.reportValidity()) return;
+    // Scene field coordinates are yards, but XR world coordinates are meters.
+    setARScale(Math.min(
+      roomWidthInput.valueAsNumber / FIELD_WIDTH_YARDS,
+      roomLengthInput.valueAsNumber / FIELD_LENGTH_YARDS
+    ));
+    setFieldHeightMode("floor");
+    giantModeActive = true;
+    if (floorCalibrationToggle) floorCalibrationToggle.checked = false;
+    updateTeleportationAvailability();
+  }
+
+  giantModeButton?.addEventListener("click", () => {
+    if (!switchingToFullScaleVR) applyRoomScale();
+  });
+  for (const input of [roomWidthInput, roomLengthInput]) {
+    input?.addEventListener("change", () => {
+      if (giantModeActive && !switchingToFullScaleVR) applyRoomScale();
+    });
+  }
 
   function updateTeleportationAvailability() {
     const teleportation = xrExperience?.teleportation;
@@ -310,7 +357,7 @@ export function initXR(teleportGrid: Mesh) {
 
   function getHeadsetFloorY(camera: WebXRCamera): number {
     camera.computeWorldMatrix();
-    return camera.globalPosition.y - camera.realWorldHeight;
+    return camera.globalPosition.y - camera.realWorldHeight - postureHeightOffset;
   }
 
   function alignFieldFloorTo(floor: AbstractMesh, floorY: number) {
@@ -357,7 +404,7 @@ export function initXR(teleportGrid: Mesh) {
       if (!Number.isFinite(eyeHeight) || eyeHeight <= 0 ||
         !Number.isFinite(camera.realWorldHeight) || camera.realWorldHeight <= 0) return;
       if (manual) setARScale(getARScaleRange().max);
-      setPlayerFloorOffset(camera.realWorldHeight - eyeHeight);
+      setPlayerFloorOffset(camera.realWorldHeight + postureHeightOffset - eyeHeight);
       alignFieldFloorTo(floor, point.y);
       captured = true;
       alignedOnEntry = alignOnEntry;
@@ -397,7 +444,7 @@ export function initXR(teleportGrid: Mesh) {
       capture(`preview:controller:${lowest.handedness}`, true, lowest.point,
         lowest.handedness, "controller", false, true);
       if (captured && confirmation !== null) {
-        savedFloorOffset = baseExperience.camera.realWorldHeight - getTrackedPlayerHeight(baseExperience.camera);
+        savedFloorOffset = baseExperience.camera.realWorldHeight + postureHeightOffset - getTrackedPlayerHeight(baseExperience.camera);
         try {
           localStorage.setItem(floorCalibrationStorageKey, JSON.stringify(savedFloorOffset));
         } catch (error) {
@@ -487,8 +534,10 @@ export function initXR(teleportGrid: Mesh) {
       });
 
       xrExperience.baseExperience.onInitialXRPoseSetObservable.add((camera) => {
+        postureHeightOffset = 0;
         resetPlayerFloorOffset();
         if (preferredMode === "immersive-vr" && savedFloorOffset !== null) setPlayerFloorOffset(savedFloorOffset);
+        applyPostureHeight(camera);
       });
 
       const handTracking = xrExperience.baseExperience.featuresManager
@@ -531,9 +580,11 @@ export function initXR(teleportGrid: Mesh) {
             scene.clearColor = new Color4(0, 0, 0, 0);
             scene.autoClear = true;
             enterARTabletopMode();
+            if (giantModeActive) applyRoomScale();
           } else {
             scene.clearColor = new Color4(0.03, 0.05, 0.09, 1);
             exitARTabletopMode();
+            if (giantModeActive) applyRoomScale();
           }
           updateTeleportationAvailability();
           return;
@@ -545,6 +596,7 @@ export function initXR(teleportGrid: Mesh) {
           wasCalibratingFloor = false;
           calibrationPresses.clear();
           resetPlayerFloorOffset();
+          postureHeightOffset = 0;
           setHandTracking(null);
           scene.clearColor = new Color4(0.03, 0.05, 0.09, 1);
           teleportGrid.setEnabled(false);

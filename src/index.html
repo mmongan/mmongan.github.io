@@ -42,8 +42,23 @@
 
         <div class="settings-group">
           <label class="settings-label">Floor</label>
+          <label class="radio-option">
+            <input id="sittingModeToggle" type="checkbox" />
+            <span>Sitting mode (unchecked: Standing)</span>
+          </label>
           <button id="fullScaleVRButton" class="xr-button secondary">Full scale VR</button>
           <button id="tabletopScaleButton" class="xr-button secondary">Tabletop scale</button>
+          <button id="giantModeButton" class="xr-button secondary">Giant mode (fit room)</button>
+          <label class="settings-label" for="roomWidth">Room width (meters)</label>
+          <input id="roomWidth" type="number" min="1" max="50" step="0.1" value="4" required />
+          <label class="settings-label" for="roomLength">Room length (meters)</label>
+          <input id="roomLength" type="number" min="1" max="50" step="0.1" value="5" required />
+          <label class="settings-label" for="floorHeight">Floor height (meters)</label>
+          <input id="floorHeight" type="range" min="-2" max="2" step="0.01" value="0" />
+          <output id="floorHeightValue" for="floorHeight">0.00 m</output>
+          <label class="settings-label" for="tableHeight">Table height (meters)</label>
+          <input id="tableHeight" type="range" min="0" max="2" step="0.01" value="1" />
+          <output id="tableHeightValue" for="tableHeight">1.00 m</output>
           <label class="radio-option">
             <input type="checkbox" id="floorCalibrationToggle" />
             <span>Floor calibration</span>
@@ -104,4 +119,3 @@
     <script type="module" src="/scene/index.ts"></script>
   </body>
 </html>
-

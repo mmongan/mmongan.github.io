@@ -50,9 +50,12 @@ Builds the project, copies `dist/` into the repository root, then commits and pu
 - Immersive VR with teleport locomotion and immersive AR with the stadium scaled to a tabletop
 - In VR at any field scale, point a tracked hand at the field and pinch to teleport. Teleport preserves the field scale, and the controller teleport torus scales with the field. Teleport pauses during floor calibration and is disabled in AR for both hands and controllers.
 - In VR or AR, use both controllers to move, rotate, and scale the stadium between tabletop and full size
+- Giant mode fits the field uniformly inside the configured room width and length (1-50 meters each; defaults to 4 by 5 meters). Use the Giant mode button in settings; changing room dimensions while active updates the fit. Field height and rotation are preserved, and tabletop/full-scale buttons exit Giant mode. Dimensions describe the field footprint, not the surrounding stadium or a detected safety boundary.
 - In VR or AR, pinch with both tracked hands to translate, rotate, and zoom the scene: move the midpoint to translate, turn the hands to rotate, and change their separation to scale. Release either pinch to stop; two-hand manipulation takes priority over hand grabs, drawing, and teleport.
 - In VR or AR at any scale, pinch near a marcher with one hand to grab it, move your hand, and release to place it on the field. In Placement mode, pinch within 15 cm above the field to create a new marcher. Losing hand tracking or starting a two-hand gesture cancels the grab and discards unplaced new marchers.
 - Floor calibration only runs when explicitly enabled using the Floor calibration checkbox; entering XR, teleporting, and touching the floor do not start it automatically
+- Separate Floor height (-2 to 2 m) and Table height (0 to 2 m) sliders set the field surface height. Full-scale and Giant mode apply the floor setting; tabletop mode applies the table setting. Values are remembered during the session, defaulting to 0 m and 1 m respectively; adjusting a height does not start calibration.
+- Sitting mode selects a 0.75 m tabletop and 1.2 m virtual eye height; Standing selects 1 m and 1.7 m. The tabletop slider remains adjustable afterward. Eye-height offsets apply only in VR, preserve subsequent physical head movement, and are retained by teleport; AR headset tracking is unchanged.
 
 ## Project structure
 
