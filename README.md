@@ -48,8 +48,10 @@ Builds the project, copies `dist/` into the repository root, then commits and pu
 - Shared count-based playback with play/pause, rewind, fast-forward, single-count stepping, and timeline seeking; playback controls are available on the video board and the palm-up VR controller menu
 - Collision-marker previews and controls for showing paths and testing larger robot groups
 - Immersive VR with teleport locomotion and immersive AR with the stadium scaled to a tabletop
-- At any field scale, point a tracked hand at it and pinch to teleport: VR moves the viewer; AR moves the selected field spot beneath the viewer without moving the headset or changing the field height. Teleport preserves the field scale. The controller teleport torus scales with the field; teleport pauses during floor calibration.
+- In VR at any field scale, point a tracked hand at the field and pinch to teleport. Teleport preserves the field scale, and the controller teleport torus scales with the field. Teleport pauses during floor calibration and is disabled in AR for both hands and controllers.
 - In VR or AR, use both controllers to move, rotate, and scale the stadium between tabletop and full size
+- In VR or AR, pinch with both tracked hands to translate, rotate, and zoom the scene: move the midpoint to translate, turn the hands to rotate, and change their separation to scale. Release either pinch to stop; two-hand manipulation takes priority over hand grabs, drawing, and teleport.
+- In VR or AR at any scale, pinch near a marcher with one hand to grab it, move your hand, and release to place it on the field. In Placement mode, pinch within 15 cm above the field to create a new marcher. Losing hand tracking or starting a two-hand gesture cancels the grab and discards unplaced new marchers.
 - Floor calibration only runs when explicitly enabled using the Floor calibration checkbox; entering XR, teleporting, and touching the floor do not start it automatically
 
 ## Project structure

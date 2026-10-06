@@ -118,7 +118,15 @@ export function createHandInteraction(paths: HandPathDependencies) {
     localAnchor: Vector3;
   } | null = null;
   const handPinches = new Map<string, boolean>();
+  let sceneGesture: {
+    startDistance: number;
+    startYaw: number;
+    startScale: number;
+    startRotation: number;
+    localAnchor: Vector3;
+  } | null = null;
   const marcherGrabs = new Map<string, MarcherGrab>();
+  const handPlacementDrafts = new Set<TransformNode>();
   let handTracking: WebXRHandTracking | null = null;
   const floorContactHands = new Set<string>();
   let fingerPath: {
@@ -171,6 +179,11 @@ export function createHandInteraction(paths: HandPathDependencies) {
     if (!grab || grab.robot.isDisposed()) return;
     const field = scene.getMeshByName('field');
     if (!commit || !field) {
+      if (handPlacementDrafts.delete(grab.robot)) {
+        setRobotHeld(grab.robot, false);
+        grab.robot.dispose();
+        return;
+      }
       grab.robot.position.copyFrom(grab.originalPosition);
       setRobotHeld(grab.robot, false);
       return;
@@ -190,6 +203,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
     );
     position.y += 0.02;
     const delta = placeRobot(grab.robot, position, scene);
+    handPlacementDrafts.delete(grab.robot);
     const oldPath = robotPaths.get(grab.robot);
     if (oldPath) {
       const translated = oldPath.map((point) => point.add(delta));
@@ -231,6 +245,26 @@ export function createHandInteraction(paths: HandPathDependencies) {
       }
     });
     return nearest;
+  }
+
+  function getPinchPlacementPoint(point: Vector3) {
+    const field = scene.getMeshByName('field');
+    if (!field?.isEnabled()) return null;
+    field.computeWorldMatrix(true);
+    const local = Vector3.TransformCoordinates(point, Matrix.Invert(field.getWorldMatrix()));
+    if (Math.abs(local.x) > FIELD_WIDTH_YARDS / 2 || Math.abs(local.z) > FIELD_LENGTH_YARDS / 2) return null;
+    local.y = 0;
+    const contact = Vector3.TransformCoordinates(local, field.getWorldMatrix());
+    if (Vector3.Distance(point, contact) > 0.15) return null;
+    pathRoot.computeWorldMatrix(true);
+    const position = Vector3.TransformCoordinates(contact, Matrix.Invert(pathRoot.getWorldMatrix()));
+    position.y += 0.02;
+    return snapToStepGrid(position);
+  }
+
+  function isHandMarcherInteraction(handedness: string, point: Vector3) {
+    return marcherGrabs.get(handedness)?.source === 'hand' ||
+      !!findMarcherNearHand(point) || (isPlacementMode() && !!getPinchPlacementPoint(point));
   }
 
   function beginCornerDrag(
@@ -314,8 +348,52 @@ export function createHandInteraction(paths: HandPathDependencies) {
   }
 
   function updateTabletopHands() {
-    if (floorCalibrationToggle?.checked) return;
-    if (!handTracking || (!isARTabletopModeActive() && !isTabletopInteractionMode())) return;
+    if (floorCalibrationToggle?.checked || !handTracking) {
+      sceneGesture = null;
+      return;
+    }
+    const pinchedPoints = new Map<string, Vector3>();
+    for (const handedness of ['left', 'right'] as const) {
+      const hand = handTracking.getHandByHandedness(handedness);
+      if (!hand) continue;
+      const thumb = hand.getJointMesh(WebXRHandJoint.THUMB_TIP).getAbsolutePosition();
+      const index = hand.getJointMesh(WebXRHandJoint.INDEX_FINGER_TIP).getAbsolutePosition();
+      const distance = Vector3.Distance(thumb, index);
+      if (distance > 0.002 && distance < (handPinches.get(handedness) ? 0.04 : 0.025)) {
+        pinchedPoints.set(handedness, thumb.add(index).scale(0.5));
+      }
+    }
+    const left = pinchedPoints.get('left');
+    const right = pinchedPoints.get('right');
+    if (left && right) {
+      finishFingerPath(false);
+      for (const handedness of ['left', 'right']) {
+        if (marcherGrabs.get(handedness)?.source === 'hand') finishMarcherGrab(handedness, false);
+        handPinches.set(handedness, true);
+      }
+      cornerDrags.clear();
+      twoCornerGesture = null;
+      const distance = Vector3.Distance(left, right);
+      if (distance < 0.05) return;
+      const midpoint = left.add(right).scale(0.5);
+      const yaw = getControllerYaw(left, right);
+      if (!sceneGesture) {
+        const startScale = getARScale();
+        const startRotation = getARRotation();
+        sceneGesture = {
+          startDistance: distance, startYaw: yaw, startScale, startRotation,
+          localAnchor: rotateAroundY(midpoint.subtract(getARPosition()), -startRotation).scale(1 / startScale),
+        };
+      } else {
+        const scale = setARScale(sceneGesture.startScale * distance / sceneGesture.startDistance);
+        const yawDelta = yaw - sceneGesture.startYaw;
+        const rotation = sceneGesture.startRotation + Math.atan2(Math.sin(yawDelta), Math.cos(yawDelta));
+        setARRotation(rotation);
+        setARPosition(midpoint.subtract(rotateAroundY(sceneGesture.localAnchor.scale(scale), rotation)));
+      }
+      return;
+    }
+    sceneGesture = null;
     for (const handedness of ['left', 'right'] as const) {
       const hand = handTracking.getHandByHandedness(handedness);
       if (!hand) {
@@ -328,7 +406,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
       const index = hand.getJointMesh(WebXRHandJoint.INDEX_FINGER_TIP).getAbsolutePosition();
       const distance = Vector3.Distance(thumb, index);
       const wasPinching = handPinches.get(handedness) ?? false;
-      const pinching = distance < (wasPinching ? 0.04 : 0.025);
+      const pinching = distance > 0.002 && distance < (wasPinching ? 0.04 : 0.025);
       handPinches.set(handedness, pinching);
       if (!pinching) {
         if (marcherGrabs.get(handedness)?.source === 'hand') finishMarcherGrab(handedness, true);
@@ -351,9 +429,17 @@ export function createHandInteraction(paths: HandPathDependencies) {
         );
         if (pick) {
           beginCornerDrag(handedness, pick, point, 'hand');
-        } else if (isTabletopInteractionMode()) {
+        } else {
           const robot = findMarcherNearHand(point);
           if (robot) beginMarcherGrab(handedness, robot, point, 'hand');
+          else if (isPlacementMode()) {
+            const position = getPinchPlacementPoint(point);
+            if (position) {
+              const draft = createStandingMarcher(position);
+              handPlacementDrafts.add(draft);
+              beginMarcherGrab(handedness, draft, point, 'hand');
+            }
+          }
         }
       }
     }
@@ -402,7 +488,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
   }
 
   function updateHandPathDrawing() {
-    if (floorCalibrationToggle?.checked || !handTracking) {
+    if (floorCalibrationToggle?.checked || !handTracking || sceneGesture) {
       finishFingerPath(false);
       return;
     }
@@ -467,6 +553,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
       if (grab.source === 'hand') finishMarcherGrab(handedness, false);
     });
     handTracking = tracking;
+    sceneGesture = null;
     handPinches.clear();
     cornerDrags.clear();
     twoCornerGesture = null;
@@ -486,6 +573,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
 
   scene.onBeforeRenderObservable.add(() => {
     if (floorCalibrationToggle?.checked) {
+      sceneGesture = null;
       finishFingerPath(false);
       [...marcherGrabs.keys()].forEach((handedness) => finishMarcherGrab(handedness, false));
       placementDrafts.forEach((robot) => robot.dispose());
@@ -495,7 +583,9 @@ export function createHandInteraction(paths: HandPathDependencies) {
       cancelControllerPathDrawing();
     }
     if (!isTabletopInteractionMode()) {
-      [...marcherGrabs.keys()].forEach((handedness) => finishMarcherGrab(handedness, false));
+      [...marcherGrabs.entries()].forEach(([handedness, grab]) => {
+        if (grab.source === 'controller') finishMarcherGrab(handedness, false);
+      });
     }
     if (!isARTabletopModeActive()) {
       cornerDrags.clear();
@@ -517,6 +607,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
     getMarcherGrabHandedness: () => [...marcherGrabs.keys()],
     marcherGrabs,
     isFingerPathPlacement: () => fingerPath?.placement ?? false,
+    isHandMarcherInteraction,
     hasCornerDrags: () => cornerDrags.size > 0,
     moveCornerDrag,
     moveMarcherGrab,

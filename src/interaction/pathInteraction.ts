@@ -1044,6 +1044,10 @@ export function setHandTracking(tracking: WebXRHandTracking | null) {
   handInteraction.setHandTracking(tracking);
 }
 
+export function isHandMarcherInteraction(handedness: string, point: Vector3) {
+  return handInteraction.isHandMarcherInteraction(handedness, point);
+}
+
 function isTabletopInteractionMode() {
   return getARScale() < getARScaleRange().max;
 }
