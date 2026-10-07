@@ -124,6 +124,15 @@ export function setARHeight(height: number) {
   arPivot.position.y = height;
 }
 
+// World-space height of the field surface, independent of the current scale.
+export function getARSurfaceHeight() {
+  return arPivot.position.y + FIELD_SURFACE_Y * getARScale();
+}
+
+export function setARSurfaceHeight(height: number) {
+  arPivot.position.y = height - FIELD_SURFACE_Y * getARScale();
+}
+
 export function setFieldHeightMode(mode: "floor" | "table") {
   fieldHeightMode = mode;
   setARHeight(fieldHeights[mode] - FIELD_SURFACE_Y * getARScale());

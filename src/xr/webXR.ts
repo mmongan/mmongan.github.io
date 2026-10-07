@@ -284,9 +284,14 @@ export function initXR(teleportGrid: Mesh) {
     }
   }
 
+  // Fields smaller than this (longest side, in meters) are within reach and
+  // shouldn't be teleported across.
+  const MIN_TELEPORT_FIELD_SIZE_METERS = 2;
+
   function isTeleportationEnabled() {
     return preferredMode === "immersive-vr" && getFieldHeightMode() === "floor" &&
-      !floorCalibrationToggle?.checked;
+      !floorCalibrationToggle?.checked &&
+      Math.max(FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS) * getARScale() >= MIN_TELEPORT_FIELD_SIZE_METERS;
   }
 
   function updateHandTeleportation() {

@@ -8,6 +8,8 @@ import {
   setARRotation,
   getARScaleRange,
   getARRotation,
+  getARSurfaceHeight,
+  setARSurfaceHeight,
 } from '../xr/ar';
 import { scene } from '../scene/engine';
 import { floorCalibrationToggle } from '../ui/dom';
@@ -24,6 +26,8 @@ const pinchState = {
   localAnchor: new Vector3(),
   startYaw: 0,
   startRotation: 0,
+  startSurfaceY: 0,
+  startMidpointY: 0,
 };
 
 function resetPinchState() {
@@ -34,6 +38,8 @@ function resetPinchState() {
   pinchState.localAnchor = new Vector3();
   pinchState.startYaw = 0;
   pinchState.startRotation = 0;
+  pinchState.startSurfaceY = 0;
+  pinchState.startMidpointY = 0;
 }
 
 function getScaleExponentFor(scale: number): number {
@@ -116,17 +122,24 @@ export function updateARResizeFromControllers(grabActive: boolean) {
     pinchState.scaleExponent = getScaleExponentFor(pinchState.startScale);
     pinchState.startYaw = currentYaw;
     pinchState.startRotation = getARRotation();
+    pinchState.startSurfaceY = getARSurfaceHeight();
+    pinchState.startMidpointY = midpoint.y;
     const worldOffsetFromPivot = midpoint.subtract(getARPosition());
+    worldOffsetFromPivot.y = 0;
     pinchState.localAnchor = rotateAroundY(worldOffsetFromPivot, -pinchState.startRotation)
       .scale(1 / pinchState.startScale);
     setARRotation(pinchState.startRotation);
     return;
   }
 
+  // Scale around the hands horizontally only; the field surface keeps its
+  // height (following vertical hand motion 1:1) so zooming to full size
+  // doesn't push the field far above or below the viewer.
   const scale = getScaleFromControllerDistance(distance);
   const yaw = pinchState.startRotation + (currentYaw - pinchState.startYaw);
   const anchorWorldOffset = rotateAroundY(pinchState.localAnchor.scale(scale), yaw);
   setARScale(scale);
   setARPosition(midpoint.subtract(anchorWorldOffset));
+  setARSurfaceHeight(pinchState.startSurfaceY + midpoint.y - pinchState.startMidpointY);
   setARRotation(yaw);
 }

@@ -12,6 +12,8 @@ import {
   setARRotation,
   getARScaleRange,
   getARRotation,
+  getARSurfaceHeight,
+  setARSurfaceHeight,
   isARTabletopModeActive,
 } from '../xr/ar';
 import { scene } from '../scene/engine';
@@ -95,6 +97,8 @@ export function createHandInteraction(paths: HandPathDependencies) {
 
   const handPinches = new Map<string, boolean>();
   let sceneGesture: {
+    startSurfaceY: number;
+    startMidpointY: number;
     startDistance: number;
     startYaw: number;
     startScale: number;
@@ -274,9 +278,12 @@ export function createHandInteraction(paths: HandPathDependencies) {
       if (!sceneGesture) {
         const startScale = getARScale();
         const startRotation = getARRotation();
+        const offset = midpoint.subtract(getARPosition());
+        offset.y = 0;
         sceneGesture = {
+          startSurfaceY: getARSurfaceHeight(), startMidpointY: midpoint.y,
           startDistance: distance, startYaw: yaw, startScale, startRotation,
-          localAnchor: rotateAroundY(midpoint.subtract(getARPosition()), -startRotation).scale(1 / startScale),
+          localAnchor: rotateAroundY(offset, -startRotation).scale(1 / startScale),
         };
       } else {
         const scale = setARScale(sceneGesture.startScale * distance / sceneGesture.startDistance);
@@ -284,6 +291,8 @@ export function createHandInteraction(paths: HandPathDependencies) {
         const rotation = sceneGesture.startRotation + Math.atan2(Math.sin(yawDelta), Math.cos(yawDelta));
         setARRotation(rotation);
         setARPosition(midpoint.subtract(rotateAroundY(sceneGesture.localAnchor.scale(scale), rotation)));
+        // Keep the field surface at its height so zooming in can't bury or lift it out of view.
+        setARSurfaceHeight(sceneGesture.startSurfaceY + midpoint.y - sceneGesture.startMidpointY);
       }
       return;
     }
