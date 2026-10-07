@@ -28,8 +28,12 @@ const PALM_BONES: [WebXRHandJoint, WebXRHandJoint][] = [
   [WebXRHandJoint.THUMB_PHALANX_PROXIMAL, WebXRHandJoint.INDEX_FINGER_PHALANX_PROXIMAL],
 ];
 const DEFAULT_JOINT_RADIUS = 0.008;
+// Gloves are a little fuller than bare fingers.
+const GLOVE_PADDING = 1.15;
+const CUFF_LENGTH = 0.05;
+const CUFF_DIAMETER = 0.075;
 
-type HandVisual = { joints: Map<WebXRHandJoint, Mesh>; bones: Mesh[] };
+type HandVisual = { joints: Map<WebXRHandJoint, Mesh>; bones: Mesh[]; cuff: Mesh };
 
 let handTracking: WebXRHandTracking | null = null;
 let material: StandardMaterial | null = null;
@@ -39,9 +43,10 @@ const boneDirection = new Vector3();
 function getMaterial() {
   if (!material) {
     material = new StandardMaterial('handModelMaterial', scene);
-    material.diffuseColor = new Color3(0.86, 0.68, 0.56);
-    material.emissiveColor = new Color3(0.3, 0.22, 0.18);
-    material.specularColor = new Color3(0.08, 0.08, 0.08);
+    // Matte white marching-band gloves.
+    material.diffuseColor = new Color3(0.96, 0.96, 0.94);
+    material.emissiveColor = new Color3(0.32, 0.32, 0.31);
+    material.specularColor = new Color3(0.05, 0.05, 0.05);
   }
   return material;
 }
@@ -62,13 +67,17 @@ function createVisual(handedness: 'left' | 'right'): HandVisual {
   const bones = [...BONES, ...PALM_BONES].map(() =>
     prepareMesh(MeshBuilder.CreateCylinder(`${handedness}HandModelBone`, { diameter: 1, height: 1, tessellation: 8 }, scene))
   );
-  return { joints, bones };
+  const cuff = prepareMesh(
+    MeshBuilder.CreateCylinder(`${handedness}HandModelCuff`, { diameterTop: 1, diameterBottom: 0.8, height: 1, tessellation: 16 }, scene)
+  );
+  return { joints, bones, cuff };
 }
 
 function setVisualEnabled(visual: HandVisual | undefined, enabled: boolean) {
   if (!visual) return;
   visual.joints.forEach((mesh) => mesh.setEnabled(enabled));
   visual.bones.forEach((mesh) => mesh.setEnabled(enabled));
+  visual.cuff.setEnabled(enabled);
 }
 
 function updateHand(handedness: 'left' | 'right') {
@@ -89,7 +98,7 @@ function updateHand(handedness: 'left' | 'right') {
   visual.joints.forEach((mesh, joint) => {
     const tracked = hand.getJointMesh(joint);
     const position = tracked.getAbsolutePosition();
-    const radius = tracked.scaling.x > 0 ? tracked.scaling.x : DEFAULT_JOINT_RADIUS;
+    const radius = (tracked.scaling.x > 0 ? tracked.scaling.x : DEFAULT_JOINT_RADIUS) * GLOVE_PADDING;
     positions.set(joint, position);
     radii.set(joint, radius);
     mesh.position.copyFrom(position);
@@ -106,13 +115,25 @@ function updateHand(handedness: 'left' | 'right') {
       bone.setEnabled(false);
       return;
     }
-    const diameter = 2 * Math.min(radii.get(from)!, radii.get(to)!) * 0.9;
+    const diameter = 2 * Math.min(radii.get(from)!, radii.get(to)!);
     start.addToRef(end, bone.position).scaleInPlace(0.5);
     boneDirection.scaleInPlace(1 / length);
     Quaternion.FromUnitVectorsToRef(Vector3.UpReadOnly, boneDirection, bone.rotationQuaternion!);
     bone.scaling.set(diameter, length, diameter);
     bone.setEnabled(true);
   });
+  // Flared cuff extends from the wrist back along the forearm.
+  const wristPosition = positions.get(WebXRHandJoint.WRIST)!;
+  wristPosition.subtractToRef(positions.get(WebXRHandJoint.MIDDLE_FINGER_METACARPAL)!, boneDirection);
+  if (boneDirection.lengthSquared() < 1e-8) {
+    visual.cuff.setEnabled(false);
+    return;
+  }
+  boneDirection.normalize();
+  wristPosition.addToRef(boneDirection.scale(CUFF_LENGTH * 0.4), visual.cuff.position);
+  Quaternion.FromUnitVectorsToRef(Vector3.UpReadOnly, boneDirection, visual.cuff.rotationQuaternion!);
+  visual.cuff.scaling.set(CUFF_DIAMETER, CUFF_LENGTH, CUFF_DIAMETER);
+  visual.cuff.setEnabled(true);
 }
 
 scene.onBeforeRenderObservable.add(() => {
