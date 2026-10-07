@@ -51,6 +51,7 @@ Builds the project, copies `dist/` into the repository root, then commits and pu
 - In VR floor/Giant mode, point a tracked hand at the field and pinch to teleport. Teleport preserves the field scale, and the controller teleport torus scales with the field. Teleport pauses during floor calibration and is disabled in tabletop mode and AR for both hands and controllers.
 - In VR or AR, use both controllers to move, rotate, and scale the stadium between tabletop and full size
 - Giant mode fits the field uniformly inside the configured room width and length (1-50 meters each; defaults to 4 by 5 meters). Use the Giant mode button in settings; changing room dimensions while active updates the fit. Field height and rotation are preserved, and tabletop/full-scale buttons exit Giant mode. Dimensions describe the field footprint, not the surrounding stadium or a detected safety boundary.
+- Tracked hands are drawn as an articulated joint-and-bone model that follows each finger in VR and AR.
 - In VR or AR, pinch with both tracked hands to translate, rotate, and zoom the scene: move the midpoint to translate, turn the hands to rotate, and change their separation to scale. Release either pinch to stop; two-hand manipulation takes priority over hand grabs, drawing, and teleport.
 - In VR or AR at any scale, pinch near a marcher with one hand to grab it, move your hand, and release to place it on the field. In Placement mode, pinch within 15 cm above the field to create a new marcher. Losing hand tracking or starting a two-hand gesture cancels the grab and discards unplaced new marchers.
 - Floor calibration only runs when explicitly enabled using the Floor calibration checkbox; entering XR, teleporting, and touching the floor do not start it automatically
@@ -94,6 +95,7 @@ src/
     dom.ts           shared DOM references for application controls
   xr/
     ar.ts            AR tabletop transforms and scene scaling
+    handModel.ts     visible articulated model for tracked hands
     webXR.ts         VR/AR session setup, teleportation, and controllers
 
 scripts/

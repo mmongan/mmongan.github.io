@@ -1,10 +1,5 @@
-import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
-import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.pure';
-import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
 import { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.pure';
-import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
-import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
 import { scene } from '../scene/engine';
 import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS, FIELD_SURFACE_Y } from '../field/constants';
@@ -43,9 +38,6 @@ let arTabletopModeActive = false;
 let fieldHeightMode: "floor" | "table" = "floor";
 const fieldHeights = { floor: 0, table: AR_TABLE_HEIGHT };
 let contentRootMeshes: AbstractMesh[] = [];
-const cornerHandles = new Map<AbstractMesh, Vector3>();
-const cornerHandleY = -0.8;
-const cornerHandleHeight = 0.038;
 
 arRoot.parent = arPivot;
 globalScaleRoot.parent = arPivot;
@@ -70,80 +62,6 @@ function updateGroundFootprint(arScale: number) {
   if (!ground) return;
   ground.scaling.x = lerpGroundPaddingRatio(GROUND_TABLETOP_WIDTH_RATIO, arScale);
   ground.scaling.z = lerpGroundPaddingRatio(GROUND_TABLETOP_LENGTH_RATIO, arScale);
-}
-
-function updateCornerHandles(arScale: number) {
-  cornerHandles.forEach((corner, handle) => {
-    handle.position.copyFrom(corner.scale(arScale));
-    handle.position.y = cornerHandleY * arScale + cornerHandleHeight / 2;
-  });
-}
-
-function createCornerHandles() {
-  if (cornerHandles.size) return;
-  const canvas = document.createElement("canvas");
-  canvas.width = 512;
-  canvas.height = 256;
-  const ctx = canvas.getContext("2d")!;
-  ctx.fillStyle = "#88451f";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = "#6c351a";
-  for (let row = 0; row < canvas.height; row += 8) {
-    for (let column = 0; column < canvas.width; column += 8) {
-      ctx.beginPath();
-      ctx.arc(column + (row % 16 === 0 ? 2 : 6), row + 2, 1.4, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-  ctx.fillStyle = "#f4efe5";
-  for (const fraction of [0.16, 0.84]) {
-    ctx.fillRect(canvas.width * fraction - 5, 0, 10, canvas.height);
-  }
-  for (const fraction of [0, 0.5, 1]) {
-    const laceY = canvas.height * fraction;
-    ctx.fillRect(canvas.width * 0.35, laceY - 2, canvas.width * 0.3, 4);
-    for (let index = 0; index < 6; index++) {
-      ctx.fillRect(canvas.width * (0.37 + index * 0.052) - 2, laceY - 12, 4, 24);
-    }
-  }
-  const texture = new DynamicTexture("tabletopFootballTexture", canvas, scene, true);
-  texture.update(false);
-  texture.anisotropicFilteringLevel = 8;
-  const material = new StandardMaterial("tabletopCornerHandleMaterial", scene);
-  material.diffuseTexture = texture;
-  material.emissiveColor = new Color3(0.12, 0.07, 0.03);
-  material.specularColor = new Color3(0.12, 0.12, 0.12);
-  const shape = Array.from({ length: 17 }, (_, index) => new Vector3(
-    cornerHandleHeight / 2 * Math.sin(Math.PI * index / 16),
-    0.09 * (index / 16 - 0.5),
-    0
-  ));
-  const halfWidth = (FIELD_WIDTH_YARDS + GROUND_TABLETOP_MARGIN_YARDS * 2) / 2;
-  const halfLength = (FIELD_LENGTH_YARDS + GROUND_TABLETOP_MARGIN_YARDS * 2) / 2;
-  for (const x of [-halfWidth, halfWidth]) {
-    for (const z of [-halfLength, halfLength]) {
-      const handle = MeshBuilder.CreateLathe(
-        "tabletopCornerHandle",
-        { shape, tessellation: 24, cap: Mesh.NO_CAP },
-        scene
-      );
-      handle.parent = arPivot;
-      handle.rotation.z = Math.PI / 2;
-      handle.material = material;
-      handle.visibility = 0;
-      cornerHandles.set(handle, new Vector3(x, cornerHandleY, z));
-    }
-  }
-}
-
-export function getTabletopCorner(handle: AbstractMesh | null): Vector3 | null {
-  return arTabletopModeActive && handle?.isEnabled() ? cornerHandles.get(handle)?.clone() ?? null : null;
-}
-
-export function setTabletopCornerHandlesVisible(visible: boolean) {
-  cornerHandles.forEach((_, handle) => {
-    handle.visibility = visible && arTabletopModeActive ? 1 : 0;
-  });
 }
 
 // The horizon ground only makes sense at full 1:1 VR scale — hide it whenever
@@ -179,7 +97,6 @@ export function setARScale(scale: number) {
   arRoot.scaling.setAll(clampedScale);
   globalScaleRoot.scaling.setAll(clampedScale);
   updateGroundFootprint(clampedScale);
-  updateCornerHandles(clampedScale);
   updateHiddenMeshVisibility(clampedScale);
   return clampedScale;
 }
@@ -236,8 +153,6 @@ export function captureContentRootMeshes() {
 export function enterARTabletopMode() {
   if (arTabletopModeActive) return;
   arTabletopModeActive = true;
-  createCornerHandles();
-  cornerHandles.forEach((_, handle) => handle.setEnabled(true));
   contentRootMeshes.forEach((mesh) => {
     if (!AR_HIDDEN_MESH_NAMES.has(mesh.name)) {
       mesh.setParent(arRoot);
@@ -256,7 +171,6 @@ export function enterARTabletopMode() {
 export function exitARTabletopMode() {
   if (!arTabletopModeActive) return;
   arTabletopModeActive = false;
-  cornerHandles.forEach((_, handle) => handle.setEnabled(false));
   contentRootMeshes.forEach((mesh) => {
     if (!AR_HIDDEN_MESH_NAMES.has(mesh.name)) {
       mesh.setParent(globalScaleRoot);

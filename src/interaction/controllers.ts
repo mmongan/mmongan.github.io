@@ -88,8 +88,8 @@ export function removeActiveController(
   activeControllers.delete(handedness);
 }
 
-export function updateARResizeFromControllers(cornerDragActive: boolean) {
-  if (floorCalibrationToggle?.checked || cornerDragActive) {
+export function updateARResizeFromControllers(grabActive: boolean) {
+  if (floorCalibrationToggle?.checked || grabActive) {
     resetPinchState();
     return;
   }

@@ -20,8 +20,6 @@ import {
   getARScaleRange,
   getARRotation,
   attachToARTransform,
-  getTabletopCorner,
-  setTabletopCornerHandlesVisible,
   isARTabletopModeActive,
 } from '../xr/ar';
 import { scene } from '../scene/engine';
@@ -158,7 +156,6 @@ export function removeActiveController(controller: WebXRInputSource) {
     finishMarcherGrab(handedness, false);
     placementDrafts.get(handedness)?.dispose();
     placementDrafts.delete(handedness);
-    cornerDrags.delete(handedness);
     triggerHeld.delete(handedness);
     gripHeld.delete(handedness);
     stopRotationHandleDrag(handedness);
@@ -166,7 +163,7 @@ export function removeActiveController(controller: WebXRInputSource) {
 }
 
 export function updateARResizeFromControllers() {
-  resizeFromControllers(cornerDrags.size > 0 || marcherGrabs.size > 0);
+  resizeFromControllers(marcherGrabs.size > 0);
 }
 
 // The path/robot live under the shared AR transform so they scale, move, and
@@ -996,16 +993,6 @@ function executeMenuAction(hit: NonNullable<ReturnType<typeof getHandMenuHit>>) 
       break;
   }
 }
-type CornerDrag = {
-  opposite: Vector3;
-  diagonal: Vector3;
-  localOpposite: Vector3;
-  localCorner: Vector3;
-  point: Vector3;
-  source: "hand" | "controller";
-  rayDistance: number;
-  offset: Vector3;
-};
 const handInteraction = createHandInteraction({
   pathRoot,
   robotPaths,
@@ -1038,7 +1025,7 @@ const handInteraction = createHandInteraction({
     currentPathPoints = [];
   },
 });
-const { cornerDrags, marcherGrabs } = handInteraction;
+const { marcherGrabs } = handInteraction;
 
 export function setHandTracking(tracking: WebXRHandTracking | null) {
   handInteraction.setHandTracking(tracking);
@@ -1068,24 +1055,6 @@ function moveMarcherGrab(handedness: string, point: Vector3) {
 
 function finishMarcherGrab(handedness: string, commit: boolean) {
   handInteraction.finishMarcherGrab(handedness, commit);
-}
-
-function beginCornerDrag(
-  handedness: string,
-  handle: AbstractMesh,
-  point: Vector3,
-  source: "hand" | "controller",
-  rayDistance = 0
-) {
-  handInteraction.beginCornerDrag(handedness, handle, point, source, rayDistance);
-}
-
-function moveCornerDrag(drag: CornerDrag, point: Vector3) {
-  handInteraction.moveCornerDrag(drag, point);
-}
-
-function updateCornerDrags() {
-  handInteraction.updateCornerDrags();
 }
 
 export function updateTabletopHands() {
@@ -1167,7 +1136,7 @@ export function updateRobotPathFromControllers() {
       return;
     }
 
-    if (gripPressed && !wasGripPressed && isTabletopInteractionMode() && cornerDrags.size === 0 &&
+    if (gripPressed && !wasGripPressed && isTabletopInteractionMode() &&
       !menuInteractionHeld.get(handedness)) {
       const ray = getControllerRay(controller);
       const pick = scene.pickWithRay(ray, (mesh) => findRobotRoot(mesh) !== null);
@@ -1191,18 +1160,6 @@ export function updateRobotPathFromControllers() {
       return;
     }
 
-    const cornerDrag = cornerDrags.get(handedness);
-    if (cornerDrag?.source === "hand") return;
-    if (!isPressed && wasPressed && cornerDrag) {
-      cornerDrags.delete(handedness);
-      return;
-    }
-    if (isPressed && cornerDrag?.source === "controller") {
-      const ray = getControllerRay(controller);
-      moveCornerDrag(cornerDrag, ray.origin.add(ray.direction.scale(cornerDrag.rayDistance)));
-      return;
-    }
-
     if (isPressed && !wasPressed) {
       const ray = getControllerRay(controller);
       const tempoPick = scene.pickWithRay(ray, isScoreboardTempoScreen);
@@ -1216,18 +1173,6 @@ export function updateRobotPathFromControllers() {
       }
       if (tempoPick?.hit && updateScoreboardHornPoseFromPick(tempoPick)) {
         menuInteractionHeld.set(handedness, true);
-        return;
-      }
-      const cornerPick = scene.pickWithRay(ray, (mesh) => getTabletopCorner(mesh) !== null);
-      const corner = getTabletopCorner(cornerPick?.pickedMesh ?? null);
-      if (corner && cornerPick?.pickedMesh && cornerPick.pickedPoint) {
-        beginCornerDrag(
-          handedness,
-          cornerPick.pickedMesh,
-          cornerPick.pickedPoint,
-          "controller",
-          Vector3.Distance(ray.origin, cornerPick.pickedPoint)
-        );
         return;
       }
       pathLine?.dispose(false, true);
@@ -1524,7 +1469,6 @@ export function updateRobotPathFromControllers() {
       drawingRobot = null;
     }
   });
-  updateCornerDrags();
 }
 
 // Read-only access for other modules (e.g. the palm-up hand menu) that need

@@ -1,7 +1,6 @@
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
 import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
 import { Matrix, Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
-import { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.pure';
 import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
 import { WebXRHandJoint, WebXRHandTracking } from '@babylonjs/core/XR/features/WebXRHandTracking.pure';
@@ -13,8 +12,6 @@ import {
   setARRotation,
   getARScaleRange,
   getARRotation,
-  getTabletopCorner,
-  setTabletopCornerHandlesVisible,
   isARTabletopModeActive,
 } from '../xr/ar';
 import { scene } from '../scene/engine';
@@ -40,17 +37,6 @@ export interface MarcherGrab {
   offset: Vector3;
   originalPosition: Vector3;
   rayDistance: number;
-}
-
-export interface CornerDrag {
-  opposite: Vector3;
-  diagonal: Vector3;
-  localOpposite: Vector3;
-  localCorner: Vector3;
-  point: Vector3;
-  source: 'hand' | 'controller';
-  rayDistance: number;
-  offset: Vector3;
 }
 
 export interface HandPathDependencies {
@@ -107,16 +93,6 @@ export function createHandInteraction(paths: HandPathDependencies) {
     cancelControllerPathDrawing,
   } = paths;
 
-  const cornerDrags = new Map<string, CornerDrag>();
-  let twoCornerGesture: {
-    first: CornerDrag;
-    second: CornerDrag;
-    startDistance: number;
-    startYaw: number;
-    startScale: number;
-    startRotation: number;
-    localAnchor: Vector3;
-  } | null = null;
   const handPinches = new Map<string, boolean>();
   let sceneGesture: {
     startDistance: number;
@@ -267,86 +243,6 @@ export function createHandInteraction(paths: HandPathDependencies) {
       !!findMarcherNearHand(point) || (isPlacementMode() && !!getPinchPlacementPoint(point));
   }
 
-  function beginCornerDrag(
-    handedness: string,
-    handle: AbstractMesh,
-    point: Vector3,
-    source: 'hand' | 'controller',
-    rayDistance = 0
-  ) {
-    const corner = getTabletopCorner(handle);
-    if (!corner) return;
-    const localOpposite = new Vector3(-corner.x, corner.y, -corner.z);
-    const rotation = getARRotation();
-    const scale = getARScale();
-    const opposite = getARPosition().add(rotateAroundY(localOpposite.scale(scale), rotation));
-    cornerDrags.set(handedness, {
-      opposite,
-      diagonal: rotateAroundY(corner.subtract(localOpposite), rotation),
-      localOpposite,
-      localCorner: corner,
-      point: point.clone(),
-      source,
-      rayDistance,
-      offset: handle.getAbsolutePosition().subtract(point),
-    });
-    setTabletopCornerHandlesVisible(true);
-  }
-
-  function moveCornerDrag(drag: CornerDrag, point: Vector3) {
-    drag.point.copyFrom(point);
-  }
-
-  function updateCornerDrags() {
-    if (!isARTabletopModeActive()) return;
-    const [first, second] = [...cornerDrags.values()];
-    if (first && second) {
-      const distance = Math.hypot(second.point.x - first.point.x, second.point.z - first.point.z);
-      if (distance < 0.02) return;
-      const midpoint = first.point.add(second.point).scale(0.5);
-      const yaw = getControllerYaw(first.point, second.point);
-      if (!twoCornerGesture || twoCornerGesture.first !== first || twoCornerGesture.second !== second) {
-        const startScale = getARScale();
-        const startRotation = getARRotation();
-        twoCornerGesture = {
-          first,
-          second,
-          startDistance: distance,
-          startYaw: yaw,
-          startScale,
-          startRotation,
-          localAnchor: rotateAroundY(midpoint.subtract(getARPosition()), -startRotation).scale(1 / startScale),
-        };
-        return;
-      }
-      const scale = setARScale(twoCornerGesture.startScale * distance / twoCornerGesture.startDistance);
-      const yawDelta = yaw - twoCornerGesture.startYaw;
-      const rotation = twoCornerGesture.startRotation + Math.atan2(Math.sin(yawDelta), Math.cos(yawDelta));
-      setARRotation(rotation);
-      setARPosition(midpoint.subtract(rotateAroundY(twoCornerGesture.localAnchor.scale(scale), rotation)));
-      return;
-    }
-
-    if (twoCornerGesture) {
-      twoCornerGesture = null;
-      if (first) {
-        const rotation = getARRotation();
-        const scale = getARScale();
-        first.opposite = getARPosition().add(rotateAroundY(first.localOpposite.scale(scale), rotation));
-        first.diagonal = rotateAroundY(first.localCorner.subtract(first.localOpposite), rotation);
-        first.offset = getARPosition().add(rotateAroundY(first.localCorner.scale(scale), rotation)).subtract(first.point);
-      }
-      return;
-    }
-    if (!first) return;
-    const drag = first;
-    const displacement = drag.point.add(drag.offset).subtract(drag.opposite);
-    const scale = Vector3.Dot(displacement, drag.diagonal) / drag.diagonal.lengthSquared();
-    const clampedScale = setARScale(scale);
-    const oppositeOffset = rotateAroundY(drag.localOpposite.scale(clampedScale), getARRotation());
-    setARPosition(drag.opposite.subtract(oppositeOffset));
-  }
-
   function updateTabletopHands() {
     if (floorCalibrationToggle?.checked || !handTracking) {
       sceneGesture = null;
@@ -371,8 +267,6 @@ export function createHandInteraction(paths: HandPathDependencies) {
         if (marcherGrabs.get(handedness)?.source === 'hand') finishMarcherGrab(handedness, false);
         handPinches.set(handedness, true);
       }
-      cornerDrags.clear();
-      twoCornerGesture = null;
       const distance = Vector3.Distance(left, right);
       if (distance < 0.05) return;
       const midpoint = left.add(right).scale(0.5);
@@ -399,7 +293,6 @@ export function createHandInteraction(paths: HandPathDependencies) {
       if (!hand) {
         handPinches.delete(handedness);
         if (marcherGrabs.get(handedness)?.source === 'hand') finishMarcherGrab(handedness, false);
-        if (cornerDrags.get(handedness)?.source === 'hand') cornerDrags.delete(handedness);
         continue;
       }
       const thumb = hand.getJointMesh(WebXRHandJoint.THUMB_TIP).getAbsolutePosition();
@@ -410,7 +303,6 @@ export function createHandInteraction(paths: HandPathDependencies) {
       handPinches.set(handedness, pinching);
       if (!pinching) {
         if (marcherGrabs.get(handedness)?.source === 'hand') finishMarcherGrab(handedness, true);
-        if (cornerDrags.get(handedness)?.source === 'hand') cornerDrags.delete(handedness);
         continue;
       }
       const point = thumb.add(index).scale(0.5);
@@ -419,31 +311,18 @@ export function createHandInteraction(paths: HandPathDependencies) {
         moveMarcherGrab(handedness, point);
         continue;
       }
-      if (marcherGrab) continue;
-      const drag = cornerDrags.get(handedness);
-      if (drag?.source === 'hand') {
-        moveCornerDrag(drag, point);
-      } else if (!drag && !wasPinching) {
-        const pick = scene.meshes.find((mesh) =>
-          getTabletopCorner(mesh) && Vector3.Distance(mesh.getAbsolutePosition(), point) < 0.07
-        );
-        if (pick) {
-          beginCornerDrag(handedness, pick, point, 'hand');
-        } else {
-          const robot = findMarcherNearHand(point);
-          if (robot) beginMarcherGrab(handedness, robot, point, 'hand');
-          else if (isPlacementMode()) {
-            const position = getPinchPlacementPoint(point);
-            if (position) {
-              const draft = createStandingMarcher(position);
-              handPlacementDrafts.add(draft);
-              beginMarcherGrab(handedness, draft, point, 'hand');
-            }
-          }
+      if (marcherGrab || wasPinching) continue;
+      const robot = findMarcherNearHand(point);
+      if (robot) beginMarcherGrab(handedness, robot, point, 'hand');
+      else if (isPlacementMode()) {
+        const position = getPinchPlacementPoint(point);
+        if (position) {
+          const draft = createStandingMarcher(position);
+          handPlacementDrafts.add(draft);
+          beginMarcherGrab(handedness, draft, point, 'hand');
         }
       }
     }
-    updateCornerDrags();
   }
 
   function finishFingerPath(commit: boolean) {
@@ -471,7 +350,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
   function getFingerFieldPoint(handedness: 'left' | 'right', touching: boolean) {
     const hand = handTracking?.getHandByHandedness(handedness);
     const field = scene.getMeshByName('field');
-    if (!hand || !field || !field.isEnabled() || cornerDrags.size > 0 || marcherGrabs.size > 0) return null;
+    if (!hand || !field || !field.isEnabled() || marcherGrabs.size > 0) return null;
     const finger = hand.getJointMesh(WebXRHandJoint.INDEX_FINGER_TIP).getAbsolutePosition();
     const thumb = hand.getJointMesh(WebXRHandJoint.THUMB_TIP).getAbsolutePosition();
     if (Vector3.Distance(finger, thumb) < 0.04) return null;
@@ -517,7 +396,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
     if (!stroke) return;
     const point = getFingerFieldPoint(stroke.handedness, true);
     if (!point) {
-      finishFingerPath(cornerDrags.size === 0);
+      finishFingerPath(true);
       return;
     }
     if (!stroke.robot) stroke.robot = createStandingMarcher(point);
@@ -555,9 +434,6 @@ export function createHandInteraction(paths: HandPathDependencies) {
     handTracking = tracking;
     sceneGesture = null;
     handPinches.clear();
-    cornerDrags.clear();
-    twoCornerGesture = null;
-    setTabletopCornerHandlesVisible(false);
   }
 
   function setHandFloorContact(handedness: string, touching: boolean) {
@@ -578,8 +454,6 @@ export function createHandInteraction(paths: HandPathDependencies) {
       [...marcherGrabs.keys()].forEach((handedness) => finishMarcherGrab(handedness, false));
       placementDrafts.forEach((robot) => robot.dispose());
       placementDrafts.clear();
-      cornerDrags.clear();
-      twoCornerGesture = null;
       cancelControllerPathDrawing();
     }
     if (!isTabletopInteractionMode()) {
@@ -587,33 +461,21 @@ export function createHandInteraction(paths: HandPathDependencies) {
         if (grab.source === 'controller') finishMarcherGrab(handedness, false);
       });
     }
-    if (!isARTabletopModeActive()) {
-      cornerDrags.clear();
-      twoCornerGesture = null;
-    }
-    setTabletopCornerHandlesVisible(cornerDrags.size > 0);
   });
 
   return {
-    beginCornerDrag,
     beginMarcherGrab,
-    cancelCornerDrag: (handedness: string) => cornerDrags.delete(handedness),
     consumeFloorCalibrationGesture,
-    cornerDrags,
     finishFingerPath,
     finishMarcherGrab,
-    getCornerDrag: (handedness: string) => cornerDrags.get(handedness),
     getMarcherGrab: (handedness: string) => marcherGrabs.get(handedness),
     getMarcherGrabHandedness: () => [...marcherGrabs.keys()],
     marcherGrabs,
     isFingerPathPlacement: () => fingerPath?.placement ?? false,
     isHandMarcherInteraction,
-    hasCornerDrags: () => cornerDrags.size > 0,
-    moveCornerDrag,
     moveMarcherGrab,
     setHandFloorContact,
     setHandTracking,
-    updateCornerDrags,
     updateHandPathDrawing,
     updateTabletopHands,
   };
