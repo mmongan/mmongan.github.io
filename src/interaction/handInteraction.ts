@@ -96,6 +96,9 @@ export function createHandInteraction(paths: HandPathDependencies) {
   } = paths;
 
   const handPinches = new Map<string, boolean>();
+  // Hands whose current pinch has grabbed or handed off a marcher; while either
+  // hand is in this set, two pinches act independently instead of moving the scene.
+  const marcherPinchHands = new Set<string>();
   let sceneGesture: {
     startSurfaceY: number;
     startMidpointY: number;
@@ -205,13 +208,17 @@ export function createHandInteraction(paths: HandPathDependencies) {
     if (grab.robot === getSelectedRobot()) refreshStepHandles();
   }
 
-  function findMarcherNearHand(point: Vector3) {
+  function findMarcherNearHand(point: Vector3, handoffFrom?: string): TransformNode | null {
     let nearest: TransformNode | null = null;
     let nearestDistance = 0.025;
+    const handoffRobot = handoffFrom && marcherGrabs.get(handoffFrom)?.source === 'hand'
+      ? marcherGrabs.get(handoffFrom)!.robot
+      : null;
     scene.meshes.forEach((mesh) => {
       if (!mesh.isEnabled() || !mesh.isVisible || !mesh.isPickable) return;
       const robot = findRobotRoot(mesh);
-      if (!robot || robot === fingerPath?.robot || [...marcherGrabs.values()].some((grab) => grab.robot === robot)) return;
+      if (!robot || robot === fingerPath?.robot) return;
+      if (robot !== handoffRobot && [...marcherGrabs.values()].some((grab) => grab.robot === robot)) return;
       mesh.computeWorldMatrix(true);
       const bounds = mesh.getBoundingInfo().boundingBox;
       const distance = Math.hypot(
@@ -243,8 +250,25 @@ export function createHandInteraction(paths: HandPathDependencies) {
   }
 
   function isHandMarcherInteraction(handedness: string, point: Vector3) {
-    return marcherGrabs.get(handedness)?.source === 'hand' ||
+    return marcherPinchHands.has(handedness) ||
+      [...marcherGrabs.values()].some((grab) => grab.source === 'hand') ||
       !!findMarcherNearHand(point) || (isPlacementMode() && !!getPinchPlacementPoint(point));
+  }
+
+  function otherHand(handedness: 'left' | 'right') {
+    return handedness === 'left' ? 'right' : 'left';
+  }
+
+  // Passes a marcher held by the other hand to this hand, keeping its original
+  // position (for cancel) and placement-draft status.
+  function handOffMarcherGrab(handedness: 'left' | 'right', point: Vector3) {
+    const from = otherHand(handedness);
+    const grab = marcherGrabs.get(from);
+    if (grab?.source !== 'hand' || findMarcherNearHand(point, from) !== grab.robot) return false;
+    marcherGrabs.delete(from);
+    grab.robot.computeWorldMatrix(true);
+    marcherGrabs.set(handedness, { ...grab, offset: grab.robot.getAbsolutePosition().subtract(point) });
+    return true;
   }
 
   function updateTabletopHands() {
@@ -265,7 +289,10 @@ export function createHandInteraction(paths: HandPathDependencies) {
     }
     const left = pinchedPoints.get('left');
     const right = pinchedPoints.get('right');
-    if (left && right) {
+    const marcherHandsBusy = !sceneGesture && (
+      marcherPinchHands.size > 0 || [...marcherGrabs.values()].some((grab) => grab.source === 'hand')
+    );
+    if (left && right && !marcherHandsBusy) {
       finishFingerPath(false);
       for (const handedness of ['left', 'right']) {
         if (marcherGrabs.get(handedness)?.source === 'hand') finishMarcherGrab(handedness, false);
@@ -301,6 +328,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
       const hand = handTracking.getHandByHandedness(handedness);
       if (!hand) {
         handPinches.delete(handedness);
+        marcherPinchHands.delete(handedness);
         if (marcherGrabs.get(handedness)?.source === 'hand') finishMarcherGrab(handedness, false);
         continue;
       }
@@ -311,6 +339,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
       const pinching = distance > 0.002 && distance < (wasPinching ? 0.04 : 0.025);
       handPinches.set(handedness, pinching);
       if (!pinching) {
+        marcherPinchHands.delete(handedness);
         if (marcherGrabs.get(handedness)?.source === 'hand') finishMarcherGrab(handedness, true);
         continue;
       }
@@ -321,14 +350,21 @@ export function createHandInteraction(paths: HandPathDependencies) {
         continue;
       }
       if (marcherGrab || wasPinching) continue;
+      if (handOffMarcherGrab(handedness, point)) {
+        marcherPinchHands.add(handedness);
+        continue;
+      }
       const robot = findMarcherNearHand(point);
-      if (robot) beginMarcherGrab(handedness, robot, point, 'hand');
-      else if (isPlacementMode()) {
+      if (robot) {
+        beginMarcherGrab(handedness, robot, point, 'hand');
+        marcherPinchHands.add(handedness);
+      } else if (isPlacementMode()) {
         const position = getPinchPlacementPoint(point);
         if (position) {
           const draft = createStandingMarcher(position);
           handPlacementDrafts.add(draft);
           beginMarcherGrab(handedness, draft, point, 'hand');
+          marcherPinchHands.add(handedness);
         }
       }
     }
@@ -443,6 +479,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
     handTracking = tracking;
     sceneGesture = null;
     handPinches.clear();
+    marcherPinchHands.clear();
   }
 
   function setHandFloorContact(handedness: string, touching: boolean) {
@@ -459,6 +496,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
   scene.onBeforeRenderObservable.add(() => {
     if (floorCalibrationToggle?.checked) {
       sceneGesture = null;
+      marcherPinchHands.clear();
       finishFingerPath(false);
       [...marcherGrabs.keys()].forEach((handedness) => finishMarcherGrab(handedness, false));
       placementDrafts.forEach((robot) => robot.dispose());
