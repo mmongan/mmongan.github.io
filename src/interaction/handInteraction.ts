@@ -1,5 +1,6 @@
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
 import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
+import { Axis } from '@babylonjs/core/Maths/math.axis';
 import { Matrix, Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
 import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
@@ -38,6 +39,9 @@ export interface MarcherGrab {
   source: 'hand' | 'controller';
   offset: Vector3;
   originalPosition: Vector3;
+  originalRotationY: number;
+  initialRotationY: number;
+  initialFacingYaw: number | null;
   rayDistance: number;
 }
 
@@ -55,6 +59,7 @@ export interface HandPathDependencies {
   getSelectedRobot: () => TransformNode | null;
   selectRobot: (robot: TransformNode | null) => void;
   createStandingMarcher: (position: Vector3) => TransformNode;
+  createHandFormation: (anchorRobot: TransformNode, start: Vector3, end: Vector3) => void;
   updateRobotPathLine: (robot: TransformNode, points: Vector3[]) => void;
   createTubeLine: (
     name: string,
@@ -85,6 +90,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
     getSelectedRobot,
     selectRobot,
     createStandingMarcher,
+    createHandFormation,
     updateRobotPathLine,
     createTubeLine,
     createSegment,
@@ -109,6 +115,12 @@ export function createHandInteraction(paths: HandPathDependencies) {
     localAnchor: Vector3;
   } | null = null;
   const marcherGrabs = new Map<string, MarcherGrab>();
+  let formationPull: {
+    anchorHand: 'left' | 'right';
+    pullHand: 'left' | 'right';
+    robot: TransformNode;
+    endPoint: Vector3;
+  } | null = null;
   const handPlacementDrafts = new Set<TransformNode>();
   let handTracking: WebXRHandTracking | null = null;
   const floorContactHands = new Set<string>();
@@ -126,12 +138,32 @@ export function createHandInteraction(paths: HandPathDependencies) {
     return getARScale() < getARScaleRange().max;
   }
 
+  function getFacingYaw(direction: Vector3): number | null {
+    pathRoot.computeWorldMatrix(true);
+    const localDirection = Vector3.TransformNormal(
+      direction,
+      Matrix.Invert(pathRoot.getWorldMatrix())
+    );
+    if (localDirection.x * localDirection.x + localDirection.z * localDirection.z < 1e-6) return null;
+    return Math.atan2(localDirection.x, localDirection.z);
+  }
+
+  function getHandFacingYaw(handedness: string): number | null {
+    if (handedness !== 'left' && handedness !== 'right') return null;
+    const hand = handTracking?.getHandByHandedness(handedness);
+    if (!hand) return null;
+    const wrist = hand.getJointMesh(WebXRHandJoint.WRIST).getAbsolutePosition();
+    const middleFinger = hand.getJointMesh(WebXRHandJoint.MIDDLE_FINGER_METACARPAL).getAbsolutePosition();
+    return getFacingYaw(middleFinger.subtract(wrist));
+  }
+
   function beginMarcherGrab(
     handedness: string,
     robot: TransformNode,
     point: Vector3,
     source: 'hand' | 'controller',
-    rayDistance = 0
+    rayDistance = 0,
+    facingYaw: number | null = null
   ) {
     if ([...marcherGrabs.values()].some((grab) => grab.robot === robot) || robot === fingerPath?.robot) return;
     robot.computeWorldMatrix(true);
@@ -139,12 +171,15 @@ export function createHandInteraction(paths: HandPathDependencies) {
       robot, source, rayDistance,
       offset: robot.getAbsolutePosition().subtract(point),
       originalPosition: robot.position.clone(),
+      originalRotationY: robot.rotation.y,
+      initialRotationY: robot.rotation.y,
+      initialFacingYaw: facingYaw,
     });
     setRobotHeld(robot, true);
     selectRobot(robot);
   }
 
-  function moveMarcherGrab(handedness: string, point: Vector3) {
+  function moveMarcherGrab(handedness: string, point: Vector3, facingYaw: number | null = null) {
     const grab = marcherGrabs.get(handedness);
     if (!grab || grab.robot.isDisposed()) {
       marcherGrabs.delete(handedness);
@@ -154,6 +189,10 @@ export function createHandInteraction(paths: HandPathDependencies) {
     grab.robot.position.copyFrom(Vector3.TransformCoordinates(
       point.add(grab.offset), Matrix.Invert(pathRoot.getWorldMatrix())
     ));
+    if (facingYaw !== null && grab.initialFacingYaw !== null) {
+      const yawDelta = facingYaw - grab.initialFacingYaw;
+      grab.robot.rotation.y = grab.initialRotationY + Math.atan2(Math.sin(yawDelta), Math.cos(yawDelta));
+    }
   }
 
   function finishMarcherGrab(handedness: string, commit: boolean) {
@@ -168,6 +207,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
         return;
       }
       grab.robot.position.copyFrom(grab.originalPosition);
+      grab.robot.rotation.y = grab.originalRotationY;
       setRobotHeld(grab.robot, false);
       return;
     }
@@ -249,6 +289,26 @@ export function createHandInteraction(paths: HandPathDependencies) {
     return snapToStepGrid(position);
   }
 
+  function getFormationFieldPoint(point: Vector3) {
+    const field = scene.getMeshByName('field');
+    if (!field?.isEnabled()) return null;
+    field.computeWorldMatrix(true);
+    const local = Vector3.TransformCoordinates(point, Matrix.Invert(field.getWorldMatrix()));
+    local.x = Math.min(FIELD_WIDTH_YARDS / 2, Math.max(-FIELD_WIDTH_YARDS / 2, local.x));
+    local.z = Math.min(FIELD_LENGTH_YARDS / 2, Math.max(-FIELD_LENGTH_YARDS / 2, local.z));
+    local.y = 0;
+    const onField = Vector3.TransformCoordinates(local, field.getWorldMatrix());
+    pathRoot.computeWorldMatrix(true);
+    const position = Vector3.TransformCoordinates(onField, Matrix.Invert(pathRoot.getWorldMatrix()));
+    position.y += 0.02;
+    return snapToStepGrid(position);
+  }
+
+  function getHandDraftPosition(point: Vector3) {
+    pathRoot.computeWorldMatrix(true);
+    return Vector3.TransformCoordinates(point, Matrix.Invert(pathRoot.getWorldMatrix()));
+  }
+
   function isHandMarcherInteraction(handedness: string, point: Vector3) {
     return marcherPinchHands.has(handedness) ||
       [...marcherGrabs.values()].some((grab) => grab.source === 'hand') ||
@@ -259,21 +319,54 @@ export function createHandInteraction(paths: HandPathDependencies) {
     return handedness === 'left' ? 'right' : 'left';
   }
 
-  // Passes a marcher held by the other hand to this hand, keeping its original
-  // position (for cancel) and placement-draft status.
-  function handOffMarcherGrab(handedness: 'left' | 'right', point: Vector3) {
+  function beginFormationPull(handedness: 'left' | 'right', point: Vector3) {
     const from = otherHand(handedness);
     const grab = marcherGrabs.get(from);
     if (grab?.source !== 'hand' || findMarcherNearHand(point, from) !== grab.robot) return false;
-    marcherGrabs.delete(from);
-    grab.robot.computeWorldMatrix(true);
-    marcherGrabs.set(handedness, { ...grab, offset: grab.robot.getAbsolutePosition().subtract(point) });
+    formationPull = {
+      anchorHand: from,
+      pullHand: handedness,
+      robot: grab.robot,
+      endPoint: point.clone(),
+    };
+    marcherPinchHands.add(from);
+    marcherPinchHands.add(handedness);
     return true;
+  }
+
+  function finishFormationPull(commit: boolean) {
+    const pull = formationPull;
+    formationPull = null;
+    if (!pull) return;
+    marcherPinchHands.delete(pull.pullHand);
+    const grab = marcherGrabs.get(pull.anchorHand);
+    if (!grab || grab.robot !== pull.robot) return;
+    if (!commit) {
+      marcherPinchHands.delete(pull.anchorHand);
+      finishMarcherGrab(pull.anchorHand, false);
+      return;
+    }
+
+    const start = getFormationFieldPoint(pull.robot.getAbsolutePosition());
+    const end = getFormationFieldPoint(pull.endPoint);
+    if (!start || !end || Vector3.Distance(start, end) < 0.1) {
+      marcherPinchHands.delete(pull.anchorHand);
+      finishMarcherGrab(pull.anchorHand, true);
+      return;
+    }
+
+    marcherGrabs.delete(pull.anchorHand);
+    handPlacementDrafts.delete(pull.robot);
+    createHandFormation(pull.robot, start, end);
+    setRobotHeld(pull.robot, false);
+    selectRobot(pull.robot);
+    marcherPinchHands.delete(pull.anchorHand);
   }
 
   function updateTabletopHands() {
     if (floorCalibrationToggle?.checked || !handTracking) {
       sceneGesture = null;
+      finishFormationPull(false);
       return;
     }
     const pinchedPoints = new Map<string, Vector3>();
@@ -329,6 +422,10 @@ export function createHandInteraction(paths: HandPathDependencies) {
       if (!hand) {
         handPinches.delete(handedness);
         marcherPinchHands.delete(handedness);
+        if (formationPull && (formationPull.anchorHand === handedness || formationPull.pullHand === handedness)) {
+          finishFormationPull(false);
+          continue;
+        }
         if (marcherGrabs.get(handedness)?.source === 'hand') finishMarcherGrab(handedness, false);
         continue;
       }
@@ -340,32 +437,38 @@ export function createHandInteraction(paths: HandPathDependencies) {
       handPinches.set(handedness, pinching);
       if (!pinching) {
         marcherPinchHands.delete(handedness);
+        if (formationPull?.pullHand === handedness) {
+          finishFormationPull(true);
+          continue;
+        }
+        if (formationPull?.anchorHand === handedness) continue;
         if (marcherGrabs.get(handedness)?.source === 'hand') finishMarcherGrab(handedness, true);
         continue;
       }
       const point = thumb.add(index).scale(0.5);
+      if (formationPull?.pullHand === handedness) {
+        formationPull.endPoint.copyFrom(point);
+        continue;
+      }
+      const facingYaw = getHandFacingYaw(handedness);
       const marcherGrab = marcherGrabs.get(handedness);
       if (marcherGrab?.source === 'hand') {
-        moveMarcherGrab(handedness, point);
+        moveMarcherGrab(handedness, point, facingYaw);
         continue;
       }
       if (marcherGrab || wasPinching) continue;
-      if (handOffMarcherGrab(handedness, point)) {
-        marcherPinchHands.add(handedness);
+      if (beginFormationPull(handedness, point)) {
         continue;
       }
       const robot = findMarcherNearHand(point);
       if (robot) {
-        beginMarcherGrab(handedness, robot, point, 'hand');
+        beginMarcherGrab(handedness, robot, point, 'hand', 0, facingYaw);
         marcherPinchHands.add(handedness);
-      } else if (isPlacementMode()) {
-        const position = getPinchPlacementPoint(point);
-        if (position) {
-          const draft = createStandingMarcher(position);
-          handPlacementDrafts.add(draft);
-          beginMarcherGrab(handedness, draft, point, 'hand');
-          marcherPinchHands.add(handedness);
-        }
+      } else {
+        const draft = createStandingMarcher(getHandDraftPosition(point));
+        handPlacementDrafts.add(draft);
+        beginMarcherGrab(handedness, draft, point, 'hand', 0, facingYaw);
+        marcherPinchHands.add(handedness);
       }
     }
   }
@@ -473,6 +576,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
   function setHandTracking(tracking: WebXRHandTracking | null) {
     finishFingerPath(false);
     floorContactHands.clear();
+    finishFormationPull(false);
     [...marcherGrabs.entries()].forEach(([handedness, grab]) => {
       if (grab.source === 'hand') finishMarcherGrab(handedness, false);
     });
@@ -520,6 +624,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
     marcherGrabs,
     isFingerPathPlacement: () => fingerPath?.placement ?? false,
     isHandMarcherInteraction,
+    getFacingYaw,
     moveMarcherGrab,
     setHandFloorContact,
     setHandTracking,

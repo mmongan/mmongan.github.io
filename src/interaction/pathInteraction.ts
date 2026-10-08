@@ -51,6 +51,7 @@ import {
   setRobotCountPosition,
   setRobotHeld,
   placeRobot,
+  clearRobotPath,
   refreshCollisionMarkers,
   COLLISION_MARKER_RADIUS_YARDS,
   resetRobotSchedule,
@@ -498,6 +499,7 @@ interface Segment {
   // Formation-only: tap to copy this formation's curve into a path segment
   // so a robot marches single file through the same positions.
   copyHandle: Mesh | null;
+  anchorRobot?: TransformNode;
   robots: TransformNode[]; // formation: every robot in the rank; path: the one marching robot
 }
 
@@ -809,15 +811,22 @@ function rebuildSegmentContent(segment: Segment) {
   const curvePoints = buildCurvePoints(segment.controlPoints);
 
   if (segment.kind === "formation") {
-    segment.robots.forEach((robot) => robot.dispose());
-    segment.robots = [];
+    segment.robots.forEach((robot) => {
+      if (robot !== segment.anchorRobot) robot.dispose();
+    });
+    segment.robots = segment.anchorRobot ? [segment.anchorRobot] : [];
 
     const formationPoints =
       curvePoints.length >= 2 ? resampleLineEvenly(curvePoints, FORMATION_SPACING_YARDS) : curvePoints;
 
     formationPoints.forEach((point, index) => {      
-      const robotPrimitives = createLowPolyRobot(scene);
-      robotPrimitives.parent = pathRoot;
+      const robotPrimitives = index === 0 && segment.anchorRobot
+        ? segment.anchorRobot
+        : createLowPolyRobot(scene);
+      if (index !== 0 || !segment.anchorRobot) {
+        robotPrimitives.parent = pathRoot;
+        segment.robots.push(robotPrimitives);
+      }
       robotPrimitives.position.copyFrom(point);
       const next = formationPoints[index + 1];
       if (next) {
@@ -828,7 +837,6 @@ function rebuildSegmentContent(segment: Segment) {
         }
       }
       robotPrimitives.setEnabled(true);
-      segment.robots.push(robotPrimitives);
     });
     rebuildFormationConnections(segment);
   } else if (curvePoints.length >= 2) {
@@ -845,7 +853,12 @@ function rebuildSegmentContent(segment: Segment) {
 // builds its robot(s), curve line, and grab handles, and registers the handles
 // for picking. robots is the initial robot list for a "path" segment (its one
 // marching robot); pass [] for a "formation" segment (rebuilt below instead).
-function createSegment(kind: SegmentKind, controlPoints: Vector3[], robots: TransformNode[]): Segment {
+function createSegment(
+  kind: SegmentKind,
+  controlPoints: Vector3[],
+  robots: TransformNode[],
+  anchorRobot?: TransformNode
+): Segment {
   const line = createTubeLine("segmentLine", controlPoints, SEGMENT_COLORS[kind]);
 
   const moveHandle = createSegmentHandle(
@@ -868,7 +881,7 @@ function createSegment(kind: SegmentKind, controlPoints: Vector3[], robots: Tran
       ? createSegmentHandle("segmentCopyHandle", SEGMENT_MOVE_HANDLE_SIZE, new Color3(0.3, 0.9, 0.4))
       : null;
 
-  const segment: Segment = { kind, controlPoints, line, moveHandle, pointHandles, rotationHandles, copyHandle, robots };
+  const segment: Segment = { kind, controlPoints, line, moveHandle, pointHandles, rotationHandles, copyHandle, anchorRobot, robots };
   pointHandles.forEach((handle, index) => segmentPointHandleOwner.set(handle, { segment, index }));
   segmentMoveHandleOwner.set(moveHandle, segment);
   rotationHandles.forEach((handle) => segmentRotationHandleOwner.set(handle, segment));
@@ -879,6 +892,48 @@ function createSegment(kind: SegmentKind, controlPoints: Vector3[], robots: Tran
   segments.push(segment);
   if (kind === "path" && robots[0]) pathSegmentByRobot.set(robots[0], segment);
   return segment;
+}
+
+function removeRobotPath(robot: TransformNode) {
+  const oldPath = robotPaths.get(robot);
+  const segment = pathSegmentByRobot.get(robot);
+  if (segment) {
+    const index = segments.indexOf(segment);
+    if (index >= 0) segments.splice(index, 1);
+    pathLineOwner.delete(segment.line);
+    segment.line.dispose(false, true);
+    segment.moveHandle.dispose();
+    segment.pointHandles.forEach((handle) => handle.dispose());
+    segment.rotationHandles.forEach((handle) => handle.dispose());
+    segment.copyHandle?.dispose();
+    segmentMoveHandleOwner.delete(segment.moveHandle);
+    segment.pointHandles.forEach((handle) => segmentPointHandleOwner.delete(handle));
+    segment.rotationHandles.forEach((handle) => segmentRotationHandleOwner.delete(handle));
+    if (segment.copyHandle) segmentCopyHandleOwner.delete(segment.copyHandle);
+    pathSegmentByRobot.delete(robot);
+  }
+  const pathLine = robotPathLines.get(robot);
+  if (pathLine) {
+    pathLineOwner.delete(pathLine);
+    if (pathLine !== segment?.line) pathLine.dispose(false, true);
+    robotPathLines.delete(robot);
+  }
+  robotPaths.delete(robot);
+  if (oldPath) {
+    const storedIndex = storedPaths.indexOf(oldPath);
+    if (storedIndex >= 0) {
+      storedPaths.splice(storedIndex, 1);
+      saveStoredPaths(storedPaths);
+    }
+  }
+  clearRobotPath(robot);
+}
+
+function createHandFormation(anchorRobot: TransformNode, start: Vector3, end: Vector3) {
+  removeRobotPath(anchorRobot);
+  const segment = createSegment('formation', [start, end], [], anchorRobot);
+  refreshCollisionMarkers(scene);
+  selectRobot(segment.robots[0] ?? anchorRobot);
 }
 
 // Copies a formation's curve into a path segment for its first robot, so that
@@ -1007,6 +1062,7 @@ const handInteraction = createHandInteraction({
   getSelectedRobot: () => selectedRobot,
   selectRobot,
   createStandingMarcher,
+  createHandFormation,
   updateRobotPathLine,
   createTubeLine,
   createSegment,
@@ -1044,13 +1100,14 @@ function beginMarcherGrab(
   robot: TransformNode,
   point: Vector3,
   source: "hand" | "controller",
-  rayDistance = 0
+  rayDistance = 0,
+  facingYaw: number | null = null
 ) {
-  handInteraction.beginMarcherGrab(handedness, robot, point, source, rayDistance);
+  handInteraction.beginMarcherGrab(handedness, robot, point, source, rayDistance, facingYaw);
 }
 
-function moveMarcherGrab(handedness: string, point: Vector3) {
-  handInteraction.moveMarcherGrab(handedness, point);
+function moveMarcherGrab(handedness: string, point: Vector3, facingYaw: number | null = null) {
+  handInteraction.moveMarcherGrab(handedness, point, facingYaw);
 }
 
 function finishMarcherGrab(handedness: string, commit: boolean) {
@@ -1131,7 +1188,11 @@ export function updateRobotPathFromControllers() {
       if (!gripPressed) finishMarcherGrab(handedness, true);
       else {
         const ray = getControllerRay(controller);
-        moveMarcherGrab(handedness, ray.origin.add(ray.direction.scale(marcherGrab.rayDistance)));
+        moveMarcherGrab(
+          handedness,
+          ray.origin.add(ray.direction.scale(marcherGrab.rayDistance)),
+          handInteraction.getFacingYaw(ray.direction),
+        );
       }
       return;
     }
@@ -1147,7 +1208,8 @@ export function updateRobotPathFromControllers() {
           robot,
           pick.pickedPoint,
           "controller",
-          Vector3.Distance(ray.origin, pick.pickedPoint)
+          Vector3.Distance(ray.origin, pick.pickedPoint),
+          handInteraction.getFacingYaw(ray.direction),
         );
         return;
       }

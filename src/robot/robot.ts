@@ -829,6 +829,11 @@ export function getRobotCounts(robot: TransformNode): ReadonlyArray<RobotCount> 
   return players.get(robot)?.counts ?? null;
 }
 
+export function clearRobotPath(robot: TransformNode) {
+  players.delete(robot);
+  heldRobots.delete(robot);
+}
+
 export function setRobotHeld(robot: TransformNode, held: boolean) {
   if (held) {
     heldRobots.add(robot);
@@ -988,5 +993,4 @@ export function getGlobalProgress(): number | null {
   if (maxCountIndex < 1) return null;
   return globalPlayback.countIndex / maxCountIndex;
 }
-
 
