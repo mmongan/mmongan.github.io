@@ -20,6 +20,7 @@ import { scene } from '../scene/engine';
 import { xrModeInputs, getSelectedXRMode, floorCalibrationToggle, fullScaleVRButton, tabletopScaleButton, giantModeButton, roomWidthInput, roomLengthInput, sittingModeToggle } from '../ui/dom';
 import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS } from '../field/constants';
 import { enterARTabletopMode, exitARTabletopMode, getARPosition, getARScale, getARScaleRange, setARPosition, setARScale, setFieldHeightMode, getFieldHeightMode } from './ar';
+import { setHandModelTracking } from './handModel';
 import { setActiveController, removeActiveController, setHandTracking, getActiveControllers, consumeFloorCalibrationGesture, setHandFloorContact, isHandMarcherInteraction } from '../interaction/pathInteraction';
 
 RegisterWebXROculusTouchMotionController();
@@ -528,14 +529,7 @@ export function initXR(teleportGrid: Mesh) {
         optionalFeatures: true,
         handSupportOptions: {
           jointMeshes: { invisible: true },
-          handMeshes: {
-            customColors: {
-              base: new Color3(0.96, 0.96, 0.94),
-              fresnel: new Color3(1, 1, 0.98),
-              fingerColor: new Color3(0.9, 0.9, 0.88),
-              tipFresnel: new Color3(1, 1, 0.98),
-            },
-          },
+          handMeshes: { disableDefaultMeshes: true },
         },
         floorMeshes: getFieldFloorMeshes(),
         disableTeleportation: preferredMode === "immersive-ar",
@@ -558,6 +552,7 @@ export function initXR(teleportGrid: Mesh) {
         .getEnabledFeature(WebXRFeatureName.HAND_TRACKING) ?? null;
       handTrackingFeature = handTracking;
       setHandTracking(handTracking);
+      setHandModelTracking(handTracking);
 
       const teleportation = xrExperience.teleportation;
       updateTeleportationAvailability();
@@ -591,6 +586,7 @@ export function initXR(teleportGrid: Mesh) {
         if (state === WebXRState.ENTERING_XR || state === WebXRState.IN_XR) {
           if (state === WebXRState.ENTERING_XR) {
             setHandTracking(handTracking);
+            setHandModelTracking(handTracking);
           }
           if (preferredMode === "immersive-ar") {
             scene.clearColor = new Color4(0, 0, 0, 0);
@@ -614,6 +610,7 @@ export function initXR(teleportGrid: Mesh) {
           resetPlayerFloorOffset();
           postureHeightOffset = 0;
           setHandTracking(null);
+          setHandModelTracking(null);
           scene.clearColor = new Color4(0.03, 0.05, 0.09, 1);
           teleportGrid.setEnabled(false);
           exitARTabletopMode();
