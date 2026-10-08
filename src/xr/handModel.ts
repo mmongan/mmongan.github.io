@@ -1,6 +1,6 @@
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
 import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
-import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
+import { Matrix, Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
 import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
 import { VertexBuffer } from '@babylonjs/core/Buffers/buffer.pure';
 import { VertexData } from '@babylonjs/core/Meshes/mesh.vertexData';
@@ -45,6 +45,8 @@ const palmNormal = new Vector3();
 const tangent = new Vector3();
 const side = new Vector3();
 const across = new Vector3();
+const inverseParentWorld = new Matrix();
+const parentLocalPosition = new Vector3();
 
 function getMaterial() {
   if (!material) {
@@ -150,7 +152,12 @@ function writePositionXYZ(target: Float32Array, vertex: number, x: number, y: nu
 function updateHand(handedness: 'left' | 'right') {
   const hand = handTracking?.getHandByHandedness(handedness);
   const wrist = hand?.getJointMesh(WebXRHandJoint.WRIST);
-  if (!hand || !wrist?.parent || wrist.position.lengthSquared() === 0) {
+  if (!hand || !wrist) {
+    visuals.get(handedness)?.mesh.setEnabled(false);
+    return;
+  }
+  wrist.computeWorldMatrix(true);
+  if (wrist.getAbsolutePosition().lengthSquared() === 0) {
     visuals.get(handedness)?.mesh.setEnabled(false);
     return;
   }
@@ -170,9 +177,16 @@ function updateHand(handedness: 'left' | 'right') {
   const positions = new Map<WebXRHandJoint, Vector3>();
   const radii = new Map<WebXRHandJoint, number>();
   const trackedJoints = new Set([...PALM_JOINTS, ...FINGERS.flat()]);
+  if (wrist.parent) {
+    wrist.parent.computeWorldMatrix(true).invertToRef(inverseParentWorld);
+  } else {
+    Matrix.IdentityToRef(inverseParentWorld);
+  }
   trackedJoints.forEach((joint) => {
     const tracked = hand.getJointMesh(joint);
-    positions.set(joint, tracked.position);
+    tracked.computeWorldMatrix(true);
+    Vector3.TransformCoordinatesToRef(tracked.getAbsolutePosition(), inverseParentWorld, parentLocalPosition);
+    positions.set(joint, parentLocalPosition.clone());
     radii.set(joint, (tracked.scaling.x > 0 ? tracked.scaling.x : JOINT_RADIUS) * GLOVE_PADDING);
   });
 
