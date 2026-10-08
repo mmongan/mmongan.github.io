@@ -51,7 +51,7 @@ Builds the project, copies `dist/` into the repository root, then commits and pu
 - In VR floor/Giant mode, point a tracked hand at the field and pinch to teleport. Teleport preserves the field scale, and the controller teleport torus scales with the field. Teleport pauses during floor calibration and is disabled in tabletop mode, in AR, and whenever the field is smaller than 2 meters along its longest side, for both hands and controllers.
 - In VR or AR, use both controllers to move, rotate, and scale the stadium between tabletop and full size
 - Giant mode fits the field uniformly inside the configured room width and length (1-50 meters each; defaults to 4 by 5 meters). Use the Giant mode button in settings; changing room dimensions while active updates the fit. Field height and rotation are preserved, and tabletop/full-scale buttons exit Giant mode. Dimensions describe the field footprint, not the surrounding stadium or a detected safety boundary.
-- Tracked hands are drawn as articulated white marching-band gloves, with wrist cuffs, that follow each finger in VR and AR.
+- Tracked hands use Babylon.js skeleton-skinned hand meshes, mapped to WebXR joint bones and rendered with an off-white marching-band glove material in VR and AR.
 - In VR or AR, pinch with both tracked hands to translate, rotate, and zoom the scene: move the midpoint to translate, turn the hands to rotate, and change their separation to scale. Zooming scales around the hands horizontally while keeping the field surface at its current height, so the field stays in view up to full 1:1 size. Release either pinch to stop; two-hand manipulation takes priority over drawing and teleport, but does not start while a hand is holding a marcher.
 - In VR or AR at any scale, pinch near a marcher with one hand to grab it, move your hand, and release to place it on the field. In Placement mode, pinch within 15 cm above the field to create a new marcher. While holding a marcher, pinch another marcher with your other hand to carry both, or pinch the held marcher with your other hand to pass it across; neither starts two-hand scene manipulation. Losing hand tracking cancels the grab and discards unplaced new marchers.
 - Floor calibration only runs when explicitly enabled using the Floor calibration checkbox; entering XR, teleporting, and touching the floor do not start it automatically
@@ -95,7 +95,7 @@ src/
     dom.ts           shared DOM references for application controls
   xr/
     ar.ts            AR tabletop transforms and scene scaling
-    handModel.ts     visible articulated model for tracked hands
+    gloveMeshes.ts   rigged glove meshes and WebXR joint-to-bone mappings
     webXR.ts         VR/AR session setup, teleportation, and controllers
 
 scripts/
@@ -114,3 +114,4 @@ Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
 - WebXR requires a browser with XR support and a compatible headset.
 - Quest 3 users should open the page in the Meta Quest Browser or another XR-capable browser.
 - Some features may require the browser to be granted permission to access the headset's camera for AR.
+- The left and right hand mesh assets are from [BabylonJS/Assets](https://github.com/BabylonJS/Assets/tree/master/meshes/HandMeshes), licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Their rigged geometry is used with an off-white glove material.
