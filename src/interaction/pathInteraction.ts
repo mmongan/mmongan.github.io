@@ -1063,6 +1063,7 @@ const handInteraction = createHandInteraction({
   selectRobot,
   createStandingMarcher,
   createHandFormation,
+  getFormationLinePoints: (start, end) => resampleLineEvenly([start, end], FORMATION_SPACING_YARDS),
   updateRobotPathLine,
   createTubeLine,
   createSegment,
