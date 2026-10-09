@@ -33,6 +33,7 @@ export interface HandSegment {
   rotationHandles: Mesh[];
   copyHandle: Mesh | null;
   robots: TransformNode[];
+  anchorRobot?: TransformNode;
 }
 
 export interface MarcherGrab {
@@ -63,11 +64,14 @@ export interface HandPathDependencies {
   createStandingMarcher: (position: Vector3) => TransformNode;
   createHandFormation: (anchorRobot: TransformNode, controlPoints: Vector3[]) => void;
   getFormationPoints: (controlPoints: Vector3[]) => Vector3[];
+  getMarcherCircle: (robot: TransformNode) => { segment: HandSegment; center: Vector3 } | null;
+  resizeCircleFormation: (segment: HandSegment, controlPoints: Vector3[]) => void;
   updateRobotPathLine: (robot: TransformNode, points: Vector3[]) => void;
   refreshSegmentVisuals: (segment: HandSegment) => void;
   rebuildFormationConnections: (segment: HandSegment) => void;
   refreshStepHandles: () => void;
   snapToStepGrid: (point: Vector3) => Vector3;
+  activateHandMenuAtPoint: (point: Vector3) => boolean;
 }
 
 export function createHandInteraction(paths: HandPathDependencies) {
@@ -87,11 +91,14 @@ export function createHandInteraction(paths: HandPathDependencies) {
     createStandingMarcher,
     createHandFormation,
     getFormationPoints,
+    getMarcherCircle,
+    resizeCircleFormation,
     updateRobotPathLine,
     refreshSegmentVisuals,
     rebuildFormationConnections,
     refreshStepHandles,
     snapToStepGrid,
+    activateHandMenuAtPoint,
   } = paths;
 
   const handPinches = new Map<string, boolean>();
@@ -108,6 +115,12 @@ export function createHandInteraction(paths: HandPathDependencies) {
     localAnchor: Vector3;
   } | null = null;
   const marcherGrabs = new Map<string, MarcherGrab>();
+  let circleResize: {
+    segment: HandSegment;
+    center: Vector3;
+    startDistance: number;
+    originalControlPoints: Vector3[];
+  } | null = null;
   let formationPull: {
     anchorHand: 'left' | 'right';
     pullHand: 'left' | 'right';
@@ -116,6 +129,10 @@ export function createHandInteraction(paths: HandPathDependencies) {
     pinchOffset: Vector3;
     tracedOffsets: Vector3[];
     previewRobots: TransformNode[];
+    shapedOffsets: Vector3[] | null;
+    shapedRotationY: number;
+    floating: boolean;
+    originalGrab: MarcherGrab;
   } | null = null;
   const handPlacementDrafts = new Set<TransformNode>();
   let handTracking: WebXRHandTracking | null = null;
@@ -336,6 +353,10 @@ export function createHandInteraction(paths: HandPathDependencies) {
       pinchOffset: grab.robot.getAbsolutePosition().subtract(point),
       tracedOffsets: [Vector3.Zero()],
       previewRobots: [],
+      shapedOffsets: null,
+      shapedRotationY: grab.robot.rotation.y,
+      floating: false,
+      originalGrab: grab,
     };
     marcherPinchHands.add(from);
     marcherPinchHands.add(handedness);
@@ -345,6 +366,12 @@ export function createHandInteraction(paths: HandPathDependencies) {
   function getFormationPullControlPoints() {
     const pull = formationPull;
     if (!pull) return [];
+    if (pull.shapedOffsets) {
+      const rotation = pull.robot.rotation.y - pull.shapedRotationY;
+      return pull.shapedOffsets.map((point) =>
+        rotateAroundY(point, rotation).add(pull.robot.position)
+      );
+    }
     pathRoot.computeWorldMatrix(true);
     const end = Vector3.TransformCoordinates(
       pull.endPoint.add(pull.pinchOffset), Matrix.Invert(pathRoot.getWorldMatrix())
@@ -363,10 +390,18 @@ export function createHandInteraction(paths: HandPathDependencies) {
     return offsets.map((point) => point.add(pull.robot.position));
   }
 
+  function finishFormationShaping() {
+    const pull = formationPull;
+    if (!pull || pull.shapedOffsets) return;
+    pull.shapedOffsets = getFormationPullControlPoints().map((point) => point.subtract(pull.robot.position));
+    pull.shapedRotationY = pull.robot.rotation.y;
+    marcherPinchHands.delete(pull.pullHand);
+  }
+
   function updateFormationPullPreview() {
     const pull = formationPull;
     if (!pull) return;
-    const grab = marcherGrabs.get(pull.anchorHand);
+    const grab = pull.floating ? pull.originalGrab : marcherGrabs.get(pull.anchorHand);
     if (!grab || grab.robot !== pull.robot || pull.robot.isDisposed()) {
       finishFormationPull(false);
       return;
@@ -381,7 +416,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
       if (!robot) {
         robot = createStandingMarcher(points[index + 1]);
         robot.getChildMeshes().forEach((mesh) => {
-          mesh.isPickable = false;
+          mesh.isPickable = true;
           mesh.renderingGroupId = GRABBED_MARCHER_RENDERING_GROUP;
         });
         pull.previewRobots.push(robot);
@@ -398,9 +433,10 @@ export function createHandInteraction(paths: HandPathDependencies) {
     if (!pull) return;
     pull.previewRobots.forEach((robot) => robot.dispose());
     marcherPinchHands.delete(pull.pullHand);
-    const grab = marcherGrabs.get(pull.anchorHand);
+    const grab = pull.floating ? pull.originalGrab : marcherGrabs.get(pull.anchorHand);
     if (!grab || grab.robot !== pull.robot) return;
     if (!commit) {
+      marcherGrabs.set(pull.anchorHand, pull.originalGrab);
       marcherPinchHands.delete(pull.anchorHand);
       finishMarcherGrab(pull.anchorHand, false);
       return;
@@ -417,6 +453,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
       (sum, point, index) => sum + Vector3.Distance(fieldPoints[index], point), 0
     );
     if (fieldPoints.length !== controlPoints.length || length < 0.1) {
+      marcherGrabs.set(pull.anchorHand, grab);
       marcherPinchHands.delete(pull.anchorHand);
       finishMarcherGrab(pull.anchorHand, true);
       return;
@@ -431,15 +468,82 @@ export function createHandInteraction(paths: HandPathDependencies) {
     marcherPinchHands.delete(pull.anchorHand);
   }
 
+  function finishCircleResize(commit: boolean) {
+    const resize = circleResize;
+    circleResize = null;
+    if (!resize) return;
+    if (!commit && segments.includes(resize.segment)) {
+      resizeCircleFormation(resize.segment, resize.originalControlPoints);
+    }
+  }
+
+  function updateCircleResize(left: Vector3 | undefined, right: Vector3 | undefined) {
+    if (!circleResize) return false;
+    if (!left || !right || !segments.includes(circleResize.segment)) {
+      finishCircleResize(true);
+      return true;
+    }
+    pathRoot.computeWorldMatrix(true);
+    const inverse = Matrix.Invert(pathRoot.getWorldMatrix());
+    const leftPoint = Vector3.TransformCoordinates(left, inverse);
+    const rightPoint = Vector3.TransformCoordinates(right, inverse);
+    const distance = Math.hypot(rightPoint.x - leftPoint.x, rightPoint.z - leftPoint.z);
+    if (distance > 0.001) {
+      const scale = distance / circleResize.startDistance;
+      resizeCircleFormation(circleResize.segment, circleResize.originalControlPoints.map((point) =>
+        point.subtract(circleResize!.center).scale(scale).add(circleResize!.center)
+      ));
+    }
+    return true;
+  }
+
+  function beginCircleResize(left: Vector3, right: Vector3) {
+    if (formationPull || sceneGesture) return false;
+    const leftGrab = marcherGrabs.get('left');
+    const rightGrab = marcherGrabs.get('right');
+    if ((leftGrab && leftGrab.source !== 'hand') || (rightGrab && rightGrab.source !== 'hand')) return false;
+    const leftRobot = leftGrab?.robot ?? findMarcherNearHand(left);
+    const rightRobot = rightGrab?.robot ?? findMarcherNearHand(right);
+    if (!leftRobot || !rightRobot || leftRobot === rightRobot) return false;
+    const leftCircle = getMarcherCircle(leftRobot);
+    const rightCircle = getMarcherCircle(rightRobot);
+    if (!leftCircle || leftCircle.segment !== rightCircle?.segment) return false;
+    pathRoot.computeWorldMatrix(true);
+    const inverse = Matrix.Invert(pathRoot.getWorldMatrix());
+    const leftPoint = Vector3.TransformCoordinates(left, inverse);
+    const rightPoint = Vector3.TransformCoordinates(right, inverse);
+    const distance = Math.hypot(rightPoint.x - leftPoint.x, rightPoint.z - leftPoint.z);
+    if (distance <= 0.001) return false;
+    if (leftGrab) finishMarcherGrab('left', false);
+    if (rightGrab) finishMarcherGrab('right', false);
+    circleResize = {
+      segment: leftCircle.segment,
+      center: leftCircle.center,
+      startDistance: distance,
+      originalControlPoints: leftCircle.segment.controlPoints.map((point) => point.clone()),
+    };
+    for (const handedness of ['left', 'right']) {
+      handPinches.set(handedness, true);
+      marcherPinchHands.add(handedness);
+    }
+    selectRobot(leftCircle.segment.robots[0]);
+    finishFingerPath(false);
+    return true;
+  }
+
   function updateTabletopHands() {
     if (floorCalibrationToggle?.checked || !handTracking) {
       sceneGesture = null;
       finishFormationPull(false);
+      finishCircleResize(false);
       return;
     }
+    if (circleResize && (
+      !handTracking.getHandByHandedness('left') || !handTracking.getHandByHandedness('right')
+    )) finishCircleResize(false);
     if (formationPull && (
-      !handTracking.getHandByHandedness(formationPull.anchorHand) ||
-      !handTracking.getHandByHandedness(formationPull.pullHand)
+      (!formationPull.floating && !handTracking.getHandByHandedness(formationPull.anchorHand)) ||
+      (!formationPull.shapedOffsets && !handTracking.getHandByHandedness(formationPull.pullHand))
     )) finishFormationPull(false);
     const pinchedPoints = new Map<string, Vector3>();
     for (const handedness of ['left', 'right'] as const) {
@@ -454,8 +558,22 @@ export function createHandInteraction(paths: HandPathDependencies) {
     }
     const left = pinchedPoints.get('left');
     const right = pinchedPoints.get('right');
+    if (formationPull && !formationPull.shapedOffsets &&
+      !pinchedPoints.has(formationPull.pullHand)) {
+      finishFormationShaping();
+    }
+    if (updateCircleResize(left, right)) {
+      for (const handedness of ['left', 'right'] as const) {
+        const pinching = pinchedPoints.has(handedness);
+        handPinches.set(handedness, pinching);
+        if (!pinching) marcherPinchHands.delete(handedness);
+      }
+      return;
+    }
+    if (left && right && beginCircleResize(left, right)) return;
     const marcherHandsBusy = !sceneGesture && (
-      marcherPinchHands.size > 0 || [...marcherGrabs.values()].some((grab) => grab.source === 'hand')
+      formationPull !== null || marcherPinchHands.size > 0 ||
+      [...marcherGrabs.values()].some((grab) => grab.source === 'hand')
     );
     if (left && right && !marcherHandsBusy) {
       finishFingerPath(false);
@@ -497,8 +615,10 @@ export function createHandInteraction(paths: HandPathDependencies) {
         handPinches.delete(handedness);
         marcherPinchHands.delete(handedness);
         if (formationPull && (formationPull.anchorHand === handedness || formationPull.pullHand === handedness)) {
-          finishFormationPull(false);
-          continue;
+          if ((!formationPull.floating && formationPull.anchorHand === handedness) || !formationPull.shapedOffsets) {
+            finishFormationPull(false);
+            continue;
+          }
         }
         if (marcherGrabs.get(handedness)?.source === 'hand') finishMarcherGrab(handedness, false);
         continue;
@@ -512,16 +632,44 @@ export function createHandInteraction(paths: HandPathDependencies) {
       if (!pinching) {
         marcherPinchHands.delete(handedness);
         if (formationPull?.pullHand === handedness) {
-          finishFormationPull(true);
           continue;
         }
-        if (formationPull?.anchorHand === handedness) continue;
+        if (formationPull?.anchorHand === handedness) {
+          if (formationPull.shapedOffsets) {
+            marcherGrabs.delete(handedness);
+            formationPull.floating = true;
+          } else finishFormationPull(false);
+          continue;
+        }
         if (marcherGrabs.get(handedness)?.source === 'hand') finishMarcherGrab(handedness, true);
         continue;
       }
       const point = thumb.add(index).scale(0.5);
+      if (!wasPinching && activateHandMenuAtPoint(point)) {
+        marcherPinchHands.add(handedness);
+        continue;
+      }
+      if (formationPull?.floating) {
+        if (!wasPinching) {
+          const robot = findMarcherNearHand(point);
+          if (robot === formationPull.robot || (robot && formationPull.previewRobots.includes(robot))) {
+            const pull = formationPull;
+            pull.anchorHand = handedness;
+            pull.pullHand = otherHand(handedness);
+            const grab = pull.originalGrab;
+            pull.robot.computeWorldMatrix(true);
+            grab.offset = pull.robot.getAbsolutePosition().subtract(point);
+            grab.initialRotationY = pull.robot.rotation.y;
+            grab.initialFacingYaw = getHandFacingYaw(handedness);
+            marcherGrabs.set(handedness, grab);
+            pull.floating = false;
+            marcherPinchHands.add(handedness);
+          }
+        }
+        continue;
+      }
       if (formationPull?.pullHand === handedness) {
-        formationPull.endPoint.copyFrom(point);
+        if (!formationPull.shapedOffsets) formationPull.endPoint.copyFrom(point);
         continue;
       }
       const facingYaw = getHandFacingYaw(handedness);
@@ -615,6 +763,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
 
   function setHandTracking(tracking: WebXRHandTracking | null) {
     finishFingerPath(false);
+    finishCircleResize(false);
     floorContactHands.clear();
     finishFormationPull(false);
     [...marcherGrabs.entries()].forEach(([handedness, grab]) => {
@@ -640,6 +789,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
   scene.onBeforeRenderObservable.add(() => {
     if (floorCalibrationToggle?.checked) {
       sceneGesture = null;
+      finishCircleResize(false);
       finishFormationPull(false);
       marcherPinchHands.clear();
       finishFingerPath(false);
@@ -656,6 +806,10 @@ export function createHandInteraction(paths: HandPathDependencies) {
 
   return {
     beginMarcherGrab,
+    commitFormation: () => {
+      if (formationPull?.shapedOffsets) finishFormationPull(true);
+    },
+    hasPendingFormation: () => formationPull?.shapedOffsets !== null && formationPull !== null,
     consumeFloorCalibrationGesture,
     finishFingerPath,
     finishMarcherGrab,

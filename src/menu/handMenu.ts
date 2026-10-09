@@ -9,6 +9,7 @@ import { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.pure';
 import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
 import { WebXRInputSource } from '@babylonjs/core/XR/webXRInputSource';
+import { WebXRHandJoint, WebXRHandTracking } from '@babylonjs/core/XR/features/WebXRHandTracking.pure';
 import { scene } from '../scene/engine';
 
 // How closely the controller's local "up" must line up with world up to
@@ -22,7 +23,7 @@ const BUTTON_SIZE = 0.022;
 const BUTTON_Y = 0.09;
 
 export type HandMenuHit =
-  | { action: "playPause" | "rewind" | "fastForward" | "stepBack" | "stepForward" | "fullScaleVR" | "tabletopScale" }
+  | { action: "playPause" | "rewind" | "fastForward" | "stepBack" | "stepForward" | "fullScaleVR" | "tabletopScale" | "commitFormation" }
   | { action: "seek"; fraction: number };
 
 function roundedRect(
@@ -159,6 +160,31 @@ let progressBar: ReturnType<typeof createProgressBarPlane> | null = null;
 let buttons: Mesh[] = [];
 let attachedTo: AbstractMesh | null = null;
 let lastDrawnProgress = -1;
+let trackedHands: WebXRHandTracking | null = null;
+let formationCommitAvailable = false;
+
+export function setFormationCommitAvailable(available: boolean) {
+  formationCommitAvailable = available;
+}
+
+export function setMenuHandTracking(tracking: WebXRHandTracking | null) {
+  trackedHands = tracking;
+}
+
+export function getHandMenuHitNearPoint(point: Vector3): HandMenuHit | null {
+  for (const [mesh, action] of buttonActions) {
+    if (!mesh.isEnabled() || !mesh.isVisible) continue;
+    mesh.computeWorldMatrix(true);
+    const bounds = mesh.getBoundingInfo().boundingBox;
+    const distance = Math.hypot(
+      Math.max(bounds.minimumWorld.x - point.x, 0, point.x - bounds.maximumWorld.x),
+      Math.max(bounds.minimumWorld.y - point.y, 0, point.y - bounds.maximumWorld.y),
+      Math.max(bounds.minimumWorld.z - point.z, 0, point.z - bounds.maximumWorld.z)
+    );
+    if (distance < 0.015) return action;
+  }
+  return null;
+}
 
 // Lets other menus (e.g. the stadium video board) reuse the same trigger-pick
 // dispatch in interaction.ts, by tagging any mesh with a hand-menu action.
@@ -190,6 +216,10 @@ function ensureMenuMeshes() {
   const tabletopButton = createButton("Table", spacing / 2, { action: "tabletopScale" });
   tabletopButton.position.z = 0.04;
   buttons.push(fullScaleButton, tabletopButton);
+  const commitButton = createButton("Commit", 0, { action: "commitFormation" });
+  commitButton.position.z = 0.075;
+  commitButton.scaling.x = 3;
+  buttons.push(commitButton);
 }
 
 // Shows a media-player-style panel (progress bar + play/rewind/fast-forward/step
@@ -207,6 +237,15 @@ export function updateHandMenu(
     if (controller.grip && isPalmUp(controller)) {
       palmUpGrip = controller.grip;
       break;
+    }
+    if (!palmUpGrip && trackedHands) {
+      for (const handedness of ['left', 'right'] as const) {
+        const wrist = trackedHands.getHandByHandedness(handedness)?.getJointMesh(WebXRHandJoint.WRIST);
+        if (wrist && Vector3.Dot(wrist.getDirection(Axis.Y), Vector3.Up()) < PALM_UP_DOT_THRESHOLD) {
+          palmUpGrip = wrist;
+          break;
+        }
+      }
     }
   }
 
@@ -231,7 +270,9 @@ export function updateHandMenu(
     button.rotation.x = menuRotation;
   });
   progressBar.plane.setEnabled(true);
-  buttons.forEach((button) => button.setEnabled(true));
+  buttons.forEach((button) => button.setEnabled(
+    buttonActions.get(button)?.action !== "commitFormation" || formationCommitAvailable
+  ));
 
   const shownProgress = progress ?? 0;
   if (Math.abs(shownProgress - lastDrawnProgress) > 0.002) {
@@ -258,4 +299,3 @@ export function getHandMenuHit(pick: PickingInfo): HandMenuHit | null {
 
   return null;
 }
-

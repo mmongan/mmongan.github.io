@@ -58,7 +58,7 @@ import {
   disposeAllRobots,
   walkRobotAlongCounts,
 } from '../robot/robot';
-import { getHandMenuHit, isHandMenuVisible, isMenuControl } from '../menu/handMenu';
+import { getHandMenuHit, getHandMenuHitNearPoint, setMenuHandTracking, setFormationCommitAvailable, isHandMenuVisible, isMenuControl } from '../menu/handMenu';
 import { createHandInteraction } from './handInteraction';
 import {
   isScoreboardGaitPick,
@@ -487,9 +487,65 @@ function isClosedFormation(controlPoints: Vector3[]) {
     Vector3.DistanceSquared(controlPoints[0], controlPoints[controlPoints.length - 1]) < 1e-6;
 }
 
+interface FormationCircle {
+  center: Vector3;
+  radius: number;
+  startAngle: number;
+  direction: number;
+}
+
+function fitFormationCircle(controlPoints: Vector3[]): FormationCircle {
+  const start = controlPoints[0];
+  let xx = 0, xz = 0, zz = 0, xr = 0, zr = 0, area = 0;
+  let farthest = Vector3.Zero();
+  controlPoints.slice(0, -1).forEach((point, index) => {
+    const x = point.x - start.x;
+    const z = point.z - start.z;
+    const squaredRadius = x * x + z * z;
+    xx += x * x;
+    xz += x * z;
+    zz += z * z;
+    xr += x * squaredRadius / 2;
+    zr += z * squaredRadius / 2;
+    if (squaredRadius > farthest.lengthSquared()) farthest.set(x, 0, z);
+    const next = controlPoints[index + 1];
+    area += x * (next.z - start.z) - z * (next.x - start.x);
+  });
+  // Least-squares fit constrained to pass through the held marcher.
+  const determinant = xx * zz - xz * xz;
+  const offset = determinant > xx * zz * 1e-8
+    ? new Vector3((xr * zz - zr * xz) / determinant, 0, (zr * xx - xr * xz) / determinant)
+    : farthest.scale(0.5);
+  return {
+    center: start.add(offset),
+    radius: offset.length(),
+    startAngle: Math.atan2(-offset.z, -offset.x),
+    direction: area < 0 ? -1 : 1,
+  };
+}
+
+function sampleFormationCircle(circle: FormationCircle, count: number, closed: boolean): Vector3[] {
+  const points: Vector3[] = [];
+  for (let index = 0; index < count; index++) {
+    const angle = circle.startAngle + circle.direction * index * Math.PI * 2 / count;
+    points.push(new Vector3(
+      circle.center.x + circle.radius * Math.cos(angle),
+      circle.center.y,
+      circle.center.z + circle.radius * Math.sin(angle)
+    ));
+  }
+  if (closed) points.push(points[0].clone());
+  return points;
+}
+
 function getFormationPoints(controlPoints: Vector3[]) {
   const closed = isClosedFormation(controlPoints);
-  const curvePoints = buildCurvePoints(controlPoints, closed);
+  if (closed) {
+    const circle = fitFormationCircle(controlPoints);
+    const count = Math.max(3, Math.round(Math.PI * 2 * circle.radius / FORMATION_SPACING_YARDS));
+    return sampleFormationCircle(circle, count, false);
+  }
+  const curvePoints = buildCurvePoints(controlPoints);
   return curvePoints.length >= 2
     ? resampleLineEvenly(curvePoints, FORMATION_SPACING_YARDS, closed)
     : curvePoints;
@@ -618,10 +674,9 @@ const CURVE_SAMPLES_PER_SPAN = 8;
 function buildCurvePoints(controlPoints: Vector3[], closed = false): Vector3[] {
   if (controlPoints.length < 3) return controlPoints;
   if (closed) {
-    const uniquePoints = controlPoints.slice(0, -1);
-    // Babylon starts a closed Catmull-Rom curve at its second control point.
-    uniquePoints.unshift(uniquePoints.pop()!);
-    return Curve3.CreateCatmullRomSpline(uniquePoints, CURVE_SAMPLES_PER_SPAN, true).getPoints();
+    const circle = fitFormationCircle(controlPoints);
+    const count = Math.max(64, Math.ceil(Math.PI * 2 * circle.radius / FORMATION_SPACING_YARDS) * CURVE_SAMPLES_PER_SPAN);
+    return sampleFormationCircle(circle, count, true);
   }
   return Curve3.CreateCatmullRomSpline(controlPoints, CURVE_SAMPLES_PER_SPAN, false).getPoints();
 }
@@ -951,6 +1006,9 @@ function removeRobotPath(robot: TransformNode) {
 
 function createHandFormation(anchorRobot: TransformNode, controlPoints: Vector3[]) {
   removeRobotPath(anchorRobot);
+  if (isClosedFormation(controlPoints)) {
+    controlPoints = sampleFormationCircle(fitFormationCircle(controlPoints), 16, true);
+  }
   const segment = createSegment('formation', controlPoints, [], anchorRobot);
   refreshCollisionMarkers(scene);
   selectRobot(segment.robots[0] ?? anchorRobot);
@@ -1028,6 +1086,9 @@ const menuInteractionHeld = new Map<string, boolean>();
 
 function executeMenuAction(hit: NonNullable<ReturnType<typeof getHandMenuHit>>) {
   switch (hit.action) {
+    case "commitFormation":
+      handInteraction.commitFormation();
+      break;
     case "playPause":
       toggleAllPlayback();
       break;
@@ -1070,16 +1131,34 @@ const handInteraction = createHandInteraction({
   createStandingMarcher,
   createHandFormation,
   getFormationPoints,
+  getMarcherCircle: (robot) => {
+    const segment = segments.find((entry) => entry.kind === "formation" &&
+      entry.robots.includes(robot) && isClosedFormation(entry.controlPoints));
+    return segment ? { segment, center: fitFormationCircle(segment.controlPoints).center } : null;
+  },
+  resizeCircleFormation: (segment, controlPoints) => {
+    segment.controlPoints = controlPoints;
+    rebuildSegmentContent(segment);
+    refreshSegmentVisuals(segment);
+    if (selectedRobot?.isDisposed()) selectRobot(segment.robots[0] ?? null);
+  },
   updateRobotPathLine,
   refreshSegmentVisuals,
   rebuildFormationConnections,
   refreshStepHandles,
   snapToStepGrid,
+  activateHandMenuAtPoint: (point) => {
+    const hit = getHandMenuHitNearPoint(point);
+    if (!hit) return false;
+    executeMenuAction(hit);
+    return true;
+  },
 });
 const { marcherGrabs } = handInteraction;
 
 export function setHandTracking(tracking: WebXRHandTracking | null) {
   handInteraction.setHandTracking(tracking);
+  setMenuHandTracking(tracking);
 }
 
 export function isHandMarcherInteraction(handedness: string, point: Vector3) {
@@ -1111,6 +1190,7 @@ function finishMarcherGrab(handedness: string, commit: boolean) {
 
 export function updateTabletopHands() {
   handInteraction.updateTabletopHands();
+  setFormationCommitAvailable(handInteraction.hasPendingFormation());
 }
 
 function finishFingerPath(commit: boolean) {
