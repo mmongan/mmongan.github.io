@@ -343,7 +343,7 @@ function updateShowAllPathsToggleFromControllers() {
 }
 
 // In placement mode, each trigger press drops a new standing robot (no path,
-// no walking) at the aimed point instead of drawing/extending a route —
+// no walking) at the aimed point —
 // for laying out a formation one member at a time.
 let placementMode = !!placementModeToggle?.checked;
 const placementDrafts = new Map<string, TransformNode>();
@@ -985,20 +985,6 @@ function spawnRobotForPath(points: Vector3[]) {
 storedPaths.forEach(spawnRobotForPath);
 
 const PATH_POINT_MIN_DISTANCE = 0.4; // yards between recorded points
-const ROBOT_TOUCH_DISTANCE = 1; // yards — how close the laser must land to a selected robot's feet
-let currentPathPoints: Vector3[] = [];
-let pathLine: Mesh | null = null;
-let pathPreviewUpdateTime = -Infinity;
-let pathPreviewPointCount = 0;
-// Set when the trigger-down aim landed on an existing robot, so the drawn
-// points extend that robot's route instead of spawning a new one.
-let extendingRobot: TransformNode | null = null;
-// The robot actively being dragged along by the drawing itself — either the
-// extended robot, or a freshly spawned one for a brand-new path.
-let drawingRobot: TransformNode | null = null;
-// True right after selecting a robot until the laser has come down to touch
-// its feet, so drawing doesn't jump it wherever the laser first happened to aim.
-let awaitingFeetTouch = false;
 // The segment currently being dragged as a whole (via its move handle), and
 // the last field point seen while dragging it (to move by incremental delta).
 let movingSegment: Segment | null = null;
@@ -1085,22 +1071,10 @@ const handInteraction = createHandInteraction({
   createHandFormation,
   getFormationPoints,
   updateRobotPathLine,
-  createTubeLine,
-  createSegment,
   refreshSegmentVisuals,
   rebuildFormationConnections,
   refreshStepHandles,
   snapToStepGrid,
-  cancelControllerPathDrawing: () => {
-    pathLine?.dispose(false, true);
-    pathLine = null;
-    pathPreviewUpdateTime = -Infinity;
-    pathPreviewPointCount = 0;
-    if (drawingRobot && !extendingRobot) drawingRobot.dispose();
-    drawingRobot = null;
-    extendingRobot = null;
-    currentPathPoints = [];
-  },
 });
 const { marcherGrabs } = handInteraction;
 
@@ -1176,10 +1150,8 @@ function getFieldPointFromController(controller: WebXRInputSource): Vector3 | nu
   return snapToStepGrid(localPoint);
 }
 
-// Hold the trigger and aim at the field to draw a path; release it to send
-// the little robot walking along the route that was just drawn. Aiming at an
-// existing robot when the trigger is first pressed extends its route instead.
-// In placement mode, each press instead drops a new standing robot in place.
+// Controller triggers select/edit existing content or place standing marchers
+// when placement mode is enabled. They never draw or extend marching paths.
 export function updateRobotPathFromControllers() {
   if (floorCalibrationToggle?.checked) return;
   updateShowAllPathsToggleFromControllers();
@@ -1258,10 +1230,6 @@ export function updateRobotPathFromControllers() {
         menuInteractionHeld.set(handedness, true);
         return;
       }
-      pathLine?.dispose(false, true);
-      pathLine = null;
-      pathPreviewUpdateTime = -Infinity;
-      pathPreviewPointCount = 0;
 
       const menuPick = scene.pickWithRay(getControllerRay(controller), isMenuControl);
       const menuHit = menuPick?.hit ? getHandMenuHit(menuPick) : null;
@@ -1328,10 +1296,8 @@ export function updateRobotPathFromControllers() {
 
       const pickedRobot = pick?.hit ? findRobotRoot(pick.pickedMesh) : null;
 
-      // Grabbing a robot that already has a real marching route by its body
-      // (not one of its handles) scrubs the shared timeline instead of
-      // extending its path — only a robot with nowhere to scrub yet (a bare
-      // placed formation member) falls through to the old extend-path flow.
+      // A marcher with a route can scrub the shared timeline; a standing
+      // marcher is selected without creating a route.
       const pickedRobotCounts = pickedRobot ? getRobotCounts(pickedRobot) : null;
       if (pickedRobot && pickedRobotCounts && pickedRobotCounts.length > 1) {
         scrubbingRobot = pickedRobot;
@@ -1339,21 +1305,7 @@ export function updateRobotPathFromControllers() {
         return;
       }
 
-      extendingRobot = pickedRobot;
       selectRobot(pickedRobot);
-      // Anchor to the robot's own last path point — don't also raycast the
-      // field this same frame, or the laser (still aimed at the robot) could
-      // pick an unrelated spot on the field and jump the path there.
-      if (pickedRobot) {
-        currentPathPoints = [pickedRobot.position.clone()];
-        drawingRobot = pickedRobot;
-        drawingRobot.setEnabled(true);
-        awaitingFeetTouch = true;
-      } else {
-        currentPathPoints = [];
-        drawingRobot = null; // spawned once the first point of a new path is drawn
-        awaitingFeetTouch = false;
-      }
       return;
     }
 
@@ -1430,47 +1382,6 @@ export function updateRobotPathFromControllers() {
         }
         return;
       }
-
-      const point = getFieldPointFromController(controller);
-      if (point) {
-        if (extendingRobot && awaitingFeetTouch) {
-          if (Vector3.Distance(point, extendingRobot.position) > ROBOT_TOUCH_DISTANCE) {
-            return; // keep waiting for the laser to reach the robot's feet
-          }
-          awaitingFeetTouch = false;
-        }
-
-        if (!drawingRobot) {
-          // Brand-new path: spawn the robot right where the drawing starts.
-          drawingRobot = createLowPolyRobot(scene);
-          drawingRobot.parent = pathRoot;
-          drawingRobot.position = point.clone();
-          drawingRobot.setEnabled(true);
-        }
-
-        // Drag the robot along with the laser tip every frame (not just at the
-        // sparser recorded points below), facing the direction it's moving.
-        const dx = point.x - drawingRobot.position.x;
-        const dz = point.z - drawingRobot.position.z;
-        if (dx * dx + dz * dz > 0.0001) {
-          drawingRobot.rotation.y = snapAngle(Math.atan2(dx, dz));
-        }
-        drawingRobot.position.copyFrom(point);
-
-        const lastPoint = currentPathPoints[currentPathPoints.length - 1];
-        if (!lastPoint || Vector3.Distance(lastPoint, point) >= PATH_POINT_MIN_DISTANCE) {
-          currentPathPoints.push(point);
-        }
-        const now = performance.now();
-        if (currentPathPoints.length >= 2 && currentPathPoints.length !== pathPreviewPointCount &&
-          (!pathLine || !isARTabletopModeActive() || now - pathPreviewUpdateTime >= 1000 / 30)) {
-          const material = pathLine?.material as StandardMaterial | undefined;
-          pathLine?.dispose(false, false);
-          pathLine = createTubeLine("robotPathLine", currentPathPoints, new Color3(1, 0.85, 0.2), material);
-          pathPreviewUpdateTime = now;
-          pathPreviewPointCount = currentPathPoints.length;
-        }
-      }
     }
 
     if (!isPressed && wasPressed) {
@@ -1501,9 +1412,6 @@ export function updateRobotPathFromControllers() {
         return;
       }
 
-      pathLine?.dispose(false, true);
-      pathLine = null;
-
       if (placementMode) {
         const point = getFieldPointFromController(controller);
         const draft = placementDrafts.get(handedness);
@@ -1517,39 +1425,6 @@ export function updateRobotPathFromControllers() {
         placementDrafts.delete(handedness);
         return;
       }
-
-      if (currentPathPoints.length >= 2) {
-        if (extendingRobot) {
-          // Grow the robot's existing path segment (or start one) with the new points.
-          const existingSegment = pathSegmentByRobot.get(extendingRobot);
-          const history = existingSegment
-            ? existingSegment.controlPoints
-            : robotPaths.get(extendingRobot) ?? [extendingRobot.position.clone()];
-          const extendedHistory = history.concat(currentPathPoints.slice(1));
-          robotPaths.set(extendingRobot, extendedHistory);
-          if (existingSegment) {
-            existingSegment.controlPoints = extendedHistory;
-            rebuildSegmentContent(existingSegment);
-            refreshSegmentVisuals(existingSegment);
-          } else {
-            createSegment("path", extendedHistory, [extendingRobot]);
-          }
-          selectRobot(extendingRobot);
-        } else if (drawingRobot) {
-          // The robot already walked here alongside the drawing — record it as a path segment.
-          robotPaths.set(drawingRobot, currentPathPoints);
-          createSegment("path", currentPathPoints.slice(), [drawingRobot]);
-          selectRobot(drawingRobot);
-          storedPaths.push(currentPathPoints);
-          saveStoredPaths(storedPaths);
-        }
-      } else if (drawingRobot && !extendingRobot) {
-        // Too short a drag to count as a path — discard the just-spawned robot.
-        drawingRobot.dispose();
-      }
-
-      extendingRobot = null;
-      drawingRobot = null;
     }
   });
 }
