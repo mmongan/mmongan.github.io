@@ -117,6 +117,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
     localAnchor: Vector3;
   } | null = null;
   const marcherGrabs = new Map<string, MarcherGrab>();
+  const fingerPushes = new Set<string>();
   let pendingFormationGlow: HighlightLayer | null = null;
 
   function highlightPendingMarcher(robot: TransformNode) {
@@ -313,7 +314,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
     return nearest;
   }
 
-  function getFormationFieldPoint(point: Vector3) {
+  function getFormationFieldPoint(point: Vector3, snap = true) {
     const field = scene.getMeshByName('field');
     if (!field?.isEnabled()) return null;
     field.computeWorldMatrix(true);
@@ -325,7 +326,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
     pathRoot.computeWorldMatrix(true);
     const position = Vector3.TransformCoordinates(onField, Matrix.Invert(pathRoot.getWorldMatrix()));
     position.y += 0.02;
-    return snapToStepGrid(position);
+    return snap ? snapToStepGrid(position) : position;
   }
 
   function getSidelineDraftPosition(point: Vector3) {
@@ -632,6 +633,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
     for (const handedness of ['left', 'right'] as const) {
       const hand = handTracking.getHandByHandedness(handedness);
       if (!hand) {
+        finishFingerPush(handedness);
         handPinches.delete(handedness);
         marcherPinchHands.delete(handedness);
         if (formationPull && (formationPull.anchorHand === handedness || formationPull.pullHand === handedness)) {
@@ -649,6 +651,10 @@ export function createHandInteraction(paths: HandPathDependencies) {
       const wasPinching = handPinches.get(handedness) ?? false;
       const pinching = distance > 0.002 && distance < (wasPinching ? 0.04 : 0.025);
       handPinches.set(handedness, pinching);
+      if (fingerPushes.has(handedness)) {
+        if (!pinching) continue;
+        finishFingerPush(handedness);
+      }
       if (!pinching) {
         marcherPinchHands.delete(handedness);
         if (formationPull?.pullHand === handedness) {
@@ -732,7 +738,8 @@ export function createHandInteraction(paths: HandPathDependencies) {
   function getFingerFieldPoint(handedness: 'left' | 'right', touching: boolean) {
     const hand = handTracking?.getHandByHandedness(handedness);
     const field = scene.getMeshByName('field');
-    if (!hand || !field || !field.isEnabled() || marcherGrabs.size > 0) return null;
+    if (!hand || !field || !field.isEnabled() || marcherGrabs.size > 0 ||
+      formationPull || fingerPushes.has(handedness)) return null;
     const finger = hand.getJointMesh(WebXRHandJoint.INDEX_FINGER_TIP).getAbsolutePosition();
     const thumb = hand.getJointMesh(WebXRHandJoint.THUMB_TIP).getAbsolutePosition();
     if (Vector3.Distance(finger, thumb) < 0.04) return null;
@@ -748,7 +755,65 @@ export function createHandInteraction(paths: HandPathDependencies) {
     return snapToStepGrid(point);
   }
 
+  function finishFingerPush(handedness: string) {
+    if (!fingerPushes.delete(handedness)) return;
+    finishMarcherGrab(handedness, true);
+  }
+
+  function isFingerNearRobot(point: Vector3, robot: TransformNode, tolerance: number) {
+    return robot.getChildMeshes().some((mesh) => {
+      if (!mesh.isEnabled() || !mesh.isVisible || !mesh.isPickable) return false;
+      mesh.computeWorldMatrix(true);
+      const bounds = mesh.getBoundingInfo().boundingBox;
+      return Math.hypot(
+        Math.max(bounds.minimumWorld.x - point.x, 0, point.x - bounds.maximumWorld.x),
+        Math.max(bounds.minimumWorld.y - point.y, 0, point.y - bounds.maximumWorld.y),
+        Math.max(bounds.minimumWorld.z - point.z, 0, point.z - bounds.maximumWorld.z)
+      ) < tolerance;
+    });
+  }
+
+  function updateFingerPushes() {
+    for (const handedness of ['left', 'right'] as const) {
+      const hand = handTracking?.getHandByHandedness(handedness);
+      const blocked = !hand || floorCalibrationToggle?.checked || sceneGesture ||
+        formationPull || circleResize || floorContactHands.has(handedness) || handPinches.get(handedness);
+      if (blocked) {
+        finishFingerPush(handedness);
+        continue;
+      }
+      const finger = hand.getJointMesh(WebXRHandJoint.INDEX_FINGER_TIP).getAbsolutePosition();
+      const thumb = hand.getJointMesh(WebXRHandJoint.THUMB_TIP).getAbsolutePosition();
+      if (Vector3.Distance(finger, thumb) < 0.04) {
+        finishFingerPush(handedness);
+        continue;
+      }
+      let grab = fingerPushes.has(handedness) ? marcherGrabs.get(handedness) : undefined;
+      if (grab && (grab.robot.isDisposed() || !isFingerNearRobot(finger, grab.robot, 0.04))) {
+        finishFingerPush(handedness);
+        continue;
+      }
+      if (!grab) {
+        if (marcherGrabs.has(handedness)) continue;
+        const robot = findMarcherNearHand(finger);
+        if (!robot || handPlacementDrafts.has(robot)) continue;
+        robot.computeWorldMatrix(true);
+        const onField = getFormationFieldPoint(robot.getAbsolutePosition(), false);
+        if (!onField || Vector3.Distance(robot.position, onField) > 0.05 ||
+          !isFingerNearRobot(finger, robot, 0.012)) continue;
+        beginMarcherGrab(handedness, robot, finger, 'hand');
+        grab = marcherGrabs.get(handedness);
+        if (!grab) continue;
+        restoreMarcherRendering(grab);
+        fingerPushes.add(handedness);
+      }
+      const position = getFormationFieldPoint(finger.add(grab.offset), false);
+      if (position) grab.robot.position.copyFrom(position);
+    }
+  }
+
   function updateHandPathDrawing() {
+    updateFingerPushes();
     if (floorCalibrationToggle?.checked || !handTracking || sceneGesture || !isPlacementMode()) {
       finishFingerPath(false);
       return;
@@ -782,6 +847,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
   }
 
   function setHandTracking(tracking: WebXRHandTracking | null) {
+    [...fingerPushes].forEach(finishFingerPush);
     finishFingerPath(false);
     finishCircleResize(false);
     floorContactHands.clear();
@@ -797,6 +863,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
 
   function setHandFloorContact(handedness: string, touching: boolean) {
     if (touching) {
+      finishFingerPush(handedness);
       floorContactHands.add(handedness);
       if (fingerPath?.handedness === handedness) finishFingerPath(false);
     } else floorContactHands.delete(handedness);
@@ -808,6 +875,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
 
   scene.onBeforeRenderObservable.add(() => {
     if (floorCalibrationToggle?.checked) {
+      [...fingerPushes].forEach(finishFingerPush);
       sceneGesture = null;
       finishCircleResize(false);
       finishFormationPull(false);
