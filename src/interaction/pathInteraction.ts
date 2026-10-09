@@ -458,14 +458,14 @@ function snapAngle(angle: number): number {
   //return Math.round(angle / ANGLE_SNAP_RADIANS) * ANGLE_SNAP_RADIANS;
 }
 
-function resampleLineEvenly(points: Vector3[], spacingYards: number): Vector3[] {
+function resampleLineEvenly(points: Vector3[], spacingYards: number, closed = false): Vector3[] {
   const segmentLengths = points.slice(1).map((point, i) => Vector3.Distance(points[i], point));
   const totalLength = segmentLengths.reduce((sum, length) => sum + length, 0);
   if (totalLength <= 0.001) return [points[0].clone()];
 
-  const count = Math.max(1, Math.round(totalLength / spacingYards));
+  const count = Math.max(closed ? 3 : 1, Math.round(totalLength / spacingYards));
   const resampled: Vector3[] = [];
-  for (let i = 0; i <= count; i++) {
+  for (let i = 0; i < count + (closed ? 0 : 1); i++) {
     const distance = Math.min(totalLength, (i / count) * totalLength);
     let remaining = distance;
     let segmentIndex = 0;
@@ -480,6 +480,19 @@ function resampleLineEvenly(points: Vector3[], spacingYards: number): Vector3[] 
     resampled.push(Vector3.Lerp(segmentStart, segmentEnd, t));
   }
   return resampled;
+}
+
+function isClosedFormation(controlPoints: Vector3[]) {
+  return controlPoints.length >= 4 &&
+    Vector3.DistanceSquared(controlPoints[0], controlPoints[controlPoints.length - 1]) < 1e-6;
+}
+
+function getFormationPoints(controlPoints: Vector3[]) {
+  const closed = isClosedFormation(controlPoints);
+  const curvePoints = buildCurvePoints(controlPoints, closed);
+  return curvePoints.length >= 2
+    ? resampleLineEvenly(curvePoints, FORMATION_SPACING_YARDS, closed)
+    : curvePoints;
 }
 
 // Two independently-maintained kinds of drawn/dragged curve:
@@ -553,9 +566,10 @@ function rebuildFormationConnections(segment: Segment) {
   }
 
   const connections: FormationConnection[] = [];
-  for (let i = 0; i < segment.robots.length - 1; i++) {
+  const connectionCount = segment.robots.length - (isClosedFormation(segment.controlPoints) ? 0 : 1);
+  for (let i = 0; i < connectionCount; i++) {
     const robotA = segment.robots[i];
-    const robotB = segment.robots[i + 1];
+    const robotB = segment.robots[(i + 1) % segment.robots.length];
     const mesh = MeshBuilder.CreateTube(
       "formationConnection",
       { path: [robotA.position, robotB.position], radius: FORMATION_CONNECTION_RADIUS_YARDS, tessellation: 6, updatable: true },
@@ -601,8 +615,14 @@ const CURVE_SAMPLES_PER_SPAN = 8;
 
 // Smooths raw drawn/dragged control points into a curved line (Catmull-Rom
 // spline) instead of a raw straight-segment polyline between them.
-function buildCurvePoints(controlPoints: Vector3[]): Vector3[] {
+function buildCurvePoints(controlPoints: Vector3[], closed = false): Vector3[] {
   if (controlPoints.length < 3) return controlPoints;
+  if (closed) {
+    const uniquePoints = controlPoints.slice(0, -1);
+    // Babylon starts a closed Catmull-Rom curve at its second control point.
+    uniquePoints.unshift(uniquePoints.pop()!);
+    return Curve3.CreateCatmullRomSpline(uniquePoints, CURVE_SAMPLES_PER_SPAN, true).getPoints();
+  }
   return Curve3.CreateCatmullRomSpline(controlPoints, CURVE_SAMPLES_PER_SPAN, false).getPoints();
 }
 
@@ -764,7 +784,8 @@ function stopRotationHandleDrag(handedness: string) {
 // Redraws a segment's curve line and repositions its move/point handles to
 // match its current control points (call after moving or reshaping it).
 function refreshSegmentVisuals(segment: Segment) {
-  const curvePoints = buildCurvePoints(segment.controlPoints);
+  const curvePoints = buildCurvePoints(segment.controlPoints,
+    segment.kind === "formation" && isClosedFormation(segment.controlPoints));
   pathLineOwner.delete(segment.line);
   segment.line.dispose(false, true);
   segment.line = createTubeLine("segmentLine", curvePoints, SEGMENT_COLORS[segment.kind]);
@@ -808,16 +829,13 @@ function refreshSegmentVisuals(segment: Segment) {
 // respaces its rank of standing robots; a path segment re-registers its one
 // robot's marching route so playback follows the updated curve.
 function rebuildSegmentContent(segment: Segment) {
-  const curvePoints = buildCurvePoints(segment.controlPoints);
-
   if (segment.kind === "formation") {
     segment.robots.forEach((robot) => {
       if (robot !== segment.anchorRobot) robot.dispose();
     });
     segment.robots = segment.anchorRobot ? [segment.anchorRobot] : [];
 
-    const formationPoints =
-      curvePoints.length >= 2 ? resampleLineEvenly(curvePoints, FORMATION_SPACING_YARDS) : curvePoints;
+    const formationPoints = getFormationPoints(segment.controlPoints);
 
     formationPoints.forEach((point, index) => {      
       const robotPrimitives = index === 0 && segment.anchorRobot
@@ -828,7 +846,8 @@ function rebuildSegmentContent(segment: Segment) {
         segment.robots.push(robotPrimitives);
       }
       robotPrimitives.position.copyFrom(point);
-      const next = formationPoints[index + 1];
+      const next = formationPoints[index + 1] ??
+        (isClosedFormation(segment.controlPoints) ? formationPoints[0] : undefined);
       if (next) {
         const dx = next.x - point.x;
         const dz = next.z - point.z;
@@ -839,9 +858,10 @@ function rebuildSegmentContent(segment: Segment) {
       robotPrimitives.setEnabled(true);
     });
     rebuildFormationConnections(segment);
-  } else if (curvePoints.length >= 2) {
+  } else {
+    const curvePoints = buildCurvePoints(segment.controlPoints);
     const robot = segment.robots[0];
-    if (robot) {
+    if (robot && curvePoints.length >= 2) {
       robotPaths.set(robot, curvePoints);
       registerRobotPath(robot, curvePoints, scene, MARCH_STEP_YARDS);
       if (robot === selectedRobot) refreshStepHandles();
@@ -929,9 +949,9 @@ function removeRobotPath(robot: TransformNode) {
   clearRobotPath(robot);
 }
 
-function createHandFormation(anchorRobot: TransformNode, start: Vector3, end: Vector3) {
+function createHandFormation(anchorRobot: TransformNode, controlPoints: Vector3[]) {
   removeRobotPath(anchorRobot);
-  const segment = createSegment('formation', [start, end], [], anchorRobot);
+  const segment = createSegment('formation', controlPoints, [], anchorRobot);
   refreshCollisionMarkers(scene);
   selectRobot(segment.robots[0] ?? anchorRobot);
 }
@@ -1063,7 +1083,7 @@ const handInteraction = createHandInteraction({
   selectRobot,
   createStandingMarcher,
   createHandFormation,
-  getFormationLinePoints: (start, end) => resampleLineEvenly([start, end], FORMATION_SPACING_YARDS),
+  getFormationPoints,
   updateRobotPathLine,
   createTubeLine,
   createSegment,

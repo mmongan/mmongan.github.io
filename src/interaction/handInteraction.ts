@@ -59,8 +59,8 @@ export interface HandPathDependencies {
   getSelectedRobot: () => TransformNode | null;
   selectRobot: (robot: TransformNode | null) => void;
   createStandingMarcher: (position: Vector3) => TransformNode;
-  createHandFormation: (anchorRobot: TransformNode, start: Vector3, end: Vector3) => void;
-  getFormationLinePoints: (start: Vector3, end: Vector3) => Vector3[];
+  createHandFormation: (anchorRobot: TransformNode, controlPoints: Vector3[]) => void;
+  getFormationPoints: (controlPoints: Vector3[]) => Vector3[];
   updateRobotPathLine: (robot: TransformNode, points: Vector3[]) => void;
   createTubeLine: (
     name: string,
@@ -92,7 +92,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
     selectRobot,
     createStandingMarcher,
     createHandFormation,
-    getFormationLinePoints,
+    getFormationPoints,
     updateRobotPathLine,
     createTubeLine,
     createSegment,
@@ -122,6 +122,8 @@ export function createHandInteraction(paths: HandPathDependencies) {
     pullHand: 'left' | 'right';
     robot: TransformNode;
     endPoint: Vector3;
+    pinchOffset: Vector3;
+    tracedOffsets: Vector3[];
     previewRobots: TransformNode[];
   } | null = null;
   const handPlacementDrafts = new Set<TransformNode>();
@@ -330,11 +332,34 @@ export function createHandInteraction(paths: HandPathDependencies) {
       pullHand: handedness,
       robot: grab.robot,
       endPoint: point.clone(),
+      pinchOffset: grab.robot.getAbsolutePosition().subtract(point),
+      tracedOffsets: [Vector3.Zero()],
       previewRobots: [],
     };
     marcherPinchHands.add(from);
     marcherPinchHands.add(handedness);
     return true;
+  }
+
+  function getFormationPullControlPoints() {
+    const pull = formationPull;
+    if (!pull) return [];
+    pathRoot.computeWorldMatrix(true);
+    const end = Vector3.TransformCoordinates(
+      pull.endPoint.add(pull.pinchOffset), Matrix.Invert(pathRoot.getWorldMatrix())
+    ).subtract(pull.robot.position);
+    const last = pull.tracedOffsets[pull.tracedOffsets.length - 1];
+    if (Vector3.Distance(last, end) >= pathPointMinDistance) {
+      pull.tracedOffsets.push(end.clone());
+    }
+    const offsets = pull.tracedOffsets.map((point) => point.clone());
+    if (Vector3.Distance(offsets[offsets.length - 1], end) > 0.001) offsets.push(end);
+    // Close a completed loop, but not a tiny movement near the starting pinch.
+    if (offsets.length >= 5 && end.length() <= pathPointMinDistance &&
+      offsets.some((point) => point.length() >= pathPointMinDistance * 4)) {
+      offsets[offsets.length - 1] = Vector3.Zero();
+    }
+    return offsets.map((point) => point.add(pull.robot.position));
   }
 
   function updateFormationPullPreview() {
@@ -345,9 +370,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
       finishFormationPull(false);
       return;
     }
-    pathRoot.computeWorldMatrix(true);
-    const end = Vector3.TransformCoordinates(pull.endPoint, Matrix.Invert(pathRoot.getWorldMatrix()));
-    const points = getFormationLinePoints(pull.robot.position, end);
+    const points = getFormationPoints(getFormationPullControlPoints());
     const previewCount = points.length - 1;
     while (pull.previewRobots.length > previewCount) {
       pull.previewRobots.pop()!.dispose();
@@ -366,6 +389,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
 
   function finishFormationPull(commit: boolean) {
     const pull = formationPull;
+    const controlPoints = commit ? getFormationPullControlPoints() : [];
     formationPull = null;
     if (!pull) return;
     pull.previewRobots.forEach((robot) => robot.dispose());
@@ -378,9 +402,17 @@ export function createHandInteraction(paths: HandPathDependencies) {
       return;
     }
 
-    const start = getFormationFieldPoint(pull.robot.getAbsolutePosition());
-    const end = getFormationFieldPoint(pull.endPoint);
-    if (!start || !end || Vector3.Distance(start, end) < 0.1) {
+    pathRoot.computeWorldMatrix(true);
+    const fieldPoints: Vector3[] = [];
+    for (const point of controlPoints) {
+      const projected = getFormationFieldPoint(Vector3.TransformCoordinates(point, pathRoot.getWorldMatrix()));
+      if (!projected) break;
+      fieldPoints.push(projected);
+    }
+    const length = fieldPoints.slice(1).reduce(
+      (sum, point, index) => sum + Vector3.Distance(fieldPoints[index], point), 0
+    );
+    if (fieldPoints.length !== controlPoints.length || length < 0.1) {
       marcherPinchHands.delete(pull.anchorHand);
       finishMarcherGrab(pull.anchorHand, true);
       return;
@@ -388,7 +420,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
 
     marcherGrabs.delete(pull.anchorHand);
     handPlacementDrafts.delete(pull.robot);
-    createHandFormation(pull.robot, start, end);
+    createHandFormation(pull.robot, fieldPoints);
     setRobotHeld(pull.robot, false);
     selectRobot(pull.robot);
     marcherPinchHands.delete(pull.anchorHand);
