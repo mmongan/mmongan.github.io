@@ -5,8 +5,8 @@ import { scene } from '../scene/engine';
 import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS, FIELD_SURFACE_Y } from '../field/constants';
 
 // AR tabletop mode: shrink the whole stadium onto a table. The skybox and
-// horizon ground are world-scale backdrops, so they stay out of the AR
-// transform hierarchy (excluded from reparenting below); visibility rules for
+// horizon ground are world-scale backdrops. The horizon follows the unscaled
+// pivot so it stays below the field; visibility rules for
 // each are handled separately in updateHiddenMeshVisibility.
 const AR_HIDDEN_MESH_NAMES = new Set(["skyBox", "horizonGround"]);
 // At AR_SCALE_MIN the ~110m-long field shrinks to roughly a 20cm hand-held model.
@@ -162,7 +162,9 @@ export function setFieldHeightSetting(mode: "floor" | "table", height: number) {
 export function captureContentRootMeshes() {
   contentRootMeshes = scene.meshes.filter((mesh) => !mesh.parent);
   contentRootMeshes.forEach((mesh) => {
-    if (mesh !== globalScaleRoot && !AR_HIDDEN_MESH_NAMES.has(mesh.name)) {
+    if (mesh.name === "horizonGround") {
+      mesh.parent = arPivot;
+    } else if (mesh !== globalScaleRoot && !AR_HIDDEN_MESH_NAMES.has(mesh.name)) {
       mesh.setParent(globalScaleRoot);
     }
   });

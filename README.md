@@ -61,6 +61,7 @@ Builds the project, copies `dist/` into the repository root, then commits and pu
 - To resize an existing circle with tracked hands, pinch two different marchers on that circle and move your hands apart or together. The circle stays centered and circular, with marchers respaced as its radius changes. Release either pinch to keep the new size; losing hand tracking or enabling floor calibration cancels the resize.
 - Floor calibration only runs when explicitly enabled using the Floor calibration checkbox; entering XR, teleporting, and touching the floor do not start it automatically
 - Separate Floor height (-2 to 2 m) and Table height (0 to 2 m) sliders set the field surface height. Full-scale and Giant mode apply the floor setting; tabletop mode applies the table setting. Values are remembered during the session, defaulting to 0 m and 1 m respectively; adjusting a height does not start calibration.
+- At 1:1 VR scale, the horizon ground follows the field's position while remaining below the turf. It stays world-sized and is hidden at reduced scales and in AR.
 - Sitting mode selects a 0.75 m tabletop and 1.2 m virtual eye height; Standing selects 1 m and 1.7 m. The tabletop slider remains adjustable afterward. Eye-height offsets apply only in VR, preserve subsequent physical head movement, and are retained by teleport; AR headset tracking is unchanged.
 
 ## Project structure
