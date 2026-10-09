@@ -14,7 +14,7 @@ import {
   getARScaleRange,
   getARRotation,
   getARSurfaceHeight,
-  setARSurfaceHeight,
+  setARSurfaceHeightForScaleGesture,
   isARTabletopModeActive,
 } from '../xr/ar';
 import { scene } from '../scene/engine';
@@ -441,13 +441,15 @@ export function createHandInteraction(paths: HandPathDependencies) {
           localAnchor: rotateAroundY(offset, -startRotation).scale(1 / startScale),
         };
       } else {
+        const previousScale = getARScale();
         const scale = setARScale(sceneGesture.startScale * distance / sceneGesture.startDistance);
         const yawDelta = yaw - sceneGesture.startYaw;
         const rotation = sceneGesture.startRotation + Math.atan2(Math.sin(yawDelta), Math.cos(yawDelta));
         setARRotation(rotation);
         setARPosition(midpoint.subtract(rotateAroundY(sceneGesture.localAnchor.scale(scale), rotation)));
         // Keep the field surface at its height so zooming in can't bury or lift it out of view.
-        setARSurfaceHeight(sceneGesture.startSurfaceY + midpoint.y - sceneGesture.startMidpointY);
+        const surfaceHeight = sceneGesture.startSurfaceY + midpoint.y - sceneGesture.startMidpointY;
+        sceneGesture.startSurfaceY += setARSurfaceHeightForScaleGesture(previousScale, surfaceHeight) - surfaceHeight;
       }
       return;
     }
