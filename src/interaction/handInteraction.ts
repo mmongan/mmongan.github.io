@@ -1,4 +1,6 @@
 import { Axis } from '@babylonjs/core/Maths/math.axis';
+import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
+import { HighlightLayer } from '@babylonjs/core/Layers/highlightLayer';
 import { Matrix, Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
 import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
 import type { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.pure';
@@ -115,6 +117,20 @@ export function createHandInteraction(paths: HandPathDependencies) {
     localAnchor: Vector3;
   } | null = null;
   const marcherGrabs = new Map<string, MarcherGrab>();
+  let pendingFormationGlow: HighlightLayer | null = null;
+
+  function highlightPendingMarcher(robot: TransformNode) {
+    if (!pendingFormationGlow) {
+      pendingFormationGlow = new HighlightLayer('pendingFormationGlow', scene, {
+        renderingGroupId: GRABBED_MARCHER_RENDERING_GROUP,
+      });
+      pendingFormationGlow.innerGlow = false;
+    }
+    robot.getChildMeshes().forEach((mesh) => {
+      if (mesh instanceof Mesh) pendingFormationGlow!.addMesh(mesh, new Color3(0.2, 0.9, 1));
+    });
+  }
+
   let circleResize: {
     segment: HandSegment;
     center: Vector3;
@@ -360,6 +376,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
     };
     marcherPinchHands.add(from);
     marcherPinchHands.add(handedness);
+    highlightPendingMarcher(grab.robot);
     return true;
   }
 
@@ -420,6 +437,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
           mesh.renderingGroupId = GRABBED_MARCHER_RENDERING_GROUP;
         });
         pull.previewRobots.push(robot);
+        highlightPendingMarcher(robot);
       }
       robot.position.copyFrom(points[index + 1]);
       robot.rotation.y = pull.robot.rotation.y;
@@ -430,6 +448,8 @@ export function createHandInteraction(paths: HandPathDependencies) {
     const pull = formationPull;
     const controlPoints = commit ? getFormationPullControlPoints() : [];
     formationPull = null;
+    pendingFormationGlow?.dispose();
+    pendingFormationGlow = null;
     if (!pull) return;
     pull.previewRobots.forEach((robot) => robot.dispose());
     marcherPinchHands.delete(pull.pullHand);
