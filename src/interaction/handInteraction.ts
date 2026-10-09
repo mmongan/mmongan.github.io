@@ -333,10 +333,6 @@ export function createHandInteraction(paths: HandPathDependencies) {
     const field = scene.getMeshByName('field');
     const ground = scene.getMeshByName('outerBase');
     if (!field?.isEnabled() || !ground?.isEnabled()) return null;
-    field.computeWorldMatrix(true);
-    const fieldPoint = Vector3.TransformCoordinates(point, Matrix.Invert(field.getWorldMatrix()));
-    if (Math.abs(fieldPoint.x) <= FIELD_WIDTH_YARDS / 2 ||
-      Math.abs(fieldPoint.z) > FIELD_LENGTH_YARDS / 2) return null;
 
     ground.computeWorldMatrix(true);
     const groundPoint = Vector3.TransformCoordinates(point, Matrix.Invert(ground.getWorldMatrix()));
