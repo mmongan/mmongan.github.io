@@ -15,7 +15,7 @@ export { COLLISION_MARKER_RADIUS_YARDS } from './collisionMarkers';
 const allRobots = new Set<TransformNode>();
 const heldRobots = new Set<TransformNode>();
 const MARCHER_MODEL_EYE_HEIGHT = 1.28;
-const MARCHER_BUILD_SCALE = 0.75;
+const MARCHER_BUILD_SCALE = 0.64;
 const MARCHER_HEIGHT_METERS = 1.8;
 const METERS_PER_YARD = 0.9144;
 const MARCHER_HEIGHT_YARDS = MARCHER_HEIGHT_METERS / METERS_PER_YARD;
@@ -100,7 +100,10 @@ function applyInstrumentPose(parts: {
   parts.rightArm.position.z = 0;
   parts.leftArm.rotation.x = restPose ? -0.8 : -1.85;
   parts.rightArm.rotation.x = restPose ? -0.8 : -1.85;
-  parts.horn.position.set(0, restPose ? 0.8 : 1.22, restPose ? 0.45 : 0.36);
+  const armAngle = restPose ? 0.16 : 0.34;
+  parts.leftArm.rotation.z = -armAngle;
+  parts.rightArm.rotation.z = armAngle;
+  parts.horn.position.set(0, restPose ? 0.8 : 1.22, restPose ? 0.62 : 0.36);
   parts.horn.rotation.set(restPose ? 0 : -Math.PI / 2, 0, 0);
 }
 
@@ -337,7 +340,7 @@ function createMarcherModel(scene: Scene, gaitIndex: number): TransformNode {
     shoe.parent = ankle;
 
     const arm = new TransformNode("marcherArm", scene);
-    arm.position.set(side * 0.16, 1.02, 0);
+    arm.position.set(side * 0.31, 1.02, 0);
     arm.rotation.x = 0;
     arm.parent = body;
     const sleeve = MeshBuilder.CreateLathe("marcherSleeve", {
@@ -355,11 +358,11 @@ function createMarcherModel(scene: Scene, gaitIndex: number): TransformNode {
       tessellation: 8,
       cap: Mesh.CAP_ALL,
     }, scene);
-    sleeve.position.x = -side * 0.04;
+    sleeve.position.x = -side * 0.015;
     sleeve.material = bodyMaterial;
     sleeve.parent = arm;
     const glove = MeshBuilder.CreateSphere("marcherHand", { diameter: 0.12, segments: 8 }, scene);
-    glove.position.set(-side * 0.1, -0.44, 0);
+    glove.position.set(-side * 0.025, -0.44, 0);
     glove.material = white;
     glove.parent = arm;
     return { leg, knee, ankle, shoe, arm };
@@ -993,4 +996,3 @@ export function getGlobalProgress(): number | null {
   if (maxCountIndex < 1) return null;
   return globalPlayback.countIndex / maxCountIndex;
 }
-
