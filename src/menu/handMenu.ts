@@ -22,8 +22,15 @@ const CANVAS_HEIGHT = 64;
 const BUTTON_SIZE = 0.022;
 const BUTTON_Y = 0.09;
 
+export type FormationLetter =
+  | "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" | "K" | "L" | "M"
+  | "N" | "O" | "P" | "Q" | "R" | "S" | "T" | "U" | "V" | "W" | "X" | "Y" | "Z";
+
 export type HandMenuHit =
   | { action: "playPause" | "rewind" | "fastForward" | "stepBack" | "stepForward" | "fullScaleVR" | "tabletopScale" | "commitFormation" }
+  | { action: "formationLibrary" | "formationLibraryBack" | "formationLibraryClose" | "lettersLibrary" }
+  | { action: "formationPreset"; preset: "line" | "arc" | "circle" | "block" | "triangle" | "square" | "pentagon" | "hexagon" | "star" }
+  | { action: "formationLetter"; letter: FormationLetter }
   | { action: "seek"; fraction: number };
 
 function roundedRect(
@@ -158,13 +165,29 @@ function isPalmUp(controller: WebXRInputSource): boolean {
 const buttonActions = new Map<AbstractMesh, HandMenuHit>();
 let progressBar: ReturnType<typeof createProgressBarPlane> | null = null;
 let buttons: Mesh[] = [];
+let formationButtons: Mesh[] = [];
+let letterButtons: Mesh[] = [];
 let attachedTo: AbstractMesh | null = null;
 let lastDrawnProgress = -1;
 let trackedHands: WebXRHandTracking | null = null;
 let formationCommitAvailable = false;
+let formationLibraryPage: "closed" | "shapes" | "letters" = "closed";
+let formationAnchorAvailable = false;
 
 export function setFormationCommitAvailable(available: boolean) {
   formationCommitAvailable = available;
+}
+
+export function setFormationLibraryOpen(open: boolean) {
+  formationLibraryPage = open ? "shapes" : "closed";
+}
+
+export function setFormationLibraryPage(page: "closed" | "shapes" | "letters") {
+  formationLibraryPage = page;
+}
+
+export function setFormationLibraryAnchorAvailable(available: boolean) {
+  formationAnchorAvailable = available;
 }
 
 export function setMenuHandTracking(tracking: WebXRHandTracking | null) {
@@ -220,6 +243,63 @@ function ensureMenuMeshes() {
   commitButton.position.z = 0.075;
   commitButton.scaling.x = 3;
   buttons.push(commitButton);
+  const formationsButton = createButton("Form", 0, { action: "formationLibrary" });
+  formationsButton.position.z = -0.09;
+  buttons.push(formationsButton);
+  const presets: Array<{
+    label: string;
+    preset: "line" | "arc" | "circle" | "block" | "triangle" | "square" | "pentagon" | "hexagon" | "star";
+  }> = [
+    { label: "Line", preset: "line" },
+    { label: "Arc", preset: "arc" },
+    { label: "Circle", preset: "circle" },
+    { label: "Block", preset: "block" },
+    { label: "Triangle", preset: "triangle" },
+    { label: "Square", preset: "square" },
+    { label: "Pentagon", preset: "pentagon" },
+    { label: "Hexagon", preset: "hexagon" },
+    { label: "Star", preset: "star" },
+  ];
+  const librarySpacing = BUTTON_SIZE + 0.006;
+  formationButtons = presets.map(({ label, preset }, index) => {
+    const columnCount = 5;
+    const row = Math.floor(index / columnCount);
+    const column = index % columnCount;
+    const buttonsInRow = Math.min(columnCount, presets.length - row * columnCount);
+    const button = createButton(label, (column - (buttonsInRow - 1) / 2) * librarySpacing, {
+      action: "formationPreset",
+      preset,
+    });
+    button.position.z = row * librarySpacing;
+    return button;
+  });
+  const backButton = createButton("Back", 0, { action: "formationLibraryClose" });
+  backButton.position.z = Math.ceil(presets.length / 5) * librarySpacing + 0.01;
+  formationButtons.push(backButton);
+  const lettersButton = createButton("Letters", 0, { action: "lettersLibrary" });
+  lettersButton.position.z = backButton.position.z;
+  lettersButton.position.x = librarySpacing * 2;
+  formationButtons.push(lettersButton);
+
+  const alphabet: FormationLetter[] = [
+    "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M",
+    "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z",
+  ];
+  letterButtons = alphabet.map((letter, index) => {
+    const columns = 7;
+    const row = Math.floor(index / columns);
+    const column = index % columns;
+    const lettersInRow = Math.min(columns, alphabet.length - row * columns);
+    const button = createButton(letter, (column - (lettersInRow - 1) / 2) * librarySpacing, {
+      action: "formationLetter",
+      letter,
+    });
+    button.position.z = row * librarySpacing;
+    return button;
+  });
+  const lettersBack = createButton("Back", 0, { action: "formationLibraryBack" });
+  lettersBack.position.z = Math.ceil(alphabet.length / 7) * librarySpacing + 0.01;
+  letterButtons.push(lettersBack);
 }
 
 // Shows a media-player-style panel (progress bar + play/rewind/fast-forward/step
@@ -252,6 +332,8 @@ export function updateHandMenu(
   if (!palmUpGrip) {
     progressBar.plane.setEnabled(false);
     buttons.forEach((button) => button.setEnabled(false));
+    formationButtons.forEach((button) => button.setEnabled(false));
+    letterButtons.forEach((button) => button.setEnabled(false));
     attachedTo = null;
     return;
   }
@@ -269,10 +351,25 @@ export function updateHandMenu(
     button.position.y = menuHeight;
     button.rotation.x = menuRotation;
   });
+  formationButtons.forEach((button) => {
+    button.parent = palmUpGrip;
+    button.position.y = menuHeight;
+    button.rotation.x = menuRotation;
+  });
+  letterButtons.forEach((button) => {
+    button.parent = palmUpGrip;
+    button.position.y = menuHeight;
+    button.rotation.x = menuRotation;
+  });
   progressBar.plane.setEnabled(true);
-  buttons.forEach((button) => button.setEnabled(
-    buttonActions.get(button)?.action !== "commitFormation" || formationCommitAvailable
-  ));
+  buttons.forEach((button) => {
+    const action = buttonActions.get(button)?.action;
+    button.setEnabled(formationLibraryPage === "closed" &&
+      (action !== "formationLibrary" || formationAnchorAvailable) &&
+      (action !== "commitFormation" || formationCommitAvailable));
+  });
+  formationButtons.forEach((button) => button.setEnabled(formationLibraryPage === "shapes"));
+  letterButtons.forEach((button) => button.setEnabled(formationLibraryPage === "letters"));
 
   const shownProgress = progress ?? 0;
   if (Math.abs(shownProgress - lastDrawnProgress) > 0.002) {

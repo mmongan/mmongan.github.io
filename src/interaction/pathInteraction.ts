@@ -58,7 +58,8 @@ import {
   disposeAllRobots,
   walkRobotAlongCounts,
 } from '../robot/robot';
-import { getHandMenuHit, getHandMenuHitNearPoint, setMenuHandTracking, setFormationCommitAvailable, isHandMenuVisible, isMenuControl } from '../menu/handMenu';
+import { getHandMenuHit, getHandMenuHitNearPoint, setMenuHandTracking, setFormationCommitAvailable, setFormationLibraryOpen, setFormationLibraryPage, setFormationLibraryAnchorAvailable, isHandMenuVisible, isMenuControl } from '../menu/handMenu';
+import type { FormationLetter } from '../menu/handMenu';
 import { createHandInteraction } from './handInteraction';
 import {
   isScoreboardGaitPick,
@@ -487,6 +488,12 @@ function isClosedFormation(controlPoints: Vector3[]) {
     Vector3.DistanceSquared(controlPoints[0], controlPoints[controlPoints.length - 1]) < 1e-6;
 }
 
+function isVerticalFormation(controlPoints: Vector3[]) {
+  if (controlPoints.length < 2) return false;
+  const heights = controlPoints.map((point) => point.y);
+  return Math.max(...heights) - Math.min(...heights) > 0.1;
+}
+
 interface FormationCircle {
   center: Vector3;
   radius: number;
@@ -538,13 +545,96 @@ function sampleFormationCircle(circle: FormationCircle, count: number, closed: b
   return points;
 }
 
-function getFormationPoints(controlPoints: Vector3[]) {
+interface VerticalFormationCircle {
+  center: Vector3;
+  horizontalAxis: Vector3;
+  radius: number;
+  startAngle: number;
+  direction: number;
+}
+
+function fitVerticalFormationCircle(controlPoints: Vector3[]): VerticalFormationCircle {
+  const start = controlPoints[0];
+  const offsets = controlPoints.slice(0, -1).map((point) => point.subtract(start));
+  const farthestHorizontal = offsets.reduce(
+    (farthest, offset) => Math.hypot(offset.x, offset.z) > Math.hypot(farthest.x, farthest.z)
+      ? offset
+      : farthest,
+    Vector3.Zero()
+  );
+  const horizontalAxis = Math.hypot(farthestHorizontal.x, farthestHorizontal.z) > 1e-6
+    ? new Vector3(farthestHorizontal.x, 0, farthestHorizontal.z).normalize()
+    : new Vector3(1, 0, 0);
+
+  let uu = 0, uv = 0, vv = 0, ur = 0, vr = 0, area = 0;
+  let farthestU = 0;
+  let farthestV = 0;
+  offsets.forEach((offset, index) => {
+    const u = offset.x * horizontalAxis.x + offset.z * horizontalAxis.z;
+    const v = offset.y;
+    const squaredRadius = u * u + v * v;
+    uu += u * u;
+    uv += u * v;
+    vv += v * v;
+    ur += u * squaredRadius / 2;
+    vr += v * squaredRadius / 2;
+    if (squaredRadius > farthestU * farthestU + farthestV * farthestV) {
+      farthestU = u;
+      farthestV = v;
+    }
+    const next = offsets[index + 1];
+    if (next) {
+      const nextU = next.x * horizontalAxis.x + next.z * horizontalAxis.z;
+      area += u * next.y - v * nextU;
+    }
+  });
+
+  const determinant = uu * vv - uv * uv;
+  const centerU = determinant > uu * vv * 1e-8
+    ? (ur * vv - vr * uv) / determinant
+    : farthestU / 2;
+  const centerV = determinant > uu * vv * 1e-8
+    ? (vr * uu - ur * uv) / determinant
+    : farthestV / 2;
+  const center = start.add(horizontalAxis.scale(centerU)).add(new Vector3(0, centerV, 0));
+  return {
+    center,
+    horizontalAxis,
+    radius: Math.hypot(centerU, centerV),
+    startAngle: Math.atan2(-centerV, -centerU),
+    direction: area < 0 ? -1 : 1,
+  };
+}
+
+function sampleVerticalFormationCircle(
+  circle: VerticalFormationCircle,
+  count: number,
+  closed: boolean
+): Vector3[] {
+  const points: Vector3[] = [];
+  for (let index = 0; index < count; index++) {
+    const angle = circle.startAngle + circle.direction * index * Math.PI * 2 / count;
+    points.push(circle.center
+      .add(circle.horizontalAxis.scale(circle.radius * Math.cos(angle)))
+      .add(new Vector3(0, circle.radius * Math.sin(angle), 0)));
+  }
+  if (closed) points.push(points[0].clone());
+  return points;
+}
+
+function getFormationPoints(controlPoints: Vector3[], fitClosedCircle = true) {
   const closed = isClosedFormation(controlPoints);
-  if (closed) {
+  if (closed && fitClosedCircle) {
+    if (isVerticalFormation(controlPoints)) {
+      const circle = fitVerticalFormationCircle(controlPoints);
+      const count = Math.max(3, Math.round(Math.PI * 2 * circle.radius / FORMATION_SPACING_YARDS));
+      return sampleVerticalFormationCircle(circle, count, false);
+    }
     const circle = fitFormationCircle(controlPoints);
     const count = Math.max(3, Math.round(Math.PI * 2 * circle.radius / FORMATION_SPACING_YARDS));
     return sampleFormationCircle(circle, count, false);
   }
+  if (closed) return resampleLineEvenly(controlPoints, FORMATION_SPACING_YARDS, true);
   const curvePoints = buildCurvePoints(controlPoints);
   return curvePoints.length >= 2
     ? resampleLineEvenly(curvePoints, FORMATION_SPACING_YARDS, closed)
@@ -569,6 +659,7 @@ interface Segment {
   // so a robot marches single file through the same positions.
   copyHandle: Mesh | null;
   anchorRobot?: TransformNode;
+  fitClosedCircle: boolean;
   robots: TransformNode[]; // formation: every robot in the rank; path: the one marching robot
 }
 
@@ -671,9 +762,15 @@ const CURVE_SAMPLES_PER_SPAN = 8;
 
 // Smooths raw drawn/dragged control points into a curved line (Catmull-Rom
 // spline) instead of a raw straight-segment polyline between them.
-function buildCurvePoints(controlPoints: Vector3[], closed = false): Vector3[] {
+function buildCurvePoints(controlPoints: Vector3[], closed = false, fitClosedCircle = true): Vector3[] {
   if (controlPoints.length < 3) return controlPoints;
   if (closed) {
+    if (!fitClosedCircle) return controlPoints;
+    if (isVerticalFormation(controlPoints)) {
+      const circle = fitVerticalFormationCircle(controlPoints);
+      const count = Math.max(64, Math.ceil(Math.PI * 2 * circle.radius / FORMATION_SPACING_YARDS) * CURVE_SAMPLES_PER_SPAN);
+      return sampleVerticalFormationCircle(circle, count, true);
+    }
     const circle = fitFormationCircle(controlPoints);
     const count = Math.max(64, Math.ceil(Math.PI * 2 * circle.radius / FORMATION_SPACING_YARDS) * CURVE_SAMPLES_PER_SPAN);
     return sampleFormationCircle(circle, count, true);
@@ -839,8 +936,11 @@ function stopRotationHandleDrag(handedness: string) {
 // Redraws a segment's curve line and repositions its move/point handles to
 // match its current control points (call after moving or reshaping it).
 function refreshSegmentVisuals(segment: Segment) {
-  const curvePoints = buildCurvePoints(segment.controlPoints,
-    segment.kind === "formation" && isClosedFormation(segment.controlPoints));
+  const curvePoints = buildCurvePoints(
+    segment.controlPoints,
+    segment.kind === "formation" && isClosedFormation(segment.controlPoints),
+    segment.fitClosedCircle
+  );
   pathLineOwner.delete(segment.line);
   segment.line.dispose(false, true);
   segment.line = createTubeLine("segmentLine", curvePoints, SEGMENT_COLORS[segment.kind]);
@@ -890,7 +990,7 @@ function rebuildSegmentContent(segment: Segment) {
     });
     segment.robots = segment.anchorRobot ? [segment.anchorRobot] : [];
 
-    const formationPoints = getFormationPoints(segment.controlPoints);
+    const formationPoints = getFormationPoints(segment.controlPoints, segment.fitClosedCircle);
 
     formationPoints.forEach((point, index) => {      
       const robotPrimitives = index === 0 && segment.anchorRobot
@@ -932,7 +1032,8 @@ function createSegment(
   kind: SegmentKind,
   controlPoints: Vector3[],
   robots: TransformNode[],
-  anchorRobot?: TransformNode
+  anchorRobot?: TransformNode,
+  fitClosedCircle = true
 ): Segment {
   const line = createTubeLine("segmentLine", controlPoints, SEGMENT_COLORS[kind]);
 
@@ -956,7 +1057,10 @@ function createSegment(
       ? createSegmentHandle("segmentCopyHandle", SEGMENT_MOVE_HANDLE_SIZE, new Color3(0.3, 0.9, 0.4))
       : null;
 
-  const segment: Segment = { kind, controlPoints, line, moveHandle, pointHandles, rotationHandles, copyHandle, anchorRobot, robots };
+  const segment: Segment = {
+    kind, controlPoints, line, moveHandle, pointHandles, rotationHandles, copyHandle,
+    anchorRobot, fitClosedCircle, robots,
+  };
   pointHandles.forEach((handle, index) => segmentPointHandleOwner.set(handle, { segment, index }));
   segmentMoveHandleOwner.set(moveHandle, segment);
   rotationHandles.forEach((handle) => segmentRotationHandleOwner.set(handle, segment));
@@ -1004,14 +1108,165 @@ function removeRobotPath(robot: TransformNode) {
   clearRobotPath(robot);
 }
 
-function createHandFormation(anchorRobot: TransformNode, controlPoints: Vector3[]) {
+function createHandFormation(
+  anchorRobot: TransformNode,
+  controlPoints: Vector3[],
+  fitClosedCircle = true
+) {
   removeRobotPath(anchorRobot);
-  if (isClosedFormation(controlPoints)) {
-    controlPoints = sampleFormationCircle(fitFormationCircle(controlPoints), 16, true);
+  if (isClosedFormation(controlPoints) && fitClosedCircle) {
+    controlPoints = isVerticalFormation(controlPoints)
+      ? sampleVerticalFormationCircle(fitVerticalFormationCircle(controlPoints), 16, true)
+      : sampleFormationCircle(fitFormationCircle(controlPoints), 16, true);
   }
-  const segment = createSegment('formation', controlPoints, [], anchorRobot);
+  const segment = createSegment('formation', controlPoints, [], anchorRobot, fitClosedCircle);
   refreshCollisionMarkers(scene);
   selectRobot(segment.robots[0] ?? anchorRobot);
+}
+
+type FormationPreset = "line" | "arc" | "circle" | "block" |
+  "triangle" | "square" | "pentagon" | "hexagon" | "star";
+
+function createFormationPreset(preset: FormationPreset) {
+  const heldRobot = [...handInteraction.marcherGrabs.values()]
+    .find((grab) => !grab.robot.isDisposed())?.robot;
+  const anchor = heldRobot ?? selectedRobot;
+  if (!anchor || anchor.isDisposed()) return;
+
+  const origin = anchor.position.clone();
+  const forward = new Vector3(Math.sin(anchor.rotation.y), 0, Math.cos(anchor.rotation.y));
+  const up = new Vector3(0, FORMATION_SPACING_YARDS, 0);
+  const side = forward.scale(FORMATION_SPACING_YARDS);
+
+  if (preset === "line") {
+    createHandFormation(anchor, [origin, origin.add(up.scale(4))]);
+    return;
+  }
+
+  if (preset === "arc") {
+    createHandFormation(anchor, [
+      origin,
+      origin.add(side.scale(1.5)).add(up.scale(2)),
+      origin.add(side.scale(3)).add(up.scale(2.5)),
+      origin.add(side.scale(4.5)).add(up.scale(1.5)),
+    ]);
+    return;
+  }
+
+  if (preset === "circle") {
+    const radius = FORMATION_SPACING_YARDS * 3;
+    const center = origin.add(forward.scale(radius));
+    const points: Vector3[] = [];
+    for (let index = 0; index <= 8; index++) {
+      const angle = Math.PI + index * Math.PI / 4;
+      points.push(center
+        .add(forward.scale(radius * Math.cos(angle)))
+        .add(new Vector3(0, radius * Math.sin(angle), 0)));
+    }
+    createHandFormation(anchor, points);
+    return;
+  }
+
+  if (preset === "triangle" || preset === "square" ||
+    preset === "pentagon" || preset === "hexagon" || preset === "star") {
+    const isStar = preset === "star";
+    const sides = preset === "triangle" ? 3 : preset === "square" ? 4 :
+      preset === "pentagon" ? 5 : preset === "hexagon" ? 6 : 10;
+    const radius = FORMATION_SPACING_YARDS * 3;
+    const center = origin.add(forward.scale(radius));
+    const points: Vector3[] = [];
+    for (let index = 0; index < sides; index++) {
+      const angle = Math.PI + index * Math.PI * 2 / sides;
+      const pointRadius = isStar && index % 2 === 1 ? radius * 0.48 : radius;
+      points.push(center
+        .add(forward.scale(pointRadius * Math.cos(angle)))
+        .add(new Vector3(0, pointRadius * Math.sin(angle), 0)));
+    }
+    points.push(points[0].clone());
+    createHandFormation(anchor, points, false);
+    return;
+  }
+
+  removeRobotPath(anchor);
+  for (let row = 0; row < 3; row++) {
+    const start = origin.add(up.scale(row));
+    const end = start.add(side.scale(2));
+    createSegment("formation", [start, end], [], row === 0 ? anchor : undefined);
+  }
+  refreshCollisionMarkers(scene);
+  selectRobot(anchor);
+}
+
+const LETTER_BITMAPS: Record<FormationLetter, string[]> = {
+  A: [".###.", "#...#", "#...#", "#####", "#...#", "#...#", "#...#"],
+  B: ["####.", "#...#", "#...#", "####.", "#...#", "#...#", "####."],
+  C: [".####", "#....", "#....", "#....", "#....", "#....", ".####"],
+  D: ["####.", "#...#", "#...#", "#...#", "#...#", "#...#", "####."],
+  E: ["#####", "#....", "#....", "####.", "#....", "#....", "#####"],
+  F: ["#####", "#....", "#....", "####.", "#....", "#....", "#...."],
+  G: [".####", "#....", "#....", "#.###", "#...#", "#...#", ".###."],
+  H: ["#...#", "#...#", "#...#", "#####", "#...#", "#...#", "#...#"],
+  I: ["#####", "..#..", "..#..", "..#..", "..#..", "..#..", "#####"],
+  J: ["..###", "...#.", "...#.", "...#.", "...#.", "#..#.", ".##.."],
+  K: ["#...#", "#..#.", "#.#..", "##...", "#.#..", "#..#.", "#...#"],
+  L: ["#....", "#....", "#....", "#....", "#....", "#....", "#####"],
+  M: ["#...#", "##.##", "#.#.#", "#.#.#", "#...#", "#...#", "#...#"],
+  N: ["#...#", "##..#", "##..#", "#.#.#", "#..##", "#..##", "#...#"],
+  O: [".###.", "#...#", "#...#", "#...#", "#...#", "#...#", ".###."],
+  P: ["####.", "#...#", "#...#", "####.", "#....", "#....", "#...."],
+  Q: [".###.", "#...#", "#...#", "#...#", "#.#.#", "#..#.", ".##.#"],
+  R: ["####.", "#...#", "#...#", "####.", "#.#..", "#..#.", "#...#"],
+  S: [".####", "#....", "#....", ".###.", "....#", "....#", "####."],
+  T: ["#####", "..#..", "..#..", "..#..", "..#..", "..#..", "..#.."],
+  U: ["#...#", "#...#", "#...#", "#...#", "#...#", "#...#", ".###."],
+  V: ["#...#", "#...#", "#...#", "#...#", ".#.#.", ".#.#.", "..#.."],
+  W: ["#...#", "#...#", "#...#", "#.#.#", "#.#.#", "##.##", "#...#"],
+  X: ["#...#", "#...#", ".#.#.", "..#..", ".#.#.", "#...#", "#...#"],
+  Y: ["#...#", "#...#", ".#.#.", "..#..", "..#..", "..#..", "..#.."],
+  Z: ["#####", "....#", "...#.", "..#..", ".#...", "#....", "#####"],
+};
+
+function createLetterFormation(letter: FormationLetter) {
+  const heldRobot = [...handInteraction.marcherGrabs.values()]
+    .find((grab) => !grab.robot.isDisposed())?.robot;
+  const anchor = heldRobot ?? selectedRobot;
+  if (!anchor || anchor.isDisposed()) return;
+
+  removeRobotPath(anchor);
+  const origin = anchor.position.clone();
+  const forward = new Vector3(Math.sin(anchor.rotation.y), 0, Math.cos(anchor.rotation.y));
+  const side = forward.scale(FORMATION_SPACING_YARDS);
+  const up = new Vector3(0, FORMATION_SPACING_YARDS, 0);
+  let anchorUsed = false;
+  for (let row = 0; row < LETTER_BITMAPS[letter].length; row++) {
+    const bitmapRow = LETTER_BITMAPS[letter][row];
+    let column = 0;
+    while (column < bitmapRow.length) {
+      while (column < bitmapRow.length && bitmapRow[column] !== "#") column++;
+      if (column >= bitmapRow.length) break;
+      const startColumn = column;
+      while (column < bitmapRow.length && bitmapRow[column] === "#") column++;
+      const endColumn = column - 1;
+      const rowOrigin = origin
+        .add(side.scale(startColumn - 2))
+        .add(up.scale(3 - row));
+      if (startColumn === endColumn) {
+        if (!anchorUsed) {
+          anchor.position.copyFrom(rowOrigin);
+          anchor.setEnabled(true);
+          anchorUsed = true;
+        } else {
+          createStandingMarcher(rowOrigin);
+        }
+        continue;
+      }
+      const points = [rowOrigin, rowOrigin.add(side.scale(endColumn - startColumn))];
+      createSegment("formation", points, [], anchorUsed ? undefined : anchor, false);
+      anchorUsed = true;
+    }
+  }
+  refreshCollisionMarkers(scene);
+  selectRobot(anchor);
 }
 
 // Copies a formation's curve into a path segment for its first robot, so that
@@ -1089,6 +1344,26 @@ function executeMenuAction(hit: NonNullable<ReturnType<typeof getHandMenuHit>>) 
     case "commitFormation":
       handInteraction.commitFormation();
       break;
+    case "formationLibrary":
+      setFormationLibraryOpen(true);
+      break;
+    case "formationLibraryBack":
+      setFormationLibraryPage("shapes");
+      break;
+    case "formationLibraryClose":
+      setFormationLibraryOpen(false);
+      break;
+    case "lettersLibrary":
+      setFormationLibraryPage("letters");
+      break;
+    case "formationPreset":
+      setFormationLibraryOpen(false);
+      createFormationPreset(hit.preset);
+      break;
+    case "formationLetter":
+      setFormationLibraryOpen(false);
+      createLetterFormation(hit.letter);
+      break;
     case "playPause":
       toggleAllPlayback();
       break;
@@ -1133,7 +1408,8 @@ const handInteraction = createHandInteraction({
   getFormationPoints,
   getMarcherCircle: (robot) => {
     const segment = segments.find((entry) => entry.kind === "formation" &&
-      entry.robots.includes(robot) && isClosedFormation(entry.controlPoints));
+      entry.robots.includes(robot) && entry.fitClosedCircle && isClosedFormation(entry.controlPoints) &&
+      !isVerticalFormation(entry.controlPoints));
     return segment ? { segment, center: fitFormationCircle(segment.controlPoints).center } : null;
   },
   resizeCircleFormation: (segment, controlPoints) => {
@@ -1191,6 +1467,9 @@ function finishMarcherGrab(handedness: string, commit: boolean) {
 export function updateTabletopHands() {
   handInteraction.updateTabletopHands();
   setFormationCommitAvailable(handInteraction.hasPendingFormation());
+  setFormationLibraryAnchorAvailable(
+    selectedRobot !== null || [...handInteraction.marcherGrabs.values()].some((grab) => !grab.robot.isDisposed())
+  );
 }
 
 function finishFingerPath(commit: boolean) {

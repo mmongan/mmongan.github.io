@@ -35,6 +35,7 @@ export interface HandSegment {
   rotationHandles: Mesh[];
   copyHandle: Mesh | null;
   robots: TransformNode[];
+  fitClosedCircle: boolean;
   anchorRobot?: TransformNode;
 }
 
@@ -145,6 +146,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
     endPoint: Vector3;
     pinchOffset: Vector3;
     tracedOffsets: Vector3[];
+    verticalAxis: Vector3 | null;
     previewRobots: TransformNode[];
     deformation: {
       controlIndex: number;
@@ -321,14 +323,14 @@ export function createHandInteraction(paths: HandPathDependencies) {
     return nearest;
   }
 
-  function getFormationFieldPoint(point: Vector3, snap = true) {
+  function getFormationFieldPoint(point: Vector3, snap = true, preserveHeight = false) {
     const field = scene.getMeshByName('field');
     if (!field?.isEnabled()) return null;
     field.computeWorldMatrix(true);
     const local = Vector3.TransformCoordinates(point, Matrix.Invert(field.getWorldMatrix()));
     local.x = Math.min(FIELD_WIDTH_YARDS / 2, Math.max(-FIELD_WIDTH_YARDS / 2, local.x));
     local.z = Math.min(FIELD_LENGTH_YARDS / 2, Math.max(-FIELD_LENGTH_YARDS / 2, local.z));
-    local.y = 0;
+    if (!preserveHeight) local.y = 0;
     const onField = Vector3.TransformCoordinates(local, field.getWorldMatrix());
     pathRoot.computeWorldMatrix(true);
     const position = Vector3.TransformCoordinates(onField, Matrix.Invert(pathRoot.getWorldMatrix()));
@@ -381,6 +383,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
       endPoint: point.clone(),
       pinchOffset: grab.robot.getAbsolutePosition().subtract(point),
       tracedOffsets: [Vector3.Zero()],
+      verticalAxis: null,
       previewRobots: [],
       deformation: null,
       shapedOffsets: null,
@@ -414,6 +417,14 @@ export function createHandInteraction(paths: HandPathDependencies) {
         pull.tracedOffsets.push(end.clone());
       }
     }
+    if (!pull.verticalAxis) {
+      const horizontalOffset = pull.tracedOffsets.find(
+        (offset) => Math.hypot(offset.x, offset.z) > 0.1
+      );
+      if (horizontalOffset) {
+        pull.verticalAxis = new Vector3(horizontalOffset.x, 0, horizontalOffset.z).normalize();
+      }
+    }
     const offsets = pull.tracedOffsets.map((point) => point.clone());
     if (end) {
       if (Vector3.Distance(offsets[offsets.length - 1], end) > 0.001) offsets.push(end);
@@ -423,7 +434,15 @@ export function createHandInteraction(paths: HandPathDependencies) {
         offsets[offsets.length - 1] = Vector3.Zero();
       }
     }
-    return offsets.map((point) => point.add(pull.robot.position));
+    return offsets.map((offset) => {
+      if (!pull.verticalAxis) return offset.add(pull.robot.position);
+      const horizontalDistance = offset.x * pull.verticalAxis.x + offset.z * pull.verticalAxis.z;
+      return pull.robot.position.add(new Vector3(
+        pull.verticalAxis.x * horizontalDistance,
+        offset.y,
+        pull.verticalAxis.z * horizontalDistance
+      ));
+    });
   }
 
   function beginFormationDeformation(
@@ -469,6 +488,57 @@ export function createHandInteraction(paths: HandPathDependencies) {
     const localPoint = Vector3.TransformCoordinates(point, Matrix.Invert(pathRoot.getWorldMatrix()));
     const target = localPoint.add(deformation.grabOffset);
     const delta = target.subtract(deformation.originalRobotPosition);
+    const axis = pull.verticalAxis;
+    const horizontalDelta = axis
+      ? axis.scale(delta.x * axis.x + delta.z * axis.z)
+      : new Vector3(delta.x, 0, delta.z);
+    const verticalDelta = new Vector3(0, delta.y, 0);
+    const constrainedDelta = horizontalDelta.add(verticalDelta);
+    if (deformation.closed) {
+      const pulledOffset = deformation.originalRobotPosition.subtract(pull.robot.position);
+      const axisLength = pulledOffset.length();
+      if (axisLength <= 1e-4) return;
+      const axis = pulledOffset.scale(1 / axisLength);
+      const stretch = Vector3.Dot(constrainedDelta, axis) / axisLength;
+      pull.tracedOffsets = deformation.originalOffsets.map((offset, index) =>
+        index === 0 || index === deformation.originalOffsets.length - 1
+          ? offset.clone()
+          : offset.add(axis.scale(Vector3.Dot(offset, axis) * stretch))
+      );
+      return;
+    }
+    if (deformation.controlIndex >= deformation.originalOffsets.length - 2) {
+      const offsets = deformation.originalOffsets;
+      const originalEnd = offsets[offsets.length - 1];
+      const chordLength = originalEnd.length();
+      if (chordLength > 1e-4) {
+        const chordDirection = originalEnd.scale(1 / chordLength);
+        const extension = Vector3.Dot(constrainedDelta, chordDirection);
+        let maximumSagitta = 0;
+        offsets.forEach((offset) => {
+          const along = Vector3.Dot(offset, chordDirection);
+          maximumSagitta = Math.max(maximumSagitta, Vector3.Distance(
+            offset,
+            chordDirection.scale(along)
+          ));
+        });
+        if (extension > 0 && maximumSagitta > 1e-4) {
+          const straightening = Math.min(1, extension / maximumSagitta);
+          const end = originalEnd.add(constrainedDelta);
+          const distances = [0];
+          for (let index = 1; index < offsets.length; index++) {
+            distances.push(distances[index - 1] + Vector3.Distance(offsets[index - 1], offsets[index]));
+          }
+          const totalLength = distances[distances.length - 1] || 1;
+          pull.tracedOffsets = offsets.map((offset, index) => {
+            if (index === 0) return offset.clone();
+            const straightPoint = end.scale(distances[index] / totalLength);
+            return Vector3.Lerp(offset, straightPoint, straightening);
+          });
+          return;
+        }
+      }
+    }
     const distances = [0];
     for (let index = 1; index < deformation.originalOffsets.length; index++) {
       distances.push(
@@ -489,13 +559,17 @@ export function createHandInteraction(paths: HandPathDependencies) {
         ? Math.min(linearDistance, totalLength - linearDistance)
         : linearDistance;
       const influence = Math.exp(-(distance ** 2) / (2 * influenceRadius ** 2));
-      return offset.add(delta.scale(influence));
+      return offset.add(constrainedDelta.scale(influence));
     });
   }
 
   function finishFormationShaping() {
     const pull = formationPull;
     if (!pull || pull.shapedOffsets) return;
+    if (!pull.verticalAxis) {
+      const yaw = pull.robot.rotation.y;
+      pull.verticalAxis = new Vector3(Math.sin(yaw), 0, Math.cos(yaw));
+    }
     pull.shapedOffsets = getFormationPullControlPoints().map((point) => point.subtract(pull.robot.position));
     pull.shapedRotationY = pull.robot.rotation.y;
     marcherPinchHands.delete(pull.pullHand);
@@ -551,7 +625,11 @@ export function createHandInteraction(paths: HandPathDependencies) {
     pathRoot.computeWorldMatrix(true);
     const fieldPoints: Vector3[] = [];
     for (const point of controlPoints) {
-      const projected = getFormationFieldPoint(Vector3.TransformCoordinates(point, pathRoot.getWorldMatrix()));
+      const projected = getFormationFieldPoint(
+        Vector3.TransformCoordinates(point, pathRoot.getWorldMatrix()),
+        true,
+        true
+      );
       if (!projected) break;
       fieldPoints.push(projected);
     }
