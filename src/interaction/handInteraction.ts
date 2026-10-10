@@ -146,6 +146,13 @@ export function createHandInteraction(paths: HandPathDependencies) {
     pinchOffset: Vector3;
     tracedOffsets: Vector3[];
     previewRobots: TransformNode[];
+    deformation: {
+      controlIndex: number;
+      originalOffsets: Vector3[];
+      originalRobotPosition: Vector3;
+      grabOffset: Vector3;
+      closed: boolean;
+    } | null;
     shapedOffsets: Vector3[] | null;
     shapedRotationY: number;
     floating: boolean;
@@ -375,6 +382,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
       pinchOffset: grab.robot.getAbsolutePosition().subtract(point),
       tracedOffsets: [Vector3.Zero()],
       previewRobots: [],
+      deformation: null,
       shapedOffsets: null,
       shapedRotationY: grab.robot.rotation.y,
       floating: false,
@@ -395,22 +403,94 @@ export function createHandInteraction(paths: HandPathDependencies) {
         rotateAroundY(point, rotation).add(pull.robot.position)
       );
     }
-    pathRoot.computeWorldMatrix(true);
-    const end = Vector3.TransformCoordinates(
-      pull.endPoint.add(pull.pinchOffset), Matrix.Invert(pathRoot.getWorldMatrix())
-    ).subtract(pull.robot.position);
-    const last = pull.tracedOffsets[pull.tracedOffsets.length - 1];
-    if (Vector3.Distance(last, end) >= pathPointMinDistance) {
-      pull.tracedOffsets.push(end.clone());
+    let end: Vector3 | null = null;
+    if (!pull.deformation) {
+      pathRoot.computeWorldMatrix(true);
+      end = Vector3.TransformCoordinates(
+        pull.endPoint.add(pull.pinchOffset), Matrix.Invert(pathRoot.getWorldMatrix())
+      ).subtract(pull.robot.position);
+      const last = pull.tracedOffsets[pull.tracedOffsets.length - 1];
+      if (Vector3.Distance(last, end) >= pathPointMinDistance) {
+        pull.tracedOffsets.push(end.clone());
+      }
     }
     const offsets = pull.tracedOffsets.map((point) => point.clone());
-    if (Vector3.Distance(offsets[offsets.length - 1], end) > 0.001) offsets.push(end);
-    // Close a completed loop, but not a tiny movement near the starting pinch.
-    if (offsets.length >= 5 && end.length() <= pathPointMinDistance &&
-      offsets.some((point) => point.length() >= pathPointMinDistance * 4)) {
-      offsets[offsets.length - 1] = Vector3.Zero();
+    if (end) {
+      if (Vector3.Distance(offsets[offsets.length - 1], end) > 0.001) offsets.push(end);
+      // Close a completed loop, but not a tiny movement near the starting pinch.
+      if (offsets.length >= 5 && end.length() <= pathPointMinDistance &&
+        offsets.some((point) => point.length() >= pathPointMinDistance * 4)) {
+        offsets[offsets.length - 1] = Vector3.Zero();
+      }
     }
     return offsets.map((point) => point.add(pull.robot.position));
+  }
+
+  function beginFormationDeformation(
+    pull: NonNullable<typeof formationPull>,
+    robot: TransformNode,
+    point: Vector3
+  ) {
+    const previewIndex = pull.previewRobots.indexOf(robot);
+    if (previewIndex < 0) return false;
+    pull.tracedOffsets = getFormationPullControlPoints().map((controlPoint) =>
+      controlPoint.subtract(pull.robot.position)
+    );
+    let controlIndex = Math.min(1, pull.tracedOffsets.length - 1);
+    let nearestDistance = Number.POSITIVE_INFINITY;
+    const robotOffset = robot.position.subtract(pull.robot.position);
+    pull.tracedOffsets.forEach((offset, index) => {
+      if (index === 0) return;
+      const distance = Vector3.Distance(offset, robotOffset);
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        controlIndex = index;
+      }
+    });
+    const closed = pull.tracedOffsets.length >= 5 &&
+      Vector3.Distance(pull.tracedOffsets[0], pull.tracedOffsets[pull.tracedOffsets.length - 1]) <=
+        pathPointMinDistance;
+    pathRoot.computeWorldMatrix(true);
+    const localPoint = Vector3.TransformCoordinates(point, Matrix.Invert(pathRoot.getWorldMatrix()));
+    pull.deformation = {
+      controlIndex,
+      originalOffsets: pull.tracedOffsets.map((offset) => offset.clone()),
+      originalRobotPosition: robot.position.clone(),
+      grabOffset: robot.position.subtract(localPoint),
+      closed,
+    };
+    return true;
+  }
+
+  function updateFormationDeformation(pull: NonNullable<typeof formationPull>, point: Vector3) {
+    const deformation = pull.deformation;
+    if (!deformation) return;
+    pathRoot.computeWorldMatrix(true);
+    const localPoint = Vector3.TransformCoordinates(point, Matrix.Invert(pathRoot.getWorldMatrix()));
+    const target = localPoint.add(deformation.grabOffset);
+    const delta = target.subtract(deformation.originalRobotPosition);
+    const distances = [0];
+    for (let index = 1; index < deformation.originalOffsets.length; index++) {
+      distances.push(
+        distances[index - 1] + Vector3.Distance(
+          deformation.originalOffsets[index - 1], deformation.originalOffsets[index]
+        )
+      );
+    }
+    const controlDistance = distances[deformation.controlIndex] ?? 0;
+    const totalLength = distances[distances.length - 1] ?? 0;
+    const influenceRadius = 3.5;
+    pull.tracedOffsets = deformation.originalOffsets.map((offset, index) => {
+      if (index === 0 || (deformation.closed && index === deformation.originalOffsets.length - 1)) {
+        return offset.clone();
+      }
+      const linearDistance = Math.abs(distances[index] - controlDistance);
+      const distance = deformation.closed
+        ? Math.min(linearDistance, totalLength - linearDistance)
+        : linearDistance;
+      const influence = Math.exp(-(distance ** 2) / (2 * influenceRadius ** 2));
+      return offset.add(delta.scale(influence));
+    });
   }
 
   function finishFormationShaping() {
@@ -701,7 +781,16 @@ export function createHandInteraction(paths: HandPathDependencies) {
         continue;
       }
       if (formationPull?.pullHand === handedness) {
-        if (!formationPull.shapedOffsets) formationPull.endPoint.copyFrom(point);
+        if (!formationPull.shapedOffsets) {
+          if (formationPull.deformation) {
+            updateFormationDeformation(formationPull, point);
+          } else {
+            const previewRobot = findMarcherNearHand(point);
+            if (!previewRobot || !beginFormationDeformation(formationPull, previewRobot, point)) {
+              formationPull.endPoint.copyFrom(point);
+            }
+          }
+        }
         continue;
       }
       const facingYaw = getHandFacingYaw(handedness);

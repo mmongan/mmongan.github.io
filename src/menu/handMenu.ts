@@ -238,13 +238,13 @@ export function updateHandMenu(
       palmUpGrip = controller.grip;
       break;
     }
-    if (!palmUpGrip && trackedHands) {
-      for (const handedness of ['left', 'right'] as const) {
-        const wrist = trackedHands.getHandByHandedness(handedness)?.getJointMesh(WebXRHandJoint.WRIST);
-        if (wrist && Vector3.Dot(wrist.getDirection(Axis.Y), Vector3.Up()) < PALM_UP_DOT_THRESHOLD) {
-          palmUpGrip = wrist;
-          break;
-        }
+  }
+  if (!palmUpGrip && trackedHands) {
+    for (const handedness of ['left', 'right'] as const) {
+      const wrist = trackedHands.getHandByHandedness(handedness)?.getJointMesh(WebXRHandJoint.WRIST);
+      if (wrist && Vector3.Dot(wrist.getDirection(Axis.Y), Vector3.Up()) < PALM_UP_DOT_THRESHOLD) {
+        palmUpGrip = wrist;
+        break;
       }
     }
   }
