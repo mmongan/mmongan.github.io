@@ -159,7 +159,7 @@ function isPalmUp(controller: WebXRInputSource): boolean {
   const grip = controller.grip;
   if (!grip) return false;
   const localUp = grip.getDirection(Axis.Y);
-  return Vector3.Dot(localUp, Vector3.Up()) < PALM_UP_DOT_THRESHOLD;
+  return Vector3.Dot(localUp, Vector3.Up()) > PALM_UP_DOT_THRESHOLD;
 }
 
 const buttonActions = new Map<AbstractMesh, HandMenuHit>();
@@ -322,7 +322,7 @@ export function updateHandMenu(
   if (!palmUpGrip && trackedHands) {
     for (const handedness of ['left', 'right'] as const) {
       const wrist = trackedHands.getHandByHandedness(handedness)?.getJointMesh(WebXRHandJoint.WRIST);
-      if (wrist && Vector3.Dot(wrist.getDirection(Axis.Y), Vector3.Up()) < PALM_UP_DOT_THRESHOLD) {
+      if (wrist && Vector3.Dot(wrist.getDirection(Axis.Y), Vector3.Up()) > PALM_UP_DOT_THRESHOLD) {
         palmUpGrip = wrist;
         break;
       }
