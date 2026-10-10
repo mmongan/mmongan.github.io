@@ -1135,20 +1135,21 @@ function createFormationPreset(preset: FormationPreset) {
 
   const origin = anchor.position.clone();
   const forward = new Vector3(Math.sin(anchor.rotation.y), 0, Math.cos(anchor.rotation.y));
-  const up = new Vector3(0, FORMATION_SPACING_YARDS, 0);
+  const across = new Vector3(Math.cos(anchor.rotation.y), 0, -Math.sin(anchor.rotation.y));
   const side = forward.scale(FORMATION_SPACING_YARDS);
+  const rowStep = across.scale(FORMATION_SPACING_YARDS);
 
   if (preset === "line") {
-    createHandFormation(anchor, [origin, origin.add(up.scale(4))]);
+    createHandFormation(anchor, [origin, origin.add(side.scale(4))]);
     return;
   }
 
   if (preset === "arc") {
     createHandFormation(anchor, [
       origin,
-      origin.add(side.scale(1.5)).add(up.scale(2)),
-      origin.add(side.scale(3)).add(up.scale(2.5)),
-      origin.add(side.scale(4.5)).add(up.scale(1.5)),
+      origin.add(side.scale(1.5)).add(rowStep.scale(2)),
+      origin.add(side.scale(3)).add(rowStep.scale(2.5)),
+      origin.add(side.scale(4.5)).add(rowStep.scale(1.5)),
     ]);
     return;
   }
@@ -1161,7 +1162,7 @@ function createFormationPreset(preset: FormationPreset) {
       const angle = Math.PI + index * Math.PI / 4;
       points.push(center
         .add(forward.scale(radius * Math.cos(angle)))
-        .add(new Vector3(0, radius * Math.sin(angle), 0)));
+        .add(across.scale(radius * Math.sin(angle))));
     }
     createHandFormation(anchor, points);
     return;
@@ -1180,7 +1181,7 @@ function createFormationPreset(preset: FormationPreset) {
       const pointRadius = isStar && index % 2 === 1 ? radius * 0.48 : radius;
       points.push(center
         .add(forward.scale(pointRadius * Math.cos(angle)))
-        .add(new Vector3(0, pointRadius * Math.sin(angle), 0)));
+        .add(across.scale(pointRadius * Math.sin(angle))));
     }
     points.push(points[0].clone());
     createHandFormation(anchor, points, false);
@@ -1189,7 +1190,7 @@ function createFormationPreset(preset: FormationPreset) {
 
   removeRobotPath(anchor);
   for (let row = 0; row < 3; row++) {
-    const start = origin.add(up.scale(row));
+    const start = origin.add(rowStep.scale(row));
     const end = start.add(side.scale(2));
     createSegment("formation", [start, end], [], row === 0 ? anchor : undefined);
   }
@@ -1235,8 +1236,9 @@ function createLetterFormation(letter: FormationLetter) {
   removeRobotPath(anchor);
   const origin = anchor.position.clone();
   const forward = new Vector3(Math.sin(anchor.rotation.y), 0, Math.cos(anchor.rotation.y));
+  const across = new Vector3(Math.cos(anchor.rotation.y), 0, -Math.sin(anchor.rotation.y))
+    .scale(FORMATION_SPACING_YARDS);
   const side = forward.scale(FORMATION_SPACING_YARDS);
-  const up = new Vector3(0, FORMATION_SPACING_YARDS, 0);
   let anchorUsed = false;
   for (let row = 0; row < LETTER_BITMAPS[letter].length; row++) {
     const bitmapRow = LETTER_BITMAPS[letter][row];
@@ -1248,8 +1250,8 @@ function createLetterFormation(letter: FormationLetter) {
       while (column < bitmapRow.length && bitmapRow[column] === "#") column++;
       const endColumn = column - 1;
       const rowOrigin = origin
-        .add(side.scale(startColumn - 2))
-        .add(up.scale(3 - row));
+        .add(across.scale(startColumn - 2))
+        .add(side.scale(3 - row));
       if (startColumn === endColumn) {
         if (!anchorUsed) {
           anchor.position.copyFrom(rowOrigin);
@@ -1260,7 +1262,7 @@ function createLetterFormation(letter: FormationLetter) {
         }
         continue;
       }
-      const points = [rowOrigin, rowOrigin.add(side.scale(endColumn - startColumn))];
+      const points = [rowOrigin, rowOrigin.add(across.scale(endColumn - startColumn))];
       createSegment("formation", points, [], anchorUsed ? undefined : anchor, false);
       anchorUsed = true;
     }
