@@ -350,6 +350,15 @@ export function createHandInteraction(paths: HandPathDependencies) {
       !!findMarcherNearHand(point) || !!getSidelineDraftPosition(point);
   }
 
+  function isPointOnField(point: Vector3) {
+    const field = scene.getMeshByName('field');
+    if (!field?.isEnabled()) return true;
+    field.computeWorldMatrix(true);
+    const local = Vector3.TransformCoordinates(point, Matrix.Invert(field.getWorldMatrix()));
+    return Math.abs(local.x) <= FIELD_WIDTH_YARDS / 2 &&
+      Math.abs(local.z) <= FIELD_LENGTH_YARDS / 2;
+  }
+
   function otherHand(handedness: 'left' | 'right') {
     return handedness === 'left' ? 'right' : 'left';
   }
@@ -592,7 +601,8 @@ export function createHandInteraction(paths: HandPathDependencies) {
       formationPull !== null || marcherPinchHands.size > 0 ||
       [...marcherGrabs.values()].some((grab) => grab.source === 'hand')
     );
-    if (left && right && !marcherHandsBusy) {
+    const pinchesOutsideField = left && right && !isPointOnField(left) && !isPointOnField(right);
+    if (left && right && pinchesOutsideField && !marcherHandsBusy) {
       finishFingerPath(false);
       for (const handedness of ['left', 'right']) {
         if (marcherGrabs.get(handedness)?.source === 'hand') finishMarcherGrab(handedness, false);
