@@ -3,7 +3,6 @@ import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
 import { HighlightLayer } from '@babylonjs/core/Layers/highlightLayer';
 import { Matrix, Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
 import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
-import type { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.pure';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
 import { WebXRHandJoint, WebXRHandTracking } from '@babylonjs/core/XR/features/WebXRHandTracking.pure';
 import {
@@ -21,8 +20,10 @@ import { scene } from '../scene/engine';
 import {
   findRobotRoot,
   getGlobalCountIndex,
+  getMarcherRenderingGroup,
   getRobotCounts,
   placeRobot,
+  setMarcherRenderingGroup,
   setRobotFacing,
   setRobotHeld,
 } from '../robot/robot';
@@ -69,7 +70,7 @@ export interface MarcherGrab {
   initialRotationY: number;
   initialFacingYaw: number | null;
   rayDistance: number;
-  originalRenderingGroups: Map<AbstractMesh, number>;
+  originalRenderingGroup: number | null;
 }
 
 export interface HandPathDependencies {
@@ -228,13 +229,10 @@ export function createHandInteraction(paths: HandPathDependencies) {
   ) {
     if ([...marcherGrabs.values()].some((grab) => grab.robot === robot) || robot === fingerPath?.robot) return;
     robot.computeWorldMatrix(true);
-    const originalRenderingGroups = new Map<AbstractMesh, number>();
-    robot.getChildMeshes().forEach((mesh) => {
-      originalRenderingGroups.set(mesh, mesh.renderingGroupId);
-      mesh.renderingGroupId = GRABBED_MARCHER_RENDERING_GROUP;
-    });
+    const originalRenderingGroup = getMarcherRenderingGroup(robot);
+    setMarcherRenderingGroup(robot, GRABBED_MARCHER_RENDERING_GROUP);
     marcherGrabs.set(handedness, {
-      robot, source, rayDistance, originalRenderingGroups,
+      robot, source, rayDistance, originalRenderingGroup,
       offset: robot.getAbsolutePosition().subtract(point),
       originalPosition: robot.position.clone(),
       originalRotationY: robot.rotation.y,
@@ -246,10 +244,9 @@ export function createHandInteraction(paths: HandPathDependencies) {
   }
 
   function restoreMarcherRendering(grab: MarcherGrab) {
-    grab.originalRenderingGroups.forEach((group, mesh) => {
-      if (!mesh.isDisposed()) mesh.renderingGroupId = group;
-    });
-    grab.originalRenderingGroups.clear();
+    if (grab.originalRenderingGroup === null) return;
+    setMarcherRenderingGroup(grab.robot, grab.originalRenderingGroup);
+    grab.originalRenderingGroup = null;
   }
 
   function moveMarcherGrab(handedness: string, point: Vector3, facingYaw: number | null = null) {
@@ -611,9 +608,9 @@ export function createHandInteraction(paths: HandPathDependencies) {
       let robot = pull.previewRobots[index];
       if (!robot) {
         robot = createStandingMarcher(points[index + 1]);
+        setMarcherRenderingGroup(robot, GRABBED_MARCHER_RENDERING_GROUP);
         robot.getChildMeshes().forEach((mesh) => {
           mesh.isPickable = true;
-          mesh.renderingGroupId = GRABBED_MARCHER_RENDERING_GROUP;
         });
         pull.previewRobots.push(robot);
         highlightPendingMarcher(robot);

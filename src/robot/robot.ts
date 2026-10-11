@@ -1,7 +1,9 @@
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
-import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
+import { VertexBuffer } from '@babylonjs/core/Buffers/buffer.pure';
+import { Color3, Color4 } from '@babylonjs/core/Maths/math.color.pure';
 import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
 import { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.pure';
+import { InstancedMesh } from '@babylonjs/core/Meshes/instancedMesh';
 import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
@@ -33,27 +35,169 @@ export { COLLISION_MARKER_RADIUS_YARDS } from './collisionMarkers';
 const allRobots = new Set<TransformNode>();
 const heldRobots = new Set<TransformNode>();
 
-// Marcher parts and instruments are clones of shared templates. While the
-// field is shrunk (Giant and tabletop modes) every clone switches to its
-// template's low-detail geometry, keeping its parenting and material.
-const modelPartTemplates = new WeakMap<Mesh, ModelTemplate>();
+// Marcher parts and instruments are hardware instances of one hidden source
+// mesh per template, so every copy of a part draws in a single call instead
+// of one call per marcher. Instances always render in their source's
+// rendering group, so a marcher drawn in any other group (held or previewed)
+// temporarily uses plain clones of the templates instead. While the field is
+// shrunk (Giant and tabletop modes) the sources and clones switch to their
+// template's low-detail geometry, keeping parenting and materials.
+type ModelPart = Mesh | InstancedMesh;
+interface ModelPartInfo { template: ModelTemplate; tinted: boolean }
+const modelPartInfo = new WeakMap<AbstractMesh, ModelPartInfo>();
+const partSources = new Map<Scene, Map<ModelTemplate, Mesh>>();
+const TINTED_PART_SPECULAR = new Color3(0.3, 0.3, 0.32);
 let marcherDetail: ModelDetail = isFieldShrunk() ? "low" : "high";
 
-function cloneModelPart(template: ModelTemplate, scene: Scene, name: string, parent: Node | null): Mesh {
-  const mesh = template(scene, marcherDetail).clone(name, parent);
-  modelPartTemplates.set(mesh, template);
+// Sources are visible but never drawn themselves (`isVisible` false); an
+// enabled source keeps its instances rendering.
+function getPartSource(template: ModelTemplate, scene: Scene, tinted: boolean): Mesh {
+  let sources = partSources.get(scene);
+  if (!sources) partSources.set(scene, sources = new Map());
+  let source = sources.get(template);
+  if (!source || source.isDisposed()) {
+    const detailTemplate = template(scene, marcherDetail);
+    source = new Mesh(`${detailTemplate.name}Instances`, scene);
+    detailTemplate.geometry?.applyToMesh(source);
+    source.material = detailTemplate.material;
+    source.isVisible = false;
+    source.isPickable = false;
+    if (tinted) {
+      source.registerInstancedBuffer(VertexBuffer.ColorKind, 4);
+      source.instancedBuffers.color = new Color4(1, 1, 1, 1);
+    }
+    sources.set(template, source);
+  }
+  return source;
+}
+
+function createModelPart(template: ModelTemplate, scene: Scene, name: string, parent: Node | null,
+  robot: TransformNode, tinted = false): ModelPart {
+  let mesh: ModelPart;
+  const color = robotColors.get(robot) ?? Color3.White();
+  if (getMarcherRenderingGroup(robot) === 0) {
+    mesh = getPartSource(template, scene, tinted).createInstance(name);
+    mesh.parent = parent;
+    if (tinted) mesh.instancedBuffers.color = Color4.FromColor3(color);
+  } else {
+    mesh = template(scene, marcherDetail).clone(name, parent);
+    mesh.setEnabled(true);
+    mesh.renderingGroupId = getMarcherRenderingGroup(robot);
+    if (tinted) mesh.material = getTintedPartMaterial(robot);
+  }
+  mesh.isPickable = true;
+  modelPartInfo.set(mesh, { template, tinted });
   return mesh;
 }
 
+// Clones can't take a per-instance tint, so a robot drawn as clones gets its
+// own material matching the shared part material in its team color.
+const tintedPartMaterials = new Map<TransformNode, StandardMaterial>();
+
+function getTintedPartMaterial(robot: TransformNode): StandardMaterial {
+  let material = tintedPartMaterials.get(robot);
+  if (!material) {
+    material = new StandardMaterial("robotBodyMaterial", robot.getScene());
+    material.diffuseColor = robotColors.get(robot) ?? Color3.White();
+    material.specularColor = TINTED_PART_SPECULAR;
+    material.specularPower = 32;
+    tintedPartMaterials.set(robot, material);
+  }
+  return material;
+}
+
+// One unlit disc shared by every marcher's top-down marker, tinted per
+// instance (white emissive times the instance color).
+const topDownMarkerSources = new WeakMap<Scene, Mesh>();
+
+function getTopDownMarkerSource(scene: Scene): Mesh {
+  let source = topDownMarkerSources.get(scene);
+  if (!source || source.isDisposed()) {
+    const material = new StandardMaterial("robotMarkerMaterial", scene);
+    material.diffuseColor = Color3.Black();
+    material.emissiveColor = Color3.White();
+    material.specularColor = Color3.Black();
+    material.disableLighting = true;
+    material.backFaceCulling = false;
+    source = MeshBuilder.CreateDisc("robotTopDownMarkerInstances",
+      { radius: TOP_DOWN_MARKER_DIAMETER_YARDS / 2, tessellation: 16 }, scene);
+    source.material = material;
+    source.layerMask = TOP_DOWN_MARKER_LAYER_MASK;
+    source.isVisible = false;
+    source.isPickable = false;
+    source.registerInstancedBuffer(VertexBuffer.ColorKind, 4);
+    source.instancedBuffers.color = new Color4(1, 1, 1, 1);
+    topDownMarkerSources.set(scene, source);
+  }
+  return source;
+}
+
+const marcherRenderingGroups = new Map<TransformNode, number>();
+
+export function getMarcherRenderingGroup(robot: TransformNode): number {
+  return marcherRenderingGroups.get(robot) ?? 0;
+}
+
+// Moves every mesh of a marcher into a rendering group. Parts switch between
+// instances (group 0) and clones (any other group), keeping their names,
+// transforms, children, and the references marcherParts holds to them.
+export function setMarcherRenderingGroup(robot: TransformNode, group: number) {
+  const previous = getMarcherRenderingGroup(robot);
+  if (group === previous || robot.isDisposed()) return;
+  if (group === 0) marcherRenderingGroups.delete(robot);
+  else marcherRenderingGroups.set(robot, group);
+  const swapPartType = previous === 0 || group === 0;
+  const replacements = new Map<Node, ModelPart>();
+  robot.getChildMeshes(false).forEach((mesh) => {
+    const info = modelPartInfo.get(mesh);
+    if (!info || !swapPartType) {
+      // Instances (the top-down marker) always draw in their source's group.
+      if (!(mesh instanceof InstancedMesh)) mesh.renderingGroupId = group;
+      return;
+    }
+    const replacement = createModelPart(info.template, robot.getScene(), mesh.name, mesh.parent, robot, info.tinted);
+    replacement.position.copyFrom(mesh.position);
+    replacement.rotation.copyFrom(mesh.rotation);
+    replacement.rotationQuaternion = mesh.rotationQuaternion?.clone() ?? null;
+    replacement.scaling.copyFrom(mesh.scaling);
+    replacement.layerMask = mesh.layerMask;
+    replacement.isPickable = mesh.isPickable;
+    replacement.setEnabled(mesh.isEnabled(false));
+    replacements.set(mesh, replacement);
+  });
+  if (replacements.size === 0) return;
+  replacements.forEach((replacement, mesh) => {
+    if (replacement.parent && replacements.has(replacement.parent)) {
+      replacement.parent = replacements.get(replacement.parent)!;
+    }
+    mesh.getChildren().forEach((child) => {
+      if (!replacements.has(child)) child.parent = replacement;
+    });
+  });
+  replacements.forEach((_, mesh) => mesh.dispose(true));
+  const parts = marcherParts.get(robot);
+  if (parts) {
+    const swap = (mesh: ModelPart) => replacements.get(mesh) ?? mesh;
+    parts.horn = swap(parts.horn);
+    parts.gloves = [swap(parts.gloves[0]), swap(parts.gloves[1])];
+    parts.leftShoe = swap(parts.leftShoe);
+    parts.rightShoe = swap(parts.rightShoe);
+  }
+}
 function setMarcherDetail(detail: ModelDetail) {
   if (detail === marcherDetail) return;
   marcherDetail = detail;
   allRobots.forEach((robot) => {
     robot.getChildMeshes(false).forEach((mesh) => {
-      const template = mesh instanceof Mesh ? modelPartTemplates.get(mesh) : undefined;
-      template?.(mesh.getScene(), detail).geometry?.applyToMesh(mesh as Mesh);
+      const info = modelPartInfo.get(mesh);
+      if (info && mesh instanceof Mesh) info.template(mesh.getScene(), detail).geometry?.applyToMesh(mesh);
     });
   });
+  partSources.forEach((sources, scene) => sources.forEach((source, template) => {
+    if (source.isDisposed()) return;
+    template(scene, detail).geometry?.applyToMesh(source);
+    source.instances.forEach((instance) => instance.refreshBoundingInfo());
+  }));
 }
 
 onARScaleChangedObservable.add(() => setMarcherDetail(isFieldShrunk() ? "low" : "high"));
@@ -236,25 +380,25 @@ const marcherParts = new Map<TransformNode, {
   gaitIndex: number;
   instrumentRestPose: boolean;
   instrument: MarcherInstrument;
-  gloves: [Mesh, Mesh];
+  gloves: [ModelPart, ModelPart];
   leftLeg: TransformNode;
   rightLeg: TransformNode;
   leftKnee: TransformNode;
   rightKnee: TransformNode;
   leftAnkle: TransformNode;
   rightAnkle: TransformNode;
-  leftShoe: Mesh;
-  rightShoe: Mesh;
+  leftShoe: ModelPart;
+  rightShoe: ModelPart;
   leftArm: TransformNode;
   rightArm: TransformNode;
   leftForearm: TransformNode;
   rightForearm: TransformNode;
   appliedInstrumentRestPose?: boolean;
-  horn: Mesh;
+  horn: ModelPart;
   body: TransformNode;
 }>();
 
-function orientMarcherShoes(leftShoe: Mesh, rightShoe: Mesh, legFacingOffset: number) {
+function orientMarcherShoes(leftShoe: ModelPart, rightShoe: ModelPart, legFacingOffset: number) {
   const shoeFacing = -legFacingOffset;
   for (const shoe of [leftShoe, rightShoe]) {
     shoe.rotation.y = shoeFacing;
@@ -263,7 +407,7 @@ function orientMarcherShoes(leftShoe: Mesh, rightShoe: Mesh, legFacingOffset: nu
   }
 }
 
-function hornRotationMatrix(horn: Mesh): Matrix {
+function hornRotationMatrix(horn: ModelPart): Matrix {
   return Matrix.RotationYawPitchRoll(horn.rotation.y, horn.rotation.x, horn.rotation.z);
 }
 
@@ -274,7 +418,7 @@ function applyInstrumentPose(parts: {
   leftForearm: TransformNode;
   rightForearm: TransformNode;
   appliedInstrumentRestPose?: boolean;
-  horn: Mesh;
+  horn: ModelPart;
 }, restPose: boolean) {
   if (parts.appliedInstrumentRestPose === restPose) return;
   parts.appliedInstrumentRestPose = restPose;
@@ -387,11 +531,8 @@ export function getMarcherInstrument(robot: TransformNode): MarcherInstrument | 
   return marcherParts.get(robot)?.instrument ?? null;
 }
 
-function createInstrumentMesh(scene: Scene, instrument: MarcherInstrument, root: TransformNode): Mesh {
-  const horn = cloneModelPart(INSTRUMENTS[instrument].template, scene, "marcherHorn", root);
-  horn.setEnabled(true);
-  horn.isPickable = true;
-  return horn;
+function createInstrumentMesh(robot: TransformNode, instrument: MarcherInstrument, root: TransformNode): ModelPart {
+  return createModelPart(INSTRUMENTS[instrument].template, robot.getScene(), "marcherHorn", root, robot);
 }
 
 // Swaps a marcher's instrument mesh, moving its gloves onto the new grips.
@@ -399,8 +540,7 @@ export function setMarcherInstrument(robot: TransformNode, instrument: MarcherIn
   const parts = marcherParts.get(robot);
   if (!parts || parts.instrument === instrument) return;
   const oldHorn = parts.horn;
-  const horn = createInstrumentMesh(robot.getScene(), instrument, oldHorn.parent as TransformNode);
-  horn.renderingGroupId = oldHorn.renderingGroupId;
+  const horn = createInstrumentMesh(robot, instrument, oldHorn.parent as TransformNode);
   horn.layerMask = oldHorn.layerMask;
   parts.gloves.forEach((glove, index) => {
     glove.parent = horn;
@@ -428,21 +568,13 @@ function createMarcherModel(scene: Scene, gaitIndex: number): TransformNode {
   const color = nextRobotColor();
   robotColors.set(robot, color);
 
-  const bodyMaterial = new StandardMaterial("robotBodyMaterial", scene);
-  bodyMaterial.diffuseColor = color;
-  bodyMaterial.specularColor = new Color3(0.25, 0.25, 0.25);
   const body = new TransformNode("marcherBody", scene);
   body.parent = robot;
   body.scaling.set(MARCHER_BODY_SCALE * MARCHER_BUILD_SCALE, MARCHER_BODY_SCALE, MARCHER_BODY_SCALE * MARCHER_BUILD_SCALE);
-  const part = (template: ModelTemplate, name: string, parent: Node | null, material?: StandardMaterial) => {
-    const mesh = cloneModelPart(template, scene, name, parent);
-    mesh.setEnabled(true);
-    mesh.isPickable = true;
-    if (material) mesh.material = material;
-    return mesh;
-  };
+  const part = (template: ModelTemplate, name: string, parent: Node | null, tinted = false) =>
+    createModelPart(template, scene, name, parent, robot, tinted);
 
-  part(getMarcherJacketTemplate, "marcherJacket", body, bodyMaterial);
+  part(getMarcherJacketTemplate, "marcherJacket", body, true);
   part(getMarcherTrimTemplate, "marcherTrim", body);
   part(getRobotEyesTemplate, "robotEyes", body);
 
@@ -468,11 +600,11 @@ function createMarcherModel(scene: Scene, gaitIndex: number): TransformNode {
     arm.position.set(side * 0.31, 1.02, 0);
     arm.rotationQuaternion = Quaternion.Identity();
     arm.parent = body;
-    part(getMarcherUpperArmTemplate, "marcherUpperArm", arm, bodyMaterial);
+    part(getMarcherUpperArmTemplate, "marcherUpperArm", arm, true);
     const forearm = new TransformNode("marcherForearm", scene);
     forearm.rotationQuaternion = Quaternion.Identity();
     forearm.parent = body;
-    part(getMarcherForearmTemplate, "marcherForearm", forearm, bodyMaterial);
+    part(getMarcherForearmTemplate, "marcherForearm", forearm, true);
     const glove = part(getMarcherGloveTemplate, "marcherHand", null);
     return { leg, knee, ankle, shoe, arm, forearm, glove };
   });
@@ -481,7 +613,7 @@ function createMarcherModel(scene: Scene, gaitIndex: number): TransformNode {
   instrumentRoot.parent = robot;
   instrumentRoot.scaling.setAll(MARCHER_BODY_SCALE);
   const instrument = selectedInstrument;
-  const horn = createInstrumentMesh(scene, instrument, instrumentRoot);
+  const horn = createInstrumentMesh(robot, instrument, instrumentRoot);
   appendages.forEach(({ glove }, index) => {
     glove.parent = horn;
     glove.position.copyFrom(INSTRUMENTS[instrument].grips[index]);
@@ -505,28 +637,18 @@ function createMarcherModel(scene: Scene, gaitIndex: number): TransformNode {
   });
   applyInstrumentPose(marcherParts.get(robot)!, instrumentCarryPose);
 
-  const markerMaterial = new StandardMaterial("robotMarkerMaterial", scene);
-  markerMaterial.diffuseColor = color;
-  markerMaterial.emissiveColor = color;
-  markerMaterial.specularColor = new Color3(0, 0, 0);
-  markerMaterial.disableLighting = true;
-  markerMaterial.backFaceCulling = false;
-
-  const marker = MeshBuilder.CreateDisc(
-    "robotTopDownMarker",
-    { radius: TOP_DOWN_MARKER_DIAMETER_YARDS / 2, tessellation: 16 },
-    scene
-  );
+  const marker = getTopDownMarkerSource(scene).createInstance("robotTopDownMarker");
+  marker.instancedBuffers.color = Color4.FromColor3(color);
   marker.rotation.x = -Math.PI / 2;
   marker.position.y = 1.85 * MARCHER_BODY_SCALE;
-  marker.material = markerMaterial;
   marker.layerMask = TOP_DOWN_MARKER_LAYER_MASK;
   marker.isPickable = false;
   marker.parent = robot;
 
   robot.onDisposeObservable.add(() => {
-    bodyMaterial.dispose();
-    markerMaterial.dispose();
+    tintedPartMaterials.get(robot)?.dispose();
+    tintedPartMaterials.delete(robot);
+    marcherRenderingGroups.delete(robot);
     allRobots.delete(robot);
     heldRobots.delete(robot);
     robotColors.delete(robot);
