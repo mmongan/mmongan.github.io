@@ -23,11 +23,13 @@
   "dependencies": {
     "@babylonjs/core": "^9.29.0",
     "@babylonjs/loaders": "^9.29.0",
+    "sql.js": "^1.14.2",
     "vite": "^8.2.2"
   },
   "main": "src/scene/index.ts",
   "type": "module",
   "devDependencies": {
+    "@types/sql.js": "^1.4.11",
     "typescript": "^7.0.2"
   }
 }

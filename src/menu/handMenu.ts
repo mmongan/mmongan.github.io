@@ -31,6 +31,8 @@ export type HandMenuHit =
   | { action: "formationLibrary" | "formationLibraryBack" | "formationLibraryClose" | "lettersLibrary" }
   | { action: "formationPreset"; preset: "line" | "arc" | "circle" | "block" | "triangle" | "square" | "pentagon" | "hexagon" | "star" }
   | { action: "formationLetter"; letter: FormationLetter }
+  | { action: "drillChartPad" }
+  | { action: "drillChartPage"; direction: 1 | -1 }
   | { action: "seek"; fraction: number };
 
 function roundedRect(
@@ -174,12 +176,17 @@ let formationCommitAvailable = false;
 let formationLibraryPage: "closed" | "shapes" | "letters" = "closed";
 let formationAnchorAvailable = false;
 let eraseModeActive = false;
+let drillChartPadActive = false;
 let undoEraseAvailable = false;
 let redoEraseAvailable = false;
 
 export function setEraseHistoryAvailable(undo: boolean, redo: boolean) {
   undoEraseAvailable = undo;
   redoEraseAvailable = redo;
+}
+
+export function setDrillChartPadActive(active: boolean) {
+  drillChartPadActive = active;
 }
 
 export function setEraseModeActive(active: boolean) {
@@ -261,6 +268,9 @@ function ensureMenuMeshes() {
   const eraseButton = createButton("Erase", spacing * 2, { action: "eraseMode" });
   eraseButton.position.z = -0.09;
   buttons.push(eraseButton);
+  const chartButton = createButton("Chart", -spacing * 2, { action: "drillChartPad" });
+  chartButton.position.z = -0.09;
+  buttons.push(chartButton);
   const undoButton = createButton("Undo", -spacing / 2, { action: "undoErase" });
   const redoButton = createButton("Redo", spacing / 2, { action: "redoErase" });
   undoButton.position.z = redoButton.position.z = -0.125;
@@ -385,6 +395,9 @@ export function updateHandMenu(
     const action = buttonActions.get(button)?.action;
     if (action === "eraseMode" && button.material instanceof StandardMaterial) {
       button.material.emissiveColor.set(1, eraseModeActive ? 0.35 : 1, eraseModeActive ? 0.15 : 1);
+    }
+    if (action === "drillChartPad" && button.material instanceof StandardMaterial) {
+      button.material.emissiveColor.set(drillChartPadActive ? 0.45 : 1, drillChartPadActive ? 0.8 : 1, 1);
     }
     button.setEnabled(formationLibraryPage === "closed" &&
       (action !== "formationLibrary" || formationAnchorAvailable) &&

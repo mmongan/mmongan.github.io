@@ -18,13 +18,34 @@ import {
   setARSurfaceHeightForScaleGesture,
 } from '../xr/ar';
 import { scene } from '../scene/engine';
-import { findRobotRoot, placeRobot, setRobotHeld } from '../robot/robot';
+import {
+  findRobotRoot,
+  getGlobalCountIndex,
+  getRobotCounts,
+  placeRobot,
+  setRobotFacing,
+  setRobotHeld,
+} from '../robot/robot';
 import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS } from '../field/constants';
 import { floorCalibrationToggle } from '../ui/dom';
+import {
+  beginDrillChartPadGrab,
+  endDrillChartPadGrab,
+  isDrillChartPadGrabbed,
+  isPointNearDrillChartPad,
+  updateDrillChartPadGrab,
+} from '../menu/drillChartPad';
 import { getControllerYaw, rotateAroundY } from './controllers';
+
+type TrackedHand = NonNullable<ReturnType<WebXRHandTracking['getHandByHandedness']>>;
+
+function getHandGrabMatrix(hand: TrackedHand) {
+  return hand.getJointMesh(WebXRHandJoint.WRIST).computeWorldMatrix(true);
+}
 
 // Clear the hand/controller depth before drawing held marchers, below XR notices.
 const GRABBED_MARCHER_RENDERING_GROUP = 2;
+const MARCHER_TWIST_COMMIT_RADIANS = (20 * Math.PI) / 180;
 
 export interface HandSegment {
   kind: 'formation' | 'path';
@@ -124,6 +145,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
   const marcherGrabs = new Map<string, MarcherGrab>();
   const fingerPushes = new Set<string>();
   const eraseContacts = new Map<string, Vector3>();
+  const padHands = new Set<string>();
   let pendingFormationGlow: HighlightLayer | null = null;
 
   function highlightPendingMarcher(robot: TransformNode) {
@@ -246,6 +268,21 @@ export function createHandInteraction(paths: HandPathDependencies) {
     }
   }
 
+  // A deliberate wrist twist on a scheduled marcher sets the facing it holds
+  // for its route, so auto gait turns the move into a slide or back-march.
+  // Twisting back to face the path restores facing the direction of travel.
+  function commitMarcherTwist(grab: MarcherGrab) {
+    if (grab.source !== 'hand') return;
+    const counts = getRobotCounts(grab.robot);
+    if (!counts || counts.length < 2) return;
+    const yaw = grab.robot.rotation.y;
+    const twist = Math.atan2(Math.sin(yaw - grab.initialRotationY), Math.cos(yaw - grab.initialRotationY));
+    if (Math.abs(twist) < MARCHER_TWIST_COMMIT_RADIANS) return;
+    const travel = counts[Math.min(counts.length - 1, getGlobalCountIndex())].rotationY;
+    const fromTravel = Math.atan2(Math.sin(yaw - travel), Math.cos(yaw - travel));
+    setRobotFacing(grab.robot, Math.abs(fromTravel) < MARCHER_TWIST_COMMIT_RADIANS ? null : yaw);
+  }
+
   function finishMarcherGrab(handedness: string, commit: boolean) {
     const grab = marcherGrabs.get(handedness);
     marcherGrabs.delete(handedness);
@@ -278,6 +315,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
       Matrix.Invert(pathRoot.getWorldMatrix())
     );
     position.y += 0.02;
+    commitMarcherTwist(grab);
     const delta = placeRobot(grab.robot, position, scene);
     handPlacementDrafts.delete(grab.robot);
     const oldPath = robotPaths.get(grab.robot);
@@ -699,6 +737,8 @@ export function createHandInteraction(paths: HandPathDependencies) {
   function updateTabletopHands() {
     if (floorCalibrationToggle?.checked || !handTracking) {
       sceneGesture = null;
+      padHands.forEach((handedness) => endDrillChartPadGrab(handedness));
+      padHands.clear();
       finishFormationPull(false);
       finishCircleResize(false);
       return;
@@ -721,11 +761,30 @@ export function createHandInteraction(paths: HandPathDependencies) {
         pinchedPoints.set(handedness, thumb.add(index).scale(0.5));
       }
     }
+    // Pinches that start on the drill chart pad belong to it (page buttons or
+    // a grab) until released, so they never also move marchers or the scene.
+    for (const handedness of ['left', 'right'] as const) {
+      const hand = handTracking.getHandByHandedness(handedness);
+      const point = pinchedPoints.get(handedness);
+      if (isDrillChartPadGrabbed(handedness)) {
+        if (hand && point) updateDrillChartPadGrab(handedness, getHandGrabMatrix(hand));
+        else endDrillChartPadGrab(handedness);
+      } else if (hand && point && !(handPinches.get(handedness) ?? false) && isPointNearDrillChartPad(point)) {
+        padHands.add(handedness);
+        if (!activateHandMenuAtPoint(point)) beginDrillChartPadGrab(handedness, getHandGrabMatrix(hand));
+      }
+      if (!point) padHands.delete(handedness);
+      if (padHands.has(handedness)) {
+        handPinches.set(handedness, true);
+        pinchedPoints.delete(handedness);
+      }
+    }
     const left = pinchedPoints.get('left');
     const right = pinchedPoints.get('right');
     if (isEraseMode()) {
       sceneGesture = null;
       for (const handedness of ['left', 'right'] as const) {
+        if (padHands.has(handedness)) continue;
         const hand = handTracking.getHandByHandedness(handedness);
         const point = pinchedPoints.get(handedness);
         const wasPinching = handPinches.get(handedness) ?? false;
@@ -803,6 +862,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
     }
     sceneGesture = null;
     for (const handedness of ['left', 'right'] as const) {
+      if (padHands.has(handedness)) continue;
       const hand = handTracking.getHandByHandedness(handedness);
       if (!hand) {
         finishFingerPush(handedness);

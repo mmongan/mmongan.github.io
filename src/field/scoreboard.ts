@@ -11,8 +11,7 @@ import {
   cycleMarchingGait,
   getMarchTempo,
   getInstrumentCarryPose,
-  getMarchingGaitIndex,
-  MARCHING_GAITS,
+  getMarchingGaitLabel,
   MAX_MARCH_TEMPO_BPM,
   MIN_MARCH_TEMPO_BPM,
   setMarchTempo,
@@ -144,7 +143,7 @@ export function createScoreboard(): void {
     boardCtx.font = "bold 16px 'Segoe UI', Arial";
     boardCtx.textAlign = "center";
     boardCtx.textBaseline = "middle";
-    boardCtx.fillText(`‹   ${MARCHING_GAITS[getMarchingGaitIndex()].name.toUpperCase()}   ›`, 256, 193);
+    boardCtx.fillText(`‹   ${getMarchingGaitLabel().toUpperCase()}   ›`, 256, 193);
     boardCtx.fillText(`HORN: ${getInstrumentCarryPose() ? "CARRY" : "PLAY"}`, 256, 211);
     boardCtx.font = "bold 15px 'Segoe UI', Arial";
     boardCtx.fillText(`MARCH TEMPO  ${Math.round(tempo)} BPM`, 256, 227);

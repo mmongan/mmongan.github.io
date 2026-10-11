@@ -9,6 +9,7 @@ import { Observer } from '@babylonjs/core/Misc/observable.pure';
 import { Node } from '@babylonjs/core/node';
 import { Scene } from '@babylonjs/core/scene.pure';
 import { createCollisionMarkerManager, COLLISION_MARKER_RADIUS_YARDS } from './collisionMarkers';
+import { isAutoGaitStyle, selectAutoGait } from './gaitSelection';
 
 export { COLLISION_MARKER_RADIUS_YARDS } from './collisionMarkers';
 
@@ -87,8 +88,7 @@ const marcherParts = new Map<TransformNode, {
   body: TransformNode;
 }>();
 
-function orientMarcherShoes(leftShoe: Mesh, rightShoe: Mesh, gait: (typeof MARCHING_GAITS)[number]) {
-  const legFacingOffset = "legFacingOffset" in gait ? gait.legFacingOffset : 0;
+function orientMarcherShoes(leftShoe: Mesh, rightShoe: Mesh, legFacingOffset: number) {
   const shoeFacing = -legFacingOffset;
   for (const shoe of [leftShoe, rightShoe]) {
     shoe.rotation.y = shoeFacing;
@@ -153,6 +153,18 @@ export function getMarchingGaitIndex(): number {
 
 export function getMarchingGaitTempoFactor(): number {
   return MARCHING_GAITS[selectedMarchingGait].tempoFactor;
+}
+
+// Forward styles (Field March, High Step, Parade, Knee-Ankle) turn on automatic
+// gait: each count picks mark time, half/double time, backward or crab walk from
+// facing, travel direction and step size. Any other gait is forced on everyone.
+export function isAutoGaitActive(): boolean {
+  return isAutoGaitStyle(MARCHING_GAITS[selectedMarchingGait].name);
+}
+
+export function getMarchingGaitLabel(): string {
+  const name = MARCHING_GAITS[selectedMarchingGait].name;
+  return isAutoGaitActive() ? `Auto · ${name}` : name;
 }
 
 export function getInstrumentCarryPose(): boolean {
@@ -397,7 +409,9 @@ function createMarcherModel(scene: Scene, gaitIndex: number): TransformNode {
     glove.position.copyFrom(TRUMPET_GRIPS[index]);
   });
   const resolvedGaitIndex = Math.min(MARCHING_GAITS.length - 1, Math.max(0, gaitIndex));
-  orientMarcherShoes(appendages[0].shoe, appendages[1].shoe, MARCHING_GAITS[resolvedGaitIndex]);
+  const initialGait = MARCHING_GAITS[resolvedGaitIndex];
+  orientMarcherShoes(appendages[0].shoe, appendages[1].shoe,
+    "legFacingOffset" in initialGait ? initialGait.legFacingOffset : 0);
 
   marcherParts.set(robot, {
     gaitIndex: resolvedGaitIndex,
@@ -456,7 +470,11 @@ export function createLowPolyRobot(scene: Scene, gaitIndex = selectedMarchingGai
 
 interface RobotCount {
   position: Vector3;
+  // Travel heading at this count.
   rotationY: number;
+  // Explicit body facing (e.g. facing the box while sliding); absent means
+  // the marcher faces where it travels.
+  facingY?: number;
 }
 
 // Each robot keeps only its own route/table; the playback transport itself
@@ -465,6 +483,8 @@ interface PlayerState {
   points: Vector3[];
   stepSizeYards: number;
   counts: RobotCount[];
+  // Facing held for the whole route; reapplied whenever counts are rebuilt.
+  fixedFacingY?: number;
 }
 
 // Default marching band "8 to 5" step size (8 steps per 5 yards); each robot
@@ -581,29 +601,99 @@ function resamplePathIntoCounts(points: Vector3[], stepSizeYards: number): Robot
   return counts;
 }
 
+const GAIT_INDEX_BY_NAME = new Map<string, number>(MARCHING_GAITS.map((gait, index) => [gait.name, index]));
+
+interface ResolvedCountGait {
+  gaitIndex: number;
+  stepsPerCount: number;
+  bodyYaw: number;
+  legYawOffset: number;
+  inPlace: boolean;
+  sideways: boolean;
+  label: string;
+}
+
+// Gait for the move from counts[segmentStart] to counts[segmentStart + 1].
+// Auto styles derive it from facing/travel/step size; other gaits are forced.
+// Returns null once an auto marcher's route has ended (it halts at attention).
+function resolveSegmentGait(
+  state: PlayerState,
+  segmentStart: number,
+  styleIndex: number
+): ResolvedCountGait | null {
+  const last = state.counts.length - 1;
+  const style = MARCHING_GAITS[styleIndex];
+  if (!isAutoGaitStyle(style.name)) {
+    const from = state.counts[Math.min(last, Math.max(0, segmentStart))];
+    const origin = style.inPlace ? state.counts[0] : from;
+    return {
+      gaitIndex: styleIndex,
+      stepsPerCount: 1,
+      bodyYaw: origin.rotationY + style.facingOffset,
+      legYawOffset: "legFacingOffset" in style ? style.legFacingOffset : 0,
+      inPlace: style.inPlace,
+      sideways: style.facingOffset === Math.PI / 2,
+      label: style.name,
+    };
+  }
+  if (segmentStart < 0 || segmentStart + 1 > last) return null;
+  const from = state.counts[segmentStart];
+  const to = state.counts[segmentStart + 1];
+  const dx = to.position.x - from.position.x;
+  const dz = to.position.z - from.position.z;
+  const travelYaw = dx * dx + dz * dz > 0.0001 ? Math.atan2(dx, dz) : from.rotationY;
+  const bodyYaw = to.facingY ?? from.facingY ?? travelYaw;
+  const selection = selectAutoGait(bodyYaw, dx, dz, style.name);
+  return {
+    gaitIndex: GAIT_INDEX_BY_NAME.get(selection.gait) ?? styleIndex,
+    stepsPerCount: selection.stepsPerCount,
+    bodyYaw,
+    legYawOffset: selection.legYawOffset,
+    inPlace: selection.relation === "in-place",
+    sideways: selection.relation === "sideways",
+    label: selection.label,
+  };
+}
+
+// The gait a marcher uses leaving the given count (e.g. for labels/debugging).
+export function getRobotGaitAtCount(robot: TransformNode, countIndex: number): string | null {
+  const state = players.get(robot);
+  const parts = marcherParts.get(robot);
+  if (!state || !parts || state.counts.length === 0) return null;
+  return resolveSegmentGait(state, countIndex, parts.gaitIndex)?.label ?? "Halt";
+}
+
 // Applies the shared global count (clamped to this robot's own table length,
 // so a shorter route just holds at its last position) to one robot.
 function applyGlobalCount(robot: TransformNode, state: PlayerState) {
   if (heldRobots.has(robot) || state.counts.length === 0) return;
-  const index = Math.min(globalPlayback.countIndex, state.counts.length - 1);
+  const last = state.counts.length - 1;
+  const index = Math.min(globalPlayback.countIndex, last);
   const count = state.counts[index];
   const parts = marcherParts.get(robot);
   if (!parts) return;
-  const gait = MARCHING_GAITS[parts.gaitIndex];
-  const hipHalfSpacing = gait.facingOffset === Math.PI / 2 ? 0.115 : 0.09;
-  const legFacingOffset = "legFacingOffset" in gait ? gait.legFacingOffset : 0;
-  orientMarcherShoes(parts.leftShoe, parts.rightShoe, gait);
+  const playbackDirection = globalPlayback.speedMultiplier >= 0 ? 1 : -1;
+  // Work in the forward frame of the count being crossed, so reverse playback
+  // simply runs the same step backward.
+  const segmentStart = playbackDirection > 0 ? globalPlayback.countIndex : globalPlayback.countIndex - 1;
+  const resolved = resolveSegmentGait(state, segmentStart, parts.gaitIndex);
+  const gaitIndex = resolved?.gaitIndex ?? parts.gaitIndex;
+  const hipHalfSpacing = resolved?.sideways ? 0.115 : 0.09;
+  const legFacingOffset = resolved?.legYawOffset ?? 0;
+  orientMarcherShoes(parts.leftShoe, parts.rightShoe, legFacingOffset);
   parts.leftLeg.rotation.y = legFacingOffset;
   parts.rightLeg.rotation.y = legFacingOffset;
   const instrumentRest = parts.instrumentRestPose;
-  const originCount = gait.inPlace ? state.counts[0] : count;
-  robot.position.copyFrom(originCount.position);
-  const bodyRotation = originCount.rotationY + gait.facingOffset;
+  const inPlace = resolved?.inPlace ?? false;
+  const from = state.counts[Math.min(last, Math.max(0, segmentStart))];
+  const to = state.counts[Math.min(last, Math.max(0, segmentStart + 1))];
+  robot.position.copyFrom((inPlace && !isAutoGaitStyle(MARCHING_GAITS[parts.gaitIndex].name)
+    ? state.counts[0]
+    : count).position);
+  const bodyRotation = resolved?.bodyYaw ?? count.facingY ?? count.rotationY;
   robot.rotation.y = bodyRotation;
-  const direction = globalPlayback.speedMultiplier >= 0 ? 1 : -1;
-  const next = state.counts[Math.min(Math.max(index + direction, 0), state.counts.length - 1)];
-  const displacement = next.position.subtract(count.position);
-  const moving = globalPlayback.playing && (gait.inPlace || displacement.lengthSquared() > 0.0001);
+  const displacement = to.position.subtract(from.position);
+  const moving = globalPlayback.playing && !!resolved && (inPlace || displacement.lengthSquared() > 0.0001);
   if (!moving) {
     parts.leftLeg.rotation.x = 0;
     parts.rightLeg.rotation.x = 0;
@@ -622,16 +712,21 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState) {
     return;
   }
   const countInterval = STEP_INTERVAL_SECONDS /
-    (globalPlayback.tempoMultiplier * gait.tempoFactor);
+    (globalPlayback.tempoMultiplier * MARCHING_GAITS[parts.gaitIndex].tempoFactor);
   const countProgress = Math.min(1, globalPlayback.stepAccumulatorSeconds / countInterval);
-  const playbackDirection = globalPlayback.speedMultiplier >= 0 ? 1 : -1;
-  if (!gait.inPlace) Vector3.LerpToRef(count.position, next.position, countProgress, robot.position);
+  const forwardProgress = playbackDirection > 0 ? countProgress : 1 - countProgress;
+  if (!inPlace) Vector3.LerpToRef(from.position, to.position, forwardProgress, robot.position);
+  const stepsPerCount = resolved!.stepsPerCount;
   const legWorldRotation = bodyRotation + legFacingOffset;
-  const localDisplacement = gait.inPlace
+  // One footfall covers 1/stepsPerCount counts, so its stride scales the same way.
+  const localDisplacement = inPlace
     ? Vector3.Zero()
-    : Vector3.TransformNormal(displacement, Matrix.RotationY(-legWorldRotation));
-  const gaitPoses = MARCHING_GAIT_POSES[parts.gaitIndex];
-  const gaitProgress = playbackDirection > 0 ? countProgress : 1 - countProgress;
+    : Vector3.TransformNormal(displacement.scale(1 / stepsPerCount), Matrix.RotationY(-legWorldRotation));
+  const stepPhase = (segmentStart + forwardProgress) * stepsPerCount;
+  const stepNumber = Math.min(Math.floor(stepPhase), Math.ceil((segmentStart + 1) * stepsPerCount) - 1);
+  const gaitProgress = Math.min(1, stepPhase - stepNumber);
+  const gaitPoses = MARCHING_GAIT_POSES[gaitIndex];
+  const gait = MARCHING_GAITS[gaitIndex];
   const frame = gaitProgress * (gaitPoses.length - 1);
   const first = gaitPoses[Math.floor(frame)];
   const second = gaitPoses[Math.min(Math.floor(frame) + 1, gaitPoses.length - 1)];
@@ -643,9 +738,7 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState) {
   const kneeBend = mix(first.kneeBend, second.kneeBend);
   const ankleFlex = mix(first.ankleFlex, second.ankleFlex);
   const footLift = mix(first.footLift, second.footLift);
-  const gaitPhaseCount = gait.inPlace ? globalPlayback.countIndex : index;
-  const stanceCount = playbackDirection > 0 ? gaitPhaseCount : gaitPhaseCount - 1;
-  const leftStance = stanceCount % 2 === 0;
+  const leftStance = ((stepNumber % 2) + 2) % 2 === 0;
   const placeLeg = (
     leg: TransformNode,
     knee: TransformNode,
@@ -747,7 +840,9 @@ export function registerRobotPath(
   ensureSharedObserver(scene);
   const resolvedStepSize = stepSizeYards ?? players.get(robot)?.stepSizeYards ?? DEFAULT_STEP_SIZE_YARDS;
   const counts = resamplePathIntoCounts(points, resolvedStepSize);
-  players.set(robot, { points, stepSizeYards: resolvedStepSize, counts });
+  const fixedFacingY = players.get(robot)?.fixedFacingY;
+  players.set(robot, { points, stepSizeYards: resolvedStepSize, counts, fixedFacingY });
+  applyFixedFacing(players.get(robot)!);
   applyGlobalCount(robot, players.get(robot)!);
   recalculateCollisionMarkers(scene);
 }
@@ -778,7 +873,12 @@ export function walkRobotAlongPath(
 // multi-robot avoidance pass where every robot must share the same step
 // count and count-for-count timing, which resamplePathIntoCounts can't
 // guarantee since it only knows about one robot's own path/step size.
-export function registerRobotCounts(robot: TransformNode, positions: Vector3[], scene: Scene) {
+export function registerRobotCounts(
+  robot: TransformNode,
+  positions: Vector3[],
+  scene: Scene,
+  facings?: ReadonlyArray<number | undefined>
+) {
   if (positions.length < 1) return;
   ensureSharedObserver(scene);
   const counts: RobotCount[] = [];
@@ -789,7 +889,8 @@ export function registerRobotCounts(robot: TransformNode, positions: Vector3[], 
       const dz = positions[i + 1].z - positions[i].z;
       if (dx * dx + dz * dz > 0.0001) lastRotationY = Math.atan2(dx, dz);
     }
-    counts.push({ position: positions[i].clone(), rotationY: lastRotationY });
+    const facingY = facings?.[i];
+    counts.push({ position: positions[i].clone(), rotationY: lastRotationY, ...(facingY === undefined ? {} : { facingY }) });
   }
   players.set(robot, { points: positions, stepSizeYards: DEFAULT_STEP_SIZE_YARDS, counts });
   applyGlobalCount(robot, players.get(robot)!);
@@ -798,12 +899,17 @@ export function registerRobotCounts(robot: TransformNode, positions: Vector3[], 
 
 // Same as walkRobotAlongPath but for a precomputed per-count position
 // sequence (see registerRobotCounts).
-export function walkRobotAlongCounts(robot: TransformNode, positions: Vector3[], scene: Scene) {
+export function walkRobotAlongCounts(
+  robot: TransformNode,
+  positions: Vector3[],
+  scene: Scene,
+  facings?: ReadonlyArray<number | undefined>
+) {
   if (positions.length < 1) {
     robot.setEnabled(false);
     return;
   }
-  registerRobotCounts(robot, positions, scene);
+  registerRobotCounts(robot, positions, scene, facings);
   robot.setEnabled(true);
   globalPlayback.speedMultiplier = Math.abs(globalPlayback.speedMultiplier) || 1;
   globalPlayback.playing = true;
@@ -815,6 +921,7 @@ export function setRobotStepSize(robot: TransformNode, stepSizeYards: number, sk
   if (!state || stepSizeYards <= 0) return;
   state.stepSizeYards = stepSizeYards;
   state.counts = resamplePathIntoCounts(state.points, stepSizeYards);
+  applyFixedFacing(state);
   applyGlobalCount(robot, state);
   if (!skipRecalculate && sharedScene) recalculateCollisionMarkers(sharedScene);
 }
@@ -838,15 +945,41 @@ export function resetRobotSchedule(
   const first = resampled[0];
   const hold: RobotCount[] =
     first && holdCounts > 0
-      ? Array.from({ length: holdCounts }, () => ({ position: first.position.clone(), rotationY: first.rotationY }))
+      ? Array.from({ length: holdCounts }, () => ({ ...first, position: first.position.clone() }))
       : [];
   state.counts = [...hold, ...resampled];
+  applyFixedFacing(state);
   applyGlobalCount(robot, state);
   if (!skipRecalculate) recalculateCollisionMarkers(scene);
 }
 
 export function getRobotStepSize(robot: TransformNode): number {
   return players.get(robot)?.stepSizeYards ?? DEFAULT_STEP_SIZE_YARDS;
+}
+
+function applyFixedFacing(state: PlayerState) {
+  if (state.fixedFacingY === undefined) return;
+  state.counts.forEach((count) => { count.facingY = state.fixedFacingY; });
+}
+
+// Holds one body facing for a marcher's whole route (e.g. facing the box while
+// it travels sideways or backward); null restores facing the direction of travel.
+// Auto gait then turns that facing/travel difference into slides or back-marches.
+export function setRobotFacing(robot: TransformNode, facingY: number | null) {
+  const state = players.get(robot);
+  if (!state) return;
+  if (facingY === null) {
+    state.fixedFacingY = undefined;
+    state.counts.forEach((count) => { delete count.facingY; });
+  } else {
+    state.fixedFacingY = Math.atan2(Math.sin(facingY), Math.cos(facingY));
+    applyFixedFacing(state);
+  }
+  applyGlobalCount(robot, state);
+}
+
+export function getRobotFixedFacing(robot: TransformNode): number | null {
+  return players.get(robot)?.fixedFacingY ?? null;
 }
 
 // Read-only view of a robot's precalculated marching steps, so callers (e.g.
@@ -946,8 +1079,8 @@ export function delayRobotStart(
   const firstCount = state?.counts[0];
   if (!state || !firstCount || holdCounts <= 0) return;
   const hold: RobotCount[] = Array.from({ length: holdCounts }, () => ({
+    ...firstCount,
     position: firstCount.position.clone(),
-    rotationY: firstCount.rotationY,
   }));
   state.counts = [...hold, ...state.counts];
   applyGlobalCount(robot, state);
@@ -1031,6 +1164,28 @@ export function seekToCount(countIndex: number) {
 // scrub) and pauses there, same as any other manual seek.
 export function scrubBy(deltaCounts: number) {
   seekToCount(globalPlayback.countIndex + deltaCounts);
+}
+
+export function getGlobalCountIndex(): number {
+  return globalPlayback.countIndex;
+}
+
+export function getDrillLastCountIndex(): number {
+  return getMaxCountIndex();
+}
+
+// Each registered marcher's position at a count, holding at its final spot
+// once its own route ends (same as playback does).
+export function getRobotPositionsAtCount(countIndex: number): Vector3[] {
+  const positions: Vector3[] = [];
+  players.forEach((state) => {
+    const count = state.counts[Math.min(state.counts.length - 1, Math.max(0, countIndex))];
+    if (count) positions.push(count.position);
+  });
+  allRobots.forEach((robot) => {
+    if (!players.has(robot) && robot.isEnabled()) positions.push(robot.position);
+  });
+  return positions;
 }
 
 export function getGlobalProgress(): number | null {

@@ -59,7 +59,20 @@ import {
   walkRobotAlongCounts,
   suspendRobotForErase,
 } from '../robot/robot';
-import { getHandMenuHit, getHandMenuHitNearPoint, setMenuHandTracking, setFormationCommitAvailable, setFormationLibraryOpen, setFormationLibraryPage, setFormationLibraryAnchorAvailable, setEraseModeActive, setEraseHistoryAvailable, isHandMenuVisible, isMenuControl } from '../menu/handMenu';
+import { getHandMenuHit, getHandMenuHitNearPoint, setMenuHandTracking, setFormationCommitAvailable, setFormationLibraryOpen, setFormationLibraryPage, setFormationLibraryAnchorAvailable, setEraseModeActive, setEraseHistoryAvailable, setDrillChartPadActive, isHandMenuVisible, isMenuControl } from '../menu/handMenu';
+import {
+  beginDrillChartPadGrab,
+  endDrillChartPadGrab,
+  flipDrillChartPage,
+  isDrillChartPadGrabbed,
+  isDrillChartPadMesh,
+  isDrillChartPadVisible,
+  isPointNearDrillChartPad,
+  onDrillChartPadVisibilityChange,
+  pickDrillChartPad,
+  setDrillChartPadVisible,
+  updateDrillChartPadGrab,
+} from '../menu/drillChartPad';
 import type { FormationLetter } from '../menu/handMenu';
 import { createHandInteraction } from './handInteraction';
 import { EditHistory } from './editHistory';
@@ -72,7 +85,7 @@ import {
   updateScoreboardHornPoseFromPick,
   updateScoreboardTempoFromPick,
 } from '../field/scoreboard';
-import { canvas, collisionMarkersToggle, floorCalibrationToggle, fullScaleVRButton, tabletopScaleButton, showAllPathsToggle, placementModeToggle, eraseModeToggle, undoEraseButton, redoEraseButton, addRandomRobotsButton, marcherCountInput, marcherCountValue, generateDrillButton } from '../ui/dom';
+import { canvas, collisionMarkersToggle, floorCalibrationToggle, fullScaleVRButton, tabletopScaleButton, showAllPathsToggle, placementModeToggle, eraseModeToggle, drillChartPadToggle, undoEraseButton, redoEraseButton, addRandomRobotsButton, marcherCountInput, marcherCountValue, generateDrillButton } from '../ui/dom';
 import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS, FIELD_SURFACE_Y } from '../field/constants';
 import { FORMATION_SPACING_YARDS, generateMarchingDrillPaths, MARCH_STEP_YARDS } from '../robot/drill';
 
@@ -167,7 +180,7 @@ export function removeActiveController(controller: WebXRInputSource) {
 }
 
 export function updateARResizeFromControllers() {
-  resizeFromControllers(eraseMode || marcherGrabs.size > 0);
+  resizeFromControllers(eraseMode || marcherGrabs.size > 0 || isDrillChartPadGrabbed());
 }
 
 // The path/robot live under the shared AR transform so they scale, move, and
@@ -377,6 +390,12 @@ function setEraseMode(enabled: boolean) {
 }
 
 eraseModeToggle?.addEventListener("change", () => setEraseMode(!!eraseModeToggle?.checked));
+
+onDrillChartPadVisibilityChange((visible) => {
+  if (drillChartPadToggle) drillChartPadToggle.checked = visible;
+  setDrillChartPadActive(visible);
+});
+drillChartPadToggle?.addEventListener("change", () => setDrillChartPadVisible(!!drillChartPadToggle?.checked));
 
 function createStandingMarcher(position: Vector3) {
   const robot = createLowPolyRobot(scene);
@@ -1483,6 +1502,12 @@ function executeMenuAction(hit: NonNullable<ReturnType<typeof getHandMenuHit>>) 
     case "redoErase":
       if (!floorCalibrationToggle?.checked) eraseHistory.redo();
       break;
+    case "drillChartPad":
+      setDrillChartPadVisible(!isDrillChartPadVisible());
+      break;
+    case "drillChartPage":
+      flipDrillChartPage(hit.direction);
+      break;
     case "commitFormation":
       handInteraction.commitFormation();
       break;
@@ -1680,6 +1705,20 @@ export function updateRobotPathFromControllers() {
 
     const marcherGrab = marcherGrabs.get(handedness);
     if (marcherGrab?.source === "hand") return;
+    if (isDrillChartPadGrabbed(handedness)) {
+      if (!gripPressed) endDrillChartPadGrab(handedness);
+      else updateDrillChartPadGrab(handedness, getControllerPosition(controller).computeWorldMatrix(true));
+      return;
+    }
+    if (!marcherGrab && gripPressed && !wasGripPressed && !menuInteractionHeld.get(handedness)) {
+      const gripNode = getControllerPosition(controller);
+      const nearPad = isPointNearDrillChartPad(gripNode.getAbsolutePosition(), 0.06) ||
+        !!pickDrillChartPad(getControllerRay(controller));
+      if (nearPad) {
+        beginDrillChartPadGrab(handedness, gripNode.computeWorldMatrix(true));
+        return;
+      }
+    }
     if (marcherGrab?.source === "controller") {
       if (!gripPressed) finishMarcherGrab(handedness, true);
       else {
@@ -1752,7 +1791,7 @@ export function updateRobotPathFromControllers() {
       }
 
       const pick = scene.pickWithRay(getControllerRay(controller));
-
+      if (pick?.pickedMesh && isDrillChartPadMesh(pick.pickedMesh)) return;
       if (pick?.hit && pick.pickedMesh && seekToCollisionMarker(pick.pickedMesh)) {
         return;
       }
