@@ -283,7 +283,7 @@ function ensureMenuMeshes() {
   const redoButton = createButton("Redo", spacing / 2, { action: "redoErase" });
   undoButton.position.z = redoButton.position.z = -0.125;
   buttons.push(undoButton, redoButton);
-  // Brass row, then woodwind row beneath it.
+  // Brass row, then woodwind and percussion rows beneath it.
   const instrumentButtons = ([
     ["Tpt", "trumpet", -spacing * 1.5, -0.16],
     ["Mel", "mellophone", -spacing / 2, -0.16],
@@ -292,6 +292,9 @@ function ensureMenuMeshes() {
     ["Sax", "saxophone", -spacing, -0.195],
     ["Cl", "clarinet", 0, -0.195],
     ["Fl", "flute", spacing, -0.195],
+    ["Sn", "snare", -spacing, -0.23],
+    ["Ten", "tenors", 0, -0.23],
+    ["BD", "bassDrum", spacing, -0.23],
   ] as const).map(([label, instrument, x, z]) => {
     const button = createButton(label, x, { action: "instrument", instrument });
     button.position.z = z;

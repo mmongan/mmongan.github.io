@@ -17,15 +17,21 @@ const DRILL_PATH_RELAX_ITERATIONS = 400;
 const DRILL_PATH_OBSTACLE_MARGIN_YARDS = 6;
 
 // Instrument section for each block rank, front (nearest the circle) to back:
-// woodwinds lead, brass project from behind.
-const DRILL_SECTION_RANKS: readonly MarcherInstrument[] = [
-  "flute", "clarinet", "saxophone", "mellophone", "trumpet", "trumpet", "trombone", "sousaphone",
+// woodwinds lead, brass project from behind, and the drumline marches at the
+// back. Null marks the battery rank, which is split by file (column).
+const DRILL_SECTION_RANKS: readonly (MarcherInstrument | null)[] = [
+  "flute", "clarinet", "saxophone", "mellophone", "trumpet", "trombone", "sousaphone", null,
+];
+// Bass drums on the ends, tenors inside them, snares in the centre.
+const DRILL_BATTERY_FILES: readonly MarcherInstrument[] = [
+  "bassDrum", "bassDrum", "tenors", "snare", "snare", "snare", "snare", "tenors", "bassDrum", "bassDrum",
 ];
 
 // Path indices are block-row-major; the last row is always the front rank.
 export function getDrillSectionInstrument(pathIndex: number): MarcherInstrument {
   const rankFromFront = DRILL_ROWS - 1 - Math.floor(pathIndex / DRILL_COLS);
-  return DRILL_SECTION_RANKS[Math.max(0, Math.min(DRILL_SECTION_RANKS.length - 1, rankFromFront))];
+  const section = DRILL_SECTION_RANKS[Math.max(0, Math.min(DRILL_SECTION_RANKS.length - 1, rankFromFront))];
+  return section ?? DRILL_BATTERY_FILES[pathIndex % DRILL_COLS];
 }
 
 function generateBlockPoints(): Vector3[] {

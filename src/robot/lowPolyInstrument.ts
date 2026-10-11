@@ -158,7 +158,8 @@ export class InstrumentGeometry {
     const bottom = center.subtract(half);
     this.bridge(this.ring(bottom, axis, radius, sides, shell), this.ring(top, axis, radius, sides, shell), sides);
     this.cap(this.ring(top, axis, radius, sides, head), sides, top, head);
-    if (bothHeads) this.cap(this.ring(bottom, axis, radius, sides, head), sides, bottom, head);
+    // The reversed normal flips the ring's handedness, so this head faces out too.
+    if (bothHeads) this.cap(this.ring(bottom, axis.scale(-1), radius, sides, head), sides, bottom, head);
   }
 
   // Drumstick or mallet from the butt through the grip to the tip; an

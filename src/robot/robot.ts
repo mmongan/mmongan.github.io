@@ -13,6 +13,9 @@ import { isAutoGaitStyle, selectAutoGait } from './gaitSelection';
 import { CLARINET_MOUTHPIECE_TIP, getClarinetTemplate } from './clarinetModel';
 import { FLUTE_MOUTHPIECE_TIP, getFluteTemplate } from './fluteModel';
 import { getSousaphoneTemplate, SOUSAPHONE_MOUTHPIECE_TIP, SOUSAPHONE_VALVE_GRIP, sousaphoneLoopPoint } from './sousaphoneModel';
+import {
+  BASS_DRUM_GRIPS, getBassDrumTemplate, getSnareTemplate, getTenorTemplate, SNARE_GRIPS, TENOR_GRIPS,
+} from './percussionModels';
 import { getMellophoneTemplate, MELLOPHONE_MOUTHPIECE_TIP } from './mellophoneModel';
 import { getRobotEyesTemplate } from './robotFaceModel';
 import {
@@ -105,7 +108,8 @@ const TOP_DOWN_MARKER_DIAMETER_YARDS = 2.2;
 const MAX_KNEE_BEND_RADIANS = 1.35;
 const UPPER_ARM_LENGTH = 0.3;
 const FOREARM_LENGTH = 0.4;
-export type MarcherInstrument = "trumpet" | "mellophone" | "saxophone" | "trombone" | "clarinet" | "flute" | "sousaphone";
+export type MarcherInstrument = "trumpet" | "mellophone" | "saxophone" | "trombone" | "clarinet" | "flute" |
+  "sousaphone" | "snare" | "tenors" | "bassDrum";
 
 // Instruments hang off an unsquashed root (uniform MARCHER_BODY_SCALE), so
 // they keep true proportions at any rotation. Instrument-root coordinates are
@@ -125,6 +129,20 @@ interface InstrumentSpec {
 }
 
 const DEFAULT_ELBOW_BENDS: [Vector3, Vector3] = [new Vector3(-0.6, -1, -0.2), new Vector3(0.6, -1, -0.2)];
+const MARCHER_MOUTH = new Vector3(0, 1.2, 0.16 * MARCHER_BUILD_SCALE);
+
+// Drums hang on a carrier and are modelled in instrument-root coordinates, so
+// they never move: the "mouthpiece" is the mouth itself, and playing and
+// carrying are the same pose with the sticks held over the heads.
+function wornInstrument(label: string, template: ModelTemplate, grips: [Vector3, Vector3]): InstrumentSpec {
+  return {
+    label, template, grips,
+    mouthpiece: MARCHER_MOUTH,
+    playRotation: Vector3.Zero(),
+    restPosition: Vector3.Zero(),
+    restRotation: Vector3.Zero(),
+  };
+}
 
 const INSTRUMENTS: Record<MarcherInstrument, InstrumentSpec> = {
   // Left hand wraps the valve casings, right hand sits over the valve buttons.
@@ -209,9 +227,11 @@ const INSTRUMENTS: Record<MarcherInstrument, InstrumentSpec> = {
     restPosition: Vector3.Zero(),
     restRotation: Vector3.Zero(),
   },
+  snare: wornInstrument("Snare drum", getSnareTemplate, SNARE_GRIPS),
+  tenors: wornInstrument("Tenor drums", getTenorTemplate, TENOR_GRIPS),
+  bassDrum: wornInstrument("Bass drum", getBassDrumTemplate, BASS_DRUM_GRIPS),
 };
 export const MARCHER_INSTRUMENTS = Object.keys(INSTRUMENTS) as MarcherInstrument[];
-const MARCHER_MOUTH = new Vector3(0, 1.2, 0.16 * MARCHER_BUILD_SCALE);
 const marcherParts = new Map<TransformNode, {
   gaitIndex: number;
   instrumentRestPose: boolean;
