@@ -13,6 +13,8 @@ import { WebXRCamera } from '@babylonjs/core/XR/webXRCamera';
 import { WebXRDefaultExperience } from '@babylonjs/core/XR/webXRDefaultExperience';
 import { WebXRFeatureName } from '@babylonjs/core/XR/webXRFeaturesManager';
 import { WebXRState } from '@babylonjs/core/XR/webXRTypes';
+import type { IWebXRTeleportationOptions, WebXRMotionControllerTeleportation } from '@babylonjs/core/XR/features/WebXRControllerTeleportation';
+import { getNavigationControllerHand, swapControllerRolesToggle } from '../ui/dom';
 import '@babylonjs/loaders/glTF';
 import { RegisterWebXROculusTouchMotionController } from '@babylonjs/core/XR/motionController/webXROculusTouchMotionController.pure';
 import { scene } from '../scene/engine';
@@ -128,6 +130,15 @@ export function initXR(teleportGrid: Mesh) {
   // was passed in at creation time, so switching the radio has to rebuild it —
   // otherwise "AR" still launches an opaque immersive-vr session (black background).
   let xrExperience: WebXRDefaultExperience | undefined;
+  let navigationOptions: IWebXRTeleportationOptions | undefined;
+  swapControllerRolesToggle?.addEventListener("change", () => {
+    if (!navigationOptions) return;
+    navigationOptions.forceHandedness = getNavigationControllerHand();
+    const teleportation = xrExperience?.teleportation;
+    if (teleportation?.attached) teleportation.detach();
+    teleportGrid.setEnabled(false);
+    updateTeleportationAvailability();
+  });
   let handTrackingFeature: WebXRHandTracking | null = null;
   let wasCalibratingFloor = false;
   const calibrationPresses = new Map<string, boolean>();
@@ -536,7 +547,7 @@ export function initXR(teleportGrid: Mesh) {
           handMeshes: gloveHandTrackingOptions,
         },
         floorMeshes: getFieldFloorMeshes(),
-        disableTeleportation: preferredMode === "immersive-ar",
+        disableTeleportation: true,
         inputOptions: {
           doNotLoadControllerMeshes: false,
           disableControllerAnimation: false,
@@ -544,6 +555,19 @@ export function initXR(teleportGrid: Mesh) {
           customControllersRepositoryURL: "https://cdn.jsdelivr.net/npm/@webxr-input-profiles/assets@1.0/dist",
         },
       });
+
+      navigationOptions = undefined;
+      if (preferredMode !== "immersive-ar") {
+        navigationOptions = {
+          xrInput: xrExperience.input,
+          floorMeshes: getFieldFloorMeshes(),
+          forceHandedness: getNavigationControllerHand(),
+        };
+        xrExperience.teleportation = xrExperience.baseExperience.featuresManager.enableFeature(
+          WebXRFeatureName.TELEPORTATION, "stable", navigationOptions
+        ) as WebXRMotionControllerTeleportation;
+        xrExperience.teleportation.setSelectionFeature(xrExperience.pointerSelection);
+      }
 
       xrExperience.baseExperience.onInitialXRPoseSetObservable.add((camera) => {
         postureHeightOffset = 0;

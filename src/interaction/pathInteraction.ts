@@ -9,7 +9,7 @@ import { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.pure';
 import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
-import { WebXRHandTracking } from '@babylonjs/core/XR/features/WebXRHandTracking.pure';
+import { WebXRHandJoint, WebXRHandTracking } from '@babylonjs/core/XR/features/WebXRHandTracking.pure';
 import { WebXRInputSource } from '@babylonjs/core/XR/webXRInputSource';
 import {
   getARPosition,
@@ -23,6 +23,9 @@ import {
   isARTabletopModeActive,
 } from '../xr/ar';
 import { scene } from '../scene/engine';
+import { getMediaControllerHand, swapControllerRolesToggle, handThumbJogToggle } from '../ui/dom';
+import { resetThumbJog, updateThumbJog } from './thumbJogGesture';
+import type { ThumbJogState } from './thumbJogGesture';
 import {
   activeControllers as controllerRegistry,
   getActiveControllers as getRegisteredControllers,
@@ -509,25 +512,74 @@ function updatePlacementModeToggleFromControllers() {
   });
 }
 
-// Deflecting either controller's thumbstick left/right scrubs the shared
+// Deflecting the media controller's thumbstick left/right scrubs the shared
 // timeline continuously — a small deadzone avoids drift from stick noise,
 // and the scrub rate is proportional to how far the stick is pushed.
 const SCRUB_DEADZONE = 0.2;
 const SCRUB_COUNTS_PER_SECOND = 16;
 let scrubRemainder = 0;
+let mediaHandTracking: WebXRHandTracking | null = null;
+const thumbJogState: ThumbJogState = { neutral: null, settlingSeconds: 0 };
+for (const toggle of [swapControllerRolesToggle, handThumbJogToggle]) {
+  toggle?.addEventListener("change", () => {
+    scrubRemainder = 0;
+    resetThumbJog(thumbJogState);
+  });
+}
+
+function getHandThumbJogAxis(deltaSeconds: number): number {
+  const hand = handThumbJogToggle?.checked
+    ? mediaHandTracking?.getHandByHandedness(getMediaControllerHand())
+    : null;
+  if (!hand) {
+    resetThumbJog(thumbJogState);
+    return 0;
+  }
+  const joint = (name: WebXRHandJoint) => hand.getJointMesh(name).getAbsolutePosition();
+  const wrist = joint(WebXRHandJoint.WRIST);
+  const middle = joint(WebXRHandJoint.MIDDLE_FINGER_PHALANX_PROXIMAL);
+  const indexBase = joint(WebXRHandJoint.INDEX_FINGER_METACARPAL);
+  const pinkyBase = joint(WebXRHandJoint.PINKY_FINGER_METACARPAL);
+  const length = Vector3.Distance(wrist, middle);
+  if (length < 0.025) {
+    resetThumbJog(thumbJogState);
+    return 0;
+  }
+  const thumb = joint(WebXRHandJoint.THUMB_TIP);
+  const thumbBase = joint(WebXRHandJoint.THUMB_METACARPAL);
+  const curled = [
+    WebXRHandJoint.INDEX_FINGER_TIP, WebXRHandJoint.MIDDLE_FINGER_TIP,
+    WebXRHandJoint.RING_FINGER_TIP, WebXRHandJoint.PINKY_FINGER_TIP,
+  ].every((tip) => Vector3.Distance(joint(tip), wrist) < length * 1.4);
+  const thumbDirection = thumb.subtract(thumbBase);
+  const raised = thumbDirection.length() > length * 0.65 &&
+    Vector3.Dot(thumbDirection, middle.subtract(wrist).normalize()) > length * 0.3;
+  const notPinching = Vector3.Distance(thumb, joint(WebXRHandJoint.INDEX_FINGER_TIP)) > length * 0.65;
+  const across = indexBase.subtract(pinkyBase).normalize();
+  if (getMediaControllerHand() === "left") across.scaleInPlace(-1);
+  const position = Vector3.Dot(thumb.subtract(wrist), across) / length;
+  return updateThumbJog(thumbJogState, curled && raised && notPinching, position, deltaSeconds);
+}
 
 function updateScrubFromControllers(deltaSeconds: number) {
-  if (!isHandMenuVisible()) {
+  if (!isHandMenuVisible() || floorCalibrationToggle?.checked) {
     scrubRemainder = 0;
+    resetThumbJog(thumbJogState);
     return;
   }
 
   let axisValue = 0;
   controllerRegistry.forEach((controller) => {
+    if (controller.inputSource.handedness !== getMediaControllerHand()) return;
     const thumbstick = controller.motionController?.getComponentOfType("thumbstick");
     const x = thumbstick?.axes.x ?? 0;
     if (Math.abs(x) > Math.abs(axisValue)) axisValue = x;
   });
+  if (controllerRegistry.has(getMediaControllerHand())) {
+    resetThumbJog(thumbJogState);
+  } else {
+    axisValue = getHandThumbJogAxis(deltaSeconds);
+  }
 
   if (Math.abs(axisValue) <= SCRUB_DEADZONE) {
     scrubRemainder = 0;
@@ -1675,6 +1727,9 @@ const handInteraction = createHandInteraction({
 const { marcherGrabs } = handInteraction;
 
 export function setHandTracking(tracking: WebXRHandTracking | null) {
+  mediaHandTracking = tracking;
+  resetThumbJog(thumbJogState);
+  scrubRemainder = 0;
   handInteraction.setHandTracking(tracking);
   setMenuHandTracking(tracking);
 }

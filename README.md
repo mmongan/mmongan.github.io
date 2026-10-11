@@ -42,6 +42,13 @@ To check automatic gait selection:
 node scripts/check-gait-selection.mjs
 ```
 
+To check controller hand assignments and media jogging:
+
+```bash
+node scripts/check-controller-roles.mjs
+node scripts/check-thumb-jog.mjs
+```
+
 ## Deploy to GitHub Pages
 
 ```bash
@@ -85,6 +92,8 @@ Builds the project, copies `dist/` into the repository root, then commits and pu
 - Collision-marker previews and controls for showing paths and testing larger robot groups
 - Immersive VR with teleport locomotion and immersive AR with the stadium scaled to a tabletop
 - In VR floor/Giant mode, teleport using controllers only. Hand gestures never teleport. Controller teleport is disabled during floor calibration, in tabletop mode or AR, and whenever the field is smaller than 2 meters along its longest side. It preserves field scale, and its target scales with the field.
+- Settings → Controller roles assigns left-hand navigation (teleport and turning) and right-hand media jogging by default. Enable Right-hand navigation / left-hand media jogging to swap them, including during an XR session. Only the media controller's thumbstick jogs the timeline left/right while the palm-up menu is open; the navigation controller cannot jog playback. The setting also selects the jogging hand in AR, where teleportation remains disabled.
+- Enable Hand-tracked thumb media jogging in the same settings group for a virtual thumbstick on the assigned media hand. With the palm-up menu open, curl the fingers and extend the thumb; hold it steady for 0.3 seconds to establish neutral, then move it sideways relative to the palm to jog. The existing deadzone and proportional jog speed apply. Opening the hand, lowering the thumb, pinching, losing tracking, closing the menu, or starting floor calibration stops the gesture. Controller input takes priority when a media controller is connected. This gesture never navigates or teleports.
 - In VR or AR, use both controllers to move, rotate, and scale the stadium between tabletop and full size. Shrinking with controllers or tracked hands across the default tabletop size (a 1-meter-long field) raises the field to the configured Table height; continued resizing preserves that height unless you move your hands vertically.
 - Giant mode fits the field uniformly inside the configured room width and length (1-50 meters each; defaults to 4 by 5 meters). Use the Giant mode button in settings; changing room dimensions while active updates the fit. In XR, the field surface follows the headset's local-floor reference rather than the Floor height slider, with physical eye height and rotation preserved. Tabletop/full-scale buttons and explicit floor calibration exit Giant mode. Dimensions describe the field footprint, not the surrounding stadium or a detected safety boundary.
 - Tracked hands use Babylon.js skeleton-skinned hand meshes, mapped to WebXR joint bones and rendered with an off-white marching-band glove material in VR and AR.

@@ -10,6 +10,16 @@ export const videoScreenSizeInput = document.getElementById("videoScreenSize") a
 export const videoScreenSizeValue = document.getElementById("videoScreenSizeValue") as HTMLOutputElement | null;
 export const statusText = document.getElementById("statusText");
 export const floorCalibrationToggle = document.getElementById("floorCalibrationToggle") as HTMLInputElement | null;
+export const swapControllerRolesToggle = document.getElementById("swapControllerRolesToggle") as HTMLInputElement | null;
+export const handThumbJogToggle = document.getElementById("handThumbJogToggle") as HTMLInputElement | null;
+
+export function getNavigationControllerHand(): "left" | "right" {
+  return swapControllerRolesToggle?.checked ? "right" : "left";
+}
+
+export function getMediaControllerHand(): "left" | "right" {
+  return getNavigationControllerHand() === "left" ? "right" : "left";
+}
 export const sittingModeToggle = document.getElementById("sittingModeToggle") as HTMLInputElement | null;
 export const fullScaleVRButton = document.getElementById("fullScaleVRButton") as HTMLButtonElement | null;
 export const tabletopScaleButton = document.getElementById("tabletopScaleButton") as HTMLButtonElement | null;
