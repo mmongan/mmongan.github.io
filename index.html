@@ -8,7 +8,7 @@
       content="Babylon.js WebXR VR and AR demo for Meta Quest 3"
     />
     <title>Chartxr</title>
-    <script type="module" crossorigin src="/assets/index-BS9d7hmP.js"></script>
+    <script type="module" crossorigin src="/assets/index-G9OyjXOd.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/rolldown-runtime-hePW80VL.js">
     <link rel="modulepreload" crossorigin href="/assets/engineStore-Bn2tApal.js">
     <link rel="modulepreload" crossorigin href="/assets/internalTexture-B3djGrls.js">
@@ -53,7 +53,7 @@
     <link rel="modulepreload" crossorigin href="/assets/flowGraphExecutionBlockWithOutSignal-B295jATU.js">
     <link rel="modulepreload" crossorigin href="/assets/flowGraphAsyncExecutionBlock-x499NxeI.js">
     <link rel="modulepreload" crossorigin href="/assets/flowGraphRichTypes.pure-BJncjwKM.js">
-    <link rel="stylesheet" crossorigin href="/assets/index-BnYw4hG6.css">
+    <link rel="stylesheet" crossorigin href="/assets/index-2WdKPPDE.css">
   </head>
   <body>
     <canvas id="renderCanvas"></canvas>
@@ -231,6 +231,27 @@
           </form>
           <button id="openMarchExampleButton" type="button" class="xr-button secondary">Load example OpenMarch show</button>
           <output id="openMarchStatus" class="settings-status" for="openMarchUrl"></output>
+          <label class="radio-option">
+            <input type="checkbox" id="drillLabelsToggle" checked />
+            <span>Show drill labels above marchers</span>
+          </label>
+          <details id="showInfo" class="show-info" hidden>
+            <summary id="showInfoSummary">Show</summary>
+            <p class="show-info-heading">Pages (click to jump)</p>
+            <div class="show-info-table">
+              <table>
+                <thead><tr><th>Page</th><th>Count</th><th>Counts</th><th>Notes</th></tr></thead>
+                <tbody id="showInfoPages"></tbody>
+              </table>
+            </div>
+            <p class="show-info-heading">Marchers</p>
+            <div class="show-info-table">
+              <table>
+                <thead><tr><th>Label</th><th>Name</th><th>Section</th><th>Instrument</th></tr></thead>
+                <tbody id="showInfoMarchers"></tbody>
+              </table>
+            </div>
+          </details>
         </div>
       </div>
     </div>
