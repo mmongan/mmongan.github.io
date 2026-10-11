@@ -43,45 +43,69 @@ function partTemplate(name: string, build: (geometry: InstrumentGeometry) => voi
 }
 
 export const getMarcherTrimTemplate = partTemplate("marcherTrimTemplate", (geometry) => {
-  geometry.lathe([[0, 0.48], [0.1, 0.48], [0.14, 0.54], [0.15, 0.6], [0.12, 0.66], [0, 0.7]], 8, DARK);
+  geometry.lathe(geometry.low
+    ? [[0, 0.48], [0.1, 0.48], [0.15, 0.6], [0, 0.7]]
+    : [[0, 0.48], [0.1, 0.48], [0.14, 0.54], [0.15, 0.6], [0.12, 0.66], [0, 0.7]], 8, DARK);
   geometry.lathe([[0.055, 1.06], [0.055, 1.18]], 6, METAL);
-  geometry.lathe([[0, 1.36], [0.125, 1.36], [0.14, 1.39], [0.13, 1.43], [0.13, 1.58], [0.105, 1.64], [0, 1.64]], 8, DARK);
-  geometry.lathe([[0, 1.62], [0.06, 1.645], [0.08, 1.7], [0.06, 1.755], [0, 1.78]], 6, GLOVE);
+  geometry.lathe(geometry.low
+    ? [[0, 1.36], [0.14, 1.36], [0.105, 1.64], [0, 1.64]]
+    : [[0, 1.36], [0.125, 1.36], [0.14, 1.39], [0.13, 1.43], [0.13, 1.58], [0.105, 1.64], [0, 1.64]], 8, DARK);
+  geometry.lathe(geometry.low
+    ? [[0, 1.62], [0.08, 1.7], [0, 1.78]]
+    : [[0, 1.62], [0.06, 1.645], [0.08, 1.7], [0.06, 1.755], [0, 1.78]], 6, GLOVE);
   addRobotHead(geometry);
 });
 
 export const getMarcherJacketTemplate = partTemplate("marcherJacketTemplate", (geometry) => {
-  geometry.lathe([[0, 0.61], [0.154, 0.61], [0.187, 0.64], [0.209, 0.75],   [0.22, 0.93], [0.245, 1.01],
-      [0.2, 1.055], [0.12, 1.075], [0, 1.075]], 8, TINTED);
+  geometry.lathe(geometry.low
+    ? [[0, 0.61], [0.154, 0.61], [0.27, 1.02], [0.12, 1.075], [0, 1.075]]
+    : [[0, 0.61], [0.154, 0.61], [0.187, 0.64], [0.209, 0.75], [0.22, 0.93], [0.245, 1.01],
+      [0.2, 1.055], [0.12, 1.075], [0, 1.075]], 8, TINTED,
+    ({ x, y, z }) => new Vector3(geometry.low ? x * Math.SQRT2 : x, y, z));
 });
 
 // Arm and leg segments hang down -Y from their joint, capped above it by a
-// half ball; the segment above closes the other half, so bends stay rounded
-// and seamless. The jacket shoulders reach past the shoulder balls.
+// half ball; the segment above closes the other half, so bends stay rounded.
+// Low-detail shoulders have a complete joint cap that rotates with the arm.
 export const getMarcherUpperArmTemplate = partTemplate("marcherUpperArmTemplate", (geometry) => {
-  geometry.lathe([[0.062, -0.3], [0.075, -0.15], [0.085, 0], [0.06, 0.06], [0, 0.085]], 8, TINTED);
+  geometry.lathe(geometry.low
+    ? [[0.062, -0.3], [0.085, 0], [0, 0.085]]
+    : [[0.062, -0.3], [0.075, -0.15], [0.085, 0], [0.06, 0.06], [0, 0.085]], 8, TINTED);
+  if (geometry.low) {
+    geometry.lathe([[0, -0.12], [0.12, 0], [0, 0.12]], 8, TINTED);
+  }
 });
 
 export const getMarcherForearmTemplate = partTemplate("marcherForearmTemplate", (geometry) => {
-  geometry.lathe([[0.05, -0.4], [0.065, 0], [0.046, 0.046], [0, 0.065]], 8, TINTED);
+  geometry.lathe(geometry.low
+    ? [[0.05, -0.4], [0.065, 0], [0, 0.065]]
+    : [[0.05, -0.4], [0.065, 0], [0.046, 0.046], [0, 0.065]], 8, TINTED);
 });
 
 export const getMarcherThighTemplate = partTemplate("marcherThighTemplate", (geometry) => {
-  geometry.lathe([[0, -0.22], [0.085, -0.21], [0.08, -0.12], [0.083, -0.03], [0.072, 0.08], [0.07, 0.16],
+  geometry.lathe(geometry.low
+    ? [[0, -0.22], [0.085, -0.21], [0.083, -0.03], [0.07, 0.16], [0, 0.23]]
+    : [[0, -0.22], [0.085, -0.21], [0.08, -0.12], [0.083, -0.03], [0.072, 0.08], [0.07, 0.16],
     [0.05, 0.21], [0, 0.23]], 8, DARK);
 });
 
 export const getMarcherCalfTemplate = partTemplate("marcherCalfTemplate", (geometry) => {
-  geometry.lathe([[0, -0.25], [0.072, -0.24], [0.068, -0.15], [0.08, -0.05], [0.087, 0], [0.062, 0.062],
+  geometry.lathe(geometry.low
+    ? [[0, -0.25], [0.072, -0.24], [0.087, 0], [0, 0.087]]
+    : [[0, -0.25], [0.072, -0.24], [0.068, -0.15], [0.08, -0.05], [0.087, 0], [0.062, 0.062],
     [0, 0.087]], 8, DARK);
 });
 
 // Toe along +Z (rotated about X), widened sideways.
 export const getMarcherShoeTemplate = partTemplate("marcherShoeTemplate", (geometry) => {
-  geometry.lathe([[0, -0.135], [0.045, -0.12], [0.06, -0.07], [0.06, 0.07], [0.045, 0.12], [0, 0.135]], 6, BOOT,
+  geometry.lathe(geometry.low
+    ? [[0, -0.135], [0.06, -0.07], [0.06, 0.07], [0, 0.135]]
+    : [[0, -0.135], [0.045, -0.12], [0.06, -0.07], [0.06, 0.07], [0.045, 0.12], [0, 0.135]], 6, BOOT,
     ({ x, y, z }) => new Vector3(x * 1.2, -z, y));
 });
 
 export const getMarcherGloveTemplate = partTemplate("marcherGloveTemplate", (geometry) => {
-  geometry.lathe([[0, -0.0475], [0.034, -0.034], [0.0475, 0], [0.034, 0.034], [0, 0.0475]], 6, GLOVE);
+  geometry.lathe(geometry.low
+    ? [[0, -0.0475], [0.0475, 0], [0, 0.0475]]
+    : [[0, -0.0475], [0.034, -0.034], [0.0475, 0], [0.034, 0.034], [0, 0.0475]], 6, GLOVE);
 });

@@ -31,6 +31,7 @@ import { getTromboneTemplate, TROMBONE_MOUTHPIECE_TIP, TROMBONE_SLIDE_STAY_Y } f
 import { getTrumpetTemplate } from './trumpetModel';
 import type { ModelDetail, ModelTemplate } from './lowPolyInstrument';
 import { isFieldShrunk, onARScaleChangedObservable } from '../xr/ar';
+import { lowPolygonMarchersToggle } from '../ui/dom';
 
 export { COLLISION_MARKER_RADIUS_YARDS } from './collisionMarkers';
 
@@ -49,7 +50,21 @@ interface ModelPartInfo { template: ModelTemplate; tinted: boolean }
 const modelPartInfo = new WeakMap<AbstractMesh, ModelPartInfo>();
 const partSources = new Map<Scene, Map<ModelTemplate, Mesh>>();
 const TINTED_PART_SPECULAR = new Color3(0.3, 0.3, 0.32);
-let marcherDetail: ModelDetail = isFieldShrunk() ? "low" : "high";
+function getMarcherDetail(): ModelDetail {
+  return lowPolygonMarchersToggle?.checked || isFieldShrunk() ? "low" : "high";
+}
+
+let marcherDetail: ModelDetail = getMarcherDetail();
+let instrumentDetail: ModelDetail = isFieldShrunk() ? "low" : "high";
+const bodyTemplates = new Set<ModelTemplate>([
+  getMarcherCalfTemplate, getMarcherForearmTemplate, getMarcherGloveTemplate,
+  getMarcherJacketTemplate, getMarcherShoeTemplate, getMarcherThighTemplate,
+  getMarcherTrimTemplate, getMarcherUpperArmTemplate, getRobotEyesTemplate,
+]);
+
+function getTemplateDetail(template: ModelTemplate): ModelDetail {
+  return bodyTemplates.has(template) ? marcherDetail : instrumentDetail;
+}
 
 // Sources are visible but never drawn themselves (`isVisible` false); an
 // enabled source keeps its instances rendering.
@@ -58,7 +73,7 @@ function getPartSource(template: ModelTemplate, scene: Scene, tinted: boolean): 
   if (!sources) partSources.set(scene, sources = new Map());
   let source = sources.get(template);
   if (!source || source.isDisposed()) {
-    const detailTemplate = template(scene, marcherDetail);
+    const detailTemplate = template(scene, getTemplateDetail(template));
     source = new Mesh(`${detailTemplate.name}Instances`, scene);
     detailTemplate.geometry?.applyToMesh(source);
     source.material = detailTemplate.material;
@@ -82,7 +97,7 @@ function createModelPart(template: ModelTemplate, scene: Scene, name: string, pa
     mesh.parent = parent;
     if (tinted) mesh.instancedBuffers.color = Color4.FromColor3(color);
   } else {
-    mesh = template(scene, marcherDetail).clone(name, parent);
+    mesh = template(scene, getTemplateDetail(template)).clone(name, parent);
     mesh.setEnabled(true);
     mesh.renderingGroupId = getMarcherRenderingGroup(robot);
     if (tinted) mesh.material = getTintedPartMaterial(robot);
@@ -208,20 +223,23 @@ function applyDetailGeometry(mesh: Mesh, template: ModelTemplate, detail: ModelD
 }
 
 function setMarcherDetail(detail: ModelDetail) {
-  if (detail === marcherDetail) return;
+  const nextInstrumentDetail = isFieldShrunk() ? "low" : "high";
+  if (detail === marcherDetail && nextInstrumentDetail === instrumentDetail) return;
   marcherDetail = detail;
+  instrumentDetail = nextInstrumentDetail;
   allRobots.forEach((robot) => {
     robot.getChildMeshes(false).forEach((mesh) => {
       const info = modelPartInfo.get(mesh);
-      if (info && mesh instanceof Mesh) applyDetailGeometry(mesh, info.template, detail);
+      if (info && mesh instanceof Mesh) applyDetailGeometry(mesh, info.template, getTemplateDetail(info.template));
     });
   });
   partSources.forEach((sources) => sources.forEach((source, template) => {
-    if (!source.isDisposed()) applyDetailGeometry(source, template, detail);
+    if (!source.isDisposed()) applyDetailGeometry(source, template, getTemplateDetail(template));
   }));
 }
 
-onARScaleChangedObservable.add(() => setMarcherDetail(isFieldShrunk() ? "low" : "high"));
+onARScaleChangedObservable.add(() => setMarcherDetail(getMarcherDetail()));
+lowPolygonMarchersToggle?.addEventListener("change", () => setMarcherDetail(getMarcherDetail()));
 const MARCHER_BUILD_SCALE = 0.64;
 const MARCHER_HEIGHT_METERS = 1.8;
 const METERS_PER_YARD = 0.9144;

@@ -12,6 +12,7 @@ export const statusText = document.getElementById("statusText");
 export const floorCalibrationToggle = document.getElementById("floorCalibrationToggle") as HTMLInputElement | null;
 export const swapControllerRolesToggle = document.getElementById("swapControllerRolesToggle") as HTMLInputElement | null;
 export const handThumbJogToggle = document.getElementById("handThumbJogToggle") as HTMLInputElement | null;
+export const lowPolygonMarchersToggle = document.getElementById("lowPolygonMarchersToggle") as HTMLInputElement | null;
 
 export function getNavigationControllerHand(): "left" | "right" {
   return swapControllerRolesToggle?.checked ? "right" : "left";

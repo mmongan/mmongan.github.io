@@ -64,7 +64,9 @@ function sideFaceX(geometry: InstrumentGeometry, radius: number) {
 // Appends the smooth-shaded head. At low detail the ears and mouth are skipped.
 export function addRobotHead(geometry: InstrumentGeometry) {
   const place = placeHead(geometry);
-  geometry.lathe(SKULL_PROFILE, HEAD_SIDES, SHELL, place);
+  geometry.lathe(geometry.low
+    ? [[0, 1.13], [0.13, 1.175], [0.147, 1.3], [0.13, 1.355], [0, 1.372]]
+    : SKULL_PROFILE, HEAD_SIDES, SHELL, place);
   geometry.lathe(VISOR_PROFILE, HEAD_SIDES, VISOR, place);
   geometry.fine(() => {
     const mouthZ = frontFaceZ(geometry, MOUTH_RADIUS);
