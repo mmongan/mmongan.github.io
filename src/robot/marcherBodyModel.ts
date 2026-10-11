@@ -101,7 +101,7 @@ export const getMarcherShoeTemplate = partTemplate("marcherShoeTemplate", (geome
   geometry.lathe(geometry.low
     ? [[0, -0.135], [0.06, -0.07], [0.06, 0.07], [0, 0.135]]
     : [[0, -0.135], [0.045, -0.12], [0.06, -0.07], [0.06, 0.07], [0.045, 0.12], [0, 0.135]], 6, BOOT,
-    ({ x, y, z }) => new Vector3(x * 1.2, -z, y));
+    ({ x, y, z }) => new Vector3(x * 1.2, -z * (geometry.low ? Math.SQRT2 : 1), y));
 });
 
 export const getMarcherGloveTemplate = partTemplate("marcherGloveTemplate", (geometry) => {

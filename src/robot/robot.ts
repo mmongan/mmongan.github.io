@@ -244,7 +244,8 @@ const MARCHER_BUILD_SCALE = 0.64;
 const MARCHER_HEIGHT_METERS = 1.8;
 const METERS_PER_YARD = 0.9144;
 const MARCHER_HEIGHT_YARDS = MARCHER_HEIGHT_METERS / METERS_PER_YARD;
-const MARCHER_MODEL_HEIGHT_YARDS = 1.78;
+// Standing soles are at y = 0; the skull crown is below the shako and plume.
+const MARCHER_MODEL_HEIGHT_YARDS = 1.372;
 const MARCHER_BODY_SCALE = MARCHER_HEIGHT_YARDS / MARCHER_MODEL_HEIGHT_YARDS;
 
 // Walks up from a picked mesh/node to find which spawned robot (if any) owns it.
@@ -449,6 +450,8 @@ const marcherParts = new Map<TransformNode, {
   rightLeg: TransformNode;
   leftKnee: TransformNode;
   rightKnee: TransformNode;
+  leftThigh: ModelPart;
+  rightThigh: ModelPart;
   leftAnkle: TransformNode;
   rightAnkle: TransformNode;
   leftShoe: ModelPart;
@@ -469,6 +472,30 @@ function orientMarcherShoes(leftShoe: ModelPart, rightShoe: ModelPart, legFacing
     shoe.position.x = Math.sin(shoeFacing) * 0.07;
     shoe.position.z = Math.cos(shoeFacing) * 0.07;
   }
+}
+
+const thighDirection = Vector3.Zero();
+const thighUp = Vector3.Up();
+
+function attachMarcherThigh(thigh: ModelPart, leg: TransformNode, hipX: number) {
+  const dx = hipX - leg.position.x;
+  const dy = 0.69 - leg.position.y;
+  const dz = -leg.position.z;
+  const sinY = Math.sin(leg.rotation.y);
+  const cosY = Math.cos(leg.rotation.y);
+  const sinX = Math.sin(leg.rotation.x);
+  const cosX = Math.cos(leg.rotation.x);
+  const localZ = dx * sinY + dz * cosY;
+  // Hip in the leg's local frame, measured from the knee at y = -0.37.
+  thighDirection.set(dx * cosY - dz * sinY,
+    dy * cosX + localZ * sinX + 0.37,
+    -dy * sinX + localZ * cosX);
+  const length = thighDirection.length();
+  thigh.position.copyFrom(thighDirection).scaleInPlace(0.21 / 0.37);
+  thigh.position.y -= 0.37;
+  thigh.scaling.y = length / 0.37;
+  thighDirection.scaleInPlace(1 / length);
+  Quaternion.FromUnitVectorsToRef(thighUp, thighDirection, thigh.rotationQuaternion!);
 }
 
 function hornRotationMatrix(horn: ModelPart): Matrix {
@@ -652,6 +679,7 @@ function createMarcherModel(scene: Scene, gaitIndex: number): TransformNode {
     leg.parent = body;
     const thigh = part(getMarcherThighTemplate, "marcherThigh", leg);
     thigh.position.y = -0.16;
+    thigh.rotationQuaternion = Quaternion.Identity();
 
     const knee = new TransformNode("marcherKnee", scene);
     knee.position.y = -0.37;
@@ -674,7 +702,7 @@ function createMarcherModel(scene: Scene, gaitIndex: number): TransformNode {
     forearm.parent = body;
     part(getMarcherForearmTemplate, "marcherForearm", forearm, true);
     const glove = part(getMarcherGloveTemplate, "marcherHand", null);
-    return { leg, knee, ankle, shoe, arm, forearm, glove };
+    return { leg, knee, ankle, shoe, thigh, arm, forearm, glove };
   });
 
   const instrumentRoot = new TransformNode("marcherInstrumentRoot", scene);
@@ -698,6 +726,7 @@ function createMarcherModel(scene: Scene, gaitIndex: number): TransformNode {
     gloves: [appendages[0].glove, appendages[1].glove],
     leftLeg: appendages[0].leg, rightLeg: appendages[1].leg,
     leftKnee: appendages[0].knee, rightKnee: appendages[1].knee,
+    leftThigh: appendages[0].thigh, rightThigh: appendages[1].thigh,
     leftAnkle: appendages[0].ankle, rightAnkle: appendages[1].ankle,
     leftShoe: appendages[0].shoe, rightShoe: appendages[1].shoe,
     leftArm: appendages[0].arm, rightArm: appendages[1].arm,
@@ -1008,6 +1037,8 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState) {
     parts.rightLeg.position.x = hipHalfSpacing;
     parts.leftLeg.position.z = 0;
     parts.rightLeg.position.z = 0;
+    attachMarcherThigh(parts.leftThigh, parts.leftLeg, -hipHalfSpacing);
+    attachMarcherThigh(parts.rightThigh, parts.rightLeg, hipHalfSpacing);
     applyInstrumentPose(parts, instrumentRest);
     parts.body.position.y = 0;
     return;
@@ -1022,9 +1053,9 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState) {
     const sin = Math.sin(legWorldRotation);
     const cos = Math.cos(legWorldRotation);
     localDisplacement.set(
-      (displacement.x * cos - displacement.z * sin) / stepsPerCount,
-      displacement.y / stepsPerCount,
-      (displacement.x * sin + displacement.z * cos) / stepsPerCount,
+      (displacement.x * cos - displacement.z * sin) / (stepsPerCount * MARCHER_BODY_SCALE * MARCHER_BUILD_SCALE),
+      displacement.y / (stepsPerCount * MARCHER_BODY_SCALE),
+      (displacement.x * sin + displacement.z * cos) / (stepsPerCount * MARCHER_BODY_SCALE * MARCHER_BUILD_SCALE),
     );
   }
   const stepPhase = (segmentStart + forwardProgress) * stepsPerCount;
@@ -1082,6 +1113,8 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState) {
   placeLeg(parts.rightLeg, parts.rightKnee, parts.rightAnkle, 1, leftStance ? swing : stance,
     leftStance ? kneeBend + lift * 2 : kneeBend * 0.12, leftStance ? -ankleFlex : 0,
     gait.inPlace && leftStance ? footLift : 0);
+  attachMarcherThigh(parts.leftThigh, parts.leftLeg, -hipHalfSpacing);
+  attachMarcherThigh(parts.rightThigh, parts.rightLeg, hipHalfSpacing);
   applyInstrumentPose(parts, instrumentRest);
   parts.body.position.y = 0;
 }
