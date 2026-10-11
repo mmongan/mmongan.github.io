@@ -1,6 +1,6 @@
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
 import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
-import { Matrix, Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
+import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
 import { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.pure';
 import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
@@ -64,6 +64,9 @@ export function getRobotColor(robot: TransformNode): Color3 {
 export const TOP_DOWN_MARKER_LAYER_MASK = 0x10000000;
 const TOP_DOWN_MARKER_DIAMETER_YARDS = 2.2;
 const MAX_KNEE_BEND_RADIANS = 1.35;
+const UPPER_ARM_LENGTH = 0.3;
+const FOREARM_LENGTH = 0.4;
+const TRUMPET_GRIPS = [new Vector3(-0.08, 0.07, 0), new Vector3(0.07, 0.12, 0)];
 const marcherParts = new Map<TransformNode, {
   gaitIndex: number;
   instrumentRestPose: boolean;
@@ -77,6 +80,9 @@ const marcherParts = new Map<TransformNode, {
   rightShoe: Mesh;
   leftArm: TransformNode;
   rightArm: TransformNode;
+  leftForearm: TransformNode;
+  rightForearm: TransformNode;
+  appliedInstrumentRestPose?: boolean;
   horn: Mesh;
   body: TransformNode;
 }>();
@@ -94,17 +100,33 @@ function orientMarcherShoes(leftShoe: Mesh, rightShoe: Mesh, gait: (typeof MARCH
 function applyInstrumentPose(parts: {
   leftArm: TransformNode;
   rightArm: TransformNode;
+  leftForearm: TransformNode;
+  rightForearm: TransformNode;
+  appliedInstrumentRestPose?: boolean;
   horn: Mesh;
 }, restPose: boolean) {
-  parts.leftArm.position.z = 0;
-  parts.rightArm.position.z = 0;
-  parts.leftArm.rotation.x = restPose ? -0.8 : -1.85;
-  parts.rightArm.rotation.x = restPose ? -0.8 : -1.85;
-  const armAngle = restPose ? 0.16 : 0.34;
-  parts.leftArm.rotation.z = -armAngle;
-  parts.rightArm.rotation.z = armAngle;
+  if (parts.appliedInstrumentRestPose === restPose) return;
+  parts.appliedInstrumentRestPose = restPose;
   parts.horn.position.set(0, restPose ? 0.8 : 1.22, restPose ? 0.62 : 0.36);
   parts.horn.rotation.set(restPose ? 0 : -Math.PI / 2, 0, 0);
+  const hornRotation = Matrix.RotationX(parts.horn.rotation.x);
+  for (const [index, arm, forearm] of [
+    [0, parts.leftArm, parts.leftForearm],
+    [1, parts.rightArm, parts.rightForearm],
+  ] as const) {
+    const wrist = Vector3.TransformCoordinates(TRUMPET_GRIPS[index], hornRotation).add(parts.horn.position);
+    const shoulderToWrist = wrist.subtract(arm.position);
+    const distance = shoulderToWrist.length();
+    const direction = shoulderToWrist.scale(1 / distance);
+    const along = (UPPER_ARM_LENGTH ** 2 - FOREARM_LENGTH ** 2 + distance ** 2) / (2 * distance);
+    const outward = new Vector3(index === 0 ? -0.6 : 0.6, -1, -0.2);
+    const bendDirection = outward.subtract(direction.scale(Vector3.Dot(outward, direction))).normalize();
+    const bend = Math.sqrt(Math.max(0, UPPER_ARM_LENGTH ** 2 - along ** 2));
+    const elbow = arm.position.add(direction.scale(along)).add(bendDirection.scale(bend));
+    forearm.position.copyFrom(elbow);
+    Quaternion.FromUnitVectorsToRef(Vector3.Down(), elbow.subtract(arm.position).normalize(), arm.rotationQuaternion!);
+    Quaternion.FromUnitVectorsToRef(Vector3.Down(), wrist.subtract(elbow).normalize(), forearm.rotationQuaternion!);
+  }
 }
 
 export const MARCHING_GAITS = [
@@ -341,31 +363,26 @@ function createMarcherModel(scene: Scene, gaitIndex: number): TransformNode {
 
     const arm = new TransformNode("marcherArm", scene);
     arm.position.set(side * 0.31, 1.02, 0);
-    arm.rotation.x = 0;
+    arm.rotationQuaternion = Quaternion.Identity();
     arm.parent = body;
-    const sleeve = MeshBuilder.CreateLathe("marcherSleeve", {
-      shape: [
-        new Vector3(0, -0.44, 0),
-        new Vector3(0.05, -0.44, 0),
-        new Vector3(0.06, -0.42, 0),
-        new Vector3(0.06, -0.3, 0),
-        new Vector3(0.07, -0.22, 0),
-        new Vector3(0.082, -0.08, 0),
-        new Vector3(0.09, -0.02, 0),
-        new Vector3(0.09, 0, 0),
-        new Vector3(0, 0, 0),
-      ],
-      tessellation: 8,
-      cap: Mesh.CAP_ALL,
+    const sleeve = MeshBuilder.CreateCylinder("marcherSleeve", {
+      height: UPPER_ARM_LENGTH, diameterTop: 0.17, diameterBottom: 0.13, tessellation: 8,
     }, scene);
-    sleeve.position.x = -side * 0.015;
+    sleeve.position.y = -UPPER_ARM_LENGTH / 2;
     sleeve.material = bodyMaterial;
     sleeve.parent = arm;
+    const forearm = new TransformNode("marcherForearm", scene);
+    forearm.rotationQuaternion = Quaternion.Identity();
+    forearm.parent = body;
+    const lowerSleeve = MeshBuilder.CreateCylinder("marcherLowerSleeve", {
+      height: FOREARM_LENGTH, diameterTop: 0.13, diameterBottom: 0.10, tessellation: 8,
+    }, scene);
+    lowerSleeve.position.y = -FOREARM_LENGTH / 2;
+    lowerSleeve.material = bodyMaterial;
+    lowerSleeve.parent = forearm;
     const glove = MeshBuilder.CreateSphere("marcherHand", { diameter: 0.12, segments: 8 }, scene);
-    glove.position.set(-side * 0.025, -0.44, 0);
     glove.material = white;
-    glove.parent = arm;
-    return { leg, knee, ankle, shoe, arm };
+    return { leg, knee, ankle, shoe, arm, forearm, glove };
   });
 
   const horn = MeshBuilder.CreateCylinder("marcherHorn", {
@@ -375,6 +392,10 @@ function createMarcherModel(scene: Scene, gaitIndex: number): TransformNode {
   horn.rotation.setAll(0);
   horn.material = brass;
   horn.parent = body;
+  appendages.forEach(({ glove }, index) => {
+    glove.parent = horn;
+    glove.position.copyFrom(TRUMPET_GRIPS[index]);
+  });
   const resolvedGaitIndex = Math.min(MARCHING_GAITS.length - 1, Math.max(0, gaitIndex));
   orientMarcherShoes(appendages[0].shoe, appendages[1].shoe, MARCHING_GAITS[resolvedGaitIndex]);
 
@@ -385,8 +406,10 @@ function createMarcherModel(scene: Scene, gaitIndex: number): TransformNode {
     leftKnee: appendages[0].knee, rightKnee: appendages[1].knee,
     leftAnkle: appendages[0].ankle, rightAnkle: appendages[1].ankle,
     leftShoe: appendages[0].shoe, rightShoe: appendages[1].shoe,
-    leftArm: appendages[0].arm, rightArm: appendages[1].arm, horn, body,
+    leftArm: appendages[0].arm, rightArm: appendages[1].arm,
+    leftForearm: appendages[0].forearm, rightForearm: appendages[1].forearm, horn, body,
   });
+  applyInstrumentPose(marcherParts.get(robot)!, instrumentCarryPose);
 
   const markerMaterial = new StandardMaterial("robotMarkerMaterial", scene);
   markerMaterial.diffuseColor = color;
@@ -835,6 +858,25 @@ export function getRobotCounts(robot: TransformNode): ReadonlyArray<RobotCount> 
 export function clearRobotPath(robot: TransformNode) {
   players.delete(robot);
   heldRobots.delete(robot);
+}
+
+export function suspendRobotForErase(robot: TransformNode) {
+  const state = players.get(robot);
+  const enabled = robot.isEnabled();
+  allRobots.delete(robot);
+  players.delete(robot);
+  heldRobots.delete(robot);
+  robot.setEnabled(false);
+  if (sharedScene) recalculateCollisionMarkers(sharedScene);
+  return () => {
+    allRobots.add(robot);
+    robot.setEnabled(enabled);
+    if (state) {
+      players.set(robot, state);
+      applyGlobalCount(robot, state);
+    }
+    if (sharedScene) recalculateCollisionMarkers(sharedScene);
+  };
 }
 
 export function setRobotHeld(robot: TransformNode, held: boolean) {

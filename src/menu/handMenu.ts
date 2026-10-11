@@ -27,7 +27,7 @@ export type FormationLetter =
   | "N" | "O" | "P" | "Q" | "R" | "S" | "T" | "U" | "V" | "W" | "X" | "Y" | "Z";
 
 export type HandMenuHit =
-  | { action: "playPause" | "rewind" | "fastForward" | "stepBack" | "stepForward" | "fullScaleVR" | "tabletopScale" | "commitFormation" }
+  | { action: "playPause" | "rewind" | "fastForward" | "stepBack" | "stepForward" | "fullScaleVR" | "tabletopScale" | "commitFormation" | "eraseMode" | "undoErase" | "redoErase" }
   | { action: "formationLibrary" | "formationLibraryBack" | "formationLibraryClose" | "lettersLibrary" }
   | { action: "formationPreset"; preset: "line" | "arc" | "circle" | "block" | "triangle" | "square" | "pentagon" | "hexagon" | "star" }
   | { action: "formationLetter"; letter: FormationLetter }
@@ -173,6 +173,18 @@ let trackedHands: WebXRHandTracking | null = null;
 let formationCommitAvailable = false;
 let formationLibraryPage: "closed" | "shapes" | "letters" = "closed";
 let formationAnchorAvailable = false;
+let eraseModeActive = false;
+let undoEraseAvailable = false;
+let redoEraseAvailable = false;
+
+export function setEraseHistoryAvailable(undo: boolean, redo: boolean) {
+  undoEraseAvailable = undo;
+  redoEraseAvailable = redo;
+}
+
+export function setEraseModeActive(active: boolean) {
+  eraseModeActive = active;
+}
 
 export function setFormationCommitAvailable(available: boolean) {
   formationCommitAvailable = available;
@@ -246,6 +258,13 @@ function ensureMenuMeshes() {
   const formationsButton = createButton("Form", 0, { action: "formationLibrary" });
   formationsButton.position.z = -0.09;
   buttons.push(formationsButton);
+  const eraseButton = createButton("Erase", spacing * 2, { action: "eraseMode" });
+  eraseButton.position.z = -0.09;
+  buttons.push(eraseButton);
+  const undoButton = createButton("Undo", -spacing / 2, { action: "undoErase" });
+  const redoButton = createButton("Redo", spacing / 2, { action: "redoErase" });
+  undoButton.position.z = redoButton.position.z = -0.125;
+  buttons.push(undoButton, redoButton);
   const presets: Array<{
     label: string;
     preset: "line" | "arc" | "circle" | "block" | "triangle" | "square" | "pentagon" | "hexagon" | "star";
@@ -364,8 +383,13 @@ export function updateHandMenu(
   progressBar.plane.setEnabled(true);
   buttons.forEach((button) => {
     const action = buttonActions.get(button)?.action;
+    if (action === "eraseMode" && button.material instanceof StandardMaterial) {
+      button.material.emissiveColor.set(1, eraseModeActive ? 0.35 : 1, eraseModeActive ? 0.15 : 1);
+    }
     button.setEnabled(formationLibraryPage === "closed" &&
       (action !== "formationLibrary" || formationAnchorAvailable) &&
+      (action !== "undoErase" || undoEraseAvailable) &&
+      (action !== "redoErase" || redoEraseAvailable) &&
       (action !== "commitFormation" || formationCommitAvailable));
   });
   formationButtons.forEach((button) => button.setEnabled(formationLibraryPage === "shapes"));

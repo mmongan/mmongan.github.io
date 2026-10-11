@@ -62,6 +62,8 @@ export interface HandPathDependencies {
   placementDrafts: Map<string, TransformNode>;
   pathPointMinDistance: number;
   isPlacementMode: () => boolean;
+  isEraseMode: () => boolean;
+  eraseMarcher: (robot: TransformNode) => void;
   getSelectedRobot: () => TransformNode | null;
   selectRobot: (robot: TransformNode | null) => void;
   createStandingMarcher: (position: Vector3) => TransformNode;
@@ -89,6 +91,8 @@ export function createHandInteraction(paths: HandPathDependencies) {
     placementDrafts,
     pathPointMinDistance,
     isPlacementMode,
+    isEraseMode,
+    eraseMarcher,
     getSelectedRobot,
     selectRobot,
     createStandingMarcher,
@@ -119,6 +123,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
   } | null = null;
   const marcherGrabs = new Map<string, MarcherGrab>();
   const fingerPushes = new Set<string>();
+  const eraseContacts = new Map<string, Vector3>();
   let pendingFormationGlow: HighlightLayer | null = null;
 
   function highlightPendingMarcher(robot: TransformNode) {
@@ -718,6 +723,33 @@ export function createHandInteraction(paths: HandPathDependencies) {
     }
     const left = pinchedPoints.get('left');
     const right = pinchedPoints.get('right');
+    if (isEraseMode()) {
+      sceneGesture = null;
+      for (const handedness of ['left', 'right'] as const) {
+        const hand = handTracking.getHandByHandedness(handedness);
+        const point = pinchedPoints.get(handedness);
+        const wasPinching = handPinches.get(handedness) ?? false;
+        handPinches.set(handedness, !!point);
+        if (!hand) {
+          eraseContacts.delete(handedness);
+          continue;
+        }
+        if (point && wasPinching) continue;
+        if (point && activateHandMenuAtPoint(point)) continue;
+        if (!isEraseMode()) break;
+        const finger = hand.getJointMesh(WebXRHandJoint.INDEX_FINGER_TIP).getAbsolutePosition();
+        const targetPoint = point ?? finger;
+        const lastContact = eraseContacts.get(handedness);
+        if (!point && lastContact && Vector3.Distance(lastContact, finger) < 0.04) continue;
+        eraseContacts.delete(handedness);
+        const robot = findMarcherNearHand(targetPoint);
+        if (robot && (point || isFingerNearRobot(finger, robot, 0.012))) {
+          eraseContacts.set(handedness, targetPoint.clone());
+          eraseMarcher(robot);
+        }
+      }
+      return;
+    }
     if (formationPull && !formationPull.shapedOffsets &&
       !pinchedPoints.has(formationPull.pullHand)) {
       finishFormationShaping();
@@ -962,6 +994,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
   }
 
   function updateHandPathDrawing() {
+    if (isEraseMode()) return;
     updateFingerPushes();
     if (floorCalibrationToggle?.checked || !handTracking || sceneGesture || !isPlacementMode()) {
       finishFingerPath(false);
@@ -996,6 +1029,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
   }
 
   function setHandTracking(tracking: WebXRHandTracking | null) {
+    eraseContacts.clear();
     [...fingerPushes].forEach(finishFingerPush);
     finishFingerPath(false);
     finishCircleResize(false);
@@ -1042,6 +1076,17 @@ export function createHandInteraction(paths: HandPathDependencies) {
   });
 
   return {
+    prepareForErase: () => {
+      sceneGesture = null;
+      finishFingerPath(true);
+      finishCircleResize(true);
+      if (formationPull) {
+        if (!formationPull.shapedOffsets) finishFormationShaping();
+        finishFormationPull(true);
+      }
+      [...fingerPushes].forEach(finishFingerPush);
+      [...marcherGrabs.keys()].forEach((handedness) => finishMarcherGrab(handedness, true));
+    },
     beginMarcherGrab,
     commitFormation: () => {
       if (formationPull?.shapedOffsets) finishFormationPull(true);

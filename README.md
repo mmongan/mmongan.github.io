@@ -30,6 +30,12 @@ To serve the production build locally:
 npm run preview
 ```
 
+To check eraser undo/redo behavior (Node.js 22.13 or newer):
+
+```bash
+node scripts/check-erase-history.mjs
+```
+
 ## Deploy to GitHub Pages
 
 ```bash
@@ -46,6 +52,7 @@ Builds the project, copies `dist/` into the repository root, then commits and pu
 - High school, college, and NFL field-marking layouts
 - Hand and controller gestures do not draw or extend marching paths. Controller triggers select existing marchers and edit existing path or formation segments; enable Placement mode to place standing marchers with a controller trigger or fingertip touch. Sideline pinch creation and two-hand line, arc, and circle formations remain available.
 - Place standing robots, create marching formations, and generate a synchronized marching-band drill
+- Marchers hold the trumpet with both glove hands in playing and carry poses, with articulated elbows connecting their sleeves to the trumpet's grip points.
 - Shared count-based playback with play/pause, rewind, fast-forward, single-count stepping, and timeline seeking; playback controls are available on the video board and the palm-up VR controller or tracked-hand menu. The hand menu's Form page offers Line, Arc, Circle, Block, Triangle, Square, Pentagon, Hexagon, and Star formations, plus A-Z letter formations, around the held or selected marcher.
 - Collision-marker previews and controls for showing paths and testing larger robot groups
 - Immersive VR with teleport locomotion and immersive AR with the stadium scaled to a tabletop
@@ -59,6 +66,8 @@ Builds the project, copies `dist/` into the repository root, then commits and pu
 - Grabbed marchers and airborne formation previews render in front of tracked hands and controller models so they stay visible. Released or canceled marchers return to normal depth rendering.
 - Uncommitted formations have a cyan outer glow while shaping, floating, or being repositioned. Committing or canceling removes the glow.
 - Touch an on-field marcher with an unpinched index fingertip and push to slide only that marcher, keeping its feet on the field and its facing unchanged. Both hands can push different marchers in different directions simultaneously. Moving the finger away stops the push; pinching switches to normal grabbing. This does not draw a marching path or move the rest of a formation.
+- Enable Erase marchers in settings or toggle the orange-highlighted Erase button in the palm-up menu. Click a marcher on desktop, aim and press a controller trigger, pinch near a marcher, or touch it with an unpinched index fingertip to delete only that marcher. Move the fingertip at least 4 cm before another touch deletion. Erase disables placement, grabbing, finger pushing, and two-hand scene manipulation, and pauses during floor calibration. Enabling it finishes pending formation placement so individual members can be erased. Deleted members stay missing when their formation is reshaped.
+- Eraser deletions have a session-local undo/redo stack of up to 100 actions. Use Undo erase/Redo erase in settings, Undo/Redo in the palm-up menu, Ctrl/Cmd+Z to undo, or Ctrl/Cmd+Shift+Z (also Ctrl/Cmd+Y) to redo. Text inputs keep their native shortcuts. Undo restores the same marcher, formation membership, path, and count schedule; redo deletes it again. New erasures discard redo history. Reshaping/rebuilding a formation or path, and generating a replacement drill, clear deletion history; other editing actions are not undoable.
 - Two-hand hand-tracked formations are created in a horizontal plane parallel to the field. Trace an open curve for a smoothly spaced arc, or close the loop to fit a true horizontal circle through the held marcher. Pulling a marcher on a closed loop stretches or compresses the circle into an ellipse while keeping the anchor marcher fixed. Pulling the free end of an open arc outward progressively straightens the chain; dragging a marcher in the middle reshapes it locally.
 - To resize an existing circle with tracked hands, pinch two different marchers on that circle and move your hands apart or together. The circle stays centered and circular, with marchers respaced as its radius changes. Release either pinch to keep the new size; losing hand tracking or enabling floor calibration cancels the resize.
 - Floor calibration only runs when explicitly enabled using the Floor calibration checkbox; entering XR, teleporting, and touching the floor do not start it automatically

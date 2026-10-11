@@ -105,6 +105,14 @@
             <input type="checkbox" id="placementModeToggle" />
             <span>Placement mode (trigger places a standing robot)</span>
           </label>
+          <label class="radio-option">
+            <input type="checkbox" id="eraseModeToggle" />
+            <span>Erase marchers (click, trigger, pinch, or touch a marcher)</span>
+          </label>
+          <div class="radio-row">
+            <button id="undoEraseButton" disabled>Undo erase</button>
+            <button id="redoEraseButton" disabled>Redo erase</button>
+          </div>
           <label class="settings-label" for="marcherCount">Marchers to add</label>
           <div class="radio-row">
             <input id="marcherCount" type="range" min="1" max="100" step="1" value="8" />

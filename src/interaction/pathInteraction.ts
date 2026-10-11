@@ -57,10 +57,12 @@ import {
   resetRobotSchedule,
   disposeAllRobots,
   walkRobotAlongCounts,
+  suspendRobotForErase,
 } from '../robot/robot';
-import { getHandMenuHit, getHandMenuHitNearPoint, setMenuHandTracking, setFormationCommitAvailable, setFormationLibraryOpen, setFormationLibraryPage, setFormationLibraryAnchorAvailable, isHandMenuVisible, isMenuControl } from '../menu/handMenu';
+import { getHandMenuHit, getHandMenuHitNearPoint, setMenuHandTracking, setFormationCommitAvailable, setFormationLibraryOpen, setFormationLibraryPage, setFormationLibraryAnchorAvailable, setEraseModeActive, setEraseHistoryAvailable, isHandMenuVisible, isMenuControl } from '../menu/handMenu';
 import type { FormationLetter } from '../menu/handMenu';
 import { createHandInteraction } from './handInteraction';
+import { EditHistory } from './editHistory';
 import {
   isScoreboardGaitPick,
   isScoreboardHornPosePick,
@@ -70,7 +72,7 @@ import {
   updateScoreboardHornPoseFromPick,
   updateScoreboardTempoFromPick,
 } from '../field/scoreboard';
-import { canvas, collisionMarkersToggle, floorCalibrationToggle, fullScaleVRButton, tabletopScaleButton, showAllPathsToggle, placementModeToggle, addRandomRobotsButton, marcherCountInput, marcherCountValue, generateDrillButton } from '../ui/dom';
+import { canvas, collisionMarkersToggle, floorCalibrationToggle, fullScaleVRButton, tabletopScaleButton, showAllPathsToggle, placementModeToggle, eraseModeToggle, undoEraseButton, redoEraseButton, addRandomRobotsButton, marcherCountInput, marcherCountValue, generateDrillButton } from '../ui/dom';
 import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS, FIELD_SURFACE_Y } from '../field/constants';
 import { FORMATION_SPACING_YARDS, generateMarchingDrillPaths, MARCH_STEP_YARDS } from '../robot/drill';
 
@@ -165,7 +167,7 @@ export function removeActiveController(controller: WebXRInputSource) {
 }
 
 export function updateARResizeFromControllers() {
-  resizeFromControllers(marcherGrabs.size > 0);
+  resizeFromControllers(eraseMode || marcherGrabs.size > 0);
 }
 
 // The path/robot live under the shared AR transform so they scale, move, and
@@ -207,6 +209,11 @@ function saveStoredPaths(paths: Vector3[][]) {
 }
 
 const storedPaths: Vector3[][] = loadStoredPaths();
+const eraseHistory = new EditHistory(() => {
+  if (undoEraseButton) undoEraseButton.disabled = !eraseHistory.canUndo;
+  if (redoEraseButton) redoEraseButton.disabled = !eraseHistory.canRedo;
+  setEraseHistoryAvailable(eraseHistory.canUndo, eraseHistory.canRedo);
+});
 
 
 // Full path history and persistent path line per robot (a robot's line covers
@@ -347,7 +354,29 @@ function updateShowAllPathsToggleFromControllers() {
 // no walking) at the aimed point —
 // for laying out a formation one member at a time.
 let placementMode = !!placementModeToggle?.checked;
+let eraseMode = false;
 const placementDrafts = new Map<string, TransformNode>();
+
+function setEraseMode(enabled: boolean) {
+  if (enabled === eraseMode) return;
+  if (enabled) {
+    setPlacementMode(false);
+    handInteraction.prepareForErase();
+    selectRobot(null);
+    movingSegment = null;
+    reshapingSegment = null;
+    rotatingSegment = null;
+    rotationHandleDrags.clear();
+    twoHandPathManipulation = null;
+    reshapingStepHandle = null;
+    scrubbingRobot = null;
+  }
+  eraseMode = enabled;
+  if (eraseModeToggle) eraseModeToggle.checked = enabled;
+  setEraseModeActive(enabled);
+}
+
+eraseModeToggle?.addEventListener("change", () => setEraseMode(!!eraseModeToggle?.checked));
 
 function createStandingMarcher(position: Vector3) {
   const robot = createLowPolyRobot(scene);
@@ -362,6 +391,7 @@ placementModeToggle?.addEventListener("change", () => {
 });
 
 function setPlacementMode(enabled: boolean) {
+  if (enabled) setEraseMode(false);
   if (enabled === placementMode) return;
   placementDrafts.forEach((robot, handedness) => {
     robot.dispose();
@@ -660,10 +690,12 @@ interface Segment {
   copyHandle: Mesh | null;
   anchorRobot?: TransformNode;
   fitClosedCircle: boolean;
+  erasedFormationIndices?: Set<number>;
   robots: TransformNode[]; // formation: every robot in the rank; path: the one marching robot
 }
 
 const segments: Segment[] = [];
+const eraseHistoryReferences = new Map<Segment, number>();
 const segmentPointHandleOwner = new Map<AbstractMesh, { segment: Segment; index: number }>();
 const segmentMoveHandleOwner = new Map<AbstractMesh, Segment>();
 const segmentRotationHandleOwner = new Map<AbstractMesh, Segment>();
@@ -706,7 +738,7 @@ function getFormationConnectionMaterial(): StandardMaterial {
 // (Re)creates the connections for a formation's current rank order — one per
 // adjacent pair of robots, e.g. after the formation is built or reshaped.
 function rebuildFormationConnections(segment: Segment) {
-  formationConnectionsBySegment.get(segment)?.forEach((connection) => connection.mesh.dispose(false, true));
+  formationConnectionsBySegment.get(segment)?.forEach((connection) => connection.mesh.dispose());
   if (segment.kind !== "formation" || segment.robots.length < 2) {
     formationConnectionsBySegment.delete(segment);
     return;
@@ -738,7 +770,7 @@ function updateFormationConnections() {
     const stillConnected = connections.filter((connection) => {
       const distanceSq = Vector3.DistanceSquared(connection.robotA.position, connection.robotB.position);
       if (distanceSq > FORMATION_CONNECTION_BREAK_DISTANCE_SQUARED) {
-        connection.mesh.dispose(false, true);
+        connection.mesh.dispose();
         return false;
       }
       MeshBuilder.CreateTube("formationConnection", {
@@ -984,22 +1016,24 @@ function refreshSegmentVisuals(segment: Segment) {
 // respaces its rank of standing robots; a path segment re-registers its one
 // robot's marching route so playback follows the updated curve.
 function rebuildSegmentContent(segment: Segment) {
+  eraseHistory.clear();
   if (segment.kind === "formation") {
     segment.robots.forEach((robot) => {
       if (robot !== segment.anchorRobot) robot.dispose();
     });
-    segment.robots = segment.anchorRobot ? [segment.anchorRobot] : [];
+    segment.robots = [];
 
     const formationPoints = getFormationPoints(segment.controlPoints, segment.fitClosedCircle);
 
     formationPoints.forEach((point, index) => {      
+      if (segment.erasedFormationIndices?.has(index)) return;
       const robotPrimitives = index === 0 && segment.anchorRobot
         ? segment.anchorRobot
         : createLowPolyRobot(scene);
       if (index !== 0 || !segment.anchorRobot) {
         robotPrimitives.parent = pathRoot;
-        segment.robots.push(robotPrimitives);
       }
+      segment.robots.push(robotPrimitives);
       robotPrimitives.position.copyFrom(point);
       const next = formationPoints[index + 1] ??
         (isClosedFormation(segment.controlPoints) ? formationPoints[0] : undefined);
@@ -1106,6 +1140,103 @@ function removeRobotPath(robot: TransformNode) {
     }
   }
   clearRobotPath(robot);
+}
+
+function eraseMarcher(robot: TransformNode) {
+  if (robot.isDisposed()) return;
+  const path = robotPaths.get(robot);
+  const pathSegment = pathSegmentByRobot.get(robot);
+  const pathControlPoints = pathSegment?.controlPoints.map((point) => point.clone());
+  const storedIndex = path ? storedPaths.indexOf(path) : -1;
+  const position = robot.position.clone();
+  const rotation = robot.rotation.clone();
+  const memberships = segments.filter((segment) =>
+    segment.kind === "formation" && segment.robots.includes(robot)
+  ).map((segment) => {
+    const rank = segment.robots.indexOf(robot);
+    const erased = segment.erasedFormationIndices ??= new Set<number>();
+    let originalIndex = -1;
+    for (let remaining = 0; remaining <= rank; remaining++) {
+      do { originalIndex++; } while (erased.has(originalIndex));
+    }
+    eraseHistoryReferences.set(segment, (eraseHistoryReferences.get(segment) ?? 0) + 1);
+    return { segment, rank, originalIndex, anchor: segment.anchorRobot === robot };
+  });
+  let restoreRobot: () => void;
+  let erased = false;
+  const redo = () => {
+    handInteraction.prepareForErase();
+    restoreRobot = suspendRobotForErase(robot);
+    removeRobotPath(robot);
+    for (const membership of memberships) {
+      const { segment, originalIndex } = membership;
+      segment.erasedFormationIndices!.add(originalIndex);
+      segment.robots.splice(segment.robots.indexOf(robot), 1);
+      if (segment.anchorRobot === robot) segment.anchorRobot = undefined;
+      rebuildFormationConnections(segment);
+      segment.line.setEnabled(segment.robots.length > 0);
+      updateSegmentHandleVisibility(segment);
+    }
+    if (selectedRobot === robot) selectRobot(null);
+    erased = true;
+  };
+  redo();
+  eraseHistory.record({
+    redo,
+    undo: () => {
+      handInteraction.prepareForErase();
+      robot.position.copyFrom(position);
+      robot.rotation.copyFrom(rotation);
+      for (const { segment, rank, originalIndex, anchor } of memberships) {
+        segment.erasedFormationIndices!.delete(originalIndex);
+        segment.robots.splice(rank, 0, robot);
+        if (anchor) segment.anchorRobot = robot;
+        segment.line.setEnabled(true);
+        rebuildFormationConnections(segment);
+        updateSegmentHandleVisibility(segment);
+      }
+      if (pathControlPoints) createSegment("path", pathControlPoints, [robot]);
+      if (path) {
+        robotPaths.set(robot, path);
+        if (!pathControlPoints) updateRobotPathLine(robot, path);
+        if (storedIndex >= 0 && !storedPaths.includes(path)) {
+          storedPaths.splice(storedIndex, 0, path);
+          saveStoredPaths(storedPaths);
+        }
+      }
+      restoreRobot();
+      refreshPathLineAppearance();
+      erased = false;
+    },
+    dispose: () => {
+      if (erased) robot.dispose(false, true);
+      for (const { segment } of memberships) {
+        const references = (eraseHistoryReferences.get(segment) ?? 1) - 1;
+        if (references > 0) {
+          eraseHistoryReferences.set(segment, references);
+          continue;
+        }
+        eraseHistoryReferences.delete(segment);
+        if (segment.robots.length > 0 || !segments.includes(segment)) continue;
+        segments.splice(segments.indexOf(segment), 1);
+        segment.line.dispose(false, true);
+        segment.moveHandle.dispose();
+        segmentMoveHandleOwner.delete(segment.moveHandle);
+        segment.pointHandles.forEach((handle) => {
+          segmentPointHandleOwner.delete(handle);
+          handle.dispose();
+        });
+        segment.rotationHandles.forEach((handle) => {
+          segmentRotationHandleOwner.delete(handle);
+          handle.dispose();
+        });
+        if (segment.copyHandle) {
+          segmentCopyHandleOwner.delete(segment.copyHandle);
+          segment.copyHandle.dispose();
+        }
+      }
+    },
+  });
 }
 
 function createHandFormation(
@@ -1343,6 +1474,15 @@ const menuInteractionHeld = new Map<string, boolean>();
 
 function executeMenuAction(hit: NonNullable<ReturnType<typeof getHandMenuHit>>) {
   switch (hit.action) {
+    case "eraseMode":
+      setEraseMode(!eraseMode);
+      break;
+    case "undoErase":
+      if (!floorCalibrationToggle?.checked) eraseHistory.undo();
+      break;
+    case "redoErase":
+      if (!floorCalibrationToggle?.checked) eraseHistory.redo();
+      break;
     case "commitFormation":
       handInteraction.commitFormation();
       break;
@@ -1403,6 +1543,8 @@ const handInteraction = createHandInteraction({
   placementDrafts,
   pathPointMinDistance: PATH_POINT_MIN_DISTANCE,
   isPlacementMode: () => placementMode,
+  isEraseMode: () => eraseMode,
+  eraseMarcher,
   getSelectedRobot: () => selectedRobot,
   selectRobot,
   createStandingMarcher,
@@ -1551,7 +1693,7 @@ export function updateRobotPathFromControllers() {
       return;
     }
 
-    if (gripPressed && !wasGripPressed && isTabletopInteractionMode() &&
+    if (!eraseMode && gripPressed && !wasGripPressed && isTabletopInteractionMode() &&
       !menuInteractionHeld.get(handedness)) {
       const ray = getControllerRay(controller);
       const pick = scene.pickWithRay(ray, (mesh) => findRobotRoot(mesh) !== null);
@@ -1600,6 +1742,14 @@ export function updateRobotPathFromControllers() {
         return;
       }
       menuInteractionHeld.set(handedness, false);
+
+      if (eraseMode) {
+        const pick = scene.pickWithRay(ray, (mesh) => findRobotRoot(mesh) !== null);
+        const robot = pick?.hit ? findRobotRoot(pick.pickedMesh) : null;
+        if (robot) eraseMarcher(robot);
+        menuInteractionHeld.set(handedness, true);
+        return;
+      }
 
       const pick = scene.pickWithRay(getControllerRay(controller));
 
@@ -1850,6 +2000,7 @@ function spawnRandomRobots(count: number) {
 // lines, segments/handles, formation connections) so a fresh drill starts on
 // an empty field instead of piling onto whatever was already there.
 function clearAllRobots() {
+  eraseHistory.clear();
   finishFingerPath(false);
   placementDrafts.forEach((robot) => robot.dispose());
   placementDrafts.clear();
@@ -1905,6 +2056,20 @@ function spawnMarchingDrill() {
 }
 
 export function initInteraction() {
+  setEraseMode(!!eraseModeToggle?.checked);
+  undoEraseButton?.addEventListener("click", () => executeMenuAction({ action: "undoErase" }));
+  redoEraseButton?.addEventListener("click", () => executeMenuAction({ action: "redoErase" }));
+  window.addEventListener("keydown", (event) => {
+    const target = event.target;
+    if (target instanceof HTMLElement && (
+      target.isContentEditable || target.closest("input, textarea, select")
+    )) return;
+    if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+    const key = event.key.toLowerCase();
+    if (key !== "z" && key !== "y") return;
+    event.preventDefault();
+    executeMenuAction({ action: key === "y" || event.shiftKey ? "redoErase" : "undoErase" });
+  });
   const getMarcherCount = () => Math.max(1, Math.min(100, Math.round(Number(marcherCountInput?.value) || 8)));
   const updateMarcherCountValue = () => {
     if (marcherCountValue) marcherCountValue.value = String(getMarcherCount());
@@ -1922,6 +2087,7 @@ export function initInteraction() {
   // wired to the same collision-marker preview and robot selection the VR
   // trigger dispatches to.
   scene.onPointerObservable.add((pointerInfo) => {
+    if ("pointerType" in pointerInfo.event && pointerInfo.event.pointerType === "xr") return;
     if (pointerInfo.type === PointerEventTypes.POINTERDOWN) {
       const tempoPick = scene.pick(scene.pointerX, scene.pointerY, isScoreboardTempoScreen);
       tempoPointerDragging = !!tempoPick?.hit && updateScoreboardTempoFromPick(tempoPick);
@@ -1942,7 +2108,7 @@ export function initInteraction() {
         scene.pointerY,
         (mesh) => isMenuControl(mesh) || isScoreboardTempoScreen(mesh)
       );
-      canvas.style.cursor = pick?.hit && (
+      canvas.style.cursor = eraseMode ? "crosshair" : pick?.hit && (
         getHandMenuHit(pick) || isScoreboardTempoPick(pick) || isScoreboardGaitPick(pick) ||
         isScoreboardHornPosePick(pick)
       ) ? "pointer" : "";
@@ -1957,6 +2123,13 @@ export function initInteraction() {
     const menuHit = menuPick?.hit ? getHandMenuHit(menuPick) : null;
     if (menuHit) {
       executeMenuAction(menuHit);
+      return;
+    }
+    if (eraseMode) {
+      if (floorCalibrationToggle?.checked) return;
+      const pick = scene.pick(scene.pointerX, scene.pointerY, (mesh) => findRobotRoot(mesh) !== null);
+      const robot = pick?.hit ? findRobotRoot(pick.pickedMesh) : null;
+      if (robot) eraseMarcher(robot);
       return;
     }
     const pickedMesh = pointerInfo.pickInfo?.pickedMesh;
