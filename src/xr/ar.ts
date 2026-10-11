@@ -1,6 +1,7 @@
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
 import { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.pure';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
+import { Observable } from '@babylonjs/core/Misc/observable.pure';
 import { scene } from '../scene/engine';
 import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS, FIELD_SURFACE_Y } from '../field/constants';
 
@@ -38,6 +39,9 @@ let arTabletopModeActive = false;
 let fieldHeightMode: "floor" | "table" = "floor";
 const fieldHeights = { floor: 0, table: AR_TABLE_HEIGHT };
 let contentRootMeshes: AbstractMesh[] = [];
+
+// Fired with the new scale whenever the field is scaled or tabletop mode exits.
+export const onARScaleChangedObservable = new Observable<number>();
 
 arRoot.parent = arPivot;
 globalScaleRoot.parent = arPivot;
@@ -98,7 +102,13 @@ export function setARScale(scale: number) {
   globalScaleRoot.scaling.setAll(clampedScale);
   updateGroundFootprint(clampedScale);
   updateHiddenMeshVisibility(clampedScale);
+  onARScaleChangedObservable.notifyObservers(clampedScale);
   return clampedScale;
+}
+
+// True in Giant and tabletop modes, where the field is shrunk below full scale.
+export function isFieldShrunk() {
+  return arTabletopModeActive || getARScale() < AR_SCALE_MAX;
 }
 
 export function setARPosition(position: Vector3) {
@@ -207,6 +217,7 @@ export function exitARTabletopMode() {
   arPivot.rotation.setAll(0);
   arRoot.position.setAll(0);
   globalScaleRoot.position.setAll(0);
+  onARScaleChangedObservable.notifyObservers(1);
 }
 
 export function getARScaleRange() {

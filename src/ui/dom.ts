@@ -27,6 +27,9 @@ export const eraseModeToggle = document.getElementById("eraseModeToggle") as HTM
 export const undoEraseButton = document.getElementById("undoEraseButton") as HTMLButtonElement | null;
 export const redoEraseButton = document.getElementById("redoEraseButton") as HTMLButtonElement | null;
 export const drillChartPadToggle = document.getElementById("drillChartPadToggle") as HTMLInputElement | null;
+export const marcherInstrumentRadios = Array.from(
+  document.querySelectorAll<HTMLInputElement>('input[name="marcherInstrument"]')
+);
 export const addRandomRobotsButton = document.getElementById("addRandomRobotsButton") as HTMLButtonElement | null;
 export const marcherCountInput = document.getElementById("marcherCount") as HTMLInputElement | null;
 export const marcherCountValue = document.getElementById("marcherCountValue") as HTMLOutputElement | null;

@@ -1,6 +1,7 @@
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
 import { COLLISION_MARKER_RADIUS_YARDS } from './collisionMarkers';
 import { FIELD_SURFACE_Y } from '../field/constants';
+import type { MarcherInstrument } from './robot';
 
 export const MARCH_STEP_YARDS = 0.625;
 export const FORMATION_SPACING_YARDS = 1.25;
@@ -14,6 +15,18 @@ const DRILL_PATH_OBSTACLE_CLEARANCE_YARDS = COLLISION_MARKER_RADIUS_YARDS * 1.6;
 const DRILL_PATH_DYNAMIC_CLEARANCE_YARDS = COLLISION_MARKER_RADIUS_YARDS * 1.6;
 const DRILL_PATH_RELAX_ITERATIONS = 400;
 const DRILL_PATH_OBSTACLE_MARGIN_YARDS = 6;
+
+// Instrument section for each block rank, front (nearest the circle) to back:
+// woodwinds lead, brass project from behind.
+const DRILL_SECTION_RANKS: readonly MarcherInstrument[] = [
+  "flute", "clarinet", "saxophone", "mellophone", "trumpet", "trumpet", "trombone", "sousaphone",
+];
+
+// Path indices are block-row-major; the last row is always the front rank.
+export function getDrillSectionInstrument(pathIndex: number): MarcherInstrument {
+  const rankFromFront = DRILL_ROWS - 1 - Math.floor(pathIndex / DRILL_COLS);
+  return DRILL_SECTION_RANKS[Math.max(0, Math.min(DRILL_SECTION_RANKS.length - 1, rankFromFront))];
+}
 
 function generateBlockPoints(): Vector3[] {
   const points: Vector3[] = [];
@@ -131,8 +144,12 @@ function buildSynchronizedPaths(startPoints: Vector3[], targetPoints: Vector3[])
   return paths;
 }
 
-export function generateMarchingDrillPaths(): Vector3[][] {
+// `mirrorZ` flips the drill end for end, so the opening block starts on the
+// +Z half of the field and the circle forms on the -Z half.
+export function generateMarchingDrillPaths(mirrorZ = false): Vector3[][] {
   const startPoints = generateBlockPoints();
   const targets = assignTargets(startPoints, generateCirclePoints(startPoints.length));
-  return buildSynchronizedPaths(startPoints, targets);
+  const paths = buildSynchronizedPaths(startPoints, targets);
+  if (mirrorZ) paths.forEach((path) => path.forEach((point) => { point.z = -point.z; }));
+  return paths;
 }

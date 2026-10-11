@@ -58,8 +58,12 @@ import {
   disposeAllRobots,
   walkRobotAlongCounts,
   suspendRobotForErase,
+  setSelectedInstrument,
+  getSelectedInstrument,
+  setMarcherInstrument,
 } from '../robot/robot';
-import { getHandMenuHit, getHandMenuHitNearPoint, setMenuHandTracking, setFormationCommitAvailable, setFormationLibraryOpen, setFormationLibraryPage, setFormationLibraryAnchorAvailable, setEraseModeActive, setEraseHistoryAvailable, setDrillChartPadActive, isHandMenuVisible, isMenuControl } from '../menu/handMenu';
+import type { MarcherInstrument } from '../robot/robot';
+import { getHandMenuHit, getHandMenuHitNearPoint, setMenuHandTracking, setFormationCommitAvailable, setFormationLibraryOpen, setFormationLibraryPage, setFormationLibraryAnchorAvailable, setEraseModeActive, setEraseHistoryAvailable, setDrillChartPadActive, setInstrumentMenuActive, isHandMenuVisible, isMenuControl } from '../menu/handMenu';
 import {
   beginDrillChartPadGrab,
   endDrillChartPadGrab,
@@ -85,9 +89,9 @@ import {
   updateScoreboardHornPoseFromPick,
   updateScoreboardTempoFromPick,
 } from '../field/scoreboard';
-import { canvas, collisionMarkersToggle, floorCalibrationToggle, fullScaleVRButton, tabletopScaleButton, showAllPathsToggle, placementModeToggle, eraseModeToggle, drillChartPadToggle, undoEraseButton, redoEraseButton, addRandomRobotsButton, marcherCountInput, marcherCountValue, generateDrillButton } from '../ui/dom';
+import { canvas, collisionMarkersToggle, floorCalibrationToggle, fullScaleVRButton, tabletopScaleButton, showAllPathsToggle, placementModeToggle, eraseModeToggle, drillChartPadToggle, marcherInstrumentRadios, undoEraseButton, redoEraseButton, addRandomRobotsButton, marcherCountInput, marcherCountValue, generateDrillButton } from '../ui/dom';
 import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS, FIELD_SURFACE_Y } from '../field/constants';
-import { FORMATION_SPACING_YARDS, generateMarchingDrillPaths, MARCH_STEP_YARDS } from '../robot/drill';
+import { FORMATION_SPACING_YARDS, generateMarchingDrillPaths, getDrillSectionInstrument, MARCH_STEP_YARDS } from '../robot/drill';
 
 // Track the live XR controllers and the state of a grab/manipulation gesture.
 // Hand-distance sensitivity for scaling: fine control near the small end of
@@ -396,6 +400,18 @@ onDrillChartPadVisibilityChange((visible) => {
   setDrillChartPadActive(visible);
 });
 drillChartPadToggle?.addEventListener("change", () => setDrillChartPadVisible(!!drillChartPadToggle?.checked));
+
+// Picks the instrument for new marchers and swaps the selected marcher's.
+function chooseInstrument(instrument: MarcherInstrument) {
+  setSelectedInstrument(instrument);
+  if (selectedRobot) setMarcherInstrument(selectedRobot, instrument);
+  marcherInstrumentRadios.forEach((radio) => (radio.checked = radio.value === instrument));
+  setInstrumentMenuActive(instrument);
+}
+
+marcherInstrumentRadios.forEach((radio) => radio.addEventListener("change", () => {
+  if (radio.checked) chooseInstrument(radio.value as MarcherInstrument);
+}));
 
 function createStandingMarcher(position: Vector3) {
   const robot = createLowPolyRobot(scene);
@@ -1228,7 +1244,8 @@ function eraseMarcher(robot: TransformNode) {
       erased = false;
     },
     dispose: () => {
-      if (erased) robot.dispose(false, true);
+      // Marchers dispose their own materials; templates' are shared.
+      if (erased) robot.dispose();
       for (const { segment } of memberships) {
         const references = (eraseHistoryReferences.get(segment) ?? 1) - 1;
         if (references > 0) {
@@ -1507,6 +1524,9 @@ function executeMenuAction(hit: NonNullable<ReturnType<typeof getHandMenuHit>>) 
       break;
     case "drillChartPage":
       flipDrillChartPage(hit.direction);
+      break;
+    case "instrument":
+      chooseInstrument(hit.instrument);
       break;
     case "commitFormation":
       handInteraction.commitFormation();
@@ -2080,16 +2100,32 @@ function clearAllRobots() {
   disposeAllRobots();
 }
 
+// True when the viewer is looking at the +Z half of the field: where their
+// gaze meets the field surface, or the way they face if looking above it.
+function isLookingAtPositiveFieldHalf(): boolean {
+  const camera = scene.activeCamera;
+  if (!camera) return false;
+  const toField = pathRoot.computeWorldMatrix(true).clone().invert();
+  const origin = Vector3.TransformCoordinates(camera.globalPosition, toField);
+  const direction = Vector3.TransformNormal(camera.getDirection(Vector3.Forward()), toField);
+  const distance = Math.abs(direction.y) > 1e-6 ? (FIELD_SURFACE_Y - origin.y) / direction.y : -1;
+  const lookZ = distance > 0 ? origin.z + direction.z * distance : direction.z;
+  return lookZ > 0;
+}
+
 function spawnMarchingDrill() {
   clearAllRobots();
-  const paths = generateMarchingDrillPaths();
-  paths.forEach((path) => {
+  const paths = generateMarchingDrillPaths(isLookingAtPositiveFieldHalf());
+  const pickerInstrument = getSelectedInstrument();
+  paths.forEach((path, index) => {
+    setSelectedInstrument(getDrillSectionInstrument(index));
     const robotPrimitives = createLowPolyRobot(scene);
     robotPrimitives.parent = pathRoot;
     robotPaths.set(robotPrimitives, path);
     updateRobotPathLine(robotPrimitives, path);
     walkRobotAlongCounts(robotPrimitives, path, scene);
   });
+  setSelectedInstrument(pickerInstrument);
 
   refreshCollisionMarkers(scene);
 }
@@ -2121,6 +2157,8 @@ export function initInteraction() {
     setCollisionMarkersVisible(!!collisionMarkersToggle?.checked);
   });
   setCollisionMarkersVisible(collisionMarkersToggle?.checked ?? true);
+  // Open on a generated drill that is already marching, rather than an empty field.
+  spawnMarchingDrill();
 
   // Desktop/browser testing has no VR trigger, so a plain mouse click is
   // wired to the same collision-marker preview and robot selection the VR

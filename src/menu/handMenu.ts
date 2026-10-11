@@ -11,6 +11,7 @@ import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
 import { WebXRInputSource } from '@babylonjs/core/XR/webXRInputSource';
 import { WebXRHandJoint, WebXRHandTracking } from '@babylonjs/core/XR/features/WebXRHandTracking.pure';
 import { scene } from '../scene/engine';
+import type { MarcherInstrument } from '../robot/robot';
 
 // How closely the controller's local "up" must line up with world up to
 // count as palm-up (like checking a smartwatch). May need tuning per headset.
@@ -32,6 +33,7 @@ export type HandMenuHit =
   | { action: "formationPreset"; preset: "line" | "arc" | "circle" | "block" | "triangle" | "square" | "pentagon" | "hexagon" | "star" }
   | { action: "formationLetter"; letter: FormationLetter }
   | { action: "drillChartPad" }
+  | { action: "instrument"; instrument: MarcherInstrument }
   | { action: "drillChartPage"; direction: 1 | -1 }
   | { action: "seek"; fraction: number };
 
@@ -179,6 +181,12 @@ let eraseModeActive = false;
 let drillChartPadActive = false;
 let undoEraseAvailable = false;
 let redoEraseAvailable = false;
+let activeInstrument: MarcherInstrument = "trumpet";
+
+// Highlights the hand-menu button for the instrument currently being picked.
+export function setInstrumentMenuActive(instrument: MarcherInstrument) {
+  activeInstrument = instrument;
+}
 
 export function setEraseHistoryAvailable(undo: boolean, redo: boolean) {
   undoEraseAvailable = undo;
@@ -275,6 +283,21 @@ function ensureMenuMeshes() {
   const redoButton = createButton("Redo", spacing / 2, { action: "redoErase" });
   undoButton.position.z = redoButton.position.z = -0.125;
   buttons.push(undoButton, redoButton);
+  // Brass row, then woodwind row beneath it.
+  const instrumentButtons = ([
+    ["Tpt", "trumpet", -spacing * 1.5, -0.16],
+    ["Mel", "mellophone", -spacing / 2, -0.16],
+    ["Tbn", "trombone", spacing / 2, -0.16],
+    ["Sou", "sousaphone", spacing * 1.5, -0.16],
+    ["Sax", "saxophone", -spacing, -0.195],
+    ["Cl", "clarinet", 0, -0.195],
+    ["Fl", "flute", spacing, -0.195],
+  ] as const).map(([label, instrument, x, z]) => {
+    const button = createButton(label, x, { action: "instrument", instrument });
+    button.position.z = z;
+    return button;
+  });
+  buttons.push(...instrumentButtons);
   const presets: Array<{
     label: string;
     preset: "line" | "arc" | "circle" | "block" | "triangle" | "square" | "pentagon" | "hexagon" | "star";
@@ -392,7 +415,12 @@ export function updateHandMenu(
   });
   progressBar.plane.setEnabled(true);
   buttons.forEach((button) => {
-    const action = buttonActions.get(button)?.action;
+    const hit = buttonActions.get(button);
+    const action = hit?.action;
+    if (hit?.action === "instrument" && button.material instanceof StandardMaterial) {
+      const active = hit.instrument === activeInstrument;
+      button.material.emissiveColor.set(1, active ? 0.85 : 1, active ? 0.35 : 1);
+    }
     if (action === "eraseMode" && button.material instanceof StandardMaterial) {
       button.material.emissiveColor.set(1, eraseModeActive ? 0.35 : 1, eraseModeActive ? 0.15 : 1);
     }

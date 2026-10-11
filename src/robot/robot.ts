@@ -10,12 +10,50 @@ import { Node } from '@babylonjs/core/node';
 import { Scene } from '@babylonjs/core/scene.pure';
 import { createCollisionMarkerManager, COLLISION_MARKER_RADIUS_YARDS } from './collisionMarkers';
 import { isAutoGaitStyle, selectAutoGait } from './gaitSelection';
+import { CLARINET_MOUTHPIECE_TIP, getClarinetTemplate } from './clarinetModel';
+import { FLUTE_MOUTHPIECE_TIP, getFluteTemplate } from './fluteModel';
+import { getSousaphoneTemplate, SOUSAPHONE_MOUTHPIECE_TIP, SOUSAPHONE_VALVE_GRIP, sousaphoneLoopPoint } from './sousaphoneModel';
+import { getMellophoneTemplate, MELLOPHONE_MOUTHPIECE_TIP } from './mellophoneModel';
+import { getRobotEyesTemplate } from './robotFaceModel';
+import {
+  getMarcherCalfTemplate, getMarcherForearmTemplate, getMarcherGloveTemplate, getMarcherJacketTemplate,
+  getMarcherShoeTemplate, getMarcherThighTemplate, getMarcherTrimTemplate, getMarcherUpperArmTemplate,
+} from './marcherBodyModel';
+import { getSaxophoneTemplate, SAXOPHONE_MOUTHPIECE_TIP } from './saxophoneModel';
+import { getTromboneTemplate, TROMBONE_MOUTHPIECE_TIP, TROMBONE_SLIDE_STAY_Y } from './tromboneModel';
+import { getTrumpetTemplate } from './trumpetModel';
+import type { ModelDetail, ModelTemplate } from './lowPolyInstrument';
+import { isFieldShrunk, onARScaleChangedObservable } from '../xr/ar';
 
 export { COLLISION_MARKER_RADIUS_YARDS } from './collisionMarkers';
 
 const allRobots = new Set<TransformNode>();
 const heldRobots = new Set<TransformNode>();
-const MARCHER_MODEL_EYE_HEIGHT = 1.28;
+
+// Marcher parts and instruments are clones of shared templates. While the
+// field is shrunk (Giant and tabletop modes) every clone switches to its
+// template's low-detail geometry, keeping its parenting and material.
+const modelPartTemplates = new WeakMap<Mesh, ModelTemplate>();
+let marcherDetail: ModelDetail = isFieldShrunk() ? "low" : "high";
+
+function cloneModelPart(template: ModelTemplate, scene: Scene, name: string, parent: Node | null): Mesh {
+  const mesh = template(scene, marcherDetail).clone(name, parent);
+  modelPartTemplates.set(mesh, template);
+  return mesh;
+}
+
+function setMarcherDetail(detail: ModelDetail) {
+  if (detail === marcherDetail) return;
+  marcherDetail = detail;
+  allRobots.forEach((robot) => {
+    robot.getChildMeshes(false).forEach((mesh) => {
+      const template = mesh instanceof Mesh ? modelPartTemplates.get(mesh) : undefined;
+      template?.(mesh.getScene(), detail).geometry?.applyToMesh(mesh as Mesh);
+    });
+  });
+}
+
+onARScaleChangedObservable.add(() => setMarcherDetail(isFieldShrunk() ? "low" : "high"));
 const MARCHER_BUILD_SCALE = 0.64;
 const MARCHER_HEIGHT_METERS = 1.8;
 const METERS_PER_YARD = 0.9144;
@@ -67,10 +105,118 @@ const TOP_DOWN_MARKER_DIAMETER_YARDS = 2.2;
 const MAX_KNEE_BEND_RADIANS = 1.35;
 const UPPER_ARM_LENGTH = 0.3;
 const FOREARM_LENGTH = 0.4;
-const TRUMPET_GRIPS = [new Vector3(-0.08, 0.07, 0), new Vector3(0.07, 0.12, 0)];
+export type MarcherInstrument = "trumpet" | "mellophone" | "saxophone" | "trombone" | "clarinet" | "flute" | "sousaphone";
+
+// Instruments hang off an unsquashed root (uniform MARCHER_BODY_SCALE), so
+// they keep true proportions at any rotation. Instrument-root coordinates are
+// body coordinates with x and z multiplied by MARCHER_BUILD_SCALE.
+// `grips` are instrument-local [left, right] hand centers; `mouthpiece` is the
+// local point placed on the lips in the playing pose.
+interface InstrumentSpec {
+  label: string;
+  template: ModelTemplate;
+  grips: [Vector3, Vector3];
+  mouthpiece: Vector3;
+  playRotation: Vector3;
+  restPosition: Vector3;
+  restRotation: Vector3;
+  // Body-space directions the [left, right] elbows bend toward while playing.
+  elbowBends?: [Vector3, Vector3];
+}
+
+const DEFAULT_ELBOW_BENDS: [Vector3, Vector3] = [new Vector3(-0.6, -1, -0.2), new Vector3(0.6, -1, -0.2)];
+
+const INSTRUMENTS: Record<MarcherInstrument, InstrumentSpec> = {
+  // Left hand wraps the valve casings, right hand sits over the valve buttons.
+  // Local +Y runs toward the mouthpiece, +Z toward the buttons.
+  trumpet: {
+    label: "Trumpet",
+    template: getTrumpetTemplate,
+    grips: [new Vector3(-0.055, 0, -0.01), new Vector3(0.05, 0, 0.07)],
+    mouthpiece: new Vector3(0, 0.25, 0),
+    playRotation: new Vector3(-Math.PI / 2, 0, 0),
+    restPosition: new Vector3(0, 0.86, 0.32),
+    restRotation: Vector3.Zero(),
+  },
+  // Held like the trumpet (same valve layout), with a longer leadpipe and a
+  // much larger forward bell. Carried upright with the bell down.
+  mellophone: {
+    label: "Mellophone",
+    template: getMellophoneTemplate,
+    grips: [new Vector3(-0.06, 0, -0.01), new Vector3(0.05, 0, 0.07)],
+    mouthpiece: MELLOPHONE_MOUTHPIECE_TIP,
+    playRotation: new Vector3(-Math.PI / 2, 0, 0),
+    restPosition: new Vector3(0, 0.82, 0.34),
+    restRotation: Vector3.Zero(),
+  },
+  // Held down and slightly out to the right; left hand on the upper key stack,
+  // right hand on the lower one. Local +Y runs up the body, -Z toward the player.
+  saxophone: {
+    label: "Saxophone",
+    template: getSaxophoneTemplate,
+    grips: [new Vector3(-0.025, 0.17, -0.06), new Vector3(0.025, -0.07, -0.065)],
+    mouthpiece: SAXOPHONE_MOUTHPIECE_TIP,
+    playRotation: new Vector3(-0.25, 0, 0.35),
+    restPosition: new Vector3(0.05, 0.66, 0.24),
+    restRotation: new Vector3(0, 0, 0.2),
+  },
+  // Slide forward at first position, bell section over the left shoulder.
+  // Left hand grips the brace by the mouthpiece, right hand the slide stay.
+  // Carried upright with the slide pointing down.
+  trombone: {
+    label: "Trombone",
+    template: getTromboneTemplate,
+    grips: [new Vector3(-0.07, 0.02, -0.04), new Vector3(0.04, TROMBONE_SLIDE_STAY_Y, -0.035)],
+    mouthpiece: TROMBONE_MOUTHPIECE_TIP,
+    playRotation: new Vector3(-Math.PI / 2, 0, 0),
+    restPosition: new Vector3(0.02, 0.95, 0.3),
+    restRotation: Vector3.Zero(),
+  },
+  // Angled about 40° below horizontal, left hand on the upper joint and right
+  // hand on the lower joint, fingers over the front keys. Carried upright.
+  clarinet: {
+    label: "Clarinet",
+    template: getClarinetTemplate,
+    grips: [new Vector3(-0.012, 0.13, 0.025), new Vector3(0.012, -0.03, 0.025)],
+    mouthpiece: CLARINET_MOUTHPIECE_TIP,
+    playRotation: new Vector3(-0.87, 0, 0),
+    restPosition: new Vector3(0, 0.82, 0.3),
+    restRotation: Vector3.Zero(),
+  },
+  // Held level out to the right with the lip plate under the lips and the
+  // foot angled slightly forward; both hands under the tube, left hand nearer
+  // the head joint. Carried upright with the crown up. The left hand crosses
+  // in front of the chin, so its elbow swings out sideways to clear the chest.
+  flute: {
+    label: "Flute",
+    template: getFluteTemplate,
+    grips: [new Vector3(0.01, -0.12, -0.012), new Vector3(0.01, -0.33, -0.012)],
+    mouthpiece: FLUTE_MOUTHPIECE_TIP,
+    playRotation: new Vector3(-Math.PI / 2, -0.25, Math.PI / 2),
+    restPosition: new Vector3(0, 0.98, 0.3),
+    restRotation: Vector3.Zero(),
+    elbowBends: [new Vector3(-1, -0.5, 0), DEFAULT_ELBOW_BENDS[1]],
+  },
+  // Worn, so it is modelled in instrument-root coordinates and never rotates:
+  // playing and carrying are the same pose. Right hand on the valves, left
+  // hand on the front of the body loop below the left shoulder.
+  sousaphone: {
+    label: "Sousaphone",
+    template: getSousaphoneTemplate,
+    grips: [sousaphoneLoopPoint((3 * Math.PI) / 4), SOUSAPHONE_VALVE_GRIP],
+    mouthpiece: SOUSAPHONE_MOUTHPIECE_TIP,
+    playRotation: Vector3.Zero(),
+    restPosition: Vector3.Zero(),
+    restRotation: Vector3.Zero(),
+  },
+};
+export const MARCHER_INSTRUMENTS = Object.keys(INSTRUMENTS) as MarcherInstrument[];
+const MARCHER_MOUTH = new Vector3(0, 1.2, 0.16 * MARCHER_BUILD_SCALE);
 const marcherParts = new Map<TransformNode, {
   gaitIndex: number;
   instrumentRestPose: boolean;
+  instrument: MarcherInstrument;
+  gloves: [Mesh, Mesh];
   leftLeg: TransformNode;
   rightLeg: TransformNode;
   leftKnee: TransformNode;
@@ -97,7 +243,12 @@ function orientMarcherShoes(leftShoe: Mesh, rightShoe: Mesh, legFacingOffset: nu
   }
 }
 
+function hornRotationMatrix(horn: Mesh): Matrix {
+  return Matrix.RotationYawPitchRoll(horn.rotation.y, horn.rotation.x, horn.rotation.z);
+}
+
 function applyInstrumentPose(parts: {
+  instrument: MarcherInstrument;
   leftArm: TransformNode;
   rightArm: TransformNode;
   leftForearm: TransformNode;
@@ -107,19 +258,29 @@ function applyInstrumentPose(parts: {
 }, restPose: boolean) {
   if (parts.appliedInstrumentRestPose === restPose) return;
   parts.appliedInstrumentRestPose = restPose;
-  parts.horn.position.set(0, restPose ? 0.8 : 1.22, restPose ? 0.62 : 0.36);
-  parts.horn.rotation.set(restPose ? 0 : -Math.PI / 2, 0, 0);
-  const hornRotation = Matrix.RotationX(parts.horn.rotation.x);
+  const spec = INSTRUMENTS[parts.instrument];
+  if (restPose) {
+    parts.horn.position.copyFrom(spec.restPosition);
+    parts.horn.rotation.copyFrom(spec.restRotation);
+  } else {
+    // Put the mouthpiece on the lips.
+    parts.horn.rotation.copyFrom(spec.playRotation);
+    const mouthpieceOffset = Vector3.TransformCoordinates(spec.mouthpiece, hornRotationMatrix(parts.horn));
+    parts.horn.position.copyFrom(MARCHER_MOUTH.subtract(mouthpieceOffset));
+  }
+  const hornRotation = hornRotationMatrix(parts.horn);
   for (const [index, arm, forearm] of [
     [0, parts.leftArm, parts.leftForearm],
     [1, parts.rightArm, parts.rightForearm],
   ] as const) {
-    const wrist = Vector3.TransformCoordinates(TRUMPET_GRIPS[index], hornRotation).add(parts.horn.position);
+    // Grip in instrument-root coordinates, then unsquash into body coordinates.
+    const grip = Vector3.TransformCoordinates(spec.grips[index], hornRotation).add(parts.horn.position);
+    const wrist = new Vector3(grip.x / MARCHER_BUILD_SCALE, grip.y, grip.z / MARCHER_BUILD_SCALE);
     const shoulderToWrist = wrist.subtract(arm.position);
     const distance = shoulderToWrist.length();
     const direction = shoulderToWrist.scale(1 / distance);
     const along = (UPPER_ARM_LENGTH ** 2 - FOREARM_LENGTH ** 2 + distance ** 2) / (2 * distance);
-    const outward = new Vector3(index === 0 ? -0.6 : 0.6, -1, -0.2);
+    const outward = (!restPose && spec.elbowBends ? spec.elbowBends : DEFAULT_ELBOW_BENDS)[index];
     const bendDirection = outward.subtract(direction.scale(Vector3.Dot(outward, direction))).normalize();
     const bend = Math.sqrt(Math.max(0, UPPER_ARM_LENGTH ** 2 - along ** 2));
     const elbow = arm.position.add(direction.scale(along)).add(bendDirection.scale(bend));
@@ -187,6 +348,51 @@ export function setMarcherInstrumentRestPose(robot: TransformNode, restPose: boo
   applyInstrumentPose(parts, restPose);
 }
 
+let selectedInstrument: MarcherInstrument = "trumpet";
+
+export function getInstrumentLabel(instrument: MarcherInstrument): string {
+  return INSTRUMENTS[instrument].label;
+}
+
+export function getSelectedInstrument(): MarcherInstrument {
+  return selectedInstrument;
+}
+
+// The instrument new marchers are created with.
+export function setSelectedInstrument(instrument: MarcherInstrument) {
+  selectedInstrument = instrument;
+}
+
+export function getMarcherInstrument(robot: TransformNode): MarcherInstrument | null {
+  return marcherParts.get(robot)?.instrument ?? null;
+}
+
+function createInstrumentMesh(scene: Scene, instrument: MarcherInstrument, root: TransformNode): Mesh {
+  const horn = cloneModelPart(INSTRUMENTS[instrument].template, scene, "marcherHorn", root);
+  horn.setEnabled(true);
+  horn.isPickable = true;
+  return horn;
+}
+
+// Swaps a marcher's instrument mesh, moving its gloves onto the new grips.
+export function setMarcherInstrument(robot: TransformNode, instrument: MarcherInstrument) {
+  const parts = marcherParts.get(robot);
+  if (!parts || parts.instrument === instrument) return;
+  const oldHorn = parts.horn;
+  const horn = createInstrumentMesh(robot.getScene(), instrument, oldHorn.parent as TransformNode);
+  horn.renderingGroupId = oldHorn.renderingGroupId;
+  horn.layerMask = oldHorn.layerMask;
+  parts.gloves.forEach((glove, index) => {
+    glove.parent = horn;
+    glove.position.copyFrom(INSTRUMENTS[instrument].grips[index]);
+  });
+  oldHorn.dispose();
+  parts.horn = horn;
+  parts.instrument = instrument;
+  parts.appliedInstrumentRestPose = undefined;
+  applyInstrumentPose(parts, parts.instrumentRestPose);
+}
+
 export function cycleMarchingGait(direction: -1 | 1): number {
   selectedMarchingGait = (selectedMarchingGait + direction + MARCHING_GAITS.length) % MARCHING_GAITS.length;
   marcherParts.forEach((parts) => {
@@ -205,208 +411,60 @@ function createMarcherModel(scene: Scene, gaitIndex: number): TransformNode {
   const bodyMaterial = new StandardMaterial("robotBodyMaterial", scene);
   bodyMaterial.diffuseColor = color;
   bodyMaterial.specularColor = new Color3(0.25, 0.25, 0.25);
-  const makeMaterial = (name: string, tint: Color3) => {
-    const material = new StandardMaterial(name, scene);
-    material.diffuseColor = tint;
-    return material;
-  };
-  const dark = makeMaterial("marcherTrousers", new Color3(0.06, 0.1, 0.17));
-  const trim = makeMaterial("marcherTrim", new Color3(0.95, 0.85, 0.54));
-  const skin = makeMaterial("marcherSkin", new Color3(0.7, 0.44, 0.31));
-  const brass = makeMaterial("marcherBrass", new Color3(0.88, 0.64, 0.15));
-  const boot = makeMaterial("marcherBoot", new Color3(0.025, 0.035, 0.045));
-  const white = makeMaterial("marcherGlove", new Color3(0.9, 0.92, 0.88));
   const body = new TransformNode("marcherBody", scene);
   body.parent = robot;
   body.scaling.set(MARCHER_BODY_SCALE * MARCHER_BUILD_SCALE, MARCHER_BODY_SCALE, MARCHER_BODY_SCALE * MARCHER_BUILD_SCALE);
+  const part = (template: ModelTemplate, name: string, parent: Node | null, material?: StandardMaterial) => {
+    const mesh = cloneModelPart(template, scene, name, parent);
+    mesh.setEnabled(true);
+    mesh.isPickable = true;
+    if (material) mesh.material = material;
+    return mesh;
+  };
 
-  const jacket = MeshBuilder.CreateLathe("marcherJacket", {
-    shape: [
-      new Vector3(0, 0.61, 0),
-      new Vector3(0.14, 0.61, 0),
-      new Vector3(0.17, 0.63, 0),
-      new Vector3(0.17, 0.66, 0),
-      new Vector3(0.18, 0.7, 0),
-      new Vector3(0.19, 0.75, 0),
-      new Vector3(0.185, 0.82, 0),
-      new Vector3(0.2, 0.93, 0),
-      new Vector3(0.19, 1.02, 0),
-      new Vector3(0.125, 1.06, 0),
-      new Vector3(0, 1.06, 0),
-    ],
-    tessellation: 10,
-    cap: Mesh.CAP_ALL,
-  }, scene);
-  jacket.scaling.x = 1.1;
-  jacket.scaling.z = 1.1;
-  jacket.material = bodyMaterial;
-  jacket.parent = body;
-
-  const pelvis = MeshBuilder.CreateLathe("marcherPelvis", {
-    shape: [
-      new Vector3(0, 0.48, 0),
-      new Vector3(0.1, 0.48, 0),
-      new Vector3(0.12, 0.5, 0),
-      new Vector3(0.14, 0.54, 0),
-      new Vector3(0.15, 0.58, 0),
-      new Vector3(0.145, 0.62, 0),
-      new Vector3(0.12, 0.66, 0),
-      new Vector3(0.09, 0.69, 0),
-      new Vector3(0, 0.7, 0),
-    ],
-    tessellation: 10,
-    cap: Mesh.CAP_ALL,
-  }, scene);
-  pelvis.material = dark;
-  pelvis.parent = body;
-
-  const belt = MeshBuilder.CreateTorus("marcherBelt", {
-    diameter: 0.32,
-    thickness: 0.025,
-    tessellation: 10,
-  }, scene);
-  belt.position.y = 0.64;
-  belt.material = trim;
-  belt.parent = body;
-
-  const neck = MeshBuilder.CreateLathe("marcherNeck", {
-    shape: [
-      new Vector3(0, -0.06, 0),
-      new Vector3(0.05, -0.06, 0),
-      new Vector3(0.06, -0.04, 0),
-      new Vector3(0.06, 0.04, 0),
-      new Vector3(0.05, 0.06, 0),
-      new Vector3(0, 0.06, 0),
-    ],
-    tessellation: 10,
-    cap: Mesh.CAP_ALL,
-  }, scene);
-  neck.position.y = 1.12;
-  neck.material = skin;
-  neck.parent = body;
-  const head = MeshBuilder.CreateSphere("robotHead", { diameter: 0.25, segments: 10 }, scene);
-  head.position.y = MARCHER_MODEL_EYE_HEIGHT;
-  head.material = skin;
-  head.parent = body;
-
-  const hat = MeshBuilder.CreateLathe("marcherShako", {
-    shape: [
-      new Vector3(0, 1.36, 0),
-      new Vector3(0.125, 1.36, 0),
-      new Vector3(0.14, 1.39, 0),
-      new Vector3(0.13, 1.43, 0),
-      new Vector3(0.13, 1.58, 0),
-      new Vector3(0.12, 1.62, 0),
-      new Vector3(0.105, 1.64, 0),
-      new Vector3(0, 1.64, 0),
-    ],
-    tessellation: 10,
-    cap: Mesh.CAP_ALL,
-  }, scene);
-  hat.material = dark;
-  hat.parent = body;
-  const plume = MeshBuilder.CreateSphere("marcherPlume", { diameter: 0.16, segments: 8 }, scene);
-  plume.position.set(0, 1.7, 0);
-  plume.material = white;
-  plume.parent = body;
+  part(getMarcherJacketTemplate, "marcherJacket", body, bodyMaterial);
+  part(getMarcherTrimTemplate, "marcherTrim", body);
+  part(getRobotEyesTemplate, "robotEyes", body);
 
   const appendages = ([-1, 1] as const).map((side) => {
     const leg = new TransformNode("marcherLeg", scene);
     leg.position.set(side * 0.09, 0.69, 0);
     leg.parent = body;
-    const thigh = MeshBuilder.CreateLathe("marcherThigh", {
-      shape: [
-        new Vector3(0, -0.22, 0),
-        new Vector3(0.082, -0.22, 0),
-        new Vector3(0.088, -0.2, 0),
-        new Vector3(0.087, -0.17, 0),
-        new Vector3(0.078, -0.12, 0),
-        new Vector3(0.085, -0.06, 0),
-        new Vector3(0.08, 0, 0),
-        new Vector3(0.07, 0.04, 0),
-        new Vector3(0.06, 0.1, 0),
-        new Vector3(0.045, 0.16, 0),
-        new Vector3(0, 0.16, 0),
-      ],
-      tessellation: 10,
-      cap: Mesh.CAP_ALL,
-    }, scene);
+    const thigh = part(getMarcherThighTemplate, "marcherThigh", leg);
     thigh.position.y = -0.16;
-    thigh.material = dark;
-    thigh.parent = leg;
 
     const knee = new TransformNode("marcherKnee", scene);
     knee.position.y = -0.37;
     knee.parent = leg;
-    const calf = MeshBuilder.CreateLathe("marcherCalf", {
-      shape: [
-        new Vector3(0, -0.25, 0),
-        new Vector3(0.065, -0.25, 0),
-        new Vector3(0.079, -0.23, 0),
-        new Vector3(0.067, -0.2, 0),
-        new Vector3(0.07, -0.13, 0),
-        new Vector3(0.078, -0.07, 0),
-        new Vector3(0.087, -0.025, 0),
-        new Vector3(0.087, 0, 0),
-        new Vector3(0, 0, 0),
-      ],
-      tessellation: 10,
-      cap: Mesh.CAP_ALL,
-    }, scene);
-    calf.material = dark;
-    calf.parent = knee;
+    part(getMarcherCalfTemplate, "marcherCalf", knee);
 
     const ankle = new TransformNode("marcherAnkle", scene);
     ankle.position.y = -0.2;
     ankle.parent = knee;
-
-    const shoe = MeshBuilder.CreateCapsule("marcherShoe", {
-      height: 0.27,
-      radius: 0.06,
-      orientation: Vector3.Forward(),
-      tessellation: 10,
-      subdivisions: 1,
-      capSubdivisions: 2,
-    }, scene);
-    shoe.scaling.x = 1.2;
+    const shoe = part(getMarcherShoeTemplate, "marcherShoe", ankle);
     shoe.position.set(0, -0.06, 0.07);
-    shoe.material = boot;
-    shoe.parent = ankle;
 
     const arm = new TransformNode("marcherArm", scene);
     arm.position.set(side * 0.31, 1.02, 0);
     arm.rotationQuaternion = Quaternion.Identity();
     arm.parent = body;
-    const sleeve = MeshBuilder.CreateCylinder("marcherSleeve", {
-      height: UPPER_ARM_LENGTH, diameterTop: 0.17, diameterBottom: 0.13, tessellation: 8,
-    }, scene);
-    sleeve.position.y = -UPPER_ARM_LENGTH / 2;
-    sleeve.material = bodyMaterial;
-    sleeve.parent = arm;
+    part(getMarcherUpperArmTemplate, "marcherUpperArm", arm, bodyMaterial);
     const forearm = new TransformNode("marcherForearm", scene);
     forearm.rotationQuaternion = Quaternion.Identity();
     forearm.parent = body;
-    const lowerSleeve = MeshBuilder.CreateCylinder("marcherLowerSleeve", {
-      height: FOREARM_LENGTH, diameterTop: 0.13, diameterBottom: 0.10, tessellation: 8,
-    }, scene);
-    lowerSleeve.position.y = -FOREARM_LENGTH / 2;
-    lowerSleeve.material = bodyMaterial;
-    lowerSleeve.parent = forearm;
-    const glove = MeshBuilder.CreateSphere("marcherHand", { diameter: 0.12, segments: 8 }, scene);
-    glove.material = white;
+    part(getMarcherForearmTemplate, "marcherForearm", forearm, bodyMaterial);
+    const glove = part(getMarcherGloveTemplate, "marcherHand", null);
     return { leg, knee, ankle, shoe, arm, forearm, glove };
   });
 
-  const horn = MeshBuilder.CreateCylinder("marcherHorn", {
-    diameterTop: 0.07, diameterBottom: 0.24, height: 0.5, tessellation: 12,
-  }, scene);
-  horn.position.set(0, 0.8, 0.1);
-  horn.rotation.setAll(0);
-  horn.material = brass;
-  horn.parent = body;
+  const instrumentRoot = new TransformNode("marcherInstrumentRoot", scene);
+  instrumentRoot.parent = robot;
+  instrumentRoot.scaling.setAll(MARCHER_BODY_SCALE);
+  const instrument = selectedInstrument;
+  const horn = createInstrumentMesh(scene, instrument, instrumentRoot);
   appendages.forEach(({ glove }, index) => {
     glove.parent = horn;
-    glove.position.copyFrom(TRUMPET_GRIPS[index]);
+    glove.position.copyFrom(INSTRUMENTS[instrument].grips[index]);
   });
   const resolvedGaitIndex = Math.min(MARCHING_GAITS.length - 1, Math.max(0, gaitIndex));
   const initialGait = MARCHING_GAITS[resolvedGaitIndex];
@@ -416,6 +474,8 @@ function createMarcherModel(scene: Scene, gaitIndex: number): TransformNode {
   marcherParts.set(robot, {
     gaitIndex: resolvedGaitIndex,
     instrumentRestPose: instrumentCarryPose,
+    instrument,
+    gloves: [appendages[0].glove, appendages[1].glove],
     leftLeg: appendages[0].leg, rightLeg: appendages[1].leg,
     leftKnee: appendages[0].knee, rightKnee: appendages[1].knee,
     leftAnkle: appendages[0].ankle, rightAnkle: appendages[1].ankle,
@@ -445,6 +505,8 @@ function createMarcherModel(scene: Scene, gaitIndex: number): TransformNode {
   marker.parent = robot;
 
   robot.onDisposeObservable.add(() => {
+    bodyMaterial.dispose();
+    markerMaterial.dispose();
     allRobots.delete(robot);
     heldRobots.delete(robot);
     robotColors.delete(robot);
