@@ -178,6 +178,8 @@ function createTopDownFieldTexture(
   );
   rtt.activeCamera = camera;
   rtt.renderList = [videoField];
+  rtt.refreshRate = RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
+  scene.customRenderTargets.push(rtt);
   const refreshInterval = Math.max(0.1, refreshIntervalSeconds);
   let elapsedSeconds = refreshInterval;
   scene.onBeforeRenderObservable.add(() => {
@@ -201,8 +203,12 @@ function createTopDownFieldTexture(
     camera.orthoBottom = -halfWidth * scale;
     camera.minZ = scale;
     camera.maxZ = 200 * scale;
-    rtt.renderList = [videoField, ...scene.meshes.filter((mesh) => mesh.name === "robotTopDownMarker")];
-    rtt.render();
+    const renderList = rtt.renderList!;
+    renderList.length = 1;
+    for (const mesh of scene.meshes) {
+      if (mesh.name === "robotTopDownMarker") renderList.push(mesh);
+    }
+    rtt.resetRefreshCounter();
   });
   return rtt;
 }

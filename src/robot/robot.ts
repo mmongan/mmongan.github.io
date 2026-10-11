@@ -356,12 +356,12 @@ const INSTRUMENTS: Record<MarcherInstrument, InstrumentSpec> = {
     restRotation: new Vector3(0, 0, 0.15),
   },
   // Slide forward at first position, bell section over the left shoulder.
-  // Left hand grips the brace by the mouthpiece, right hand the slide stay.
+  // Left hand rests beside the receiver, right hand holds the brass slide crosspiece.
   // Carried upright with the slide pointing down.
   trombone: {
     label: "Trombone",
     template: getTromboneTemplate,
-    grips: [new Vector3(-0.07, 0.02, -0.04), new Vector3(0.04, TROMBONE_SLIDE_STAY_Y, -0.035)],
+    grips: [new Vector3(-0.055, 0.02, 0), new Vector3(0.055, TROMBONE_SLIDE_STAY_Y, 0)],
     mouthpiece: TROMBONE_MOUTHPIECE_TIP,
     playRotation: new Vector3(-Math.PI / 2, 0, 0),
     restPosition: new Vector3(0.02, 0.95, 0.3),
@@ -927,6 +927,9 @@ function lerpAngle(from: number, to: number, t: number): number {
 
 // Applies the shared global count (clamped to this robot's own table length,
 // so a shorter route just holds at its last position) to one robot.
+const playbackDisplacement = Vector3.Zero();
+const playbackLocalDisplacement = Vector3.Zero();
+
 function applyGlobalCount(robot: TransformNode, state: PlayerState) {
   if (heldRobots.has(robot) || state.counts.length === 0) return;
   const last = state.counts.length - 1;
@@ -971,7 +974,8 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState) {
     ? state.counts[0]
     : count).position);
   robot.rotation.y = bodyRotation;
-  const displacement = to.position.subtract(from.position);
+  to.position.subtractToRef(from.position, playbackDisplacement);
+  const displacement = playbackDisplacement;
   const moving = globalPlayback.playing && !!resolved && (inPlace || displacement.lengthSquared() > 0.0001);
   if (!moving) {
     parts.leftLeg.rotation.x = 0;
@@ -993,9 +997,18 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState) {
   if (!inPlace) Vector3.LerpToRef(from.position, to.position, forwardProgress, robot.position);
   const stepsPerCount = resolved!.stepsPerCount;
   // One footfall covers 1/stepsPerCount counts, so its stride scales the same way.
-  const localDisplacement = inPlace
-    ? Vector3.Zero()
-    : Vector3.TransformNormal(displacement.scale(1 / stepsPerCount), Matrix.RotationY(-legWorldRotation));
+  const localDisplacement = playbackLocalDisplacement;
+  if (inPlace) {
+    localDisplacement.setAll(0);
+  } else {
+    const sin = Math.sin(legWorldRotation);
+    const cos = Math.cos(legWorldRotation);
+    localDisplacement.set(
+      (displacement.x * cos - displacement.z * sin) / stepsPerCount,
+      displacement.y / stepsPerCount,
+      (displacement.x * sin + displacement.z * cos) / stepsPerCount,
+    );
+  }
   const stepPhase = (segmentStart + forwardProgress) * stepsPerCount;
   const stepNumber = Math.min(Math.floor(stepPhase), Math.ceil((segmentStart + 1) * stepsPerCount) - 1);
   const gaitProgress = Math.min(1, stepPhase - stepNumber);

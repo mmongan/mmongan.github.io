@@ -603,6 +603,9 @@ export function initXR(teleportGrid: Mesh) {
       }
 
       xrExperience.baseExperience.onStateChangedObservable.add((state) => {
+        if (state === WebXRState.IN_XR && sessionManager.isFixedFoveationSupported) {
+          sessionManager.fixedFoveation = 0.5;
+        }
         if (state === WebXRState.ENTERING_XR || state === WebXRState.IN_XR) {
           if (state === WebXRState.ENTERING_XR) {
             setHandTracking(handTracking);
