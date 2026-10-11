@@ -24,6 +24,18 @@ if (settingsOverlay) {
     }
   });
 }
+
+export function setTableHeightForPosture(sitting: boolean, height = sitting ? 0.75 : 1) {
+  if (sittingModeToggle) sittingModeToggle.checked = sitting;
+  if (tableHeightInput) tableHeightInput.value = String(height);
+  if (tableHeightValue) tableHeightValue.value = `${height.toFixed(2)} m`;
+  setFieldHeightSetting("table", height);
+}
+
+sittingModeToggle?.addEventListener("change", () => {
+  setTableHeightForPosture(!!sittingModeToggle?.checked);
+});
+
 for (const [mode, input, output] of [
   ["floor", floorHeightInput, floorHeightValue],
   ["table", tableHeightInput, tableHeightValue],
@@ -34,12 +46,6 @@ for (const [mode, input, output] of [
       return;
     }
 
-    sittingModeToggle?.addEventListener("change", () => {
-      const height = sittingModeToggle?.checked ? 0.75 : 1;
-      if (tableHeightInput) tableHeightInput.value = String(height);
-      if (tableHeightValue) tableHeightValue.value = `${height.toFixed(2)} m`;
-      setFieldHeightSetting("table", height);
-    });
     setFieldHeightSetting(mode, input.valueAsNumber);
     if (output) output.value = `${input.valueAsNumber.toFixed(2)} m`;
   });

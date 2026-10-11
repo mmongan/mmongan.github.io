@@ -16,9 +16,10 @@ import { WebXRState } from '@babylonjs/core/XR/webXRTypes';
 import '@babylonjs/loaders/glTF';
 import { RegisterWebXROculusTouchMotionController } from '@babylonjs/core/XR/motionController/webXROculusTouchMotionController.pure';
 import { scene } from '../scene/engine';
+import { setTableHeightForPosture } from '../menu/settings';
 import { xrModeInputs, getSelectedXRMode, floorCalibrationToggle, fullScaleVRButton, tabletopScaleButton, giantModeButton, roomWidthInput, roomLengthInput, sittingModeToggle } from '../ui/dom';
 import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS } from '../field/constants';
-import { enterARTabletopMode, exitARTabletopMode, getARPosition, getARScale, getARScaleRange, setARPosition, setARScale, setFieldHeightMode, getFieldHeightMode } from './ar';
+import { enterARTabletopMode, exitARTabletopMode, getARPosition, getARScale, getARScaleRange, setARPosition, setARScale, setFieldHeightMode, getFieldHeightMode, setARSurfaceHeight } from './ar';
 import { getGloveHandTrackingOptions } from './gloveMeshes';
 import { setActiveController, removeActiveController, setHandTracking, getActiveControllers, consumeFloorCalibrationGesture, setHandFloorContact } from '../interaction/pathInteraction';
 
@@ -131,6 +132,50 @@ export function initXR(teleportGrid: Mesh) {
   const calibrationPresses = new Map<string, boolean>();
   let switchingToFullScaleVR = false;
   let giantModeActive = false;
+  let detectedSitting: boolean | null = null;
+  let pendingSitting: boolean | null = null;
+  let pendingPostureSince = 0;
+
+  function updateTableHeightFromCamera(camera: WebXRCamera, sitting: boolean) {
+    const height = camera.realWorldHeight;
+    if (!Number.isFinite(height) || height <= 0) return;
+    const worldScale = xrExperience?.baseExperience.sessionManager.worldScalingFactor ?? 1;
+    const tableAboveFloor = Math.max(0, Math.min(
+      (sitting ? 0.75 : 1) * worldScale,
+      height - 0.45 * worldScale
+    ));
+    setTableHeightForPosture(sitting, getHeadsetFloorY(camera) + tableAboveFloor);
+  }
+
+  function updateDetectedPosture(camera: WebXRCamera) {
+    if (floorCalibrationToggle?.checked) {
+      pendingSitting = null;
+      return;
+    }
+    const worldScale = xrExperience?.baseExperience.sessionManager.worldScalingFactor ?? 1;
+    const height = camera.realWorldHeight / worldScale;
+    if (!Number.isFinite(height) || height <= 0) {
+      pendingSitting = null;
+      return;
+    }
+    const sitting = detectedSitting === null
+      ? height < 1.425
+      : detectedSitting ? height < 1.5 : height < 1.35;
+    if (sitting === detectedSitting) {
+      pendingSitting = null;
+      return;
+    }
+    const now = performance.now();
+    if (pendingSitting !== sitting) {
+      pendingSitting = sitting;
+      pendingPostureSince = now;
+    }
+    if (now - pendingPostureSince >= 1000) {
+      detectedSitting = sitting;
+      pendingSitting = null;
+      updateTableHeightFromCamera(camera, sitting);
+    }
+  }
 
   function applyPostureHeight(camera: WebXRCamera) {
     if (preferredMode !== "immersive-vr") return;
@@ -139,14 +184,19 @@ export function initXR(teleportGrid: Mesh) {
       console.warn("Cannot apply sitting/standing height until a valid XR pose is available.");
       return;
     }
-    const newOffset = (sittingModeToggle?.checked ? 1.2 : 1.7) - trackedHeight;
+    const newOffset = giantModeActive || getFieldHeightMode() === "table"
+      ? 0
+      : (sittingModeToggle?.checked ? 1.2 : 1.7) - trackedHeight;
     camera.position.y += newOffset - postureHeightOffset;
     postureHeightOffset = newOffset;
   }
 
   sittingModeToggle?.addEventListener("change", () => {
     const baseExperience = xrExperience?.baseExperience;
-    if (baseExperience?.state === WebXRState.IN_XR) applyPostureHeight(baseExperience.camera);
+    if (baseExperience?.state === WebXRState.IN_XR) {
+      applyPostureHeight(baseExperience.camera);
+      updateTableHeightFromCamera(baseExperience.camera, !!sittingModeToggle?.checked);
+    }
   });
   const floorCalibrationStorageKey = "chartxr.floorCalibrationOffset";
   let savedFloorOffset: number | null = null;
@@ -210,6 +260,9 @@ export function initXR(teleportGrid: Mesh) {
       giantModeActive = false;
       setARScale(getARScaleRange().max);
       setFieldHeightMode("floor");
+      if (xrExperience?.baseExperience.state === WebXRState.IN_XR) {
+        applyPostureHeight(xrExperience.baseExperience.camera);
+      }
       if (preferredMode !== "immersive-vr") {
         if (xrExperience && xrExperience.baseExperience.state !== WebXRState.NOT_IN_XR) {
           await xrExperience.baseExperience.exitXRAsync();
@@ -237,6 +290,11 @@ export function initXR(teleportGrid: Mesh) {
     setARScale(getARScaleRange().default);
     setFieldHeightMode("table");
     if (floorCalibrationToggle) floorCalibrationToggle.checked = false;
+    const baseExperience = xrExperience?.baseExperience;
+    if (baseExperience?.state === WebXRState.IN_XR) {
+      applyPostureHeight(baseExperience.camera);
+      updateTableHeightFromCamera(baseExperience.camera, detectedSitting ?? !!sittingModeToggle?.checked);
+    }
     updateTeleportationAvailability();
   });
 
@@ -250,7 +308,13 @@ export function initXR(teleportGrid: Mesh) {
     ));
     setFieldHeightMode("floor");
     giantModeActive = true;
+    resetPlayerFloorOffset();
     if (floorCalibrationToggle) floorCalibrationToggle.checked = false;
+    const baseExperience = xrExperience?.baseExperience;
+    if (baseExperience?.state === WebXRState.IN_XR) {
+      applyPostureHeight(baseExperience.camera);
+      alignRoomScaleFloor(baseExperience.camera);
+    }
     updateTeleportationAvailability();
   }
 
@@ -297,6 +361,12 @@ export function initXR(teleportGrid: Mesh) {
     return camera.globalPosition.y - camera.realWorldHeight - postureHeightOffset;
   }
 
+  function alignRoomScaleFloor(camera: WebXRCamera) {
+    if (!giantModeActive || getFieldHeightMode() !== "floor") return;
+    if (!Number.isFinite(camera.realWorldHeight) || camera.realWorldHeight <= 0) return;
+    setARSurfaceHeight(getHeadsetFloorY(camera));
+  }
+
   function alignFieldFloorTo(floor: AbstractMesh, floorY: number) {
     floor.computeWorldMatrix(true);
     const fieldPosition = getARPosition();
@@ -316,6 +386,7 @@ export function initXR(teleportGrid: Mesh) {
       calibrationPresses.clear();
       return;
     }
+    giantModeActive = false;
     const trackedHeight = getTrackedPlayerHeight(baseExperience.camera);
     if (!Number.isFinite(trackedHeight) || trackedHeight <= 0 ||
       !Number.isFinite(baseExperience.camera.realWorldHeight) || baseExperience.camera.realWorldHeight <= 0) {
@@ -472,8 +543,15 @@ export function initXR(teleportGrid: Mesh) {
       xrExperience.baseExperience.onInitialXRPoseSetObservable.add((camera) => {
         postureHeightOffset = 0;
         resetPlayerFloorOffset();
-        if (preferredMode === "immersive-vr" && savedFloorOffset !== null) setPlayerFloorOffset(savedFloorOffset);
+        if (preferredMode === "immersive-vr" && !giantModeActive && savedFloorOffset !== null) {
+          setPlayerFloorOffset(savedFloorOffset);
+        }
         applyPostureHeight(camera);
+        alignRoomScaleFloor(camera);
+        if (getFieldHeightMode() === "table") {
+          updateTableHeightFromCamera(camera, camera.realWorldHeight < 1.425 *
+            xrExperience!.baseExperience.sessionManager.worldScalingFactor);
+        }
       });
 
       const handTracking = xrExperience.baseExperience.featuresManager
@@ -538,6 +616,8 @@ export function initXR(teleportGrid: Mesh) {
         }
 
         if (state === WebXRState.NOT_IN_XR) {
+          detectedSitting = null;
+          pendingSitting = null;
           fullScaleNoticeShown = false;
           hideFloorResetNotice();
           wasCalibratingFloor = false;
@@ -610,6 +690,11 @@ export function initXR(teleportGrid: Mesh) {
     updateFloorCalibration();
     const baseExperience = xrExperience?.baseExperience;
     if (baseExperience?.state === WebXRState.IN_XR) {
+      if ((giantModeActive || getFieldHeightMode() === "table") && postureHeightOffset !== 0) {
+        applyPostureHeight(baseExperience.camera);
+      }
+      alignRoomScaleFloor(baseExperience.camera);
+      updateDetectedPosture(baseExperience.camera);
       const calibratingFloor = preferredMode === "immersive-vr" && !!floorCalibrationToggle?.checked;
       if (calibratingFloor && !fullScaleNoticeShown) {
         showFloorResetNotice(baseExperience.camera);
