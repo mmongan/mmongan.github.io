@@ -9,7 +9,7 @@ import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
 import { scene } from '../scene/engine';
 import { getARScale, getARScaleRange, isARTabletopModeActive } from '../xr/ar';
-import { FIELD_LENGTH_YARDS, FIELD_WIDTH_YARDS, FIELD_SURFACE_Y, END_ZONE_DEPTH_YARDS, HASH_OFFSETS_YARDS } from './constants';
+import { FIELD_LENGTH_YARDS, FIELD_WIDTH_YARDS, FIELD_SURFACE_Y, END_ZONE_DEPTH_YARDS, HASH_OFFSETS_YARDS, FIELD_LINE_WIDTH_YARDS, HASH_MARK_LENGTH_YARDS } from './constants';
 
 export interface TurfResult {
   outerBase: Mesh;
@@ -43,7 +43,7 @@ function createStripeMaterial(
   stripeIndex: number,
   level: string,
   resolution: number,
-  yardLineWidthYards = 0.24
+  yardLineWidthYards = FIELD_LINE_WIDTH_YARDS
 ): StandardMaterial {
   const height = Math.round((resolution / FIELD_WIDTH_YARDS) * YARDS_PER_STRIPE);
   const canvas = document.createElement("canvas");
@@ -65,10 +65,10 @@ function createStripeMaterial(
   ctx.strokeStyle = "rgba(250, 250, 250, 0.95)";
   for (let z = -50; z <= 50; z += 5) {
     if (z < startZ || z > startZ + YARDS_PER_STRIPE) continue;
-    const lineWidth = (z === 0 ? 0.32 : yardLineWidthYards) * pixelsPerYard;
-    let y = ((z - startZ) / YARDS_PER_STRIPE) * height;
-    if (z === startZ) y = lineWidth / 2;
-    if (z === startZ + YARDS_PER_STRIPE) y = height - lineWidth / 2;
+    const goalLineScale = level === "nfl" && Math.abs(z) === 50 ? 2 : 1;
+    const lineWidth = yardLineWidthYards * goalLineScale * height / YARDS_PER_STRIPE;
+    // Adjacent stripes each paint half of the line, clipped at the shared edge.
+    const y = ((z - startZ) / YARDS_PER_STRIPE) * height;
     ctx.lineWidth = lineWidth;
     ctx.beginPath();
     ctx.moveTo(0, y);
@@ -83,7 +83,9 @@ function createStripeMaterial(
     const y = ((z - startZ) / YARDS_PER_STRIPE) * height;
     for (const x of [-hashOffset, hashOffset]) {
       const px = ((x + FIELD_WIDTH_YARDS / 2) / FIELD_WIDTH_YARDS) * resolution;
-      ctx.fillRect(px - 0.35 * pixelsPerYard, y - 0.09 * pixelsPerYard, 0.7 * pixelsPerYard, 0.18 * pixelsPerYard);
+      const hashLength = HASH_MARK_LENGTH_YARDS * pixelsPerYard;
+      const hashWidth = FIELD_LINE_WIDTH_YARDS * height / YARDS_PER_STRIPE;
+      ctx.fillRect(px - hashLength / 2, y - hashWidth / 2, hashLength, hashWidth);
     }
   }
 
@@ -363,7 +365,7 @@ export function createTurf(): TurfResult {
 
   const goalLineNorth = MeshBuilder.CreateBox(
     "goalLineNorth",
-    { width: FIELD_WIDTH_YARDS, height: 0.015, depth: 0.26 },
+    { width: FIELD_WIDTH_YARDS, height: 0.015, depth: FIELD_LINE_WIDTH_YARDS },
     scene
   );
   goalLineNorth.position = new Vector3(0, -0.48, -60);
@@ -371,7 +373,7 @@ export function createTurf(): TurfResult {
 
   const goalLineSouth = MeshBuilder.CreateBox(
     "goalLineSouth",
-    { width: FIELD_WIDTH_YARDS, height: 0.015, depth: 0.26 },
+    { width: FIELD_WIDTH_YARDS, height: 0.015, depth: FIELD_LINE_WIDTH_YARDS },
     scene
   );
   goalLineSouth.position = new Vector3(0, -0.48, 60);
@@ -538,7 +540,7 @@ export function createTurf(): TurfResult {
 
   const leftSideline = MeshBuilder.CreateBox(
     "leftSideline",
-    { width: 0.2, height: 0.015, depth: FIELD_LENGTH_YARDS },
+    { width: FIELD_LINE_WIDTH_YARDS, height: 0.015, depth: FIELD_LENGTH_YARDS },
     scene
   );
   leftSideline.position = new Vector3(-FIELD_WIDTH_YARDS / 2, -0.48, 0);
@@ -546,7 +548,7 @@ export function createTurf(): TurfResult {
 
   const rightSideline = MeshBuilder.CreateBox(
     "rightSideline",
-    { width: 0.2, height: 0.015, depth: FIELD_LENGTH_YARDS },
+    { width: FIELD_LINE_WIDTH_YARDS, height: 0.015, depth: FIELD_LENGTH_YARDS },
     scene
   );
   rightSideline.position = new Vector3(FIELD_WIDTH_YARDS / 2, -0.48, 0);

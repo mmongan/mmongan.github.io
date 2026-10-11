@@ -6,7 +6,7 @@ import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
 import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
 import { scene } from '../scene/engine';
-import { FIELD_WIDTH_YARDS, HASH_OFFSETS_YARDS } from './constants';
+import { FIELD_WIDTH_YARDS, HASH_OFFSETS_YARDS, FIELD_LINE_WIDTH_YARDS, HASH_MARK_LENGTH_YARDS } from './constants';
 
 export function createHashMarks(whiteMaterial: StandardMaterial): {
   updateHashMarks: (level: string) => void;
@@ -24,7 +24,7 @@ export function createHashMarks(whiteMaterial: StandardMaterial): {
       for (const x of [-offset, offset]) {
         const hashMark = MeshBuilder.CreateBox(
           `hashMark${z}_${x}`,
-          { width: 0.7, height: 0.012, depth: 0.18 },
+          { width: HASH_MARK_LENGTH_YARDS, height: 0.012, depth: FIELD_LINE_WIDTH_YARDS },
           scene
         );
         hashMark.position = new Vector3(x, -0.48, z);
