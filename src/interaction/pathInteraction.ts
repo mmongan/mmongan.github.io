@@ -61,8 +61,12 @@ import {
   setSelectedInstrument,
   getSelectedInstrument,
   setMarcherInstrument,
+  setMarchTempo,
+  playAll,
 } from '../robot/robot';
 import type { MarcherInstrument } from '../robot/robot';
+import { getOpenMarchSectionInstrument, loadOpenMarchFromUrl, OPEN_MARCH_URL_PARAM } from '../robot/openMarchUrl';
+import type { OpenMarchImportedDrill } from '../robot/openMarchFormat';
 import { getHandMenuHit, getHandMenuHitNearPoint, setMenuHandTracking, setFormationCommitAvailable, setFormationLibraryOpen, setFormationLibraryPage, setFormationLibraryAnchorAvailable, setEraseModeActive, setEraseHistoryAvailable, setDrillChartPadActive, setInstrumentMenuActive, isHandMenuVisible, isMenuControl } from '../menu/handMenu';
 import {
   beginDrillChartPadGrab,
@@ -89,7 +93,7 @@ import {
   updateScoreboardHornPoseFromPick,
   updateScoreboardTempoFromPick,
 } from '../field/scoreboard';
-import { canvas, collisionMarkersToggle, floorCalibrationToggle, fullScaleVRButton, tabletopScaleButton, showAllPathsToggle, placementModeToggle, eraseModeToggle, drillChartPadToggle, marcherInstrumentRadios, undoEraseButton, redoEraseButton, addRandomRobotsButton, marcherCountInput, marcherCountValue, generateDrillButton } from '../ui/dom';
+import { canvas, collisionMarkersToggle, floorCalibrationToggle, fullScaleVRButton, tabletopScaleButton, showAllPathsToggle, placementModeToggle, eraseModeToggle, drillChartPadToggle, marcherInstrumentRadios, undoEraseButton, redoEraseButton, addRandomRobotsButton, marcherCountInput, marcherCountValue, generateDrillButton, openMarchForm, openMarchUrlInput, openMarchButton, openMarchStatus } from '../ui/dom';
 import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS, FIELD_SURFACE_Y } from '../field/constants';
 import { FORMATION_SPACING_YARDS, generateMarchingDrillPaths, getDrillSectionInstrument, MARCH_STEP_YARDS } from '../robot/drill';
 
@@ -2170,6 +2174,58 @@ function spawnMarchingDrill() {
   refreshCollisionMarkers(scene);
 }
 
+// Replaces the field with an OpenMarch show, each marcher holding the
+// instrument for its section and playing from the opening set.
+function spawnOpenMarchDrill(drill: OpenMarchImportedDrill): number {
+  clearAllRobots();
+  const pickerInstrument = getSelectedInstrument();
+  drill.tracks.forEach((track, index) => {
+    setSelectedInstrument(getOpenMarchSectionInstrument(drill.marcherSections[index] ?? "", pickerInstrument));
+    const path = track.map((point) => new Vector3(point.x, FIELD_SURFACE_Y, point.z));
+    const robotPrimitives = createLowPolyRobot(scene);
+    robotPrimitives.parent = pathRoot;
+    robotPaths.set(robotPrimitives, path);
+    updateRobotPathLine(robotPrimitives, path);
+    walkRobotAlongCounts(robotPrimitives, path, scene);
+  });
+  setSelectedInstrument(pickerInstrument);
+  const tempoBpm = setMarchTempo(drill.tempoBpm);
+  seekToCount(0);
+  playAll();
+
+  refreshCollisionMarkers(scene);
+  return tempoBpm;
+}
+
+let openMarchRequest = 0;
+
+async function openMarchFromUrl(url: string): Promise<boolean> {
+  const request = ++openMarchRequest;
+  const setStatus = (message: string, error = false) => {
+    if (!openMarchStatus) return;
+    openMarchStatus.value = message;
+    openMarchStatus.classList.toggle("error", error);
+  };
+  setStatus("Opening…");
+  if (openMarchButton) openMarchButton.disabled = true;
+  try {
+    const drill = await loadOpenMarchFromUrl(url);
+    if (request !== openMarchRequest) return false;
+    const tempoBpm = Math.round(spawnOpenMarchDrill(drill));
+    const showTempoBpm = Math.round(drill.tempoBpm);
+    const lastCount = drill.tracks[0].length - 1;
+    setStatus(`Opened ${drill.tracks.length} marchers, ${drill.pageCount} pages, ${lastCount} counts at ${tempoBpm} BPM` +
+      (tempoBpm === showTempoBpm ? "." : ` (the show is ${showTempoBpm} BPM).`));
+    return true;
+  } catch (error) {
+    if (request === openMarchRequest) setStatus(error instanceof Error ? error.message : String(error), true);
+    console.warn("Could not open OpenMarch show", error);
+    return false;
+  } finally {
+    if (openMarchButton) openMarchButton.disabled = false;
+  }
+}
+
 export function initInteraction() {
   setEraseMode(!!eraseModeToggle?.checked);
   undoEraseButton?.addEventListener("click", () => executeMenuAction({ action: "undoErase" }));
@@ -2192,13 +2248,27 @@ export function initInteraction() {
   marcherCountInput?.addEventListener("input", updateMarcherCountValue);
   updateMarcherCountValue();
   addRandomRobotsButton?.addEventListener("click", () => spawnRandomRobots(getMarcherCount()));
-  generateDrillButton?.addEventListener("click", () => spawnMarchingDrill());
+  generateDrillButton?.addEventListener("click", () => {
+    openMarchRequest++;
+    spawnMarchingDrill();
+  });
   collisionMarkersToggle?.addEventListener("change", () => {
     setCollisionMarkersVisible(!!collisionMarkersToggle?.checked);
   });
   setCollisionMarkersVisible(collisionMarkersToggle?.checked ?? true);
-  // Open on a generated drill that is already marching, rather than an empty field.
+  openMarchForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const url = openMarchUrlInput?.value.trim();
+    if (url) void openMarchFromUrl(url);
+  });
+  // Open on a generated drill that is already marching, rather than an empty
+  // field; `?openmarch=<url>` replaces it with that show once it downloads.
   spawnMarchingDrill();
+  const sharedShowUrl = new URLSearchParams(window.location.search).get(OPEN_MARCH_URL_PARAM);
+  if (sharedShowUrl) {
+    if (openMarchUrlInput) openMarchUrlInput.value = sharedShowUrl;
+    void openMarchFromUrl(sharedShowUrl);
+  }
 
   // Desktop/browser testing has no VR trigger, so a plain mouse click is
   // wired to the same collision-marker preview and robot selection the VR

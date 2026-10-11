@@ -132,6 +132,32 @@ body {
   accent-color: var(--accent-strong);
 }
 
+.url-row {
+  display: flex;
+  gap: 8px;
+}
+
+.url-row input {
+  flex: 1;
+  min-width: 0;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 0.85rem;
+}
+
+.settings-status {
+  font-size: 0.8rem;
+  color: rgba(237, 244, 255, 0.76);
+  overflow-wrap: anywhere;
+}
+
+.settings-status.error {
+  color: #ff9b9b;
+}
+
 .field-level-row {
   display: flex;
   align-items: center;

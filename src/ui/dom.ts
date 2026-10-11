@@ -34,6 +34,10 @@ export const addRandomRobotsButton = document.getElementById("addRandomRobotsBut
 export const marcherCountInput = document.getElementById("marcherCount") as HTMLInputElement | null;
 export const marcherCountValue = document.getElementById("marcherCountValue") as HTMLOutputElement | null;
 export const generateDrillButton = document.getElementById("generateDrillButton") as HTMLButtonElement | null;
+export const openMarchForm = document.getElementById("openMarchForm") as HTMLFormElement | null;
+export const openMarchUrlInput = document.getElementById("openMarchUrl") as HTMLInputElement | null;
+export const openMarchButton = document.getElementById("openMarchButton") as HTMLButtonElement | null;
+export const openMarchStatus = document.getElementById("openMarchStatus") as HTMLOutputElement | null;
 
 export function getSelectedXRMode(): XRSessionMode {
   const selected = xrModeInputs.find((input) => input.checked)?.value as XRSessionMode | undefined;

@@ -182,6 +182,8 @@ export type OpenMarchImportedDrill = {
   tempoBpm: number;
   pageCount: number;
   marcherLabels: string[];
+  // OpenMarch section of each track (e.g. "Trumpet", "Snare").
+  marcherSections: string[];
   // One position per count, all tracks the same length.
   tracks: FieldPoint[][];
 };
@@ -506,7 +508,7 @@ export function readOpenMarchDatabase(SQL: SqlJsStatic, bytes: Uint8Array, width
       frame = getFieldFrame(undefined);
     }
 
-    const marchers = queryRows(db, "SELECT id, name, drill_prefix, drill_order FROM marchers ORDER BY drill_prefix, drill_order, id");
+    const marchers = queryRows(db, "SELECT id, name, section, drill_prefix, drill_order FROM marchers ORDER BY drill_prefix, drill_order, id");
     const keyframesByMarcher = new Map<number, { count: number; point: FieldPoint }[]>();
     const marcherPageRows = queryRows(db, "SELECT id, marcher_id, page_id, x, y FROM marcher_pages");
     const marcherPageById = new Map<number, { marcherId: number; pageIndex: number }>();
@@ -536,6 +538,7 @@ export function readOpenMarchDatabase(SQL: SqlJsStatic, bytes: Uint8Array, width
 
     const tracks: FieldPoint[][] = [];
     const marcherLabels: string[] = [];
+    const marcherSections: string[] = [];
     marchers.forEach((marcher) => {
       const keyframes = keyframesByMarcher.get(Number(marcher.id));
       if (!keyframes || keyframes.length === 0) return;
@@ -543,12 +546,14 @@ export function readOpenMarchDatabase(SQL: SqlJsStatic, bytes: Uint8Array, width
       tracks.push(sampleKeyframes(keyframes, lastCount));
       const label = `${marcher.drill_prefix ?? ""}${marcher.drill_order ?? ""}`;
       marcherLabels.push(typeof marcher.name === "string" && marcher.name ? `${label} ${marcher.name}` : label);
+      marcherSections.push(typeof marcher.section === "string" ? marcher.section : "");
     });
 
     return {
       tempoBpm: 60 / medianDuration,
       pageCount: pages.length,
       marcherLabels,
+      marcherSections,
       tracks,
     };
   } finally {

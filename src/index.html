@@ -179,6 +179,12 @@
           </div>
           <button id="addRandomRobotsButton" class="xr-button secondary">Add marchers</button>
           <button id="generateDrillButton" class="xr-button secondary">Generate marching band drill</button>
+          <label class="settings-label" for="openMarchUrl">Open OpenMarch show (.dots URL)</label>
+          <form id="openMarchForm" class="url-row">
+            <input id="openMarchUrl" type="url" placeholder="https://example.com/show.dots" autocomplete="url" spellcheck="false" required />
+            <button id="openMarchButton" type="submit" class="xr-button secondary">Open</button>
+          </form>
+          <output id="openMarchStatus" class="settings-status" for="openMarchUrl"></output>
         </div>
       </div>
     </div>
