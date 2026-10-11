@@ -40,6 +40,7 @@ Builds the project, copies `dist/` into the repository root, then commits and pu
 
 ## Features
 
+- The startup video board displays the application version from `package.json`, alongside the build timestamp.
 - Stadium environment with turf, field markings, stands, goal posts, scoreboard, and a video board
 - The video board always displays a live orthographic field view, following field movement, rotation, and scale in desktop, VR, and AR modes
 - High school, college, and NFL field-marking layouts

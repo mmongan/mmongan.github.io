@@ -17,6 +17,7 @@ import { TOP_DOWN_MARKER_LAYER_MASK, playAll } from '../robot/robot';
 import { INTRO_DURATION_MS } from '../camera/desktopCamera';
 
 declare const __BUILD_TIME__: string | undefined;
+declare const __APP_VERSION__: string;
 
 function formatBuildStamp(rawValue?: string): string {
   const fallback = "20260905123456";
@@ -240,6 +241,8 @@ export function createVideoBoard(
     hudCtx.fillText("Chartxr", 16, 34);
 
     hudCtx.fillStyle = "#dfe8ff";
+    hudCtx.font = "14px 'Segoe UI', Arial";
+    hudCtx.fillText(`v${__APP_VERSION__}`, 16, 88);
     hudCtx.font = "16px 'Segoe UI', Arial";
     hudCtx.fillText(formatBuildStamp(), 16, 64);
 
@@ -459,10 +462,10 @@ function createTitleBanner(panelBottomY: number, z: number, width: number) {
   roundedRect(ctx, 4, 4, canvas.width - 8, canvas.height - 8, 24);
   ctx.fill();
   ctx.fillStyle = "#ffcf40";
-  ctx.font = "bold 64px 'Segoe UI', Arial";
+  ctx.font = "bold 48px 'Segoe UI', Arial";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText("Chartxr", canvas.width / 2, canvas.height / 2);
+  ctx.fillText(`Chartxr v${__APP_VERSION__}`, canvas.width / 2, canvas.height / 2);
 
   const texture = new DynamicTexture("videoBoardBannerTexture", canvas, scene, false);
   texture.update(true);
