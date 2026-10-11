@@ -26,20 +26,22 @@ function createTromboneTemplate(scene: Scene): Mesh {
   geometry.tube([new Vector3(0, 0.045, 0), TROMBONE_MOUTHPIECE_TIP], [0.004, 0.014], 4, SILVER);
 
   // The whole air path as one continuous tube (48): receiver, inner slide
-  // forward, U-bend crook, outer slide back, a neck crossing over to the
-  // bell section, back over the shoulder through the tuning slide, then
-  // forward and straight on into the 9-sided flare.
-  const BELL_NECK_Y = 0.05;
+  // forward, U-bend crook, outer slide back to the receiver, a crossbar
+  // neck over to the bell section, back over the shoulder through the
+  // tuning slide, then forward and straight on into the 9-sided flare.
+  // The crossbar and the bell section's back leg stay in the outer slide's
+  // plane (below the mouth), so the slide visibly flows into the bell.
+  const NECK_Y = 0.03;
   geometry.tube([
     new Vector3(0, 0.05, 0),
     new Vector3(0, 0.03, 0),
     new Vector3(0, SLIDE_END_Y, 0),
     new Vector3(0, SLIDE_END_Y - 0.04, SLIDE_Z / 2),
     new Vector3(0, SLIDE_END_Y, SLIDE_Z),
-    new Vector3(0, 0, SLIDE_Z),
-    new Vector3(BELL_X, BELL_NECK_Y, 0),
-    new Vector3(BELL_X, 0.2, 0),
-    new Vector3(BELL_X, 0.23, BELL_Z / 2),
+    new Vector3(0, NECK_Y, SLIDE_Z),
+    new Vector3(BELL_X, NECK_Y, SLIDE_Z),
+    new Vector3(BELL_X, 0.2, SLIDE_Z),
+    new Vector3(BELL_X, 0.24, (SLIDE_Z + BELL_Z) / 2),
     new Vector3(BELL_X, 0.2, BELL_Z),
     new Vector3(BELL_X, -0.2, BELL_Z),
     new Vector3(BELL_X, -0.38, BELL_Z),
@@ -49,8 +51,8 @@ function createTromboneTemplate(scene: Scene): Mesh {
     TUBE_RADIUS, TUBE_RADIUS, TUBE_RADIUS, TUBE_RADIUS, 0.03, 0.095,
   ], [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 9, 9], BRASS);
 
-  // Brace joining the receiver to the bell section's neck (8), and the slide stay (8).
-  geometry.box(new Vector3(BELL_X - 0.012, 0.03, -0.012), new Vector3(0.012, BELL_NECK_Y + 0.012, 0.012), BRASS);
+  // Slide brace joining the receiver to the outer slide at the neck (8), and the slide stay (8).
+  geometry.box(new Vector3(-0.006, NECK_Y - 0.008, SLIDE_Z), new Vector3(0.006, NECK_Y + 0.008, 0), BRASS);
   geometry.box(
     new Vector3(-0.006, TROMBONE_SLIDE_STAY_Y - 0.01, SLIDE_Z - 0.004),
     new Vector3(0.006, TROMBONE_SLIDE_STAY_Y + 0.01, 0.004),
