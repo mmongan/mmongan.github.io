@@ -8,7 +8,7 @@
       content="Babylon.js WebXR VR and AR demo for Meta Quest 3"
     />
     <title>Chartxr</title>
-    <script type="module" crossorigin src="/assets/index-BAKMCokF.js"></script>
+    <script type="module" crossorigin src="/assets/index-D2_PLhXk.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/math.scalar.functions-D-i-XBaP.js">
     <link rel="modulepreload" crossorigin href="/assets/engineStore-Bn2tApal.js">
     <link rel="modulepreload" crossorigin href="/assets/internalTexture-B3djGrls.js">
@@ -149,6 +149,14 @@
             <input type="checkbox" id="placementModeToggle" />
             <span>Placement mode (trigger places a standing robot)</span>
           </label>
+          <label class="radio-option">
+            <input type="checkbox" id="eraseModeToggle" />
+            <span>Erase marchers (click, trigger, pinch, or touch a marcher)</span>
+          </label>
+          <div class="radio-row">
+            <button id="undoEraseButton" disabled>Undo erase</button>
+            <button id="redoEraseButton" disabled>Redo erase</button>
+          </div>
           <label class="settings-label" for="marcherCount">Marchers to add</label>
           <div class="radio-row">
             <input id="marcherCount" type="range" min="1" max="100" step="1" value="8" />
