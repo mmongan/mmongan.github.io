@@ -132,7 +132,8 @@ export function createTurf(): TurfResult {
     { width: FIELD_WIDTH_YARDS + 22, depth: FIELD_LENGTH_YARDS + 16, height: outerBaseThickness },
     scene
   );
-  outerBase.position.y = -0.8 - outerBaseThickness / 2;
+  // Its top sits just under the turf, level with the stands and goalposts.
+  outerBase.position.y = -0.505 - outerBaseThickness / 2;
 
   const outerBaseMat = new StandardMaterial("outerBaseMat", scene);
   outerBaseMat.diffuseColor = new Color3(0.18, 0.2, 0.22);

@@ -26,6 +26,7 @@ import { setActiveController, removeActiveController, setHandTracking, getActive
 RegisterWebXROculusTouchMotionController();
 WebXRMotionControllerManager.PrioritizeOnlineRepository = true;
 
+// Height of the calibrated real floor above the headset's local-floor origin.
 let playerFloorOffset = 0;
 let postureHeightOffset = 0;
 
@@ -40,7 +41,7 @@ function setPlayerFloorOffset(offset: number) {
 }
 
 function getTrackedPlayerHeight(camera: WebXRCamera) {
-  return camera.realWorldHeight - playerFloorOffset + postureHeightOffset;
+  return camera.realWorldHeight - playerFloorOffset;
 }
 
 // WebXR session detection: this keeps the app from trying to launch unsupported
@@ -184,9 +185,13 @@ export function initXR(teleportGrid: Mesh) {
       console.warn("Cannot apply sitting/standing height until a valid XR pose is available.");
       return;
     }
-    const newOffset = giantModeActive || getFieldHeightMode() === "table"
+    const fullScaleFloor = !giantModeActive && getFieldHeightMode() === "floor";
+    // Standing keeps physical eye height so real feet stay on the turf; the
+    // floor-calibration offset shifts tracking space instead of the field.
+    if (fullScaleFloor) setFieldHeightMode("floor");
+    const newOffset = !fullScaleFloor
       ? 0
-      : (sittingModeToggle?.checked ? 1.2 : 1.7) - trackedHeight;
+      : sittingModeToggle?.checked ? 1.2 - trackedHeight : -playerFloorOffset;
     camera.position.y += newOffset - postureHeightOffset;
     postureHeightOffset = newOffset;
   }
@@ -198,7 +203,7 @@ export function initXR(teleportGrid: Mesh) {
       updateTableHeightFromCamera(baseExperience.camera, !!sittingModeToggle?.checked);
     }
   });
-  const floorCalibrationStorageKey = "chartxr.floorCalibrationOffset";
+  const floorCalibrationStorageKey = "chartxr.floorCalibrationOffset.v2";
   let savedFloorOffset: number | null = null;
   try {
     const value: unknown = JSON.parse(localStorage.getItem(floorCalibrationStorageKey) ?? "null");
@@ -412,7 +417,7 @@ export function initXR(teleportGrid: Mesh) {
       if (!Number.isFinite(eyeHeight) || eyeHeight <= 0 ||
         !Number.isFinite(camera.realWorldHeight) || camera.realWorldHeight <= 0) return;
       if (manual) setARScale(getARScaleRange().max);
-      setPlayerFloorOffset(camera.realWorldHeight + postureHeightOffset - eyeHeight);
+      setPlayerFloorOffset(camera.realWorldHeight - eyeHeight);
       alignFieldFloorTo(floor, point.y);
       captured = true;
       alignedOnEntry = alignOnEntry;
@@ -452,7 +457,7 @@ export function initXR(teleportGrid: Mesh) {
       capture(`preview:controller:${lowest.handedness}`, true, lowest.point,
         lowest.handedness, "controller", false, true);
       if (captured && confirmation !== null) {
-        savedFloorOffset = baseExperience.camera.realWorldHeight + postureHeightOffset - getTrackedPlayerHeight(baseExperience.camera);
+        savedFloorOffset = playerFloorOffset;
         try {
           localStorage.setItem(floorCalibrationStorageKey, JSON.stringify(savedFloorOffset));
         } catch (error) {
@@ -575,9 +580,10 @@ export function initXR(teleportGrid: Mesh) {
         teleportation.onBeforeCameraTeleport.add(() => {
           const camera = xrExperience!.baseExperience.camera;
           const rawHeight = camera.realWorldHeight;
-          const calibratedHeight = getTrackedPlayerHeight(camera);
-          teleportHeightCorrection = Number.isFinite(rawHeight) && Number.isFinite(calibratedHeight) && calibratedHeight > 0
-            ? rawHeight - calibratedHeight
+          const seatedFullScale = !giantModeActive && getFieldHeightMode() === "floor" && !!sittingModeToggle?.checked;
+          const eyeHeight = seatedFullScale ? 1.2 : getTrackedPlayerHeight(camera);
+          teleportHeightCorrection = Number.isFinite(rawHeight) && Number.isFinite(eyeHeight) && eyeHeight > 0
+            ? rawHeight - eyeHeight
             : 0;
         });
         teleportation.onAfterCameraTeleport.add(() => {

@@ -2282,7 +2282,7 @@ export function initInteraction() {
   });
   setCollisionMarkersVisible(collisionMarkersToggle?.checked ?? true);
   drillLabelsToggle?.addEventListener("change", () => setDrillLabelsVisible(!!drillLabelsToggle?.checked));
-  setDrillLabelsVisible(drillLabelsToggle?.checked ?? true);
+  setDrillLabelsVisible(drillLabelsToggle?.checked ?? false);
   openMarchForm?.addEventListener("submit", (event) => {
     event.preventDefault();
     const url = openMarchUrlInput?.value.trim();

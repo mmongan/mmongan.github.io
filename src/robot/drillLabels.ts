@@ -26,7 +26,7 @@ type DrillLabel = { robot: TransformNode; label: string };
 let labelSystem: SolidParticleSystem | null = null;
 let labelAtlas: DynamicTexture | null = null;
 let labelObserver: Observer<Scene> | null = null;
-let labelsVisible = true;
+let labelsVisible = false;
 let labelEntries: DrillLabel[] = [];
 
 const robotWorld = new Vector3();

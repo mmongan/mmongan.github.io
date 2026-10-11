@@ -15,7 +15,9 @@ export function createHorizonGround(): Mesh {
     { diameter: 480, height: groundThickness, tessellation: 64 },
     scene
   );
-  horizonGround.position.y = -0.9 - groundThickness / 2;
+  // Its top sits just below the field surround and the turf, so the field
+  // doesn't stand on a raised platform.
+  horizonGround.position.y = -0.52 - groundThickness / 2;
   const horizonGroundMat = new StandardMaterial("horizonGroundMat", scene);
   horizonGroundMat.diffuseColor = new Color3(0.22, 0.32, 0.16);
   horizonGroundMat.specularColor = new Color3(0.05, 0.05, 0.05);
