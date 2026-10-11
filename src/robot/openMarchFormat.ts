@@ -178,14 +178,31 @@ export type OpenMarchExportDrill = {
   tracks: FieldPoint[][];
   // Optional section and drill prefix per track (defaults: Trumpet, "T").
   marchers?: { section: string; drillPrefix: string }[];
+  // Optional notes per page (one per set count).
+  pageNotes?: string[];
+};
+
+export type OpenMarchPageInfo = {
+  // OpenMarch's page name, e.g. "0", "1", "1A" (subsets get letters).
+  name: string;
+  // Count index of the page's set.
+  count: number;
+  notes: string;
+};
+
+export type OpenMarchMarcherInfo = {
+  // Drill label, e.g. "T3".
+  label: string;
+  name: string;
+  section: string;
+  notes: string;
 };
 
 export type OpenMarchImportedDrill = {
   tempoBpm: number;
-  pageCount: number;
-  marcherLabels: string[];
-  // OpenMarch section of each track (e.g. "Trumpet", "Snare").
-  marcherSections: string[];
+  pages: OpenMarchPageInfo[];
+  // One entry per track, in track order.
+  marchers: OpenMarchMarcherInfo[];
   // One position per count, all tracks the same length.
   tracks: FieldPoint[][];
 };
@@ -359,7 +376,11 @@ export function writeOpenMarchDatabase(
       run(db, "INSERT INTO measures (start_beat) VALUES (?)", [beat]);
     }
     setCounts.forEach((count, page) => {
-      run(db, "INSERT INTO pages (id, start_beat) VALUES (?, ?)", [page, page === 0 ? 0 : setCounts[page - 1] + 1]);
+      run(db, "INSERT INTO pages (id, start_beat, notes) VALUES (?, ?, ?)", [
+        page,
+        page === 0 ? 0 : setCounts[page - 1] + 1,
+        drill.pageNotes?.[page] || null,
+      ]);
     });
     run(db, "INSERT INTO utility (id, last_page_counts, default_beat_duration) VALUES (0, ?, ?)", [
       Math.max(1, lastPageCounts),
@@ -483,7 +504,7 @@ export function readOpenMarchDatabase(SQL: SqlJsStatic, bytes: Uint8Array, width
 
     const pages = queryRows(
       db,
-      "SELECT pages.id AS id, beats.position AS position FROM pages JOIN beats ON beats.id = pages.start_beat ORDER BY beats.position"
+      "SELECT pages.id AS id, pages.is_subset AS is_subset, pages.notes AS notes, beats.position AS position FROM pages JOIN beats ON beats.id = pages.start_beat ORDER BY beats.position"
     );
     if (pages.length === 0) throw new Error("This OpenMarch show has no pages.");
     const lastPageCounts = tableExists(db, "utility")
@@ -514,7 +535,7 @@ export function readOpenMarchDatabase(SQL: SqlJsStatic, bytes: Uint8Array, width
       frame = getFieldFrame(undefined);
     }
 
-    const marchers = queryRows(db, "SELECT id, name, section, drill_prefix, drill_order FROM marchers ORDER BY drill_prefix, drill_order, id");
+    const marchers = queryRows(db, "SELECT id, name, section, notes, drill_prefix, drill_order FROM marchers ORDER BY drill_prefix, drill_order, id");
     const keyframesByMarcher = new Map<number, { count: number; point: FieldPoint }[]>();
     const marcherPageRows = queryRows(db, "SELECT id, marcher_id, page_id, x, y FROM marcher_pages");
     const marcherPageById = new Map<number, { marcherId: number; pageIndex: number }>();
@@ -543,28 +564,73 @@ export function readOpenMarchDatabase(SQL: SqlJsStatic, bytes: Uint8Array, width
     }
 
     const tracks: FieldPoint[][] = [];
-    const marcherLabels: string[] = [];
-    const marcherSections: string[] = [];
+    const marcherInfo: OpenMarchMarcherInfo[] = [];
+    const text = (value: unknown) => (typeof value === "string" ? value.trim() : "");
     marchers.forEach((marcher) => {
       const keyframes = keyframesByMarcher.get(Number(marcher.id));
       if (!keyframes || keyframes.length === 0) return;
       keyframes.sort((a, b) => a.count - b.count);
       tracks.push(sampleKeyframes(keyframes, lastCount));
-      const label = `${marcher.drill_prefix ?? ""}${marcher.drill_order ?? ""}`;
-      marcherLabels.push(typeof marcher.name === "string" && marcher.name ? `${label} ${marcher.name}` : label);
-      marcherSections.push(typeof marcher.section === "string" ? marcher.section : "");
+      marcherInfo.push({
+        label: `${text(marcher.drill_prefix)}${marcher.drill_order ?? ""}`,
+        name: text(marcher.name),
+        section: text(marcher.section),
+        notes: text(marcher.notes),
+      });
     });
+
+    let pageNumberOffset = 0;
+    try {
+      const json = tableExists(db, "workspace_settings")
+        ? queryRows(db, "SELECT json_data FROM workspace_settings WHERE id = 1")[0]?.json_data
+        : undefined;
+      const offset = typeof json === "string" ? Number(JSON.parse(json)?.pageNumberOffset) : NaN;
+      if (Number.isInteger(offset)) pageNumberOffset = offset;
+    } catch {
+      // Unreadable settings keep OpenMarch's default numbering.
+    }
+    const pageNames = getOpenMarchPageNames(pages.map((page) => Number(page.is_subset) === 1), pageNumberOffset);
 
     return {
       tempoBpm: 60 / medianDuration,
-      pageCount: pages.length,
-      marcherLabels,
-      marcherSections,
+      pages: pages.map((page, index) => ({ name: pageNames[index], count: pageCounts[index], notes: text(page.notes) })),
+      marchers: marcherInfo,
       tracks,
     };
   } finally {
     db.close();
   }
+}
+
+// Mirrors OpenMarch's page naming: pages count up from the offset and each
+// subset page takes the previous number plus the next letter (2, 2A, 2B, 3).
+function getOpenMarchPageNames(isSubset: boolean[], offset: number): string[] {
+  const names: string[] = [];
+  let pageNumber = offset;
+  let letters = "";
+  const nextLetters = (current: string) => {
+    const chars = current.split("");
+    for (let i = chars.length - 1; i >= 0; i--) {
+      if (chars[i] !== "Z") {
+        chars[i] = String.fromCharCode(chars[i].charCodeAt(0) + 1);
+        return chars.join("");
+      }
+      chars[i] = "A";
+    }
+    return "A" + chars.join("");
+  };
+  isSubset.forEach((subset, index) => {
+    if (index > 0) {
+      if (subset) {
+        letters = nextLetters(letters);
+      } else {
+        pageNumber++;
+        letters = "";
+      }
+    }
+    names.push(`${pageNumber}${letters}`);
+  });
+  return names;
 }
 
 function sampleKeyframes(keyframes: { count: number; point: FieldPoint }[], lastCount: number): FieldPoint[] {

@@ -39,6 +39,11 @@ export const openMarchUrlInput = document.getElementById("openMarchUrl") as HTML
 export const openMarchButton = document.getElementById("openMarchButton") as HTMLButtonElement | null;
 export const openMarchExampleButton = document.getElementById("openMarchExampleButton") as HTMLButtonElement | null;
 export const openMarchStatus = document.getElementById("openMarchStatus") as HTMLOutputElement | null;
+export const drillLabelsToggle = document.getElementById("drillLabelsToggle") as HTMLInputElement | null;
+export const showInfo = document.getElementById("showInfo") as HTMLDetailsElement | null;
+export const showInfoSummary = document.getElementById("showInfoSummary");
+export const showInfoPages = document.getElementById("showInfoPages") as HTMLTableSectionElement | null;
+export const showInfoMarchers = document.getElementById("showInfoMarchers") as HTMLTableSectionElement | null;
 
 export function getSelectedXRMode(): XRSessionMode {
   const selected = xrModeInputs.find((input) => input.checked)?.value as XRSessionMode | undefined;

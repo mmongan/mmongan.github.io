@@ -158,6 +158,60 @@ body {
   color: #ff9b9b;
 }
 
+.show-info {
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 8px 10px;
+  font-size: 0.8rem;
+}
+
+.show-info summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.show-info-heading {
+  margin: 10px 0 4px;
+  color: rgba(237, 244, 255, 0.76);
+}
+
+.show-info-table {
+  max-height: 180px;
+  overflow: auto;
+}
+
+.show-info table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.show-info th,
+.show-info td {
+  padding: 3px 6px;
+  text-align: left;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.show-info th {
+  position: sticky;
+  top: 0;
+  background: rgb(18, 28, 48);
+}
+
+.show-info tr.page-row {
+  cursor: pointer;
+}
+
+.show-info tr.page-row:hover,
+.show-info tr.page-row:focus-visible {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.show-info tr.page-row.current {
+  background: rgba(120, 180, 255, 0.22);
+}
+
 .field-level-row {
   display: flex;
   align-items: center;

@@ -51,6 +51,7 @@ const chevron: Set = (f, r) => {
   return { x: -13 + r * 2 + Math.abs(z) * 0.5, z };
 };
 const sets: Set[] = [block, companyFront, arc, chevron, block];
+const pageNotes = ["Opening block", "Company front", "Arc", "Chevron", "Closing block"];
 
 const tracks: FieldPoint[][] = marchers.map((_, index) => {
   // Rank 0 is the front (woodwinds), rank 4 the drumline.
@@ -76,6 +77,7 @@ const bytes = writeOpenMarchDatabase(
     setCounts: sets.map((_, page) => page * COUNTS_PER_MOVE),
     tracks,
     marchers,
+    pageNotes,
   },
   { level: "highschool", widthYards: 53.333, hashOffsetYards: 8.8889 }
 );

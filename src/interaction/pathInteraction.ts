@@ -67,6 +67,8 @@ import {
 import type { MarcherInstrument } from '../robot/robot';
 import { getOpenMarchSectionInstrument, loadOpenMarchFromUrl, OPEN_MARCH_EXAMPLE, OPEN_MARCH_URL_PARAM } from '../robot/openMarchUrl';
 import type { OpenMarchImportedDrill } from '../robot/openMarchFormat';
+import { clearDrillLabels, setDrillLabels, setDrillLabelsVisible } from '../robot/drillLabels';
+import { clearShowInfo, setShowInfo } from '../menu/showInfoPanel';
 import { getHandMenuHit, getHandMenuHitNearPoint, setMenuHandTracking, setFormationCommitAvailable, setFormationLibraryOpen, setFormationLibraryPage, setFormationLibraryAnchorAvailable, setEraseModeActive, setEraseHistoryAvailable, setDrillChartPadActive, setInstrumentMenuActive, isHandMenuVisible, isMenuControl } from '../menu/handMenu';
 import {
   beginDrillChartPadGrab,
@@ -93,7 +95,7 @@ import {
   updateScoreboardHornPoseFromPick,
   updateScoreboardTempoFromPick,
 } from '../field/scoreboard';
-import { canvas, collisionMarkersToggle, floorCalibrationToggle, fullScaleVRButton, tabletopScaleButton, showAllPathsToggle, placementModeToggle, eraseModeToggle, drillChartPadToggle, marcherInstrumentRadios, undoEraseButton, redoEraseButton, addRandomRobotsButton, marcherCountInput, marcherCountValue, generateDrillButton, openMarchForm, openMarchUrlInput, openMarchButton, openMarchExampleButton, openMarchStatus } from '../ui/dom';
+import { canvas, collisionMarkersToggle, floorCalibrationToggle, fullScaleVRButton, tabletopScaleButton, showAllPathsToggle, placementModeToggle, eraseModeToggle, drillChartPadToggle, marcherInstrumentRadios, undoEraseButton, redoEraseButton, addRandomRobotsButton, marcherCountInput, marcherCountValue, generateDrillButton, openMarchForm, openMarchUrlInput, openMarchButton, openMarchExampleButton, openMarchStatus, drillLabelsToggle } from '../ui/dom';
 import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS, FIELD_SURFACE_Y } from '../field/constants';
 import { FORMATION_SPACING_YARDS, generateMarchingDrillPaths, getDrillSectionInstrument, MARCH_STEP_YARDS } from '../robot/drill';
 
@@ -2141,6 +2143,8 @@ function clearAllRobots() {
   clearStepHandles();
   selectedRobot = null;
 
+  clearDrillLabels();
+  clearShowInfo();
   disposeAllRobots();
 }
 
@@ -2176,17 +2180,23 @@ function spawnMarchingDrill() {
 
 // Replaces the field with an OpenMarch show, each marcher holding the
 // instrument for its section and playing from the opening set.
-function spawnOpenMarchDrill(drill: OpenMarchImportedDrill): number {
+function spawnOpenMarchDrill(drill: OpenMarchImportedDrill, showName: string): number {
   clearAllRobots();
   const pickerInstrument = getSelectedInstrument();
+  const instruments: MarcherInstrument[] = [];
+  const labels: { robot: TransformNode; label: string }[] = [];
   drill.tracks.forEach((track, index) => {
-    setSelectedInstrument(getOpenMarchSectionInstrument(drill.marcherSections[index] ?? "", pickerInstrument));
+    const marcher = drill.marchers[index];
+    const instrument = getOpenMarchSectionInstrument(marcher?.section ?? "", pickerInstrument);
+    instruments.push(instrument);
+    setSelectedInstrument(instrument);
     const path = track.map((point) => new Vector3(point.x, FIELD_SURFACE_Y, point.z));
     const robotPrimitives = createLowPolyRobot(scene);
     robotPrimitives.parent = pathRoot;
     robotPaths.set(robotPrimitives, path);
     updateRobotPathLine(robotPrimitives, path);
     walkRobotAlongCounts(robotPrimitives, path, scene);
+    labels.push({ robot: robotPrimitives, label: marcher?.label ?? "" });
   });
   setSelectedInstrument(pickerInstrument);
   const tempoBpm = setMarchTempo(drill.tempoBpm);
@@ -2194,7 +2204,20 @@ function spawnOpenMarchDrill(drill: OpenMarchImportedDrill): number {
   playAll();
 
   refreshCollisionMarkers(scene);
+  setDrillLabels(scene, pathRoot, labels);
+  setShowInfo(showName, drill, instruments, tempoBpm);
   return tempoBpm;
+}
+
+// The show's name: OpenMarch files carry no title, so the file name is used.
+function getOpenMarchShowName(url: string): string {
+  if (url.trim().toLowerCase() === OPEN_MARCH_EXAMPLE) return "Example show";
+  try {
+    const file = decodeURIComponent(new URL(url, window.location.href).pathname.split("/").pop() ?? "");
+    return file.replace(/\.dots$/i, "") || "OpenMarch show";
+  } catch {
+    return "OpenMarch show";
+  }
 }
 
 let openMarchRequest = 0;
@@ -2212,11 +2235,11 @@ async function openMarchFromUrl(url: string): Promise<boolean> {
   try {
     const drill = await loadOpenMarchFromUrl(url);
     if (request !== openMarchRequest) return false;
-    const tempoBpm = Math.round(spawnOpenMarchDrill(drill));
+    const tempoBpm = Math.round(spawnOpenMarchDrill(drill, getOpenMarchShowName(url)));
     const showTempoBpm = Math.round(drill.tempoBpm);
     const lastCount = drill.tracks[0].length - 1;
     const opened = url.trim().toLowerCase() === OPEN_MARCH_EXAMPLE ? "Opened the example show:" : "Opened";
-    setStatus(`${opened} ${drill.tracks.length} marchers, ${drill.pageCount} pages, ${lastCount} counts at ${tempoBpm} BPM` +
+    setStatus(`${opened} ${drill.tracks.length} marchers, ${drill.pages.length} pages, ${lastCount} counts at ${tempoBpm} BPM` +
       (tempoBpm === showTempoBpm ? "." : ` (the show is ${showTempoBpm} BPM).`));
     return true;
   } catch (error) {
@@ -2258,6 +2281,8 @@ export function initInteraction() {
     setCollisionMarkersVisible(!!collisionMarkersToggle?.checked);
   });
   setCollisionMarkersVisible(collisionMarkersToggle?.checked ?? true);
+  drillLabelsToggle?.addEventListener("change", () => setDrillLabelsVisible(!!drillLabelsToggle?.checked));
+  setDrillLabelsVisible(drillLabelsToggle?.checked ?? true);
   openMarchForm?.addEventListener("submit", (event) => {
     event.preventDefault();
     const url = openMarchUrlInput?.value.trim();
