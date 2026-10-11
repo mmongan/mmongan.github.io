@@ -54,6 +54,7 @@ Builds the project, copies `dist/` into the repository root, then commits and pu
 
 - The startup video board displays the application version from `package.json`, alongside the build timestamp.
 - Stadium environment with turf, field markings, stands, goal posts, scoreboard, and a video board
+- Desktop navigation: after the startup camera reveal, click the scene and use WASD to move, drag the mouse to look around, or use the arrow keys to turn. Ground collisions and stadium bounds keep the spectator camera above the floor and inside the stadium.
 - The video board always displays a live orthographic field view, following field movement, rotation, and scale in desktop, VR, and AR modes
 - High school, college, and NFL field-marking layouts
 - Hand and controller gestures do not draw or extend marching paths. Controller triggers select existing marchers and edit existing path or formation segments; enable Placement mode to place standing marchers with a controller trigger or fingertip touch. Sideline pinch creation and two-hand line, arc, and circle formations remain available.
