@@ -184,19 +184,38 @@ export function setMarcherRenderingGroup(robot: TransformNode, group: number) {
     parts.rightShoe = swap(parts.rightShoe);
   }
 }
+type GeometrySwapMesh = Mesh & {
+  _createGlobalSubMesh(force: boolean): unknown;
+  _invalidateInstanceVertexArrayObject(): void;
+};
+
+// Swap a mesh to another detail level's geometry. applyToMesh only rebuilds
+// the submesh when the new geometry is smaller, so going back up to high
+// detail would keep drawing the low-detail index range; force it. Sources
+// with per-instance colors also cache vertex array objects bound to the old
+// geometry's buffers, which applyToMesh doesn't release.
+function applyDetailGeometry(mesh: Mesh, template: ModelTemplate, detail: ModelDetail) {
+  const geometry = template(mesh.getScene(), detail).geometry;
+  if (!geometry || mesh.geometry === geometry) return;
+  geometry.applyToMesh(mesh);
+  const swapMesh = mesh as GeometrySwapMesh;
+  swapMesh._createGlobalSubMesh(true);
+  swapMesh._invalidateInstanceVertexArrayObject();
+  mesh.synchronizeInstances();
+  mesh.instances.forEach((instance) => instance.refreshBoundingInfo());
+}
+
 function setMarcherDetail(detail: ModelDetail) {
   if (detail === marcherDetail) return;
   marcherDetail = detail;
   allRobots.forEach((robot) => {
     robot.getChildMeshes(false).forEach((mesh) => {
       const info = modelPartInfo.get(mesh);
-      if (info && mesh instanceof Mesh) info.template(mesh.getScene(), detail).geometry?.applyToMesh(mesh);
+      if (info && mesh instanceof Mesh) applyDetailGeometry(mesh, info.template, detail);
     });
   });
-  partSources.forEach((sources, scene) => sources.forEach((source, template) => {
-    if (source.isDisposed()) return;
-    template(scene, detail).geometry?.applyToMesh(source);
-    source.instances.forEach((instance) => instance.refreshBoundingInfo());
+  partSources.forEach((sources) => sources.forEach((source, template) => {
+    if (!source.isDisposed()) applyDetailGeometry(source, template, detail);
   }));
 }
 
