@@ -18,20 +18,29 @@ const DRILL_PATH_OBSTACLE_MARGIN_YARDS = 6;
 
 // Instrument section for each block rank, front (nearest the circle) to back:
 // woodwinds lead, brass project from behind, and the drumline marches at the
-// back. Null marks the battery rank, which is split by file (column).
-const DRILL_SECTION_RANKS: readonly (MarcherInstrument | null)[] = [
-  "flute", "clarinet", "saxophone", "mellophone", "trumpet", "trombone", "sousaphone", null,
+// back. Mixed ranks list one instrument per file (column).
+// Bari saxes anchor the ends of the sax rank.
+const DRILL_SAX_FILES: readonly MarcherInstrument[] = [
+  "bariSax", "altoSax", "altoSax", "altoSax", "altoSax", "altoSax", "altoSax", "altoSax", "altoSax", "bariSax",
 ];
-// Bass drums on the ends, tenors inside them, snares in the centre.
+// Euphoniums in the centre of the low brass, sousaphones on either side.
+const DRILL_LOW_BRASS_FILES: readonly MarcherInstrument[] = [
+  "sousaphone", "sousaphone", "sousaphone", "euphonium", "euphonium",
+  "euphonium", "euphonium", "sousaphone", "sousaphone", "sousaphone",
+];
+// Glockenspiels on the ends, then bass drums, tenors, and snares in the centre.
 const DRILL_BATTERY_FILES: readonly MarcherInstrument[] = [
-  "bassDrum", "bassDrum", "tenors", "snare", "snare", "snare", "snare", "tenors", "bassDrum", "bassDrum",
+  "glockenspiel", "bassDrum", "tenors", "snare", "snare", "snare", "snare", "tenors", "bassDrum", "glockenspiel",
+];
+const DRILL_SECTION_RANKS: readonly (MarcherInstrument | readonly MarcherInstrument[])[] = [
+  "flute", "clarinet", DRILL_SAX_FILES, "mellophone", "trumpet", "trombone", DRILL_LOW_BRASS_FILES, DRILL_BATTERY_FILES,
 ];
 
 // Path indices are block-row-major; the last row is always the front rank.
 export function getDrillSectionInstrument(pathIndex: number): MarcherInstrument {
   const rankFromFront = DRILL_ROWS - 1 - Math.floor(pathIndex / DRILL_COLS);
   const section = DRILL_SECTION_RANKS[Math.max(0, Math.min(DRILL_SECTION_RANKS.length - 1, rankFromFront))];
-  return section ?? DRILL_BATTERY_FILES[pathIndex % DRILL_COLS];
+  return typeof section === "string" ? section : section[pathIndex % DRILL_COLS];
 }
 
 function generateBlockPoints(): Vector3[] {

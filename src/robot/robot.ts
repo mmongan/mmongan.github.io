@@ -16,7 +16,7 @@ import { CLARINET_MOUTHPIECE_TIP, getClarinetTemplate } from './clarinetModel';
 import { FLUTE_MOUTHPIECE_TIP, getFluteTemplate } from './fluteModel';
 import { getSousaphoneTemplate, SOUSAPHONE_MOUTHPIECE_TIP, SOUSAPHONE_VALVE_GRIP, sousaphoneLoopPoint } from './sousaphoneModel';
 import {
-  BASS_DRUM_GRIPS, getBassDrumTemplate, getSnareTemplate, getTenorTemplate, SNARE_GRIPS, TENOR_GRIPS,
+  BASS_DRUM_GRIPS, getBassDrumTemplate, getGlockenspielTemplate, getSnareTemplate, GLOCKENSPIEL_GRIPS, getTenorTemplate, SNARE_GRIPS, TENOR_GRIPS,
 } from './percussionModels';
 import { getMellophoneTemplate, MELLOPHONE_MOUTHPIECE_TIP } from './mellophoneModel';
 import { getRobotEyesTemplate } from './robotFaceModel';
@@ -25,6 +25,8 @@ import {
   getMarcherShoeTemplate, getMarcherThighTemplate, getMarcherTrimTemplate, getMarcherUpperArmTemplate,
 } from './marcherBodyModel';
 import { getSaxophoneTemplate, SAXOPHONE_MOUTHPIECE_TIP } from './saxophoneModel';
+import { BARI_SAXOPHONE_MOUTHPIECE_TIP, getBariSaxophoneTemplate } from './bariSaxophoneModel';
+import { EUPHONIUM_MOUTHPIECE_TIP, getEuphoniumTemplate } from './euphoniumModel';
 import { getTromboneTemplate, TROMBONE_MOUTHPIECE_TIP, TROMBONE_SLIDE_STAY_Y } from './tromboneModel';
 import { getTrumpetTemplate } from './trumpetModel';
 import type { ModelDetail, ModelTemplate } from './lowPolyInstrument';
@@ -271,8 +273,8 @@ const TOP_DOWN_MARKER_DIAMETER_YARDS = 2.2;
 const MAX_KNEE_BEND_RADIANS = 1.35;
 const UPPER_ARM_LENGTH = 0.3;
 const FOREARM_LENGTH = 0.4;
-export type MarcherInstrument = "trumpet" | "mellophone" | "saxophone" | "trombone" | "clarinet" | "flute" |
-  "sousaphone" | "snare" | "tenors" | "bassDrum";
+export type MarcherInstrument = "trumpet" | "mellophone" | "altoSax" | "bariSax" | "trombone" | "euphonium" |
+  "clarinet" | "flute" | "sousaphone" | "snare" | "tenors" | "bassDrum" | "glockenspiel";
 
 // Instruments hang off an unsquashed root (uniform MARCHER_BODY_SCALE), so
 // they keep true proportions at any rotation. Instrument-root coordinates are
@@ -332,14 +334,26 @@ const INSTRUMENTS: Record<MarcherInstrument, InstrumentSpec> = {
   },
   // Held down and slightly out to the right; left hand on the upper key stack,
   // right hand on the lower one. Local +Y runs up the body, -Z toward the player.
-  saxophone: {
-    label: "Saxophone",
+  altoSax: {
+    label: "Alto saxophone",
     template: getSaxophoneTemplate,
     grips: [new Vector3(-0.025, 0.17, -0.06), new Vector3(0.025, -0.07, -0.065)],
     mouthpiece: SAXOPHONE_MOUTHPIECE_TIP,
     playRotation: new Vector3(-0.25, 0, 0.35),
     restPosition: new Vector3(0.05, 0.66, 0.24),
     restRotation: new Vector3(0, 0, 0.2),
+  },
+  // Held like the alto but hanging lower and further out to the right on its
+  // harness, so the long body and bow clear the legs; the pigtail loop rises
+  // beside the head. Carried upright at the right hip.
+  bariSax: {
+    label: "Baritone saxophone",
+    template: getBariSaxophoneTemplate,
+    grips: [new Vector3(-0.03, 0.17, -0.07), new Vector3(0.03, -0.13, -0.075)],
+    mouthpiece: BARI_SAXOPHONE_MOUTHPIECE_TIP,
+    playRotation: new Vector3(-0.2, 0, 0.42),
+    restPosition: new Vector3(0.1, 0.62, 0.28),
+    restRotation: new Vector3(0, 0, 0.15),
   },
   // Slide forward at first position, bell section over the left shoulder.
   // Left hand grips the brace by the mouthpiece, right hand the slide stay.
@@ -351,6 +365,18 @@ const INSTRUMENTS: Record<MarcherInstrument, InstrumentSpec> = {
     mouthpiece: TROMBONE_MOUTHPIECE_TIP,
     playRotation: new Vector3(-Math.PI / 2, 0, 0),
     restPosition: new Vector3(0.02, 0.95, 0.3),
+    restRotation: Vector3.Zero(),
+  },
+  // Front-bell horn held like the mellophone but much heavier: left hand
+  // under the leadpipe wrap, right hand over the valve buttons, bell forward.
+  // Carried upright with the bell down.
+  euphonium: {
+    label: "Euphonium",
+    template: getEuphoniumTemplate,
+    grips: [new Vector3(-0.075, -0.04, -0.02), new Vector3(0.06, 0, 0.09)],
+    mouthpiece: EUPHONIUM_MOUTHPIECE_TIP,
+    playRotation: new Vector3(-Math.PI / 2, 0, 0),
+    restPosition: new Vector3(0, 0.84, 0.38),
     restRotation: Vector3.Zero(),
   },
   // Angled about 40° below horizontal, left hand on the upper joint and right
@@ -393,6 +419,7 @@ const INSTRUMENTS: Record<MarcherInstrument, InstrumentSpec> = {
   snare: wornInstrument("Snare drum", getSnareTemplate, SNARE_GRIPS),
   tenors: wornInstrument("Tenor drums", getTenorTemplate, TENOR_GRIPS),
   bassDrum: wornInstrument("Bass drum", getBassDrumTemplate, BASS_DRUM_GRIPS),
+  glockenspiel: wornInstrument("Glockenspiel", getGlockenspielTemplate, GLOCKENSPIEL_GRIPS),
 };
 export const MARCHER_INSTRUMENTS = Object.keys(INSTRUMENTS) as MarcherInstrument[];
 const marcherParts = new Map<TransformNode, {
@@ -462,12 +489,16 @@ function applyInstrumentPose(parts: {
     const shoulderToWrist = wrist.subtract(arm.position);
     const distance = shoulderToWrist.length();
     const direction = shoulderToWrist.scale(1 / distance);
-    const along = (UPPER_ARM_LENGTH ** 2 - FOREARM_LENGTH ** 2 + distance ** 2) / (2 * distance);
+    // Out of reach, the arm straightens and the forearm stretches to the grip
+    // so the elbow and wrist stay attached.
+    const along = Math.min(UPPER_ARM_LENGTH,
+      (UPPER_ARM_LENGTH ** 2 - FOREARM_LENGTH ** 2 + distance ** 2) / (2 * distance));
     const outward = (!restPose && spec.elbowBends ? spec.elbowBends : DEFAULT_ELBOW_BENDS)[index];
     const bendDirection = outward.subtract(direction.scale(Vector3.Dot(outward, direction))).normalize();
     const bend = Math.sqrt(Math.max(0, UPPER_ARM_LENGTH ** 2 - along ** 2));
     const elbow = arm.position.add(direction.scale(along)).add(bendDirection.scale(bend));
     forearm.position.copyFrom(elbow);
+    forearm.scaling.y = Math.max(1, Vector3.Distance(elbow, wrist) / FOREARM_LENGTH);
     Quaternion.FromUnitVectorsToRef(Vector3.Down(), elbow.subtract(arm.position).normalize(), arm.rotationQuaternion!);
     Quaternion.FromUnitVectorsToRef(Vector3.Down(), wrist.subtract(elbow).normalize(), forearm.rotationQuaternion!);
   }
@@ -886,6 +917,14 @@ export function getRobotGaitAtCount(robot: TransformNode, countIndex: number): s
   return resolveSegmentGait(state, countIndex, parts.gaitIndex)?.label ?? "Halt";
 }
 
+function wrapAngle(angle: number): number {
+  return Math.atan2(Math.sin(angle), Math.cos(angle));
+}
+
+function lerpAngle(from: number, to: number, t: number): number {
+  return from + wrapAngle(to - from) * t;
+}
+
 // Applies the shared global count (clamped to this robot's own table length,
 // so a shorter route just holds at its last position) to one robot.
 function applyGlobalCount(robot: TransformNode, state: PlayerState) {
@@ -900,9 +939,27 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState) {
   // simply runs the same step backward.
   const segmentStart = playbackDirection > 0 ? globalPlayback.countIndex : globalPlayback.countIndex - 1;
   const resolved = resolveSegmentGait(state, segmentStart, parts.gaitIndex);
+  const previous = resolveSegmentGait(state, segmentStart - 1, parts.gaitIndex);
   const gaitIndex = resolved?.gaitIndex ?? parts.gaitIndex;
   const hipHalfSpacing = resolved?.sideways ? 0.115 : 0.09;
-  const legFacingOffset = resolved?.legYawOffset ?? 0;
+  const countInterval = STEP_INTERVAL_SECONDS /
+    (globalPlayback.tempoMultiplier * MARCHING_GAITS[parts.gaitIndex].tempoFactor);
+  const countProgress = globalPlayback.playing
+    ? Math.min(1, globalPlayback.stepAccumulatorSeconds / countInterval)
+    : 0;
+  const forwardProgress = playbackDirection > 0 ? countProgress : 1 - countProgress;
+  // Turn over the count instead of snapping at its boundary: ease body and
+  // leg facing from the previous segment's facing into this segment's.
+  const targetBodyYaw = resolved?.bodyYaw ?? count.facingY ?? count.rotationY;
+  const targetLegYaw = targetBodyYaw + (resolved?.legYawOffset ?? 0);
+  const turnBlend = forwardProgress * forwardProgress * (3 - 2 * forwardProgress);
+  const bodyRotation = previous
+    ? lerpAngle(previous.bodyYaw, targetBodyYaw, turnBlend)
+    : targetBodyYaw;
+  const legWorldRotation = previous
+    ? lerpAngle(previous.bodyYaw + previous.legYawOffset, targetLegYaw, turnBlend)
+    : targetLegYaw;
+  const legFacingOffset = wrapAngle(legWorldRotation - bodyRotation);
   orientMarcherShoes(parts.leftShoe, parts.rightShoe, legFacingOffset);
   parts.leftLeg.rotation.y = legFacingOffset;
   parts.rightLeg.rotation.y = legFacingOffset;
@@ -913,7 +970,6 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState) {
   robot.position.copyFrom((inPlace && !isAutoGaitStyle(MARCHING_GAITS[parts.gaitIndex].name)
     ? state.counts[0]
     : count).position);
-  const bodyRotation = resolved?.bodyYaw ?? count.facingY ?? count.rotationY;
   robot.rotation.y = bodyRotation;
   const displacement = to.position.subtract(from.position);
   const moving = globalPlayback.playing && !!resolved && (inPlace || displacement.lengthSquared() > 0.0001);
@@ -934,13 +990,8 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState) {
     parts.body.position.y = 0;
     return;
   }
-  const countInterval = STEP_INTERVAL_SECONDS /
-    (globalPlayback.tempoMultiplier * MARCHING_GAITS[parts.gaitIndex].tempoFactor);
-  const countProgress = Math.min(1, globalPlayback.stepAccumulatorSeconds / countInterval);
-  const forwardProgress = playbackDirection > 0 ? countProgress : 1 - countProgress;
   if (!inPlace) Vector3.LerpToRef(from.position, to.position, forwardProgress, robot.position);
   const stepsPerCount = resolved!.stepsPerCount;
-  const legWorldRotation = bodyRotation + legFacingOffset;
   // One footfall covers 1/stepsPerCount counts, so its stride scales the same way.
   const localDisplacement = inPlace
     ? Vector3.Zero()

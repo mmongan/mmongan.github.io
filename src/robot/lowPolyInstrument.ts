@@ -202,6 +202,15 @@ export class InstrumentGeometry {
     this.quad(d, h, e, a);
   }
 
+  // Horizontal, up-facing rectangle at height `y` (e.g. a keyboard bar).
+  plate(minX: number, maxX: number, y: number, minZ: number, maxZ: number, color: Color4) {
+    const start = this.positions.length / 3;
+    for (const [x, z] of [[maxX, minZ], [maxX, maxZ], [minX, maxZ], [minX, minZ]]) {
+      this.vertex(new Vector3(x, y, z), color);
+    }
+    this.quad(start, start + 1, start + 2, start + 3);
+  }
+
   // Surface of revolution around +Y through `profile` ([radius, y] pairs,
   // bottom to top). A zero radius is a single pole vertex; a nonzero first or
   // last ring is left open. `place` maps each point (e.g. to stretch it or

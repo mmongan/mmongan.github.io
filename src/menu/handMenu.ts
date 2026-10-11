@@ -285,16 +285,19 @@ function ensureMenuMeshes() {
   buttons.push(undoButton, redoButton);
   // Brass row, then woodwind and percussion rows beneath it.
   const instrumentButtons = ([
-    ["Tpt", "trumpet", -spacing * 1.5, -0.16],
-    ["Mel", "mellophone", -spacing / 2, -0.16],
-    ["Tbn", "trombone", spacing / 2, -0.16],
-    ["Sou", "sousaphone", spacing * 1.5, -0.16],
-    ["Sax", "saxophone", -spacing, -0.195],
-    ["Cl", "clarinet", 0, -0.195],
-    ["Fl", "flute", spacing, -0.195],
-    ["Sn", "snare", -spacing, -0.23],
-    ["Ten", "tenors", 0, -0.23],
-    ["BD", "bassDrum", spacing, -0.23],
+    ["Tpt", "trumpet", -spacing * 2, -0.16],
+    ["Mel", "mellophone", -spacing, -0.16],
+    ["Tbn", "trombone", 0, -0.16],
+    ["Eup", "euphonium", spacing, -0.16],
+    ["Sou", "sousaphone", spacing * 2, -0.16],
+    ["Alto", "altoSax", -spacing * 1.5, -0.195],
+    ["Bari", "bariSax", -spacing / 2, -0.195],
+    ["Cl", "clarinet", spacing / 2, -0.195],
+    ["Fl", "flute", spacing * 1.5, -0.195],
+    ["Sn", "snare", -spacing * 1.5, -0.23],
+    ["Ten", "tenors", -spacing / 2, -0.23],
+    ["BD", "bassDrum", spacing / 2, -0.23],
+    ["Glk", "glockenspiel", spacing * 1.5, -0.23],
   ] as const).map(([label, instrument, x, z]) => {
     const button = createButton(label, x, { action: "instrument", instrument });
     button.position.z = z;

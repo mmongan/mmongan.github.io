@@ -70,7 +70,55 @@ function createBassDrumTemplate(scene: Scene): Mesh {
   return buildInstrumentTemplate("bassDrumTemplate", geometry, scene);
 }
 
+// Glockenspiel (marching bells): a level keyboard on the carrier at waist
+// height, its low end to the marcher's left. Silver natural bars (graduated,
+// longest at the low end) nearest the player; the sharps on a raised rail
+// behind them, grouped in twos and threes. A hard-headed mallet in each hand,
+// the left on a natural and the right on a sharp.
+export const GLOCKENSPIEL_GRIPS: [Vector3, Vector3] = [new Vector3(-0.12, 0.96, 0.25), new Vector3(0.12, 0.96, 0.25)];
+
+const GLOCK_LEFT = -0.3;
+const GLOCK_RIGHT = 0.3;
+const GLOCK_TOP = 0.845;
+const GLOCK_NATURAL_FRONT = 0.27;
+const GLOCK_SHARP_FRONT = 0.43;
+const GLOCK_SHARP_TOP = 0.875;
+const GLOCK_NATURALS = 11; // C to F
+// Sharps sit between these naturals (C#, D#, F#, G#, A#, C#, D#).
+const GLOCK_SHARP_AFTER = [0, 1, 3, 4, 5, 7, 8];
+const MALLET_HEAD = new Color4(0.75, 0.12, 0.14, 1);
+
+function createGlockenspielTemplate(scene: Scene): Mesh {
+  const geometry = new InstrumentGeometry();
+  const pitch = (GLOCK_RIGHT - GLOCK_LEFT - 0.02) / GLOCK_NATURALS;
+  const barLeft = (index: number) => GLOCK_LEFT + 0.01 + index * pitch;
+  geometry.box(new Vector3(GLOCK_LEFT, 0.79, 0.24), new Vector3(GLOCK_RIGHT, GLOCK_TOP - 0.005, 0.56), CARRIER);
+  for (let index = 0; index < GLOCK_NATURALS; index++) {
+    const length = 0.14 - (0.04 * index) / (GLOCK_NATURALS - 1);
+    geometry.plate(barLeft(index) + 0.004, barLeft(index + 1) - 0.004, GLOCK_TOP,
+      GLOCK_NATURAL_FRONT, GLOCK_NATURAL_FRONT + length, SILVER);
+  }
+  geometry.fine(() => {
+    geometry.box(new Vector3(GLOCK_LEFT + 0.02, GLOCK_TOP - 0.01, GLOCK_SHARP_FRONT - 0.01),
+      new Vector3(GLOCK_RIGHT - 0.02, GLOCK_SHARP_TOP - 0.003, 0.55), CARRIER);
+    for (const after of GLOCK_SHARP_AFTER) {
+      const center = barLeft(after + 1);
+      geometry.plate(center - pitch * 0.32, center + pitch * 0.32, GLOCK_SHARP_TOP,
+        GLOCK_SHARP_FRONT, GLOCK_SHARP_FRONT + 0.1 - 0.025 * (after / 8), SILVER);
+    }
+  });
+  carrier(geometry, 0.8, 0.24);
+  const malletTips = [new Vector3(-0.15, GLOCK_TOP + 0.013, 0.34), new Vector3(0.1, GLOCK_SHARP_TOP + 0.013, 0.47)];
+  GLOCKENSPIEL_GRIPS.forEach((grip, index) => {
+    const side = index === 0 ? -1 : 1;
+    geometry.stick(grip.add(new Vector3(side * 0.01, 0.02, -0.06)), malletTips[index], 0.006, WOOD,
+      0.012, MALLET_HEAD);
+  });
+  return buildInstrumentTemplate("glockenspielTemplate", geometry, scene);
+}
+
 // Shared, hidden source meshes; clone them (clones share geometry and material).
 export const getSnareTemplate = cachedInstrumentTemplate(createSnareTemplate);
 export const getTenorTemplate = cachedInstrumentTemplate(createTenorTemplate);
 export const getBassDrumTemplate = cachedInstrumentTemplate(createBassDrumTemplate);
+export const getGlockenspielTemplate = cachedInstrumentTemplate(createGlockenspielTemplate);
