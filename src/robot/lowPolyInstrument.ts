@@ -240,16 +240,6 @@ export class InstrumentGeometry {
       previous = { start, pole };
     }
   }
-
-  // Appends `other` with every triangle given its own vertices, so computed
-  // normals shade it flat while this geometry's shared vertices stay smooth.
-  appendFlat(other: InstrumentGeometry) {
-    for (const index of other.indices) {
-      this.positions.push(...other.positions.slice(index * 3, index * 3 + 3));
-      this.colors.push(...other.colors.slice(index * 4, index * 4 + 4));
-      this.indices.push(this.positions.length / 3 - 1);
-    }
-  }
 }
 
 // Hidden, unpickable template mesh (smooth normals over shared vertices) to

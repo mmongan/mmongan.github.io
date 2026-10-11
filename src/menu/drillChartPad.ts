@@ -4,6 +4,7 @@ import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTextur
 import { Texture } from '@babylonjs/core/Materials/Textures/texture.pure';
 import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
 import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
+import { Plane } from '@babylonjs/core/Maths/math.plane';
 import type { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.pure';
 import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
@@ -50,6 +51,14 @@ let pad: Pad | null = null;
 let visible = false;
 let grabSource: string | null = null;
 const grabOffset = new Matrix();
+// Once the user positions the pad it stays put across hide/show, unless the
+// viewer has since moved too far away to reach or read it.
+let userPlaced = false;
+const USER_PLACEMENT_MAX_DISTANCE = 2.5;
+const POINTER_SOURCE = "pointer";
+const POINTER_MIN_DISTANCE = 0.3;
+const POINTER_MAX_DISTANCE = 3;
+const pointerDrag = { plane: null as Plane | null, offset: new Vector3() };
 let lastSignature = "";
 let framesUntilRedraw = 0;
 const visibilityListeners = new Set<(visible: boolean) => void>();
@@ -364,10 +373,17 @@ export function onDrillChartPadVisibilityChange(listener: (visible: boolean) => 
 export function setDrillChartPadVisible(show: boolean) {
   if (show) {
     pad ??= createPad();
-    placeInFrontOfViewer();
+    const eye = scene.activeCamera?.globalPosition;
+    if (!userPlaced || !eye || Vector3.Distance(eye, pad.root.position) > USER_PLACEMENT_MAX_DISTANCE) {
+      userPlaced = false;
+      placeInFrontOfViewer();
+    }
     refreshPage(true);
   }
-  if (!show) grabSource = null;
+  if (!show) {
+    grabSource = null;
+    pointerDrag.plane = null;
+  }
   pad?.root.setEnabled(show);
   if (visible === show) return;
   visible = show;
@@ -397,6 +413,7 @@ export function pickDrillChartPad(ray: Ray) {
 export function beginDrillChartPadGrab(source: string, sourceWorld: Matrix) {
   if (!pad || !visible) return;
   grabSource = source;
+  userPlaced = true;
   pad.root.computeWorldMatrix(true).multiplyToRef(sourceWorld.clone().invert(), grabOffset);
 }
 
@@ -409,6 +426,54 @@ export function updateDrillChartPadGrab(source: string, sourceWorld: Matrix) {
 
 export function endDrillChartPadGrab(source: string) {
   if (grabSource === source) grabSource = null;
+}
+
+function facePadToEye(eye: Vector3) {
+  if (!pad) return;
+  const away = pad.root.position.subtract(eye);
+  away.y = 0;
+  if (away.lengthSquared() < 1e-6) return;
+  pad.root.lookAt(pad.root.position.add(away));
+}
+
+// Desktop mouse drags slide the pad across a camera-facing plane through its
+// grab point, turning it to keep facing the viewer.
+export function beginDrillChartPadPointerDrag(ray: Ray) {
+  const pick = pickDrillChartPad(ray);
+  if (!pad || !pick?.pickedPoint || grabSource !== null) return false;
+  const normal = ray.direction.scale(-1);
+  pointerDrag.plane = Plane.FromPositionAndNormal(pick.pickedPoint, normal);
+  pad.root.position.subtractToRef(pick.pickedPoint, pointerDrag.offset);
+  grabSource = POINTER_SOURCE;
+  userPlaced = true;
+  return true;
+}
+
+export function updateDrillChartPadPointerDrag(ray: Ray) {
+  if (!pad || grabSource !== POINTER_SOURCE || !pointerDrag.plane) return;
+  const distance = ray.intersectsPlane(pointerDrag.plane);
+  if (distance === null || distance <= 0 || distance > POINTER_MAX_DISTANCE * 2) return;
+  ray.origin.add(ray.direction.scale(distance)).addToRef(pointerDrag.offset, pad.root.position);
+  facePadToEye(ray.origin);
+}
+
+export function endDrillChartPadPointerDrag() {
+  pointerDrag.plane = null;
+  endDrillChartPadGrab(POINTER_SOURCE);
+}
+
+// Mouse wheel over the pad pushes it away from or pulls it toward the viewer.
+export function nudgeDrillChartPadDistance(ray: Ray, wheelDelta: number) {
+  if (!pad || !pickDrillChartPad(ray)) return false;
+  const eye = ray.origin;
+  const offset = pad.root.position.subtract(eye);
+  const current = offset.length();
+  if (current < 1e-6) return false;
+  const next = Math.min(POINTER_MAX_DISTANCE, Math.max(POINTER_MIN_DISTANCE, current * Math.exp(wheelDelta * 0.001)));
+  eye.addToRef(offset.scale(next / current), pad.root.position);
+  facePadToEye(eye);
+  userPlaced = true;
+  return true;
 }
 
 export function isDrillChartPadGrabbed(source?: string) {

@@ -72,16 +72,20 @@ import { clearShowInfo, setShowInfo } from '../menu/showInfoPanel';
 import { getHandMenuHit, getHandMenuHitNearPoint, setMenuHandTracking, setFormationCommitAvailable, setFormationLibraryOpen, setFormationLibraryPage, setFormationLibraryAnchorAvailable, setEraseModeActive, setEraseHistoryAvailable, setDrillChartPadActive, setInstrumentMenuActive, isHandMenuVisible, isMenuControl } from '../menu/handMenu';
 import {
   beginDrillChartPadGrab,
+  beginDrillChartPadPointerDrag,
   endDrillChartPadGrab,
+  endDrillChartPadPointerDrag,
   flipDrillChartPage,
   isDrillChartPadGrabbed,
   isDrillChartPadMesh,
   isDrillChartPadVisible,
   isPointNearDrillChartPad,
+  nudgeDrillChartPadDistance,
   onDrillChartPadVisibilityChange,
   pickDrillChartPad,
   setDrillChartPadVisible,
   updateDrillChartPadGrab,
+  updateDrillChartPadPointerDrag,
 } from '../menu/drillChartPad';
 import type { FormationLetter } from '../menu/handMenu';
 import { createHandInteraction } from './handInteraction';
@@ -1550,6 +1554,9 @@ const triggerHeld = new Map<string, boolean>();
 const gripHeld = new Map<string, boolean>();
 const tempoControllerDrags = new Set<string>();
 let tempoPointerDragging = false;
+// Which controller button holds each drill chart pad grab, so releasing that
+// button (grip or trigger) lets go.
+const padGrabButtons = new Map<string, "grip" | "trigger">();
 // True while a controller's trigger-down landed on the hand menu, so the rest
 // of the hold/release is treated as a menu tap instead of drawing a path.
 const menuInteractionHeld = new Map<string, boolean>();
@@ -1772,8 +1779,11 @@ export function updateRobotPathFromControllers() {
     const marcherGrab = marcherGrabs.get(handedness);
     if (marcherGrab?.source === "hand") return;
     if (isDrillChartPadGrabbed(handedness)) {
-      if (!gripPressed) endDrillChartPadGrab(handedness);
-      else updateDrillChartPadGrab(handedness, getControllerPosition(controller).computeWorldMatrix(true));
+      const holding = padGrabButtons.get(handedness) === "trigger" ? isPressed : gripPressed;
+      if (!holding) {
+        endDrillChartPadGrab(handedness);
+        padGrabButtons.delete(handedness);
+      } else updateDrillChartPadGrab(handedness, getControllerPosition(controller).computeWorldMatrix(true));
       return;
     }
     if (!marcherGrab && gripPressed && !wasGripPressed && !menuInteractionHeld.get(handedness)) {
@@ -1782,6 +1792,7 @@ export function updateRobotPathFromControllers() {
         !!pickDrillChartPad(getControllerRay(controller));
       if (nearPad) {
         beginDrillChartPadGrab(handedness, gripNode.computeWorldMatrix(true));
+        padGrabButtons.set(handedness, "grip");
         return;
       }
     }
@@ -1857,7 +1868,11 @@ export function updateRobotPathFromControllers() {
       }
 
       const pick = scene.pickWithRay(getControllerRay(controller));
-      if (pick?.pickedMesh && isDrillChartPadMesh(pick.pickedMesh)) return;
+      if (pick?.pickedMesh && isDrillChartPadMesh(pick.pickedMesh)) {
+        beginDrillChartPadGrab(handedness, getControllerPosition(controller).computeWorldMatrix(true));
+        padGrabButtons.set(handedness, "trigger");
+        return;
+      }
       if (pick?.hit && pick.pickedMesh && seekToCollisionMarker(pick.pickedMesh)) {
         return;
       }
@@ -2304,8 +2319,35 @@ export function initInteraction() {
   // Desktop/browser testing has no VR trigger, so a plain mouse click is
   // wired to the same collision-marker preview and robot selection the VR
   // trigger dispatches to.
-  scene.onPointerObservable.add((pointerInfo) => {
+  scene.onPointerObservable.add((pointerInfo, eventState) => {
     if ("pointerType" in pointerInfo.event && pointerInfo.event.pointerType === "xr") return;
+    // Dragging or wheeling over the drill chart pad moves it; skipping later
+    // observers keeps the camera's mouse-look and wheel input from also firing.
+    const getPointerRay = () => scene.createPickingRay(scene.pointerX, scene.pointerY, Matrix.Identity(), scene.activeCamera);
+    if (isDrillChartPadGrabbed("pointer")) {
+      if (pointerInfo.type === PointerEventTypes.POINTERMOVE) updateDrillChartPadPointerDrag(getPointerRay());
+      if (pointerInfo.type === PointerEventTypes.POINTERUP) {
+        endDrillChartPadPointerDrag();
+        canvas.style.cursor = "grab";
+      }
+      eventState.skipNextObservers = true;
+      return;
+    }
+    if (pointerInfo.type === PointerEventTypes.POINTERWHEEL && pointerInfo.event instanceof WheelEvent &&
+      nudgeDrillChartPadDistance(getPointerRay(), pointerInfo.event.deltaY)) {
+      pointerInfo.event.preventDefault();
+      eventState.skipNextObservers = true;
+      return;
+    }
+    if (pointerInfo.type === PointerEventTypes.POINTERDOWN && "button" in pointerInfo.event &&
+      pointerInfo.event.button === 0) {
+      const menuPick = scene.pick(scene.pointerX, scene.pointerY, isMenuControl);
+      if (!menuPick?.hit && beginDrillChartPadPointerDrag(getPointerRay())) {
+        canvas.style.cursor = "grabbing";
+        eventState.skipNextObservers = true;
+        return;
+      }
+    }
     if (pointerInfo.type === PointerEventTypes.POINTERDOWN) {
       const tempoPick = scene.pick(scene.pointerX, scene.pointerY, isScoreboardTempoScreen);
       tempoPointerDragging = !!tempoPick?.hit && updateScoreboardTempoFromPick(tempoPick);
@@ -2324,12 +2366,12 @@ export function initInteraction() {
       const pick = scene.pick(
         scene.pointerX,
         scene.pointerY,
-        (mesh) => isMenuControl(mesh) || isScoreboardTempoScreen(mesh)
+        (mesh) => isMenuControl(mesh) || isScoreboardTempoScreen(mesh) || isDrillChartPadMesh(mesh)
       );
       canvas.style.cursor = eraseMode ? "crosshair" : pick?.hit && (
         getHandMenuHit(pick) || isScoreboardTempoPick(pick) || isScoreboardGaitPick(pick) ||
         isScoreboardHornPosePick(pick)
-      ) ? "pointer" : "";
+      ) ? "pointer" : pick?.pickedMesh && isDrillChartPadMesh(pick.pickedMesh) ? "grab" : "";
       return;
     }
     if (pointerInfo.type !== PointerEventTypes.POINTERTAP) return;

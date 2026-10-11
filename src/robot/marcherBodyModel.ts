@@ -47,15 +47,7 @@ export const getMarcherTrimTemplate = partTemplate("marcherTrimTemplate", (geome
   geometry.lathe([[0.055, 1.06], [0.055, 1.18]], 6, METAL);
   geometry.lathe([[0, 1.36], [0.125, 1.36], [0.14, 1.39], [0.13, 1.43], [0.13, 1.58], [0.105, 1.64], [0, 1.64]], 8, DARK);
   geometry.lathe([[0, 1.62], [0.06, 1.645], [0.08, 1.7], [0.06, 1.755], [0, 1.78]], 6, GLOVE);
-  // Flat shading gives every head triangle its own vertices, so the
-  // low-detail head keeps shared ones.
-  if (geometry.low) {
-    addRobotHead(geometry);
-  } else {
-    const head = new InstrumentGeometry();
-    addRobotHead(head);
-    geometry.appendFlat(head);
-  }
+  addRobotHead(geometry);
 });
 
 export const getMarcherJacketTemplate = partTemplate("marcherJacketTemplate", (geometry) => {
