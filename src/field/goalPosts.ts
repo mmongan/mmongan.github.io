@@ -6,6 +6,9 @@ import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
 import { scene } from '../scene/engine';
 import { GOAL_POST_WIDTH_YARDS } from './constants';
+import { mergeMeshesByMaterial } from './meshMerging';
+
+const GOAL_POST_SIDES = 8;
 
 // Build the end-zone goalposts and rebuild them when the field-level presets
 // change between high school, college, and NFL dimensions.
@@ -25,6 +28,7 @@ export function createGoalPosts(): {
     const postHalfWidth = (GOAL_POST_WIDTH_YARDS[level] ?? GOAL_POST_WIDTH_YARDS.nfl) / 2;
     const uprightHeight = level === "nfl" ? 35 / 3 : 20 / 3;
     goalPosts.getChildMeshes().forEach((mesh) => mesh.dispose());
+    const parts: Mesh[] = [];
 
     for (const goalZ of [-60, 60]) {
       const rearZ = goalZ + Math.sign(goalZ) * 1.6;
@@ -34,45 +38,48 @@ export function createGoalPosts(): {
         new Vector3(0, crossbarY - 0.7, rearZ - Math.sign(goalZ) * 0.3),
         new Vector3(0, crossbarY - 0.2, goalZ + Math.sign(goalZ) * 0.6),
         new Vector3(0, crossbarY, goalZ),
-      ], 8);
+      ], 3);
       const support = MeshBuilder.CreateTube(
         `goalSupportPost${goalZ}`,
-        { path: supportCurve.getPoints(), radius: 0.14, tessellation: 12, cap: Mesh.CAP_ALL },
+        { path: supportCurve.getPoints(), radius: 0.14, tessellation: GOAL_POST_SIDES, cap: Mesh.CAP_ALL },
         scene
       );
       support.material = postMaterial;
-      support.parent = goalPosts;
+      parts.push(support);
 
       const pad = MeshBuilder.CreateCylinder(
         `goalPostPad${goalZ}`,
-        { diameter: 0.42, height: 1.5, tessellation: 16 },
+        { diameter: 0.42, height: 1.5, tessellation: GOAL_POST_SIDES },
         scene
       );
       pad.position = new Vector3(0, groundY + 0.75, rearZ);
       pad.material = padMaterial;
-      pad.parent = goalPosts;
+      parts.push(pad);
 
       const crossbar = MeshBuilder.CreateCylinder(
         `goalCrossbar${goalZ}`,
-        { diameter: 0.12, height: postHalfWidth * 2, tessellation: 12 },
+        { diameter: 0.12, height: postHalfWidth * 2, tessellation: GOAL_POST_SIDES },
         scene
       );
       crossbar.rotation.z = Math.PI / 2;
       crossbar.position = new Vector3(0, crossbarY, goalZ);
       crossbar.material = postMaterial;
-      crossbar.parent = goalPosts;
+      parts.push(crossbar);
 
       for (const side of [-1, 1]) {
         const upright = MeshBuilder.CreateCylinder(
           `goalUpright${goalZ}_${side}`,
-          { diameter: 0.1, height: uprightHeight, tessellation: 12 },
+          { diameter: 0.1, height: uprightHeight, tessellation: GOAL_POST_SIDES },
           scene
         );
         upright.position = new Vector3(side * postHalfWidth, crossbarY + uprightHeight / 2, goalZ);
         upright.material = postMaterial;
-        upright.parent = goalPosts;
+        parts.push(upright);
       }
     }
+
+    // Both goalposts merge into one yellow mesh and one pad mesh.
+    mergeMeshesByMaterial(parts, "goalPosts", goalPosts);
   }
 
   return { updateGoalPosts };

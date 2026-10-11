@@ -245,12 +245,52 @@ let showAllPaths = !!showAllPathsToggle?.checked;
 // Paths/segments are drawn as tubes connecting the grab-point balls instead
 // of thin CreateLines meshes, so drawn routes are actually visible in VR.
 const PATH_TUBE_RADIUS_YARDS = 0.05;
-const PATH_TUBE_TESSELLATION = 8;
+const PATH_TUBE_TESSELLATION = 6;
+// Drawn and planned paths are densely sampled, mostly along straight runs.
+// Points closer than this to the simplified line are dropped from the tube
+// geometry only; the path data itself keeps every sample.
+const PATH_TUBE_SIMPLIFY_TOLERANCE_YARDS = 0.01;
+
+function distanceToSegment(point: Vector3, start: Vector3, end: Vector3): number {
+  const segment = end.subtract(start);
+  const lengthSquared = segment.lengthSquared();
+  if (lengthSquared < 1e-12) return Vector3.Distance(point, start);
+  const t = Math.min(1, Math.max(0, Vector3.Dot(point.subtract(start), segment) / lengthSquared));
+  return Vector3.Distance(point, start.add(segment.scale(t)));
+}
+
+// Ramer–Douglas–Peucker simplification of a polyline.
+function simplifyTubePath(points: Vector3[], tolerance: number): Vector3[] {
+  if (points.length <= 2) return points;
+  const keep = new Uint8Array(points.length);
+  keep[0] = keep[points.length - 1] = 1;
+  const stack: Array<[number, number]> = [[0, points.length - 1]];
+  while (stack.length) {
+    const [first, last] = stack.pop()!;
+    let farthest = -1;
+    let farthestDistance = tolerance;
+    for (let i = first + 1; i < last; i++) {
+      const distance = distanceToSegment(points[i], points[first], points[last]);
+      if (distance > farthestDistance) {
+        farthest = i;
+        farthestDistance = distance;
+      }
+    }
+    if (farthest < 0) continue;
+    keep[farthest] = 1;
+    stack.push([first, farthest], [farthest, last]);
+  }
+  return points.filter((_, index) => keep[index]);
+}
 
 function createTubeLine(name: string, points: Vector3[], color: Color3, existingMaterial?: StandardMaterial): Mesh {
   const tube = MeshBuilder.CreateTube(
     name,
-    { path: points, radius: PATH_TUBE_RADIUS_YARDS, tessellation: PATH_TUBE_TESSELLATION },
+    {
+      path: simplifyTubePath(points, PATH_TUBE_SIMPLIFY_TOLERANCE_YARDS),
+      radius: PATH_TUBE_RADIUS_YARDS,
+      tessellation: PATH_TUBE_TESSELLATION,
+    },
     scene
   );
   const material = existingMaterial ?? new StandardMaterial(`${name}Material`, scene);

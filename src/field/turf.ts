@@ -187,7 +187,7 @@ export function createTurf(): TurfResult {
 
   const field = MeshBuilder.CreateGround(
     "field",
-    { width: FIELD_WIDTH_YARDS, height: FIELD_LENGTH_YARDS, subdivisions: 48 },
+    { width: FIELD_WIDTH_YARDS, height: FIELD_LENGTH_YARDS, subdivisions: 1 },
     scene
   );
   field.position.y = -0.5;
@@ -264,14 +264,15 @@ export function createTurf(): TurfResult {
     const offset = HASH_OFFSETS_YARDS[level] ?? HASH_OFFSETS_YARDS.nfl;
     const hashBoxes: Mesh[] = [];
 
+    // Seen only from the top-down camera, so each mark is a flat quad.
     for (let z = -49; z <= 49; z++) {
       for (const x of [-offset, offset]) {
-        const hashMark = MeshBuilder.CreateBox(
+        const hashMark = MeshBuilder.CreateGround(
           `topDownHashMark${z}_${x}`,
-          { width: 0.7, height: 0.02, depth: 0.36 },
+          { width: 0.7, height: 0.36 },
           scene
         );
-        hashMark.position = new Vector3(x, -0.45, z);
+        hashMark.position = new Vector3(x, -0.44, z);
         hashBoxes.push(hashMark);
       }
     }

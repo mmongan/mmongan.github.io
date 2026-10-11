@@ -4,6 +4,7 @@ import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
 import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
 import { scene } from '../scene/engine';
+import { mergeMeshesByMaterial } from './meshMerging';
 import { FIELD_WIDTH_YARDS, STAND_CONFIGS } from './constants';
 
 const ROW_HEIGHT = 0.35;
@@ -34,7 +35,7 @@ export function createStands(): { updateStands: (level: string) => void } {
     standLength: number,
     baseOffset: number,
     startY: number,
-    parent: Mesh
+    parts: Mesh[]
   ): number {
     for (let row = 0; row < rows; row++) {
       const stepFrontOffset = baseOffset + row * ROW_DEPTH;
@@ -53,7 +54,7 @@ export function createStands(): { updateStands: (level: string) => void } {
         0
       );
       riser.material = supportMat;
-      riser.parent = parent;
+      parts.push(riser);
 
       const bench = MeshBuilder.CreateBox(
         `standBench${side}_${startY}_${row}`,
@@ -62,7 +63,7 @@ export function createStands(): { updateStands: (level: string) => void } {
       );
       bench.position = new Vector3(treadCenterX, STAND_GROUND_Y + riserTopY, 0);
       bench.material = row % 2 === 0 ? benchMat : standsMat;
-      bench.parent = parent;
+      parts.push(bench);
     }
 
     // Solid back wall behind the top row so the stand reads as an enclosed
@@ -80,7 +81,7 @@ export function createStands(): { updateStands: (level: string) => void } {
       0
     );
     backWall.material = supportMat;
-    backWall.parent = parent;
+    parts.push(backWall);
 
     return tierTopY;
   }
@@ -88,6 +89,7 @@ export function createStands(): { updateStands: (level: string) => void } {
   function updateStands(level: string) {
     const config = STAND_CONFIGS[level] ?? STAND_CONFIGS.nfl;
     standsGroup.getChildMeshes().forEach((mesh) => mesh.dispose());
+    const parts: Mesh[] = [];
 
     for (const side of [-1, 1]) {
       const lowerTopY = buildBleacherTier(
@@ -96,7 +98,7 @@ export function createStands(): { updateStands: (level: string) => void } {
         config.standLength,
         config.offset,
         0,
-        standsGroup
+        parts
       );
 
       if (config.hasUpperDeck) {
@@ -116,7 +118,7 @@ export function createStands(): { updateStands: (level: string) => void } {
           0
         );
         concourseWall.material = supportMat;
-        concourseWall.parent = standsGroup;
+        parts.push(concourseWall);
 
         buildBleacherTier(
           side,
@@ -124,10 +126,14 @@ export function createStands(): { updateStands: (level: string) => void } {
           config.upperStandLength!,
           upperBaseOffset,
           lowerTopY + CONCOURSE_GAP,
-          standsGroup
+          parts
         );
       }
     }
+
+    // Every row is a separate box while building; merge them into one mesh per
+    // material so both stands cost three draw calls instead of dozens.
+    mergeMeshesByMaterial(parts, "stands", standsGroup);
   }
 
   return { updateStands };
