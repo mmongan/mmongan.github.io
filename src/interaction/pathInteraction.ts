@@ -149,16 +149,8 @@ function rotateAroundY(vector: Vector3, angle: number): Vector3 {
 }
 
 function isGripPressed(controller: WebXRInputSource): boolean {
-  const motionController = controller.motionController;
-  if (!motionController) {
-    return false;
-  }
-
-  // Squeeze only — the trigger is reserved for drawing the robot's path.
-  const squeeze = motionController.getComponentOfType('squeeze');
-  if (squeeze?.pressed) return true;
-
-  return !!controller.inputSource.gamepad?.buttons?.[1]?.pressed;
+  const squeeze = controller.motionController?.getComponentOfType('squeeze');
+  return !!squeeze?.pressed || !!controller.inputSource.gamepad?.buttons?.[1]?.pressed;
 }
 
 function getControllerPosition(controller: WebXRInputSource) {
@@ -1723,6 +1715,7 @@ const handInteraction = createHandInteraction({
     executeMenuAction(hit);
     return true;
   },
+  activateChartButton: executeMenuAction,
 });
 const { marcherGrabs } = handInteraction;
 
@@ -1779,7 +1772,7 @@ export function updateHandPathDrawing() {
 
 function getTriggerPressed(controller: WebXRInputSource): boolean {
   const trigger = controller.motionController?.getComponentOfType('trigger');
-  return !!trigger?.pressed;
+  return !!trigger?.pressed || !!controller.inputSource.gamepad?.buttons?.[0]?.pressed;
 }
 
 function getControllerRay(controller: WebXRInputSource): Ray {

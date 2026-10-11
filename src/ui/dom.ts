@@ -13,6 +13,14 @@ export const floorCalibrationToggle = document.getElementById("floorCalibrationT
 export const swapControllerRolesToggle = document.getElementById("swapControllerRolesToggle") as HTMLInputElement | null;
 export const handThumbJogToggle = document.getElementById("handThumbJogToggle") as HTMLInputElement | null;
 export const lowPolygonMarchersToggle = document.getElementById("lowPolygonMarchersToggle") as HTMLInputElement | null;
+export const midiFileInput = document.getElementById("midiFile") as HTMLInputElement | null;
+export const midiAudioButton = document.getElementById("midiAudioButton") as HTMLButtonElement | null;
+export const midiClearButton = document.getElementById("midiClearButton") as HTMLButtonElement | null;
+export const midiVolumeInput = document.getElementById("midiVolume") as HTMLInputElement | null;
+export const midiStatus = document.getElementById("midiStatus") as HTMLOutputElement | null;
+export const midiUrlForm = document.getElementById("midiUrlForm") as HTMLFormElement | null;
+export const midiUrlInput = document.getElementById("midiUrl") as HTMLInputElement | null;
+export const midiExampleButton = document.getElementById("midiExampleButton") as HTMLButtonElement | null;
 
 export function getNavigationControllerHand(): "left" | "right" {
   return swapControllerRolesToggle?.checked ? "right" : "left";

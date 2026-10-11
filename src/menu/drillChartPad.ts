@@ -18,7 +18,7 @@ import {
 } from '../robot/robot';
 import { END_ZONE_DEPTH_YARDS, FIELD_LENGTH_YARDS, FIELD_WIDTH_YARDS, HASH_OFFSETS_YARDS } from '../field/constants';
 import { getSelectedFieldLevel } from '../ui/dom';
-import { registerMenuButton } from './handMenu';
+import { registerMenuButton, type HandMenuHit } from './handMenu';
 
 export const DRILL_CHART_COUNTS_PER_SET = 8;
 
@@ -43,6 +43,7 @@ const REDRAW_INTERVAL_FRAMES = 6;
 interface Pad {
   root: TransformNode;
   meshes: Set<AbstractMesh>;
+  buttons: Map<AbstractMesh, HandMenuHit>;
   texture: DynamicTexture;
   ctx: CanvasRenderingContext2D;
 }
@@ -119,6 +120,7 @@ function createPad(): Pad {
   const root = new TransformNode("drillChartPadRoot", scene);
   root.rotationQuaternion = Quaternion.Identity();
   const meshes = new Set<AbstractMesh>();
+  const buttons = new Map<AbstractMesh, HandMenuHit>();
 
   const backingMaterial = new StandardMaterial("drillChartBackingMaterial", scene);
   backingMaterial.diffuseColor = new Color3(0.45, 0.33, 0.2);
@@ -173,6 +175,7 @@ function createPad(): Pad {
     button.material = buttonMaterial;
     button.position.set(x * (PAD_WIDTH / 2 - BUTTON_WIDTH / 2 - 0.012), -PAD_HEIGHT / 2 + BUTTON_HEIGHT / 2 + 0.01, -0.002);
     registerMenuButton(button, { action: "drillChartPage", direction });
+    buttons.set(button, { action: "drillChartPage", direction });
     button.parent = root;
     meshes.add(button);
   }
@@ -182,7 +185,7 @@ function createPad(): Pad {
     meshes.add(mesh);
   }
   root.setEnabled(false);
-  return { root, meshes, texture, ctx };
+  return { root, meshes, buttons, texture, ctx };
 }
 
 function fieldPoint(position: Vector3) {
@@ -406,6 +409,16 @@ export function pickDrillChartPad(ray: Ray) {
   if (!pad || !visible) return null;
   const pick = scene.pickWithRay(ray, (mesh) => pad!.meshes.has(mesh));
   return pick?.hit ? pick : null;
+}
+
+export function getDrillChartButtonNearPoint(point: Vector3): HandMenuHit | null {
+  if (!pad || !visible) return null;
+  for (const [button, action] of pad.buttons) {
+    const local = Vector3.TransformCoordinates(point, button.computeWorldMatrix(true).clone().invert());
+    if (Math.abs(local.x) <= BUTTON_WIDTH / 2 + 0.01 &&
+      Math.abs(local.y) <= BUTTON_HEIGHT / 2 + 0.01 && Math.abs(local.z) <= 0.04) return action;
+  }
+  return null;
 }
 
 // Grabs keep the pad's pose fixed relative to the grabbing hand/controller;

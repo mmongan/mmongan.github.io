@@ -7,7 +7,7 @@ import { InstancedMesh } from '@babylonjs/core/Meshes/instancedMesh';
 import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
-import { Observer } from '@babylonjs/core/Misc/observable.pure';
+import { Observable, Observer } from '@babylonjs/core/Misc/observable.pure';
 import { Node } from '@babylonjs/core/node';
 import { Scene } from '@babylonjs/core/scene.pure';
 import { createCollisionMarkerManager, COLLISION_MARKER_RADIUS_YARDS } from './collisionMarkers';
@@ -830,6 +830,37 @@ const globalPlayback: GlobalPlayback = {
   playing: false,
 };
 
+export interface DrillTransportState {
+  beat: number;
+  beatsPerSecond: number;
+  playing: boolean;
+  lastBeat: number;
+  revision: number;
+}
+
+let transportRevision = 0;
+export const onDrillTransportChangedObservable = new Observable<DrillTransportState>();
+
+export function getDrillTransportState(): DrillTransportState {
+  const cadence = COUNTS_PER_SECOND * globalPlayback.tempoMultiplier *
+    MARCHING_GAITS[selectedMarchingGait].tempoFactor;
+  const direction = Math.sign(globalPlayback.speedMultiplier);
+  const lastBeat = getMaxCountIndex();
+  return {
+    beat: Math.min(lastBeat, Math.max(0, globalPlayback.countIndex +
+      direction * Math.min(1, globalPlayback.stepAccumulatorSeconds * cadence))),
+    beatsPerSecond: cadence * globalPlayback.speedMultiplier,
+    playing: globalPlayback.playing,
+    lastBeat,
+    revision: transportRevision,
+  };
+}
+
+function notifyDrillTransport(discontinuity = false) {
+  if (discontinuity) transportRevision++;
+  onDrillTransportChangedObservable.notifyObservers(getDrillTransportState());
+}
+
 const players = new Map<TransformNode, PlayerState>();
 let sharedScene: Scene | null = null;
 let sharedObserver: Observer<Scene> | null = null;
@@ -1121,6 +1152,7 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState) {
 
 function applyGlobalCountToAllRobots() {
   players.forEach((state, robot) => applyGlobalCount(robot, state));
+  notifyDrillTransport();
 }
 
 // The longest registered route determines the full drill's length in counts.
@@ -1437,10 +1469,12 @@ export function refreshCollisionMarkers(scene: Scene) {
 export function playAll() {
   globalPlayback.speedMultiplier = Math.abs(globalPlayback.speedMultiplier) || 1;
   globalPlayback.playing = true;
+  notifyDrillTransport();
 }
 
 export function pauseAll() {
   globalPlayback.playing = false;
+  notifyDrillTransport();
 }
 
 export function toggleAllPlayback() {
@@ -1462,20 +1496,24 @@ export function getMarchTempo(): number {
 export function setMarchTempo(beatsPerMinute: number): number {
   const boundedBpm = Math.min(MAX_MARCH_TEMPO_BPM, Math.max(MIN_MARCH_TEMPO_BPM, beatsPerMinute));
   globalPlayback.tempoMultiplier = boundedBpm / (COUNTS_PER_SECOND * 60);
+  notifyDrillTransport();
   return getMarchTempo();
 }
 
 export function rewindAll() {
   globalPlayback.speedMultiplier = -2;
   globalPlayback.playing = true;
+  notifyDrillTransport();
 }
 
 export function fastForwardAll() {
   globalPlayback.speedMultiplier = 2;
   globalPlayback.playing = true;
+  notifyDrillTransport();
 }
 
 export function stepAll(direction: 1 | -1) {
+  transportRevision++;
   globalPlayback.playing = false;
   globalPlayback.stepAccumulatorSeconds = 0;
   globalPlayback.countIndex = Math.min(getMaxCountIndex(), Math.max(0, globalPlayback.countIndex + direction));
@@ -1484,6 +1522,7 @@ export function stepAll(direction: 1 | -1) {
 
 // Seeks to a 0..1 fraction along the full drill (e.g. tapping a point on the progress bar).
 export function seekAll(fraction: number) {
+  transportRevision++;
   globalPlayback.stepAccumulatorSeconds = 0;
   globalPlayback.countIndex = Math.round(Math.min(1, Math.max(0, fraction)) * getMaxCountIndex());
   applyGlobalCountToAllRobots();
@@ -1492,6 +1531,7 @@ export function seekAll(fraction: number) {
 // Seeks to an absolute count index (e.g. clicking a specific footstep handle)
 // and pauses there, so the clicked moment stays put instead of playing on.
 export function seekToCount(countIndex: number) {
+  transportRevision++;
   globalPlayback.stepAccumulatorSeconds = 0;
   globalPlayback.countIndex = Math.min(getMaxCountIndex(), Math.max(0, countIndex));
   globalPlayback.playing = false;

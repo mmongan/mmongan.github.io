@@ -17,6 +17,7 @@ import { captureContentRootMeshes, attachToARTransform } from '../xr/ar';
 import { createTeleportGrid, initXR } from '../xr/webXR';
 import { updateHandMenu } from '../menu/handMenu';
 import '../menu/settings';
+import { initMidiPlayback } from '../audio/midiPlayback';
 
 // Build static content before wiring up input and the WebXR experience.
 createSky();
@@ -34,6 +35,7 @@ fieldLevelInputs.forEach((input) => {
 updateFieldLevel();
 
 initInteraction();
+initMidiPlayback();
 
 // Snapshot of top-level meshes for AR tabletop mode — must be taken after all
 // real scene content exists but before the teleport grid is created, since the

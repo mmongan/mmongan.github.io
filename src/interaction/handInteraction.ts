@@ -1,4 +1,5 @@
 import { Axis } from '@babylonjs/core/Maths/math.axis';
+import { Ray } from '@babylonjs/core/Culling/ray';
 import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
 import { HighlightLayer } from '@babylonjs/core/Layers/highlightLayer';
 import { Matrix, Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
@@ -34,8 +35,11 @@ import {
   endDrillChartPadGrab,
   isDrillChartPadGrabbed,
   isPointNearDrillChartPad,
+  getDrillChartButtonNearPoint,
+  pickDrillChartPad,
   updateDrillChartPadGrab,
 } from '../menu/drillChartPad';
+import { getHandMenuHit } from '../menu/handMenu';
 import { getControllerYaw, rotateAroundY } from './controllers';
 
 type TrackedHand = NonNullable<ReturnType<WebXRHandTracking['getHandByHandedness']>>;
@@ -99,6 +103,7 @@ export interface HandPathDependencies {
   refreshStepHandles: () => void;
   snapToStepGrid: (point: Vector3) => Vector3;
   activateHandMenuAtPoint: (point: Vector3) => boolean;
+  activateChartButton: (action: NonNullable<ReturnType<typeof getHandMenuHit>>) => void;
 }
 
 export function createHandInteraction(paths: HandPathDependencies) {
@@ -128,6 +133,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
     refreshStepHandles,
     snapToStepGrid,
     activateHandMenuAtPoint,
+    activateChartButton,
   } = paths;
 
   const handPinches = new Map<string, boolean>();
@@ -766,9 +772,16 @@ export function createHandInteraction(paths: HandPathDependencies) {
       if (isDrillChartPadGrabbed(handedness)) {
         if (hand && point) updateDrillChartPadGrab(handedness, getHandGrabMatrix(hand));
         else endDrillChartPadGrab(handedness);
-      } else if (hand && point && !(handPinches.get(handedness) ?? false) && isPointNearDrillChartPad(point)) {
-        padHands.add(handedness);
-        if (!activateHandMenuAtPoint(point)) beginDrillChartPadGrab(handedness, getHandGrabMatrix(hand));
+      } else if (hand && point && !(handPinches.get(handedness) ?? false)) {
+        const pointer = hand.xrController.pointer;
+        const ray = new Ray(pointer.getAbsolutePosition(), pointer.getDirection(Axis.Z), 3);
+        const pick = pickDrillChartPad(ray);
+        const action = getDrillChartButtonNearPoint(point) ?? (pick ? getHandMenuHit(pick) : null);
+        if (action || isPointNearDrillChartPad(point) || pick) {
+          padHands.add(handedness);
+          if (action) activateChartButton(action);
+          else beginDrillChartPadGrab(handedness, getHandGrabMatrix(hand));
+        }
       }
       if (!point) padHands.delete(handedness);
       if (padHands.has(handedness)) {

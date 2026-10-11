@@ -204,6 +204,23 @@
           </form>
           <button id="openMarchExampleButton" type="button" class="xr-button secondary">Load example OpenMarch show</button>
           <output id="openMarchStatus" class="settings-status" for="openMarchUrl"></output>
+          <label class="settings-label" for="midiFile">Drill music (.mid / .midi)</label>
+          <input id="midiFile" type="file" accept=".mid,.midi,audio/midi,audio/x-midi" />
+          <label class="settings-label" for="midiUrl">MIDI URL</label>
+          <form id="midiUrlForm" class="url-row">
+            <input id="midiUrl" type="url" placeholder="https://example.com/music.mid" required />
+            <button type="submit" class="xr-button secondary">Load MIDI URL</button>
+          </form>
+          <button id="midiExampleButton" type="button" class="xr-button secondary">Load public-domain Sousa march</button>
+          <p>Startup music: The Stars and Stripes Forever (piano MIDI), J. P. Sousa. Public Domain edition by Benjamin Bloomfield, <a href="https://www.mutopiaproject.org/cgibin/piece-info.cgi?id=626" target="_blank" rel="noopener noreferrer">Mutopia Project</a>. URL servers must allow CORS downloads.</p>
+          <p>One drill count = one quarter-note beat. Music follows drill tempo, playback, and seeking. Enable audio before entering VR/AR.</p>
+          <div class="radio-row">
+            <button id="midiAudioButton" type="button">Enable MIDI audio</button>
+            <button id="midiClearButton" type="button" disabled>Clear MIDI</button>
+          </div>
+          <label class="settings-label" for="midiVolume">MIDI volume</label>
+          <input id="midiVolume" type="range" min="0" max="100" value="60" aria-label="MIDI volume" />
+          <output id="midiStatus" class="settings-status" for="midiFile" aria-live="polite">No MIDI loaded.</output>
           <label class="radio-option">
             <input type="checkbox" id="drillLabelsToggle" />
             <span>Show drill labels above marchers</span>

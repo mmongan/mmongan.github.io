@@ -23,6 +23,7 @@
   "dependencies": {
     "@babylonjs/core": "^9.29.0",
     "@babylonjs/loaders": "^9.29.0",
+    "@tonejs/midi": "^2.0.28",
     "sql.js": "^1.14.2",
     "vite": "^8.2.2"
   },
