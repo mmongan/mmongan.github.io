@@ -176,6 +176,8 @@ export type OpenMarchExportDrill = {
   setCounts: number[];
   // One track per marcher with a position for every count up to the last set.
   tracks: FieldPoint[][];
+  // Optional section and drill prefix per track (defaults: Trumpet, "T").
+  marchers?: { section: string; drillPrefix: string }[];
 };
 
 export type OpenMarchImportedDrill = {
@@ -370,15 +372,19 @@ export function writeOpenMarchDatabase(
     ]);
 
     let marcherPageId = 1;
+    const drillOrders = new Map<string, number>();
     drill.tracks.forEach((track, index) => {
       if (track.length === 0) return;
       const marcherId = index + 1;
+      const { section, drillPrefix } = drill.marchers?.[index] ?? { section: "Trumpet", drillPrefix: "T" };
+      const drillOrder = (drillOrders.get(drillPrefix) ?? 0) + 1;
+      drillOrders.set(drillPrefix, drillOrder);
       run(db, "INSERT INTO marchers (id, name, section, drill_prefix, drill_order) VALUES (?, ?, ?, ?, ?)", [
         marcherId,
-        `Marcher ${marcherId}`,
-        "Trumpet",
-        "T",
-        marcherId,
+        `${section} ${drillOrder}`,
+        section,
+        drillPrefix,
+        drillOrder,
       ]);
       const at = (count: number) => track[Math.min(track.length - 1, Math.max(0, count))];
       setCounts.forEach((count, page) => {

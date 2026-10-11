@@ -3,10 +3,14 @@ import type { SqlJsStatic } from "sql.js";
 import { FIELD_WIDTH_YARDS } from "../field/constants";
 import { readOpenMarchDatabase, type OpenMarchImportedDrill } from "./openMarchFormat";
 import type { MarcherInstrument } from "./robot";
+import exampleShowUrl from "../assets/openmarch/example-show.dots?url";
 
 // Query parameter that opens an OpenMarch show on startup, e.g.
 // `?openmarch=https://example.com/show.dots`.
 export const OPEN_MARCH_URL_PARAM = "openmarch";
+// Opens the bundled example show (scripts/make-openmarch-example.mts) instead
+// of a URL, e.g. `?openmarch=example`.
+export const OPEN_MARCH_EXAMPLE = "example";
 
 let sqlJs: Promise<SqlJsStatic> | null = null;
 
@@ -22,6 +26,7 @@ function loadSqlJs(): Promise<SqlJsStatic> {
 
 // Share links for file pages are rewritten to their raw download URLs.
 export function resolveOpenMarchUrl(input: string, base = window.location.href): URL {
+  if (input.trim().toLowerCase() === OPEN_MARCH_EXAMPLE) return new URL(exampleShowUrl, base);
   const url = new URL(input.trim(), base);
   const github = url.hostname === "github.com" && url.pathname.match(/^\/([^/]+)\/([^/]+)\/(?:blob|raw)\/(.+)$/);
   if (github) return new URL(`https://raw.githubusercontent.com/${github[1]}/${github[2]}/${github[3]}`);
@@ -45,7 +50,12 @@ export async function loadOpenMarchFromUrl(input: string): Promise<OpenMarchImpo
   }
   if (!response.ok) throw new Error(`Could not download ${url.href} (HTTP ${response.status}).`);
   const [SQL, bytes] = await Promise.all([loadSqlJs(), response.arrayBuffer()]);
-  const drill = readOpenMarchDatabase(SQL, new Uint8Array(bytes), FIELD_WIDTH_YARDS);
+  let drill: OpenMarchImportedDrill;
+  try {
+    drill = readOpenMarchDatabase(SQL, new Uint8Array(bytes), FIELD_WIDTH_YARDS);
+  } catch {
+    throw new Error(`${url.href} is not an OpenMarch .dots show.`);
+  }
   if (drill.tracks.length === 0) throw new Error("This OpenMarch show has no marchers with dots.");
   return drill;
 }

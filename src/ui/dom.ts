@@ -37,6 +37,7 @@ export const generateDrillButton = document.getElementById("generateDrillButton"
 export const openMarchForm = document.getElementById("openMarchForm") as HTMLFormElement | null;
 export const openMarchUrlInput = document.getElementById("openMarchUrl") as HTMLInputElement | null;
 export const openMarchButton = document.getElementById("openMarchButton") as HTMLButtonElement | null;
+export const openMarchExampleButton = document.getElementById("openMarchExampleButton") as HTMLButtonElement | null;
 export const openMarchStatus = document.getElementById("openMarchStatus") as HTMLOutputElement | null;
 
 export function getSelectedXRMode(): XRSessionMode {
