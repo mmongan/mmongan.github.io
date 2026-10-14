@@ -8,7 +8,7 @@
       content="Babylon.js WebXR VR and AR demo for Meta Quest 3"
     />
     <title>OpenChartxr</title>
-    <script type="module" crossorigin src="/assets/index-BkHhW3ml.js"></script>
+    <script type="module" crossorigin src="/assets/index-C6WxgJlf.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/rolldown-runtime-B0Z9INg1.js">
     <link rel="modulepreload" crossorigin href="/assets/engineStore-Bn2tApal.js">
     <link rel="modulepreload" crossorigin href="/assets/internalTexture-B3djGrls.js">
@@ -256,8 +256,8 @@
             <input id="midiUrl" type="url" placeholder="https://example.com/music.mid" required />
             <button type="submit" class="xr-button secondary">Load MIDI URL</button>
           </form>
-          <button id="midiExampleButton" type="button" class="xr-button secondary">Load public-domain Sousa march</button>
-          <p>Startup music: The Stars and Stripes Forever (piano MIDI), J. P. Sousa. Public Domain edition by Benjamin Bloomfield, <a href="https://www.mutopiaproject.org/cgibin/piece-info.cgi?id=626" target="_blank" rel="noopener noreferrer">Mutopia Project</a>. URL servers must allow CORS downloads.</p>
+          <button id="midiExampleButton" type="button" class="xr-button secondary">Load Liberty Bell full-band score</button>
+          <p>Startup music: The Liberty Bell (1893), J. P. Sousa, full-band MIDI with 20 woodwind, brass, and percussion tracks. From <a href="https://archive.org/details/InternetJukebox.JPS.48" target="_blank" rel="noopener noreferrer">Internet Archive</a>, marked <a href="https://creativecommons.org/publicdomain/mark/1.0/" target="_blank" rel="noopener noreferrer">Public Domain</a>. URL servers must allow CORS downloads.</p>
           <p>One drill count = one quarter-note beat. Music follows drill tempo, playback, and seeking. MIDI audio is enabled by default; click, tap, or press a key to unlock browser sound before entering VR/AR.</p>
           <div class="radio-row">
             <button id="midiAudioButton" type="button">Mute MIDI audio</button>
@@ -285,6 +285,7 @@
             <option value="2">2 measures (8 counts / 1 drill set)</option>
             <option value="3">3 measures</option>
             <option value="4">4 measures (show more staff)</option>
+            <option value="8">8 measures (overview)</option>
           </select>
           <details id="midiScore">
             <summary>Sheet music (MIDI preview)</summary>
