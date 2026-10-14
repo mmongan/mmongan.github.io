@@ -49,6 +49,12 @@ export function wrapAngle(angle: number): number {
   return Math.atan2(Math.sin(angle), Math.cos(angle));
 }
 
+export function buildGaitStepPhaseOffsets(stepsPerCount: ReadonlyArray<number>): number[] {
+  const offsets = [0];
+  for (const steps of stepsPerCount) offsets.push(offsets[offsets.length - 1] + steps);
+  return offsets;
+}
+
 // Yaw convention matches Babylon/robot.ts: yaw = atan2(dx, dz).
 export function selectAutoGait(
   facingYaw: number,

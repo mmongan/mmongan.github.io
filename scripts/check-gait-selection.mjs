@@ -7,10 +7,11 @@ const source = readFileSync(new URL('../src/robot/gaitSelection.ts', import.meta
 const context = vm.createContext({ Math });
 vm.runInContext(
   `${stripTypeScriptTypes(source, { mode: 'transform' }).replace(/export /g, '')}
-globalThis.selectAutoGait = selectAutoGait;`,
+globalThis.selectAutoGait = selectAutoGait;
+globalThis.buildGaitStepPhaseOffsets = buildGaitStepPhaseOffsets;`,
   context
 );
-const { selectAutoGait } = context;
+const { selectAutoGait, buildGaitStepPhaseOffsets } = context;
 
 const yard = 0.625; // 8-to-5
 const deg = (value) => (value * Math.PI) / 180;
@@ -60,5 +61,7 @@ near(result.strideYards, yard);
 assert.equal(result.label, 'Double Time Backward March');
 assert.equal(pick(0, 0, 5 / 6).stepsPerCount, 1);
 assert.equal(pick(0, 0, 5 / 12).stepsPerCount, 1);
+
+assert.deepEqual(Array.from(buildGaitStepPhaseOffsets([0.5, 0.5, 2, 1])), [0, 0.5, 1, 3, 4]);
 
 console.log('Gait selection checks passed: mark time, forward styles, backward, crab walk left/right, and half/double time cadence.');

@@ -11,7 +11,7 @@ import { Observable, Observer } from '@babylonjs/core/Misc/observable.pure';
 import { Node } from '@babylonjs/core/node';
 import { Scene } from '@babylonjs/core/scene.pure';
 import { createCollisionMarkerManager, COLLISION_MARKER_RADIUS_YARDS } from './collisionMarkers';
-import { isAutoGaitStyle, selectAutoGait } from './gaitSelection';
+import { buildGaitStepPhaseOffsets, isAutoGaitStyle, selectAutoGait } from './gaitSelection';
 import { resolveRepeatPlayback } from './playbackRepeat';
 import { registerManualPlacementMarcher, tryManualMarcherPose } from './manualPlacement';
 import { CLARINET_MOUTHPIECE_TIP, getClarinetTemplate } from './clarinetModel';
@@ -799,6 +799,7 @@ interface PlayerState {
   points: Vector3[];
   stepSizeYards: number;
   counts: RobotCount[];
+  gaitPhaseCache?: Map<number, { counts: RobotCount[]; offsets: number[] }>;
   // Facing held for the whole route; reapplied whenever counts are rebuilt.
   fixedFacingY?: number;
 }
@@ -1026,6 +1027,17 @@ function resolveSegmentGait(
   };
 }
 
+function getGaitStepPhaseOffsets(state: PlayerState, styleIndex: number): number[] {
+  const cached = state.gaitPhaseCache?.get(styleIndex);
+  if (cached?.counts === state.counts) return cached.offsets;
+
+  const stepsPerCount = Array.from({ length: Math.max(0, state.counts.length - 1) }, (_, index) =>
+    resolveSegmentGait(state, index, styleIndex)?.stepsPerCount ?? 0);
+  const offsets = buildGaitStepPhaseOffsets(stepsPerCount);
+  (state.gaitPhaseCache ??= new Map()).set(styleIndex, { counts: state.counts, offsets });
+  return offsets;
+}
+
 // The gait a marcher uses leaving the given count (e.g. for labels/debugging).
 export function getRobotGaitAtCount(robot: TransformNode, countIndex: number): string | null {
   const state = players.get(robot);
@@ -1128,8 +1140,9 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState) {
       (displacement.x * sin + displacement.z * cos) / (stepsPerCount * MARCHER_BODY_SCALE * MARCHER_BUILD_SCALE),
     );
   }
-  const stepPhase = (segmentStart + forwardProgress) * stepsPerCount;
-  const stepNumber = Math.min(Math.floor(stepPhase), Math.ceil((segmentStart + 1) * stepsPerCount) - 1);
+  const stepPhaseStart = getGaitStepPhaseOffsets(state, parts.gaitIndex)[segmentStart];
+  const stepPhase = stepPhaseStart + forwardProgress * stepsPerCount;
+  const stepNumber = Math.min(Math.floor(stepPhase), Math.ceil(stepPhaseStart + stepsPerCount) - 1);
   const gaitProgress = Math.min(1, stepPhase - stepNumber);
   const gaitPoses = MARCHING_GAIT_POSES[gaitIndex];
   const gait = MARCHING_GAITS[gaitIndex];
@@ -1517,6 +1530,7 @@ export function setRobotCountPosition(
   if (!accepted) return;
   count.position.copyFrom(position);
   count.rotationY = rotationY;
+  state.gaitPhaseCache?.clear();
 
   applyGlobalCount(robot, state);
   recalculateCollisionMarkers(scene);
