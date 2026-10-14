@@ -245,6 +245,7 @@ const robotPathLines = new Map<TransformNode, Mesh>();
 const pathLineOwner = new Map<AbstractMesh, TransformNode>();
 let selectedRobot: TransformNode | null = null;
 let showAllPaths = !!showAllPathsToggle?.checked;
+let pathsHiddenByFieldClick = true;
 
 // Paths/segments are drawn as tubes connecting the grab-point balls instead
 // of thin CreateLines meshes, so drawn routes are actually visible in VR.
@@ -323,11 +324,13 @@ export function refreshPathLineAppearance() {
     const isSelected = robot === selectedRobot;
     const color = getRobotColor(robot);
     setTubeLineAppearance(line, color, isSelected ? PATH_SELECTED_ALPHA : PATH_UNSELECTED_ALPHA);
-    line.setEnabled(isMarcherPOVActive() ? isSelected : showAllPaths || isSelected || selectedRobot !== null);
+    line.setEnabled(!pathsHiddenByFieldClick &&
+      (isMarcherPOVActive() ? isSelected : showAllPaths || isSelected || selectedRobot !== null));
   });
 }
 
-export function selectRobot(robot: TransformNode | null) {
+export function selectRobot(robot: TransformNode | null, revealPaths = false) {
+  if (revealPaths) pathsHiddenByFieldClick = false;
   selectedRobot = robot;
   refreshPathLineAppearance();
   refreshStepHandles();
@@ -366,7 +369,7 @@ function clearStepHandles() {
 
 function refreshStepHandles() {
   clearStepHandles();
-  if (!selectedRobot) return;
+  if (!selectedRobot || pathsHiddenByFieldClick) return;
   const counts = getRobotCounts(selectedRobot);
   if (!counts) return;
 
@@ -388,11 +391,13 @@ function refreshStepHandles() {
 }
 
 showAllPathsToggle?.addEventListener("change", () => {
+  pathsHiddenByFieldClick = false;
   showAllPaths = !!showAllPathsToggle?.checked;
   refreshPathLineAppearance();
 });
 
 function toggleShowAllPaths() {
+  pathsHiddenByFieldClick = false;
   showAllPaths = !showAllPaths;
   if (showAllPathsToggle) showAllPathsToggle.checked = showAllPaths;
   refreshPathLineAppearance();
@@ -968,7 +973,7 @@ function growSegmentPointHandles(segment: Segment) {
 }
 
 function updateSegmentHandleVisibility(segment: Segment) {
-  const visible = selectedRobot !== null && segment.robots.includes(selectedRobot);
+  const visible = !pathsHiddenByFieldClick && selectedRobot !== null && segment.robots.includes(selectedRobot);
   segment.moveHandle.setEnabled(visible);
   segment.pointHandles.forEach((handle) => handle.setEnabled(visible));
   segment.rotationHandles.forEach((handle) => handle.setEnabled(visible));
@@ -2486,6 +2491,24 @@ export function initInteraction() {
       return;
     }
     const robot = findRobotRoot(pickedMesh);
-    if (robot) selectRobot(robot);
+    if (robot) {
+      selectRobot(robot);
+      if (!isMarcherPOVActive()) setMarcherPOVEnabled(true);
+      return;
+    }
+    let fieldNode: import('@babylonjs/core/node').Node | null = pickedMesh;
+    while (fieldNode) {
+      if (/^(field|fieldLines|hashMarks|leftEndZone|rightEndZone)$/.test(fieldNode.name) ||
+        fieldNode.name.startsWith("turfStripe")) {
+        pathsHiddenByFieldClick = true;
+        showAllPaths = false;
+        if (showAllPathsToggle) showAllPathsToggle.checked = false;
+        refreshPathLineAppearance();
+        clearStepHandles();
+        segments.forEach(updateSegmentHandleVisibility);
+        return;
+      }
+      fieldNode = fieldNode.parent;
+    }
   });
 }

@@ -1,9 +1,9 @@
 // Shared DOM references for the canvas and application controls.
 export const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
-export const marcherPOVToggle = document.getElementById("marcherPOVToggle") as HTMLInputElement | null;
 export const marcherPOVSelect = document.getElementById("marcherPOVSelect") as HTMLSelectElement | null;
 export const marcherPOVStatus = document.getElementById("marcherPOVStatus") as HTMLOutputElement | null;
 export const marcherPOVExitButton = document.getElementById("marcherPOVExitButton") as HTMLButtonElement | null;
+export const marcherPOVModeButton = document.getElementById("marcherPOVModeButton") as HTMLButtonElement | null;
 export const xrModeInputs = Array.from(
   document.querySelectorAll<HTMLInputElement>('input[name="xrMode"]')
 );

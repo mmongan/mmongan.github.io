@@ -303,6 +303,60 @@ body {
   margin-bottom: 12px;
 }
 
+.construction-banner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 16px;
+  padding: 8px 14px;
+  border: 1px solid rgba(255, 155, 53, 0.5);
+  border-radius: 12px;
+  background: rgba(255, 133, 24, 0.1);
+  color: #ffd09a;
+}
+
+.traffic-cone-preview {
+  width: 72px;
+  height: 76px;
+  flex: 0 0 72px;
+  perspective: 240px;
+  pointer-events: none;
+}
+
+.traffic-cone {
+  position: relative;
+  width: 72px;
+  height: 76px;
+  transform-style: preserve-3d;
+  transform: rotateX(-18deg) rotateY(-25deg);
+}
+
+.traffic-cone-face {
+  position: absolute;
+  left: 30.65px;
+  bottom: 14px;
+  width: 10.7px;
+  height: 52px;
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  background: linear-gradient(to bottom, #ff8a24 0 30%, #fff3de 30% 48%, #ef7014 48% 67%, #fff3de 67% 82%, #e55c09 82%);
+  transform-origin: 50% 100%;
+  transform: rotateY(calc(var(--face) * 30deg)) translateZ(20px) rotateX(22.6deg);
+  backface-visibility: hidden;
+}
+
+.traffic-cone-base {
+  position: absolute;
+  left: 9px;
+  bottom: -13px;
+  width: 54px;
+  height: 54px;
+  border-radius: 5px;
+  background: #cb4e08;
+  border: 3px solid #ff8a24;
+  box-sizing: border-box;
+  transform: rotateX(90deg);
+}
+
 .settings-close-button {
   background: none;
   border: none;

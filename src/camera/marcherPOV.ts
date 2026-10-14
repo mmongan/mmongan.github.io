@@ -7,12 +7,12 @@ import { camera as desktopCamera, setDesktopMarcherPOV } from './desktopCamera';
 import { MarcherPOVCamera } from './marcherPOVCamera';
 import { getMarcherEyePose } from '../robot/robot';
 import { setMarcherPOVMenuActive } from '../menu/handMenu';
-import { marcherPOVToggle, marcherPOVSelect, marcherPOVStatus, marcherPOVExitButton } from '../ui/dom';
+import { marcherPOVSelect, marcherPOVStatus, marcherPOVExitButton, marcherPOVModeButton } from '../ui/dom';
 
 const follower = new MarcherPOVCamera(getMarcherEyePose);
 let getSelected: () => TransformNode | null = () => null;
 let getMarchers: () => TransformNode[] = () => [];
-let selectMarcher: (robot: TransformNode | null) => void = () => {};
+let selectMarcher: (robot: TransformNode | null, revealPaths?: boolean) => void = () => {};
 let availableVR: () => boolean = () => false;
 let listSignature = '';
 let startupPOVPending = true;
@@ -57,7 +57,7 @@ export function setMarcherPOVEnabled(enabled: boolean) {
 }
 
 function publish(message: string) {
-  if (marcherPOVToggle) marcherPOVToggle.checked = follower.active;
+  marcherPOVModeButton?.setAttribute('aria-pressed', String(follower.active));
   if (marcherPOVExitButton) marcherPOVExitButton.hidden = !follower.active;
   if (marcherPOVStatus) marcherPOVStatus.textContent = message;
   setMarcherPOVMenuActive(follower.active);
@@ -76,7 +76,7 @@ function updateFollower() {
 function refreshMarcherList() {
   const marchers = getMarchers().filter(robot => !robot.isDisposed() && robot.isEnabled());
   if (startupPOVPending && marchers.length > 0) {
-    selectMarcher(marchers[0]);
+    selectMarcher(marchers[0], false);
     setMarcherPOVEnabled(true);
   }
   const signature = marchers.map(robot => robot.uniqueId).join(',');
@@ -99,17 +99,16 @@ function refreshMarcherList() {
 export function initMarcherPOV(
   selected: () => TransformNode | null,
   marchers: () => TransformNode[],
-  select: (robot: TransformNode | null) => void,
+  select: (robot: TransformNode | null, revealPaths?: boolean) => void,
   updatePaths: () => void,
 ) {
   getSelected = selected;
   getMarchers = marchers;
   selectMarcher = select;
   refreshPaths = updatePaths;
-  const toggle = marcherPOVToggle;
   const selector = marcherPOVSelect;
-  toggle?.addEventListener('change', () => setMarcherPOVEnabled(toggle.checked));
   marcherPOVExitButton?.addEventListener('click', () => setMarcherPOVEnabled(false));
+  marcherPOVModeButton?.addEventListener('click', () => setMarcherPOVEnabled(!follower.active));
   selector?.addEventListener('change', () => {
     selectMarcher(getMarchers().find(robot => String(robot.uniqueId) === selector.value) ?? null);
     if (follower.active) updateFollower();
