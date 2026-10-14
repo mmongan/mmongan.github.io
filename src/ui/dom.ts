@@ -94,6 +94,10 @@ export const formationScale = document.getElementById("formationScale") as HTMLI
 export const formationEditorStatus = document.getElementById("formationEditorStatus") as HTMLOutputElement | null;
 export const gridSnapToggle = document.getElementById("gridSnapToggle") as HTMLInputElement | null;
 export const gridSnapInterval = document.getElementById("gridSnapInterval") as HTMLSelectElement | null;
+export const gridSnapX = document.getElementById("gridSnapX") as HTMLInputElement | null;
+export const gridSnapZ = document.getElementById("gridSnapZ") as HTMLInputElement | null;
+export const formationLockX = document.getElementById("formationLockX") as HTMLInputElement | null;
+export const formationLockZ = document.getElementById("formationLockZ") as HTMLInputElement | null;
 export const angleSnapToggle = document.getElementById("angleSnapToggle") as HTMLInputElement | null;
 
 export function getSelectedXRMode(): XRSessionMode {

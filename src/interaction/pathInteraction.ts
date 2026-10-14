@@ -23,11 +23,15 @@ import {
   isARTabletopModeActive,
 } from '../xr/ar';
 import { scene } from '../scene/engine';
-import { snapDrillPoint, transformFormationPoint, type FormationTransform } from './drillEditing';
+import {
+  alignFormationPoints, constrainDrillMovement, snapDrillPoint, transformFormationPoint,
+  type FormationAlignment, type FormationTransform,
+} from './drillEditing';
 import {
   formationEditor, formationPresetSelect, formationSelection, formationSpacingInput,
   formationOriginX, formationOriginZ, formationMoveX, formationMoveZ, formationRotation,
   formationScale, formationEditorStatus, gridSnapToggle, gridSnapInterval, angleSnapToggle,
+  gridSnapX, gridSnapZ, formationLockX, formationLockZ,
 } from '../ui/dom';
 import { getMediaControllerHand, swapControllerRolesToggle, handThumbJogToggle } from '../ui/dom';
 import { resetThumbJog, updateThumbJog } from './thumbJogGesture';
@@ -644,15 +648,40 @@ function updateRobotPathLine(robot: TransformNode, points: Vector3[]) {
 
 // The 8 standard facing directions (45° increments), so drawn angles snap to drill grid.
 const ANGLE_SNAP_RADIANS = Math.PI / 4;
+let bypassDrillSnap = false;
+
+gridSnapInterval?.addEventListener("change", () => {
+  const interval = gridSnapInterval?.value;
+  if (!interval || interval === "custom") return;
+  if (gridSnapX) gridSnapX.value = interval;
+  if (gridSnapZ) gridSnapZ.value = interval;
+});
+for (const input of [gridSnapX, gridSnapZ]) {
+  input?.addEventListener("input", () => {
+    if (gridSnapInterval) gridSnapInterval.value = "custom";
+  });
+}
 
 function snapToStepGrid(point: Vector3): Vector3 {
-  if (!gridSnapToggle?.checked) return point;
-  const snapped = snapDrillPoint(point, Number(gridSnapInterval?.value ?? MARCH_STEP_YARDS));
+  if (!gridSnapToggle?.checked || bypassDrillSnap) return point;
+  const x = Number(gridSnapX?.value ?? MARCH_STEP_YARDS);
+  const z = Number(gridSnapZ?.value ?? MARCH_STEP_YARDS);
+  if (![x, z].every(value => Number.isFinite(value) && value >= 0.001 && value <= 10)) {
+    publishFormationEdit("Grid rounding must be between 0.001 and 10 yards on each axis. Snapping was not applied.");
+    return point;
+  }
+  const snapped = snapDrillPoint(point, x, z);
   return new Vector3(snapped.x, snapped.y, snapped.z);
 }
 
 function snapAngle(angle: number): number {
-  return angleSnapToggle?.checked ? Math.round(angle / ANGLE_SNAP_RADIANS) * ANGLE_SNAP_RADIANS : angle;
+  return angleSnapToggle?.checked && !bypassDrillSnap
+    ? Math.round(angle / ANGLE_SNAP_RADIANS) * ANGLE_SNAP_RADIANS : angle;
+}
+
+function constrainFormationMovement(delta: Vector3): Vector3 {
+  const result = constrainDrillMovement(delta, !!formationLockX?.checked, !!formationLockZ?.checked);
+  return new Vector3(result.x, result.y, result.z);
 }
 
 function resampleLineEvenly(points: Vector3[], spacingYards: number, closed = false): Vector3[] {
@@ -997,9 +1026,12 @@ function createSegmentHandle(name: string, size: number, color: Color3): Mesh {
   return handle;
 }
 
-// Adds point handles for any control points that don't have one yet (e.g.
-// after extending a path segment), registering them for picking.
-function growSegmentPointHandles(segment: Segment) {
+function syncSegmentPointHandles(segment: Segment) {
+  while (segment.pointHandles.length > segment.controlPoints.length) {
+    const handle = segment.pointHandles.pop()!;
+    segmentPointHandleOwner.delete(handle);
+    handle.dispose();
+  }
   while (segment.pointHandles.length < segment.controlPoints.length) {
     const index = segment.pointHandles.length;
     const handle = createSegmentHandle("segmentPointHandle", SEGMENT_POINT_HANDLE_SIZE, SEGMENT_COLORS[segment.kind]);
@@ -1159,7 +1191,7 @@ function refreshSegmentVisuals(segment: Segment) {
     }
   }
 
-  growSegmentPointHandles(segment);
+  syncSegmentPointHandles(segment);
   segment.pointHandles.forEach((handle, i) => handle.position.copyFrom(segment.controlPoints[i]));
 
   const midIndex = Math.floor(segment.controlPoints.length / 2);
@@ -1554,25 +1586,41 @@ function refreshFormationEditor() {
   formationSelection.value = current ? String(current.robots[0].uniqueId) : "";
 }
 
-function transformEditorFormation(transform: FormationTransform, spacing?: number): boolean {
+function getEditableEditorFormation(): Segment | undefined {
   const segment = getEditorFormation();
   if (!segment) {
     publishFormationEdit("Select a standing form first. Imported marching routes are unchanged.");
-    return false;
+    return undefined;
   }
   if (segment.robots.some((robot) => getRobotCounts(robot) !== null || robot.isDisposed())) {
     publishFormationEdit("This form contains marching routes. Stop using it as a route before editing the standing form.");
-    return false;
+    return undefined;
   }
+  return segment;
+}
+
+function refreshEditedFormation(segment: Segment) {
+  acceptedFormationControls.set(segment, segment.controlPoints.map(point => point.clone()));
+  rebuildFormationConnections(segment);
+  refreshSegmentVisuals(segment);
+  refreshCollisionMarkers(scene);
+}
+
+function transformEditorFormation(transform: FormationTransform, spacing?: number): boolean {
+  const segment = getEditableEditorFormation();
+  if (!segment) return false;
   const nextSpacing = spacing ?? (segment.spacing ?? FORMATION_SPACING_YARDS) * transform.scale;
   if (!Number.isFinite(nextSpacing) || nextSpacing < 0.625 || nextSpacing > 10) {
     publishFormationEdit("Scaling must keep marcher spacing between 0.625 and 10 yards.");
     return false;
   }
   const center = getSegmentCenter(segment.controlPoints);
+  const translation = constrainFormationMovement(new Vector3(transform.x, 0, transform.z));
+  transform = { ...transform, x: translation.x, z: translation.z };
   if (gridSnapToggle?.checked) {
     const target = snapToStepGrid(center.add(new Vector3(transform.x, 0, transform.z)));
-    transform = { ...transform, x: target.x - center.x, z: target.z - center.z };
+    const snappedTranslation = constrainFormationMovement(target.subtract(center));
+    transform = { ...transform, x: snappedTranslation.x, z: snappedTranslation.z };
   }
   transform = { ...transform, rotation: snapAngle(transform.rotation) };
   const move = (point: Vector3) => {
@@ -1589,11 +1637,30 @@ function transformEditorFormation(transform: FormationTransform, spacing?: numbe
   eraseHistory.clear();
   segment.controlPoints = segment.controlPoints.map(move);
   segment.spacing = nextSpacing;
-  acceptedFormationControls.set(segment, segment.controlPoints.map((point) => point.clone()));
-  rebuildFormationConnections(segment);
-  refreshSegmentVisuals(segment);
-  refreshCollisionMarkers(scene);
+  refreshEditedFormation(segment);
   publishFormationEdit(`Updated ${segment.robots.length} marchers; spacing ${segment.spacing.toFixed(3)} yards. Routes unchanged.`);
+  return true;
+}
+
+function alignEditorFormation(action: FormationAlignment | "round"): boolean {
+  const segment = getEditableEditorFormation();
+  if (!segment) return false;
+  const points = segment.robots.map(robot => robot.position);
+  const targets = action === "round" ? points.map(point => snapDrillPoint(point, 1))
+    : alignFormationPoints(points, action);
+  const positions = targets.map(point => new Vector3(point.x, point.y, point.z));
+  if (!tryManualMarcherPoses(segment.robots.map((robot, index) => ({
+    robot, position: positions[index], rotationY: robot.rotation.y,
+  })), false)) {
+    publishFormationEdit("Form edit blocked: leave room for every marcher's body and instrument. Nothing was changed.");
+    return false;
+  }
+  eraseHistory.clear();
+  segment.controlPoints = positions.map(point => point.clone());
+  segment.fitClosedCircle = false;
+  segment.erasedFormationIndices?.clear();
+  refreshEditedFormation(segment);
+  publishFormationEdit(`Updated ${positions.length} marchers with ${action === "round" ? "whole-yard rounding" : action}. Routes unchanged.`);
   return true;
 }
 
@@ -1645,6 +1712,11 @@ formationEditor?.addEventListener("submit", (event) => {
     return;
   }
   const action = event.submitter instanceof HTMLButtonElement ? event.submitter.value : "create";
+  if (action === "alignX" || action === "alignZ" || action === "distributeX" ||
+    action === "distributeZ" || action === "round") {
+    alignEditorFormation(action);
+    return;
+  }
   const spacing = Number(formationSpacingInput?.value);
   if (!Number.isFinite(spacing) || spacing < 0.625 || spacing > 10) {
     publishFormationEdit("Spacing must be between 0.625 and 10 yards.");
@@ -2313,7 +2385,8 @@ export function updateRobotPathFromControllers() {
         const point = getFieldPointFromController(controller);
         if (point) {
           if (lastMovePoint) {
-            const delta = point.subtract(lastMovePoint);
+            const delta = movingSegment.kind === "formation"
+              ? constrainFormationMovement(point.subtract(lastMovePoint)) : point.subtract(lastMovePoint);
             if (tryManualMarcherPoses(movingSegment.robots.map((robot) => ({
               robot, position: robot.position.add(delta),
             })))) {
@@ -2332,7 +2405,9 @@ export function updateRobotPathFromControllers() {
       if (reshapingSegment) {
         const point = getFieldPointFromController(controller);
         if (point) {
-          reshapingSegment.segment.controlPoints[reshapingSegment.index] = point;
+          const original = reshapingSegment.segment.controlPoints[reshapingSegment.index];
+          reshapingSegment.segment.controlPoints[reshapingSegment.index] = reshapingSegment.segment.kind === "formation"
+            ? original.add(constrainFormationMovement(point.subtract(original))) : point;
           rebuildSegmentContent(reshapingSegment.segment);
           refreshSegmentVisuals(reshapingSegment.segment);
         }
@@ -2611,15 +2686,30 @@ export function initInteraction() {
   undoEraseButton?.addEventListener("click", () => executeMenuAction({ action: "undoErase" }));
   redoEraseButton?.addEventListener("click", () => executeMenuAction({ action: "redoErase" }));
   window.addEventListener("keydown", (event) => {
+    bypassDrillSnap = event.shiftKey;
     const target = event.target;
     if (target instanceof HTMLElement && (
       target.isContentEditable || target.closest("input, textarea, select")
     )) return;
+    if (event.key === "1" && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      if (floorCalibrationToggle?.checked) {
+        publishFormationEdit("Finish floor calibration before editing forms.");
+        return;
+      }
+      event.preventDefault();
+      alignEditorFormation("round");
+      return;
+    }
     if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
     const key = event.key.toLowerCase();
     if (key !== "z" && key !== "y") return;
     event.preventDefault();
     executeMenuAction({ action: key === "y" || event.shiftKey ? "redoErase" : "undoErase" });
+  });
+  window.addEventListener("keyup", event => { bypassDrillSnap = event.shiftKey; });
+  window.addEventListener("blur", () => { bypassDrillSnap = false; });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) bypassDrillSnap = false;
   });
   const getMarcherCount = () => Math.max(1, Math.min(100, Math.round(Number(marcherCountInput?.value) || 8)));
   const updateMarcherCountValue = () => {
