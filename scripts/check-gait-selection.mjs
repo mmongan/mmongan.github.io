@@ -8,10 +8,11 @@ const context = vm.createContext({ Math });
 vm.runInContext(
   `${stripTypeScriptTypes(source, { mode: 'transform' }).replace(/export /g, '')}
 globalThis.selectAutoGait = selectAutoGait;
-globalThis.buildGaitStepPhaseOffsets = buildGaitStepPhaseOffsets;`,
+globalThis.buildGaitStepPhaseOffsets = buildGaitStepPhaseOffsets;
+globalThis.gaitPhaseAtBeat = gaitPhaseAtBeat;`,
   context
 );
-const { selectAutoGait, buildGaitStepPhaseOffsets } = context;
+const { selectAutoGait, buildGaitStepPhaseOffsets, gaitPhaseAtBeat } = context;
 
 const yard = 0.625; // 8-to-5
 const deg = (value) => (value * Math.PI) / 180;
@@ -63,5 +64,15 @@ assert.equal(pick(0, 0, 5 / 6).stepsPerCount, 1);
 assert.equal(pick(0, 0, 5 / 12).stepsPerCount, 1);
 
 assert.deepEqual(Array.from(buildGaitStepPhaseOffsets([0.5, 0.5, 2, 1])), [0, 0.5, 1, 3, 4]);
+
+for (const cadence of [0.5, 1, 2]) {
+  for (let step = 0; step < 16; step++) {
+    const beat = step / cadence;
+    const phase = gaitPhaseAtBeat(beat, cadence);
+    assert.equal(phase.stepNumber, step);
+    assert.equal(phase.progress, 0, 'Footfall lands on its MIDI beat subdivision');
+    near(gaitPhaseAtBeat(beat + 0.5 / cadence, cadence).progress, 0.5);
+  }
+}
 
 console.log('Gait selection checks passed: mark time, forward styles, backward, crab walk left/right, and half/double time cadence.');

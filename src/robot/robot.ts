@@ -11,7 +11,7 @@ import { Observable, Observer } from '@babylonjs/core/Misc/observable.pure';
 import { Node } from '@babylonjs/core/node';
 import { Scene } from '@babylonjs/core/scene.pure';
 import { createCollisionMarkerManager, COLLISION_MARKER_RADIUS_YARDS } from './collisionMarkers';
-import { buildGaitStepPhaseOffsets, isAutoGaitStyle, selectAutoGait } from './gaitSelection';
+import { buildGaitStepPhaseOffsets, gaitPhaseAtBeat, isAutoGaitStyle, selectAutoGait } from './gaitSelection';
 import { resolveRepeatPlayback } from './playbackRepeat';
 import { registerManualPlacementMarcher, tryManualMarcherPose } from './manualPlacement';
 import { CLARINET_MOUTHPIECE_TIP, getClarinetTemplate } from './clarinetModel';
@@ -811,7 +811,6 @@ const DEFAULT_STEP_SIZE_YARDS = 0.625;
 const COUNTS_PER_SECOND = 4;
 export const MIN_MARCH_TEMPO_BPM = 60;
 export const MAX_MARCH_TEMPO_BPM = 120;
-const STEP_INTERVAL_SECONDS = 1 / COUNTS_PER_SECOND;
 const MARCHING_GAIT_POSES = MARCHING_GAITS.map((gait) =>
   Array.from({ length: 9 }, (_, index) => {
     const progress = index / 8;
@@ -854,9 +853,15 @@ export interface DrillTransportState {
   revision: number;
 }
 
+export interface PlaybackTempoEvent {
+  beat: number;
+  bpm: number;
+}
+
 let transportRevision = 0;
 let repeatElapsed: number | null = null;
 let repeatOptions = { drill: false, song: false, songLength: 0 };
+let playbackTempoMap: ReadonlyArray<PlaybackTempoEvent> | null = null;
 
 export function setPlaybackRepeat(drill: boolean, song: boolean) {
   repeatElapsed ??= getDrillTransportState().beat;
@@ -871,24 +876,107 @@ export function setPlaybackSongLength(songLength: number) {
   notifyDrillTransport(true);
 }
 
+export function setPlaybackTempoMap(tempoMap: ReadonlyArray<PlaybackTempoEvent> | null) {
+  const beat = getDrillTransportState().beat;
+  playbackTempoMap = tempoMap?.map((event) => ({ ...event })) ?? null;
+  setDrillBeatPosition(beat);
+  notifyDrillTransport(true);
+}
+
 export function getMusicTransportState(): DrillTransportState {
   const state = getDrillTransportState();
   if (repeatElapsed === null) return state;
   const frame = resolveRepeatPlayback(repeatElapsed, state.lastBeat, repeatOptions);
   return { ...state, beat: frame.songBeat, lastBeat: frame.songEnd,
+    beatsPerSecond: globalPlayback.speedMultiplier / getCountInterval(frame.songBeat),
     revision: state.revision + frame.songCycle };
 }
 
 export const onDrillTransportChangedObservable = new Observable<DrillTransportState>();
 
+function getTempoBpmAtBeat(beat: number): number {
+  if (!playbackTempoMap?.length) return COUNTS_PER_SECOND * 60 * globalPlayback.tempoMultiplier;
+  let low = 0;
+  let high = playbackTempoMap.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (playbackTempoMap[middle].beat <= beat) low = middle + 1;
+    else high = middle;
+  }
+  return low > 0 ? playbackTempoMap[low - 1].bpm : 120;
+}
+
+function getCountInterval(beat: number, gaitIndex = selectedMarchingGait): number {
+  return 60 / (getTempoBpmAtBeat(Math.max(0, beat)) * MARCHING_GAITS[gaitIndex].tempoFactor);
+}
+
+const TEMPO_BOUNDARY_EPSILON = 1e-9;
+
+function nextTempoBoundary(beat: number, end: number, direction: 1 | -1): number {
+  if (!playbackTempoMap) return end;
+  let boundary = end;
+  for (const event of playbackTempoMap) {
+    if (direction > 0 && event.beat > beat + TEMPO_BOUNDARY_EPSILON && event.beat < boundary) {
+      boundary = event.beat;
+    } else if (direction < 0 && event.beat < beat - TEMPO_BOUNDARY_EPSILON && event.beat > boundary) {
+      boundary = event.beat;
+    }
+  }
+  return boundary;
+}
+
+function getSecondsBetweenBeats(start: number, end: number, gaitIndex = selectedMarchingGait): number {
+  const direction: 1 | -1 = end >= start ? 1 : -1;
+  let beat = start;
+  let seconds = 0;
+  while (direction * (end - beat) > TEMPO_BOUNDARY_EPSILON) {
+    const tempoBeat = direction > 0 ? beat : beat - TEMPO_BOUNDARY_EPSILON;
+    const boundary = nextTempoBoundary(beat, end, direction);
+    seconds += Math.abs(boundary - beat) * getCountInterval(tempoBeat, gaitIndex);
+    beat = boundary;
+  }
+  return seconds;
+}
+
+function advanceBeatBySeconds(
+  start: number,
+  end: number,
+  seconds: number,
+  gaitIndex = selectedMarchingGait
+): number {
+  const direction: 1 | -1 = end >= start ? 1 : -1;
+  let beat = start;
+  let remainingSeconds = Math.max(0, seconds);
+  while (direction * (end - beat) > TEMPO_BOUNDARY_EPSILON && remainingSeconds > 0) {
+    const tempoBeat = direction > 0 ? beat : beat - TEMPO_BOUNDARY_EPSILON;
+    const boundary = nextTempoBoundary(beat, end, direction);
+    const interval = getCountInterval(tempoBeat, gaitIndex);
+    const secondsToBoundary = Math.abs(boundary - beat) * interval;
+    if (remainingSeconds < secondsToBoundary) return beat + direction * remainingSeconds / interval;
+    beat = boundary;
+    remainingSeconds -= secondsToBoundary;
+  }
+  return beat;
+}
+
+function setDrillBeatPosition(beat: number) {
+  const reverse = globalPlayback.speedMultiplier < 0;
+  globalPlayback.countIndex = reverse ? Math.ceil(beat) : Math.floor(beat);
+  globalPlayback.stepAccumulatorSeconds = getSecondsBetweenBeats(globalPlayback.countIndex, beat);
+}
+
 export function getDrillTransportState(): DrillTransportState {
-  const cadence = COUNTS_PER_SECOND * globalPlayback.tempoMultiplier *
-    MARCHING_GAITS[selectedMarchingGait].tempoFactor;
   const direction = Math.sign(globalPlayback.speedMultiplier);
+  const startBeat = globalPlayback.countIndex;
+  const endBeat = globalPlayback.countIndex + (direction < 0 ? -1 : direction > 0 ? 1 : 0);
+  const beat = repeatElapsed !== null
+    ? resolveRepeatPlayback(repeatElapsed, getMaxCountIndex(), repeatOptions).drillBeat
+    : advanceBeatBySeconds(startBeat, endBeat, globalPlayback.stepAccumulatorSeconds);
+  const tempoBeat = direction < 0 ? beat - TEMPO_BOUNDARY_EPSILON : beat;
+  const cadence = 1 / getCountInterval(tempoBeat);
   const lastBeat = getMaxCountIndex();
   return {
-    beat: Math.min(lastBeat, Math.max(0, globalPlayback.countIndex +
-      direction * Math.min(1, globalPlayback.stepAccumulatorSeconds * cadence))),
+    beat: Math.min(lastBeat, Math.max(0, beat)),
     beatsPerSecond: cadence * globalPlayback.speedMultiplier,
     playing: globalPlayback.playing,
     lastBeat,
@@ -1062,24 +1150,22 @@ const playbackLocalDisplacement = Vector3.Zero();
 function applyGlobalCount(robot: TransformNode, state: PlayerState) {
   if (heldRobots.has(robot) || state.counts.length === 0) return;
   const last = state.counts.length - 1;
-  const index = Math.min(globalPlayback.countIndex, last);
+  const drillBeat = getDrillTransportState().beat;
+  const index = Math.min(Math.floor(drillBeat), last);
   const count = state.counts[index];
   const parts = marcherParts.get(robot);
   if (!parts) return;
   const playbackDirection = globalPlayback.speedMultiplier >= 0 ? 1 : -1;
   // Work in the forward frame of the count being crossed, so reverse playback
   // simply runs the same step backward.
-  const segmentStart = playbackDirection > 0 ? globalPlayback.countIndex : globalPlayback.countIndex - 1;
+  const segmentStart = playbackDirection < 0 && drillBeat > 0 && Number.isInteger(drillBeat)
+    ? Math.floor(drillBeat) - 1
+    : Math.floor(drillBeat);
   const resolved = resolveSegmentGait(state, segmentStart, parts.gaitIndex);
   const previous = resolveSegmentGait(state, segmentStart - 1, parts.gaitIndex);
   const gaitIndex = resolved?.gaitIndex ?? parts.gaitIndex;
   const hipHalfSpacing = resolved?.sideways ? 0.115 : 0.09;
-  const countInterval = STEP_INTERVAL_SECONDS /
-    (globalPlayback.tempoMultiplier * MARCHING_GAITS[parts.gaitIndex].tempoFactor);
-  const countProgress = globalPlayback.playing
-    ? Math.min(1, globalPlayback.stepAccumulatorSeconds / countInterval)
-    : 0;
-  const forwardProgress = playbackDirection > 0 ? countProgress : 1 - countProgress;
+  const forwardProgress = drillBeat - segmentStart;
   // Turn over the count instead of snapping at its boundary: ease body and
   // leg facing from the previous segment's facing into this segment's.
   const targetBodyYaw = resolved?.bodyYaw ?? count.facingY ?? count.rotationY;
@@ -1105,7 +1191,7 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState) {
   robot.rotation.y = bodyRotation;
   to.position.subtractToRef(from.position, playbackDisplacement);
   const displacement = playbackDisplacement;
-  const moving = globalPlayback.playing && !!resolved && (inPlace || displacement.lengthSquared() > 0.0001);
+  const moving = !!resolved && (inPlace || displacement.lengthSquared() > 0.0001);
   if (!moving) {
     parts.leftLeg.rotation.x = 0;
     parts.rightLeg.rotation.x = 0;
@@ -1140,10 +1226,14 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState) {
       (displacement.x * sin + displacement.z * cos) / (stepsPerCount * MARCHER_BODY_SCALE * MARCHER_BUILD_SCALE),
     );
   }
-  const stepPhaseStart = getGaitStepPhaseOffsets(state, parts.gaitIndex)[segmentStart];
-  const stepPhase = stepPhaseStart + forwardProgress * stepsPerCount;
-  const stepNumber = Math.min(Math.floor(stepPhase), Math.ceil(stepPhaseStart + stepsPerCount) - 1);
-  const gaitProgress = Math.min(1, stepPhase - stepNumber);
+  const phase = repeatOptions.songLength > 0
+    ? gaitPhaseAtBeat(getMusicTransportState().beat, stepsPerCount)
+    : gaitPhaseAtBeat(
+      getGaitStepPhaseOffsets(state, parts.gaitIndex)[segmentStart] + forwardProgress * stepsPerCount,
+      1
+    );
+  const stepNumber = phase.stepNumber;
+  const gaitProgress = phase.progress;
   const gaitPoses = MARCHING_GAIT_POSES[gaitIndex];
   const gait = MARCHING_GAITS[gaitIndex];
   const frame = gaitProgress * (gaitPoses.length - 1);
@@ -1231,30 +1321,67 @@ function ensureSharedObserver(scene: Scene) {
       const maxCountIndex = getMaxCountIndex();
       globalPlayback.stepAccumulatorSeconds += deltaSeconds * Math.abs(globalPlayback.speedMultiplier);
 
-      const countInterval = STEP_INTERVAL_SECONDS /
-        (globalPlayback.tempoMultiplier * MARCHING_GAITS[selectedMarchingGait].tempoFactor);
       if (repeatElapsed !== null && direction > 0 && maxCountIndex > 0) {
-        const frame = resolveRepeatPlayback(repeatElapsed + deltaSeconds *
-          Math.abs(globalPlayback.speedMultiplier) / countInterval, maxCountIndex, repeatOptions);
+        let remainingSeconds = deltaSeconds * Math.abs(globalPlayback.speedMultiplier);
+        while (remainingSeconds > 0) {
+          const currentFrame = resolveRepeatPlayback(repeatElapsed, maxCountIndex, repeatOptions);
+          if (currentFrame.ended) {
+            remainingSeconds = 0;
+            break;
+          }
+          const beat = currentFrame.songBeat;
+          let nextBoundary = Math.floor(beat) + 1;
+          const nextTempoEvent = playbackTempoMap?.find((event) => event.beat > beat + 1e-9);
+          if (nextTempoEvent && nextTempoEvent.beat < nextBoundary) nextBoundary = nextTempoEvent.beat;
+          if (repeatOptions.song && repeatOptions.songLength > beat &&
+            repeatOptions.songLength < nextBoundary) nextBoundary = repeatOptions.songLength;
+          const secondsToBoundary = getSecondsBetweenBeats(beat, nextBoundary);
+          if (remainingSeconds < secondsToBoundary) {
+            const nextBeat = advanceBeatBySeconds(beat, nextBoundary, remainingSeconds);
+            repeatElapsed += nextBeat - beat;
+            remainingSeconds = 0;
+          } else {
+            repeatElapsed += nextBoundary - beat;
+            remainingSeconds -= secondsToBoundary;
+          }
+        }
+        const frame = resolveRepeatPlayback(repeatElapsed, maxCountIndex, repeatOptions);
         repeatElapsed = frame.elapsed;
         globalPlayback.countIndex = Math.floor(frame.drillBeat);
-        globalPlayback.stepAccumulatorSeconds = (frame.drillBeat % 1) * countInterval;
+        globalPlayback.stepAccumulatorSeconds = getSecondsBetweenBeats(
+          globalPlayback.countIndex,
+          frame.drillBeat
+        );
         if (frame.ended) {
           globalPlayback.playing = false;
           globalPlayback.stepAccumulatorSeconds = 0;
         }
       } else {
-        while (globalPlayback.stepAccumulatorSeconds >= countInterval) {
+        const nextCountInterval = () => getSecondsBetweenBeats(
+          direction > 0 ? globalPlayback.countIndex : globalPlayback.countIndex - 1,
+          direction > 0 ? globalPlayback.countIndex + 1 : globalPlayback.countIndex
+        );
+        let countDuration = nextCountInterval();
+        while (globalPlayback.stepAccumulatorSeconds >= countDuration) {
           const nextIndex = globalPlayback.countIndex + direction;
           if (nextIndex < 0 || nextIndex > maxCountIndex) {
             globalPlayback.playing = false;
             break;
           }
-          globalPlayback.stepAccumulatorSeconds -= countInterval;
+          globalPlayback.stepAccumulatorSeconds -= countDuration;
           globalPlayback.countIndex = nextIndex;
+          countDuration = nextCountInterval();
         }
-        if (repeatElapsed !== null) repeatElapsed = globalPlayback.countIndex +
-          direction * Math.min(1, globalPlayback.stepAccumulatorSeconds / countInterval);
+        if (repeatElapsed !== null) {
+          const startBeat = direction > 0 ? globalPlayback.countIndex : globalPlayback.countIndex - 1;
+          const endBeat = direction > 0 ? globalPlayback.countIndex + 1 : globalPlayback.countIndex;
+          const elapsedBeat = advanceBeatBySeconds(
+            direction > 0 ? startBeat : endBeat,
+            direction > 0 ? endBeat : startBeat,
+            globalPlayback.stepAccumulatorSeconds
+          );
+          repeatElapsed = elapsedBeat;
+        }
       }
     }
 
@@ -1592,12 +1719,15 @@ export function isAnyPlaying(): boolean {
 }
 
 export function getMarchTempo(): number {
-  return COUNTS_PER_SECOND * 60 * globalPlayback.tempoMultiplier;
+  return getTempoBpmAtBeat(getDrillTransportState().beat);
 }
 
 export function setMarchTempo(beatsPerMinute: number): number {
+  const beat = getDrillTransportState().beat;
   const boundedBpm = Math.min(MAX_MARCH_TEMPO_BPM, Math.max(MIN_MARCH_TEMPO_BPM, beatsPerMinute));
+  playbackTempoMap = null;
   globalPlayback.tempoMultiplier = boundedBpm / (COUNTS_PER_SECOND * 60);
+  setDrillBeatPosition(beat);
   notifyDrillTransport();
   return getMarchTempo();
 }
@@ -1636,9 +1766,9 @@ export function seekAll(fraction: number) {
 // and pauses there, so the clicked moment stays put instead of playing on.
 export function seekToCount(countIndex: number) {
   transportRevision++;
-  globalPlayback.stepAccumulatorSeconds = 0;
-  globalPlayback.countIndex = Math.min(getMaxCountIndex(), Math.max(0, countIndex));
-  if (repeatElapsed !== null) repeatElapsed = globalPlayback.countIndex;
+  const beat = Math.min(getMaxCountIndex(), Math.max(0, countIndex));
+  setDrillBeatPosition(beat);
+  if (repeatElapsed !== null) repeatElapsed = beat;
   globalPlayback.playing = false;
   applyGlobalCountToAllRobots();
 }

@@ -135,8 +135,8 @@ export function createScoreboard(): void {
 
   function drawTempoSlider() {
     const tempo = getMarchTempo();
-    const fraction = (tempo - MIN_MARCH_TEMPO_BPM) /
-      (MAX_MARCH_TEMPO_BPM - MIN_MARCH_TEMPO_BPM);
+    const fraction = Math.min(1, Math.max(0, (tempo - MIN_MARCH_TEMPO_BPM) /
+      (MAX_MARCH_TEMPO_BPM - MIN_MARCH_TEMPO_BPM)));
     boardCtx.fillStyle = "rgba(20, 35, 26, 0.96)";
     boardCtx.fillRect(72, 178, 368, 74);
     boardCtx.fillStyle = "#b9ffd0";

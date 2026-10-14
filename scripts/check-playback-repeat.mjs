@@ -66,7 +66,12 @@ const observerContext = vm.createContext({
   globalPlayback: playback, sharedScene: null, sharedObserver: null,
   repeatElapsed: 255, repeatOptions: { drill: true, song: false, songLength: 636 },
   resolveRepeatPlayback: resolve, getMaxCountIndex: () => 256,
-  STEP_INTERVAL_SECONDS: 0.5, selectedMarchingGait: 0, MARCHING_GAITS: [{ tempoFactor: 1 }],
+  playbackTempoMap: null, getCountInterval: () => 0.5,
+  getSecondsBetweenBeats: (start, end) => Math.abs(end - start) * 0.5,
+  advanceBeatBySeconds: (start, end, seconds) => start + Math.sign(end - start) *
+    Math.min(Math.abs(end - start), seconds / 0.5),
+  selectedMarchingGait: 0,
+  MARCHING_GAITS: [{ tempoFactor: 1 }],
   applyGlobalCountToAllRobots: () => { updates++; },
 });
 vm.runInContext(`${stripTypeScriptTypes(observerSource, { mode: 'transform' })}

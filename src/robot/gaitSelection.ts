@@ -55,6 +55,12 @@ export function buildGaitStepPhaseOffsets(stepsPerCount: ReadonlyArray<number>):
   return offsets;
 }
 
+export function gaitPhaseAtBeat(beat: number, stepsPerCount: number) {
+  const phase = beat * stepsPerCount;
+  const stepNumber = Math.floor(phase);
+  return { stepNumber, progress: phase - stepNumber };
+}
+
 // Yaw convention matches Babylon/robot.ts: yaw = atan2(dx, dz).
 export function selectAutoGait(
   facingYaw: number,

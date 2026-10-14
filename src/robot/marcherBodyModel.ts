@@ -9,7 +9,7 @@ import { addRobotHead } from './robotFaceModel';
 // the body's build scale). Each part is a shared vertex-colored template
 // cloned per marcher, so a marcher is a handful of small meshes sharing one
 // material, apart from its team-colored jacket and sleeves:
-// - trim: every rigid fixed-color part (pelvis, neck, head, shako, plume)
+// - trim: every rigid fixed-color part (neck, head, shako, plume)
 //   merged into one mesh;
 // - jacket, upper arm, and forearm: white, tinted by the marcher's material;
 // - thigh, calf, shoe, and glove: one per animated joint.
@@ -27,8 +27,8 @@ function getMarcherPartMaterial(scene: Scene): StandardMaterial {
   if (!material || material.getScene() !== scene) {
     material = new StandardMaterial("marcherPartMaterial", scene);
     material.diffuseColor = Color3.White();
-    material.specularColor = new Color3(0.3, 0.3, 0.32);
-    material.specularPower = 32;
+    material.specularColor = new Color3(0.12, 0.12, 0.13);
+    material.specularPower = 12;
     materials.set(scene, material);
   }
   return material;
@@ -43,9 +43,6 @@ function partTemplate(name: string, build: (geometry: InstrumentGeometry) => voi
 }
 
 export const getMarcherTrimTemplate = partTemplate("marcherTrimTemplate", (geometry) => {
-  geometry.lathe(geometry.low
-    ? [[0, 0.48], [0.1, 0.48], [0.15, 0.6], [0, 0.7]]
-    : [[0, 0.48], [0.1, 0.48], [0.14, 0.54], [0.15, 0.6], [0.12, 0.66], [0, 0.7]], 8, DARK);
   geometry.lathe([[0.055, 1.06], [0.055, 1.18]], 6, METAL);
   geometry.lathe(geometry.low
     ? [[0, 1.36], [0.14, 1.36], [0.105, 1.64], [0, 1.64]]
@@ -58,54 +55,54 @@ export const getMarcherTrimTemplate = partTemplate("marcherTrimTemplate", (geome
 
 export const getMarcherJacketTemplate = partTemplate("marcherJacketTemplate", (geometry) => {
   geometry.lathe(geometry.low
-    ? [[0, 0.61], [0.154, 0.61], [0.27, 1.02], [0.12, 1.075], [0, 1.075]]
-    : [[0, 0.61], [0.154, 0.61], [0.187, 0.64], [0.209, 0.75], [0.22, 0.93], [0.245, 1.01],
-      [0.2, 1.055], [0.12, 1.075], [0, 1.075]], 8, TINTED,
-    ({ x, y, z }) => new Vector3(geometry.low ? x * Math.SQRT2 : x, y, z));
+    ? [[0, 0.61], [0.16, 0.63], [0.2, 0.69], [0.215, 0.84], [0.26, 0.98],
+      [0.24, 1.035], [0.13, 1.075], [0, 1.085]]
+    : [[0, 0.61], [0.11, 0.615], [0.16, 0.635], [0.19, 0.67], [0.205, 0.73],
+      [0.215, 0.84], [0.235, 0.93], [0.26, 0.98], [0.255, 1.01], [0.225, 1.045],
+      [0.17, 1.07], [0.1, 1.082], [0, 1.085]], 16, TINTED,
+    ({ x, y, z }) => new Vector3(x, y, z * 0.85));
 });
 
-// Arm and leg segments hang down -Y from their joint, capped above it by a
-// half ball; the segment above closes the other half, so bends stay rounded.
-// Low-detail shoulders have a complete joint cap that rotates with the arm.
+// Rounded ends overlap at the existing joints, keeping the clay-like silhouette
+// continuous without changing the rig's joint centers or instrument grips.
 export const getMarcherUpperArmTemplate = partTemplate("marcherUpperArmTemplate", (geometry) => {
   geometry.lathe(geometry.low
-    ? [[0.062, -0.3], [0.085, 0], [0, 0.085]]
-    : [[0.062, -0.3], [0.075, -0.15], [0.085, 0], [0.06, 0.06], [0, 0.085]], 8, TINTED);
-  if (geometry.low) {
-    geometry.lathe([[0, -0.12], [0.12, 0], [0, 0.12]], 8, TINTED);
-  }
+    ? [[0, -0.37], [0.075, -0.3], [0.085, -0.15], [0.095, 0], [0, 0.095]]
+    : [[0, -0.375], [0.053, -0.353], [0.075, -0.3], [0.08, -0.23],
+      [0.085, -0.15], [0.09, -0.07], [0.095, 0], [0.067, 0.067], [0, 0.095]], 12, TINTED);
 });
 
 export const getMarcherForearmTemplate = partTemplate("marcherForearmTemplate", (geometry) => {
   geometry.lathe(geometry.low
-    ? [[0.05, -0.4], [0.065, 0], [0, 0.065]]
-    : [[0.05, -0.4], [0.065, 0], [0.046, 0.046], [0, 0.065]], 8, TINTED);
+    ? [[0, -0.44], [0.055, -0.4], [0.07, -0.2], [0.075, 0], [0, 0.075]]
+    : [[0, -0.445], [0.039, -0.432], [0.055, -0.4], [0.065, -0.3], [0.07, -0.2],
+      [0.075, -0.08], [0.075, 0], [0.053, 0.053], [0, 0.075]], 12, TINTED);
 });
 
 export const getMarcherThighTemplate = partTemplate("marcherThighTemplate", (geometry) => {
   geometry.lathe(geometry.low
-    ? [[0, -0.22], [0.085, -0.21], [0.083, -0.03], [0.07, 0.16], [0, 0.23]]
-    : [[0, -0.22], [0.085, -0.21], [0.08, -0.12], [0.083, -0.03], [0.072, 0.08], [0.07, 0.16],
-    [0.05, 0.21], [0, 0.23]], 8, DARK);
+    ? [[0, -0.29], [0.08, -0.21], [0.085, -0.03], [0.085, 0.16], [0, 0.245]]
+    : [[0, -0.29], [0.057, -0.267], [0.08, -0.21], [0.083, -0.12],
+      [0.085, -0.03], [0.087, 0.08], [0.085, 0.16], [0.06, 0.22], [0, 0.245]], 12, DARK);
 });
 
 export const getMarcherCalfTemplate = partTemplate("marcherCalfTemplate", (geometry) => {
   geometry.lathe(geometry.low
-    ? [[0, -0.25], [0.072, -0.24], [0.087, 0], [0, 0.087]]
-    : [[0, -0.25], [0.072, -0.24], [0.068, -0.15], [0.08, -0.05], [0.087, 0], [0.062, 0.062],
-    [0, 0.087]], 8, DARK);
+    ? [[0, -0.26], [0.065, -0.2], [0.08, -0.1], [0.08, 0], [0, 0.08]]
+    : [[0, -0.265], [0.046, -0.246], [0.065, -0.2], [0.075, -0.15],
+      [0.08, -0.1], [0.082, -0.05], [0.08, 0], [0.057, 0.057], [0, 0.08]], 12, DARK);
 });
 
 // Toe along +Z (rotated about X), widened sideways.
 export const getMarcherShoeTemplate = partTemplate("marcherShoeTemplate", (geometry) => {
   geometry.lathe(geometry.low
     ? [[0, -0.135], [0.06, -0.07], [0.06, 0.07], [0, 0.135]]
-    : [[0, -0.135], [0.045, -0.12], [0.06, -0.07], [0.06, 0.07], [0.045, 0.12], [0, 0.135]], 6, BOOT,
+    : [[0, -0.135], [0.045, -0.12], [0.06, -0.07], [0.06, 0.07], [0.045, 0.12], [0, 0.135]], 12, BOOT,
     ({ x, y, z }) => new Vector3(x * 1.2, -z * (geometry.low ? Math.SQRT2 : 1), y));
 });
 
 export const getMarcherGloveTemplate = partTemplate("marcherGloveTemplate", (geometry) => {
   geometry.lathe(geometry.low
     ? [[0, -0.0475], [0.0475, 0], [0, 0.0475]]
-    : [[0, -0.0475], [0.034, -0.034], [0.0475, 0], [0.034, 0.034], [0, 0.0475]], 6, GLOVE);
+    : [[0, -0.0475], [0.034, -0.034], [0.0475, 0], [0.034, 0.034], [0, 0.0475]], 12, GLOVE);
 });

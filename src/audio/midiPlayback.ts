@@ -1,4 +1,10 @@
-import { getMusicTransportState, setPlaybackRepeat, setPlaybackSongLength, onDrillTransportChangedObservable } from '../robot/robot';
+import {
+  getMusicTransportState,
+  setPlaybackRepeat,
+  setPlaybackSongLength,
+  setPlaybackTempoMap,
+  onDrillTransportChangedObservable,
+} from '../robot/robot';
 import {
   midiFileInput, midiAudioButton, midiClearButton, midiVolumeInput, midiStatus,
   midiUrlForm, midiUrlInput, midiExampleButton, midiPlaybackHint,
@@ -210,6 +216,13 @@ async function loadMidi(name: string, read: () => Promise<ArrayBuffer>, failureH
     const { Midi } = await import('@tonejs/midi');
     const midi = new Midi(bytes);
     if (!Number.isFinite(midi.header.ppq) || midi.header.ppq <= 0) throw new Error("The MIDI file has invalid beat resolution.");
+    const tempoMap = midi.header.tempos.length
+      ? midi.header.tempos.map(tempo => ({ beat: tempo.ticks / midi.header.ppq, bpm: tempo.bpm }))
+      : [{ beat: 0, bpm: 120 }];
+    if (tempoMap.some(tempo => !Number.isFinite(tempo.beat) || tempo.beat < 0 ||
+      !Number.isFinite(tempo.bpm) || tempo.bpm <= 0)) {
+      throw new Error("The MIDI file contains invalid tempo events.");
+    }
     const musicTracks = midi.tracks.filter(track => track.notes.length);
     const notes: MidiNote[] = musicTracks.flatMap(track => track.notes.map(note => ({
       beat: note.ticks / midi.header.ppq,
@@ -233,6 +246,7 @@ async function loadMidi(name: string, read: () => Promise<ArrayBuffer>, failureH
     midiNotes = notes;
     timeline = new MidiTimeline(notes);
     const beats = notes.reduce((last, n) => Math.max(last, n.beat + n.duration), 0);
+    setPlaybackTempoMap(tempoMap);
     setPlaybackSongLength(beats);
     loadedDescription = `${name}: ${musicTracks.length} parts, ${notes.length} notes, ${Math.ceil(beats)} beats`;
     setMidiScoreTracks(musicTracks.map((track, index) => ({
@@ -310,6 +324,7 @@ export function initMidiPlayback() {
     disposeSynth();
     midiNotes = [];
     timeline = null;
+    setPlaybackTempoMap(null);
     setPlaybackSongLength(0);
     loadedDescription = "";
     setMidiScoreTracks([]);

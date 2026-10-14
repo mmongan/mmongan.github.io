@@ -18,7 +18,7 @@ export interface ScheduledMidiNote {
 const LOOKAHEAD_SECONDS = 0.08;
 const MAX_CLOCK_DRIFT_SECONDS = 0.1;
 
-// All note times are quarter-note beats; MIDI tempo events never override drill tempo.
+// Note times are quarter-note beats, shared with the MIDI-driven playback tempo.
 export class MidiTimeline {
   private previous: DrillTransportState | null = null;
   private previousTime = 0;

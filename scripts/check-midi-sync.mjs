@@ -50,20 +50,45 @@ assert.ok(result.scheduled[0].durationSeconds < 0.5);
 timeline.reset();
 assert.equal(timeline.update(state, 4).scheduled.length, 1);
 const robotSource = readFileSync(new URL('../src/robot/robot.ts', import.meta.url), 'utf8');
-const snapshotSource = robotSource.slice(robotSource.indexOf('export function getDrillTransportState'),
+const snapshotSource = robotSource.slice(robotSource.indexOf('function getTempoBpmAtBeat'),
   robotSource.indexOf('function notifyDrillTransport'));
 const playback = { countIndex: 3, stepAccumulatorSeconds: 0.125, tempoMultiplier: 0.5, speedMultiplier: 1, playing: true };
 const transportContext = vm.createContext({
   Math, globalPlayback: playback, COUNTS_PER_SECOND: 4,
   MARCHING_GAITS: [{ tempoFactor: 1 }, { tempoFactor: 2 }], selectedMarchingGait: 0,
-  getMaxCountIndex: () => 16, transportRevision: 7,
+  playbackTempoMap: null, repeatElapsed: null, getMaxCountIndex: () => 16, transportRevision: 7,
 });
 vm.runInContext(`${stripTypeScriptTypes(snapshotSource).replace(/export /g, '')}
-globalThis.snapshot = getDrillTransportState;`, transportContext);
+globalThis.snapshot = getDrillTransportState;
+globalThis.getTempoBpmAtBeat = getTempoBpmAtBeat;
+globalThis.getSecondsBetweenBeats = getSecondsBetweenBeats;
+globalThis.advanceBeatBySeconds = advanceBeatBySeconds;
+globalThis.setDrillBeatPosition = setDrillBeatPosition;`, transportContext);
 let snapshot = transportContext.snapshot();
 assert.equal(snapshot.beat, 3.25);
 assert.equal(snapshot.beatsPerSecond, 2);
 assert.equal(snapshot.revision, 7);
+playback.playing = false;
+assert.equal(transportContext.snapshot().beat, 3.25, 'Pause preserves fractional MIDI beat position');
+playback.playing = true;
+assert.equal(transportContext.snapshot().beat, 3.25, 'Resume does not rewind the beat');
+transportContext.setDrillBeatPosition(6.375);
+playback.playing = false;
+assert.equal(transportContext.snapshot().beat, 6.375, 'Fractional seek holds its exact position');
+playback.playing = true;
+assert.equal(transportContext.snapshot().beat, 6.375, 'Fractional seek resumes without phase offset');
+transportContext.setDrillBeatPosition(3.25);
+transportContext.playbackTempoMap = [{ beat: 0, bpm: 180 }, { beat: 4, bpm: 90 }];
+snapshot = transportContext.snapshot();
+assert.equal(snapshot.beat, 3.375);
+assert.equal(snapshot.beatsPerSecond, 3);
+assert.equal(transportContext.getTempoBpmAtBeat(4), 90);
+assert.equal(transportContext.getTempoBpmAtBeat(3), 180);
+transportContext.playbackTempoMap = [{ beat: 0, bpm: 120 }, { beat: 0.5, bpm: 60 }];
+assert.equal(transportContext.getSecondsBetweenBeats(0, 1), 0.75);
+assert.equal(transportContext.advanceBeatBySeconds(0, 1, 0.625), 0.875);
+assert.equal(transportContext.advanceBeatBySeconds(1, 0, 0.625), 0.25);
+transportContext.playbackTempoMap = null;
 transportContext.selectedMarchingGait = 1;
 playback.speedMultiplier = 2;
 snapshot = transportContext.snapshot();
@@ -98,6 +123,7 @@ await assert.rejects(() => urlContext.readUrl('https://music.example/large.mid')
 response = new Response(new Uint8Array(10 * 1024 * 1024 + 1));
 await assert.rejects(() => urlContext.readUrl('https://music.example/stream.mid'), /10 MB/);
 const example = new Midi(readFileSync(new URL('../src/assets/liberty-bell-band.mid', import.meta.url)));
+assert.equal(example.header.tempos[0].bpm, 180.00018000018);
 const bandTracks = example.tracks.filter(track => track.notes.length);
 assert.equal(bandTracks.length, 20);
 assert.ok(bandTracks.some(track => track.instrument.percussion));
