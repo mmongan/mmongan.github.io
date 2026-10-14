@@ -1128,8 +1128,8 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState) {
       (displacement.x * sin + displacement.z * cos) / (stepsPerCount * MARCHER_BODY_SCALE * MARCHER_BUILD_SCALE),
     );
   }
-  const stepPhase = (segmentStart + forwardProgress) * stepsPerCount;
-  const stepNumber = Math.min(Math.floor(stepPhase), Math.ceil((segmentStart + 1) * stepsPerCount) - 1);
+  const stepPhase = getMusicTransportState().beat * stepsPerCount;
+  const stepNumber = Math.floor(stepPhase);
   const gaitProgress = Math.min(1, stepPhase - stepNumber);
   const gaitPoses = MARCHING_GAIT_POSES[gaitIndex];
   const gait = MARCHING_GAITS[gaitIndex];
@@ -1157,20 +1157,20 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState) {
   ) => {
     const footZ = localDisplacement.z * offset;
     const angle = Math.asin(Math.max(-0.95, Math.min(0.95, -footZ / 0.47)));
-    const boundedKneeAngle = Math.min(MAX_KNEE_BEND_RADIANS, Math.max(0, kneeAngle));
-    knee.rotation.x = boundedKneeAngle;
+    const kneeRotationAngle = -Math.min(MAX_KNEE_BEND_RADIANS, Math.max(0, kneeAngle));
+    knee.rotation.x = kneeRotationAngle;
     ankle.rotation.x = ankleAngle;
     leg.rotation.x = angle;
     leg.position.x = side * hipHalfSpacing + Math.max(-0.015, Math.min(0.015, localDisplacement.x * offset));
-    const ankleY = -0.2 * Math.cos(boundedKneeAngle);
-    const ankleZ = -0.2 * Math.sin(boundedKneeAngle);
+    const ankleY = -0.2 * Math.cos(kneeRotationAngle);
+    const ankleZ = -0.2 * Math.sin(kneeRotationAngle);
     const shoeYInAnkle = -0.06 * Math.cos(ankleAngle) - 0.07 * Math.sin(ankleAngle);
     const shoeZInAnkle = -0.06 * Math.sin(ankleAngle) + 0.07 * Math.cos(ankleAngle);
-    const shoeY = ankleY + shoeYInAnkle * Math.cos(boundedKneeAngle)
-      - shoeZInAnkle * Math.sin(boundedKneeAngle);
-    const shoeZ = ankleZ + shoeYInAnkle * Math.sin(boundedKneeAngle)
-      + shoeZInAnkle * Math.cos(boundedKneeAngle);
-    const totalLegAngle = angle + boundedKneeAngle + ankleAngle;
+    const shoeY = ankleY + shoeYInAnkle * Math.cos(kneeRotationAngle)
+      - shoeZInAnkle * Math.sin(kneeRotationAngle);
+    const shoeZ = ankleZ + shoeYInAnkle * Math.sin(kneeRotationAngle)
+      + shoeZInAnkle * Math.cos(kneeRotationAngle);
+    const totalLegAngle = angle + kneeRotationAngle + ankleAngle;
     leg.position.z = Math.max(-0.015, Math.min(0.015, footZ - (-0.37 + shoeY) * Math.sin(angle) - shoeZ * Math.cos(angle) + 0.07));
     const plantedHipHeight = (0.37 - shoeY) * Math.cos(angle) + shoeZ * Math.sin(angle)
       + 0.06 * Math.abs(Math.cos(totalLegAngle))
