@@ -18,6 +18,7 @@ import {
 import { registerMenuButton, type HandMenuHit } from './handMenu';
 import { getDrillTransportState, onDrillTransportChangedObservable } from '../robot/robot';
 import type { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.pure';
+import { layoutScorePage } from '../audio/scoreLayout';
 
 const WIDTH = 1536;
 const HEIGHT = 1280;
@@ -56,12 +57,12 @@ export function getMusicStandScale(): number {
   return standScale;
 }
 
-const STAFF_OPTIONS: ('auto' | 4 | 2 | 1)[] = ['auto', 4, 2, 1];
+const STAFF_OPTIONS: ('auto' | number)[] = ['auto', 8, 4, 3, 2, 1];
 
 export function cycleMusicStandStaff() {
   const current = getScoreMeasuresConfig();
   let nextIndex = 0;
-  const currentIndex = STAFF_OPTIONS.indexOf(current as 'auto' | 4 | 2 | 1);
+  const currentIndex = STAFF_OPTIONS.indexOf(current);
   if (currentIndex !== -1) {
     nextIndex = (currentIndex + 1) % STAFF_OPTIONS.length;
   }
@@ -267,32 +268,30 @@ export function initMusicStand() {
     if (!rows.length) {
       ctx!.fillText('Load MIDI in Settings to display the score.', 50, 200, WIDTH - 100);
     } else {
-      const totalHeight = rows.reduce((sum, row) => sum + row.height + 24, 0);
-      const scale = Math.min((WIDTH - 80) / 760, (HEIGHT - 170) / totalHeight);
-      let y = 140;
-      for (const row of rows) {
-        const height = row.height * scale;
-        const rowHeight = (row.height + 24) * scale;
+      const layout = layoutScorePage(rows.map(row => row.height));
+      const scale = layout.scale;
+      rows.forEach((row, index) => {
+        const cell = layout.cells[index];
+        const left = 40 + cell.x;
+        const y = 140 + cell.y;
         if (row.measure === latest.currentMeasure) {
           ctx!.fillStyle = '#e0eeff';
-          ctx!.fillRect(30, y, WIDTH - 60, rowHeight);
+          ctx!.fillRect(left, y, cell.width, cell.height + cell.labelHeight);
         }
         ctx!.fillStyle = '#475569';
-        ctx!.font = 'bold 22px Arial';
-        ctx!.fillText(String(row.measure + 1), 40, y + 22);
-        const left = (WIDTH - 760 * scale) / 2;
-        ctx!.drawImage(row.image, left, y + 24 * scale, 760 * scale, height);
+        ctx!.font = `bold ${Math.max(12, 18 * scale)}px Arial`;
+        ctx!.fillText(String(row.measure + 1), left + 4, y + cell.labelHeight - 2);
+        ctx!.drawImage(row.image, left, y + cell.labelHeight, cell.width, cell.height);
         if (row.measure === latest.currentMeasure) {
           const x = left + (row.beatPositions[latest.currentBeat % 4] - 5) * scale;
           ctx!.strokeStyle = '#d97706';
           ctx!.lineWidth = 5;
           ctx!.beginPath();
-          ctx!.moveTo(x, y + 24 * scale + 10 * scale);
-          ctx!.lineTo(x, y + 24 * scale + height - 10 * scale);
+          ctx!.moveTo(x, y + cell.labelHeight + 10 * scale);
+          ctx!.lineTo(x, y + cell.labelHeight + cell.height - 10 * scale);
           ctx!.stroke();
         }
-        y += rowHeight;
-      }
+      });
     }
     texture.update(true);
   }

@@ -39,7 +39,7 @@ assert.deepEqual(plain(scoreBeatPositionsMulti([
   { segments: [{ ticks: 4, pitches: [48], tiedPitches: [] }, { ticks: 4, pitches: [50], tiedPitches: [] }, { ticks: 4, pitches: [52], tiedPitches: [] }, { ticks: 4, pitches: [53], tiedPitches: [] }], notePositions: [120, 260, 400, 540] },
 ], 120, 740)), [120, 260, 400, 540]);
 assert.throws(() => scoreBeatPositionsMulti([], 100, 740), /incomplete beat spacing/);
-const midi = new midiPackage.Midi(readFileSync(new URL('../src/assets/stars-and-stripes.mid', import.meta.url)));
+const midi = new midiPackage.Midi(readFileSync(new URL('../src/assets/liberty-bell-band.mid', import.meta.url)));
 for (const midiTrack of midi.tracks.filter(t => t.notes.length)) {
   const scoreTrack = track(midiTrack.notes.map(note =>
     quantizeScoreNote(note.ticks / midi.header.ppq, note.durationTicks / midi.header.ppq, note.midi)));
@@ -55,24 +55,10 @@ for (const midiTrack of midi.tracks.filter(t => t.notes.length)) {
     }
   }
 }
-// Check measure-per-page dynamic sizing logic for full score and individual tracks
-function calcMeasuresPerPage(trackCount, standScale, measuresConfig) {
-  if (typeof measuresConfig === 'number') {
-    return Math.max(1, Math.min(8, measuresConfig));
-  }
-  if (trackCount <= 1) {
-    if (standScale >= 1.4) return 6;
-    if (standScale <= 0.8) return 2;
-    return 4;
-  }
-  if (trackCount <= 4) {
-    if (standScale >= 1.25) return 4;
-    if (standScale <= 0.8) return 1;
-    return 2;
-  }
-  if (standScale >= 1.5) return 2;
-  return 1;
-}
+const layoutSource = readFileSync(new URL('../src/audio/scoreLayout.ts', import.meta.url), 'utf8');
+vm.runInContext(`${stripTypeScriptTypes(layoutSource, { mode: 'transform' }).replace(/export /g, '')}
+globalThis.layoutApi = { scoreMeasuresPerPage, layoutScorePage };`, context);
+const { scoreMeasuresPerPage: calcMeasuresPerPage, layoutScorePage } = context.layoutApi;
 
 // 2-track full score (e.g. Sousa march)
 assert.equal(calcMeasuresPerPage(2, 1.0, 'auto'), 2, 'Default 1.0x scale shows 2 measures in full score');
@@ -83,5 +69,30 @@ assert.equal(calcMeasuresPerPage(2, 1.5, 1), 1, 'Explicit 1 measure override sho
 // 1-track score
 assert.equal(calcMeasuresPerPage(1, 1.0, 'auto'), 4, 'Single track at 1.0x scale shows 4 measures');
 assert.equal(calcMeasuresPerPage(1, 1.5, 'auto'), 6, 'Single track at 1.5x scale shows 6 measures');
+assert.equal(calcMeasuresPerPage(20, 1, 'auto'), 3, 'Full band fills the pad with three measures across');
+assert.equal(calcMeasuresPerPage(20, 1.5, 'auto'), 5, 'A larger pad shows more full-band measures');
+assert.equal(calcMeasuresPerPage(20, 1, 8), 8, 'Eight-measure overview is available');
+assert.equal(calcMeasuresPerPage(20, 1, 1), 1, 'Large-print override remains available');
+const fullBandLayout = layoutScorePage([1940, 1940, 1940]);
+assert.equal(fullBandLayout.columns, 3);
+assert.ok(fullBandLayout.cells[0].width * 3 / 1456 > 0.88, 'Full score occupies over 88% of available width');
+assert.ok(fullBandLayout.cells[0].height / 1110 > 0.97, 'Full score fills available height');
+for (const heights of [[150, 150, 150, 150], [1940, 1900, 1920, 1940], [1940], [], Array(8).fill(1940)]) {
+  const layout = layoutScorePage(heights);
+  assert.equal(layout.cells.length, heights.length);
+  for (const cell of layout.cells) {
+    assert.ok(cell.x >= 0 && cell.y >= 0);
+    assert.ok(cell.x + cell.width <= 1456 + 1e-6);
+    assert.ok(cell.y + cell.height + cell.labelHeight <= 1110 + 1e-6);
+  }
+  for (let a = 0; a < layout.cells.length; a++) {
+    for (let b = a + 1; b < layout.cells.length; b++) {
+      const x = layout.cells[a], y = layout.cells[b];
+      assert.ok(x.x + x.width <= y.x + 1e-6 || y.x + y.width <= x.x + 1e-6 ||
+        x.y + x.height + x.labelHeight <= y.y + 1e-6 ||
+        y.y + y.height + y.labelHeight <= x.y + 1e-6, 'Measures must not overlap');
+    }
+  }
+}
 
 console.log('MIDI notation checks passed: quantization, pitch spelling, rests, chords, ties, repeated attacks, bar crossings, measure pagination scaling, and every measure of the bundled Sousa MIDI.');

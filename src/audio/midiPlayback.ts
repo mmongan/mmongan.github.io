@@ -7,8 +7,9 @@ import { MidiTimeline, type MidiNote } from './midiTimeline';
 import { SampledMidiSynth } from './sampledMidiSynth';
 import { initMidiScore, setMidiScoreTracks } from './midiScore';
 import { quantizeScoreNote } from './midiNotation';
-import exampleMidiUrl from '../assets/stars-and-stripes.mid?url';
+import exampleMidiUrl from '../assets/liberty-bell-band.mid?url';
 
+const EXAMPLE_MIDI_DESCRIPTION = "Sousa — The Liberty Bell (full band, Public Domain)";
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_NOTES = 100000;
 let context: AudioContext | null = null;
@@ -151,7 +152,8 @@ async function loadMidi(name: string, read: () => Promise<ArrayBuffer>, failureH
     const { Midi } = await import('@tonejs/midi');
     const midi = new Midi(bytes);
     if (!Number.isFinite(midi.header.ppq) || midi.header.ppq <= 0) throw new Error("The MIDI file has invalid beat resolution.");
-    const notes: MidiNote[] = midi.tracks.flatMap(track => track.notes.map(note => ({
+    const musicTracks = midi.tracks.filter(track => track.notes.length);
+    const notes: MidiNote[] = musicTracks.flatMap(track => track.notes.map(note => ({
       beat: note.ticks / midi.header.ppq,
       duration: note.durationTicks / midi.header.ppq,
       pitch: note.midi,
@@ -175,8 +177,8 @@ async function loadMidi(name: string, read: () => Promise<ArrayBuffer>, failureH
     midiNotes = notes;
     timeline = new MidiTimeline(notes);
     const beats = notes.reduce((last, n) => Math.max(last, n.beat + n.duration), 0);
-    loadedDescription = `${name}: ${midi.tracks.length} tracks, ${notes.length} notes, ${Math.ceil(beats)} beats`;
-    setMidiScoreTracks(midi.tracks.filter(track => track.notes.length).map((track, index) => ({
+    loadedDescription = `${name}: ${musicTracks.length} parts, ${notes.length} notes, ${Math.ceil(beats)} beats`;
+    setMidiScoreTracks(musicTracks.map((track, index) => ({
       name: `${index + 1}. ${track.name || track.instrument.name}`,
       percussion: track.instrument.percussion,
       notes: track.notes.map(note =>
@@ -223,7 +225,7 @@ export function initMidiPlayback() {
   });
   midiExampleButton?.addEventListener('click', () => {
     if (midiUrlInput) midiUrlInput.value = new URL(exampleMidiUrl, window.location.href).href;
-    void loadMidiFromUrl(exampleMidiUrl, "Sousa — The Stars and Stripes Forever (Public Domain)");
+    void loadMidiFromUrl(exampleMidiUrl, EXAMPLE_MIDI_DESCRIPTION);
   });
   clearButton?.addEventListener('click', () => {
     loadRequest++;
@@ -260,5 +262,5 @@ export function initMidiPlayback() {
   const sharedUrl = new URLSearchParams(window.location.search).get("midi");
   if (midiUrlInput) midiUrlInput.value = sharedUrl || new URL(exampleMidiUrl, window.location.href).href;
   void loadMidiFromUrl(sharedUrl || exampleMidiUrl,
-    sharedUrl || "Sousa — The Stars and Stripes Forever (Public Domain)");
+    sharedUrl || EXAMPLE_MIDI_DESCRIPTION);
 }

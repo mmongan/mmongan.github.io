@@ -8,6 +8,7 @@ import {
   scorePitch, type ScoreTrack, type ScoreSegment,
 } from './midiNotation';
 import { Observable } from '@babylonjs/core/Misc/observable.pure';
+import { layoutScorePage, scoreMeasuresPerPage } from './scoreLayout';
 
 export interface MidiScoreDisplay {
   rows: { svg: string; height: number; measure: number; beatPositions: number[] }[];
@@ -87,21 +88,7 @@ function getActiveTracks(): (ScoreTrack & { measureCount: number })[] {
 }
 
 function getMeasuresPerPage(trackCount: number): number {
-  if (typeof measuresConfig === 'number') {
-    return Math.max(1, Math.min(8, measuresConfig));
-  }
-  if (trackCount <= 1) {
-    if (standScale >= 1.4) return 6;
-    if (standScale <= 0.8) return 2;
-    return 4;
-  }
-  if (trackCount <= 4) {
-    if (standScale >= 1.25) return 4;
-    if (standScale <= 0.8) return 1;
-    return 2;
-  }
-  if (standScale >= 1.5) return 2;
-  return 1;
+  return scoreMeasuresPerPage(trackCount, standScale, measuresConfig);
 }
 
 function getTotalMeasures(activeTracks = getActiveTracks()): number {
@@ -120,6 +107,7 @@ function highlightMeasure() {
     const current = Number(element.dataset.measure) === currentMeasure;
     if (current && !element.classList.contains('current-measure') && midiScoreFollow?.checked && midiScoreCanvas) {
       midiScoreCanvas.scrollTop = element.offsetTop;
+      midiScoreCanvas.scrollLeft = element.offsetLeft;
     }
     element.classList.toggle('current-measure', current);
   });
@@ -329,6 +317,9 @@ async function renderScore() {
       });
     }
 
+    const layout = layoutScorePage(scoreRows.map(row => row.height));
+    container.style.display = 'grid';
+    container.style.gridTemplateColumns = `repeat(${layout.columns}, 760px)`;
     container.replaceChildren(fragment);
     const titleName = fullScore ? `Full score (${activeTracks.length} parts)` : activeTracks[0].name;
     display = {

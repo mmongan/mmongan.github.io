@@ -97,7 +97,30 @@ response = new Response('large', { headers: { 'content-length': String(11 * 1024
 await assert.rejects(() => urlContext.readUrl('https://music.example/large.mid'), /10 MB/);
 response = new Response(new Uint8Array(10 * 1024 * 1024 + 1));
 await assert.rejects(() => urlContext.readUrl('https://music.example/stream.mid'), /10 MB/);
-const example = new Midi(readFileSync(new URL('../src/assets/stars-and-stripes.mid', import.meta.url)));
-assert.ok(example.tracks.flatMap(t => t.notes).length > 0);
+const example = new Midi(readFileSync(new URL('../src/assets/liberty-bell-band.mid', import.meta.url)));
+const bandTracks = example.tracks.filter(track => track.notes.length);
+assert.equal(bandTracks.length, 20);
+assert.ok(bandTracks.some(track => track.instrument.percussion));
+assert.ok(bandTracks.some(track => track.instrument.number === 56), 'Full band includes trumpet/cornet');
+assert.ok(bandTracks.some(track => track.instrument.number === 58), 'Full band includes tuba');
+assert.ok(bandTracks.some(track => track.instrument.number === 71), 'Full band includes clarinet');
+assert.ok(bandTracks.some(track => track.instrument.number === 73), 'Full band includes flute');
+const bandNotes = bandTracks.flatMap(track => track.notes.map(note => ({
+  beat: note.ticks / example.header.ppq, duration: note.durationTicks / example.header.ppq,
+  pitch: note.midi, velocity: note.velocity, program: track.instrument.number,
+  percussion: track.instrument.percussion,
+})));
+assert.ok(bandNotes.length < 100000);
+assert.ok(bandNotes.every(note => Number.isFinite(note.beat) && note.beat >= 0 &&
+  Number.isFinite(note.duration) && note.duration > 0 && Number.isInteger(note.pitch) &&
+  note.pitch >= 0 && note.pitch <= 127 && note.velocity > 0 && note.velocity <= 1));
+bandNotes.sort((a, b) => a.beat - b.beat);
+const bandTimeline = new context.MidiTimeline(bandNotes);
+const bandPlan = bandTimeline.update({ ...state, lastBeat: 636 }, 0);
+assert.ok(bandPlan.scheduled.some(scheduled => scheduled.note.program === 56));
+const firstDrumBeat = bandNotes.find(note => note.percussion).beat;
+const drumPlan = bandTimeline.update({ ...state, beat: firstDrumBeat, lastBeat: 636, revision: 1 }, 1);
+assert.ok(drumPlan.scheduled.some(scheduled => scheduled.note.percussion));
+assert.ok(playbackSource.includes("../assets/liberty-bell-band.mid?url"), 'Startup loads the verified full-band MIDI');
 console.log('MIDI sync checks passed: parser round-trip, beat alignment, no duplicate notes, seek into held notes, pause/resume, tempo, fast-forward, reverse mute, drill-end cutoff, drift recovery, and reload.');
 console.log('MIDI URL checks passed: download parsing, scheme validation, HTTP errors, declared and streamed size limits, and bundled public-domain music.');
