@@ -1128,8 +1128,8 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState) {
       (displacement.x * sin + displacement.z * cos) / (stepsPerCount * MARCHER_BODY_SCALE * MARCHER_BUILD_SCALE),
     );
   }
-  const stepPhase = getMusicTransportState().beat * stepsPerCount;
-  const stepNumber = Math.floor(stepPhase);
+  const stepPhase = (segmentStart + forwardProgress) * stepsPerCount;
+  const stepNumber = Math.min(Math.floor(stepPhase), Math.ceil((segmentStart + 1) * stepsPerCount) - 1);
   const gaitProgress = Math.min(1, stepPhase - stepNumber);
   const gaitPoses = MARCHING_GAIT_POSES[gaitIndex];
   const gait = MARCHING_GAITS[gaitIndex];
