@@ -8,7 +8,7 @@
       content="Babylon.js WebXR VR and AR demo for Meta Quest 3"
     />
     <title>OpenChartxr</title>
-    <script type="module" crossorigin src="/assets/index-DosaeW6u.js"></script>
+    <script type="module" crossorigin src="/assets/index-U2zQkLhO.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/rolldown-runtime-B0Z9INg1.js">
     <link rel="modulepreload" crossorigin href="/assets/engineStore-Bn2tApal.js">
     <link rel="modulepreload" crossorigin href="/assets/internalTexture-B3djGrls.js">
@@ -53,7 +53,7 @@
     <link rel="modulepreload" crossorigin href="/assets/flowGraphExecutionBlockWithOutSignal-Dkj7gfkW.js">
     <link rel="modulepreload" crossorigin href="/assets/flowGraphAsyncExecutionBlock-BG68nGzX.js">
     <link rel="modulepreload" crossorigin href="/assets/flowGraphRichTypes.pure-D2WqOeRI.js">
-    <link rel="stylesheet" crossorigin href="/assets/index-BlxqHjLt.css">
+    <link rel="stylesheet" crossorigin href="/assets/index-CfcmjrBk.css">
   </head>
   <body>
     <canvas id="renderCanvas"></canvas>
@@ -71,6 +71,27 @@
         <div class="settings-panel-header">
           <span>Settings</span>
           <button id="settingsCloseButton" class="settings-close-button">&times;</button>
+        </div>
+
+        <div class="construction-banner">
+          <div class="traffic-cone-preview" aria-hidden="true">
+            <div class="traffic-cone">
+              <span class="traffic-cone-base"></span>
+              <span class="traffic-cone-face" style="--face: 0"></span>
+              <span class="traffic-cone-face" style="--face: 1"></span>
+              <span class="traffic-cone-face" style="--face: 2"></span>
+              <span class="traffic-cone-face" style="--face: 3"></span>
+              <span class="traffic-cone-face" style="--face: 4"></span>
+              <span class="traffic-cone-face" style="--face: 5"></span>
+              <span class="traffic-cone-face" style="--face: 6"></span>
+              <span class="traffic-cone-face" style="--face: 7"></span>
+              <span class="traffic-cone-face" style="--face: 8"></span>
+              <span class="traffic-cone-face" style="--face: 9"></span>
+              <span class="traffic-cone-face" style="--face: 10"></span>
+              <span class="traffic-cone-face" style="--face: 11"></span>
+            </div>
+          </div>
+          <strong>Under construction</strong>
         </div>
 
         <div class="settings-group">
@@ -110,6 +131,9 @@
           <button id="fullScaleVRButton" class="xr-button secondary">Full scale VR</button>
           <button id="tabletopScaleButton" class="xr-button secondary">Tabletop scale</button>
           <button id="giantModeButton" class="xr-button secondary">Giant mode (fit room)</button>
+          <button id="marcherPOVModeButton" class="xr-button secondary" type="button" aria-pressed="false">Marcher POV (eye-level camera follow)</button>
+          <label class="settings-label" for="marcherPOVSelect">POV marcher</label>
+          <select id="marcherPOVSelect" aria-label="POV marcher"><option value="">Select a marcher</option></select>
           <label class="settings-label" for="roomWidth">Room width (meters)</label>
           <input id="roomWidth" type="number" min="1" max="50" step="0.1" value="4" required />
           <label class="settings-label" for="roomLength">Room length (meters)</label>
@@ -154,12 +178,6 @@
 
         <div class="settings-group">
           <label class="settings-label">Robot paths</label>
-          <label class="settings-label" for="marcherPOVSelect">POV marcher</label>
-          <select id="marcherPOVSelect" aria-label="POV marcher"><option value="">Select a marcher</option></select>
-          <label class="radio-option">
-            <input id="marcherPOVToggle" type="checkbox" />
-            <span>Marcher POV (eye-level camera follow)</span>
-          </label>
           <output id="marcherPOVStatus" class="settings-status" aria-live="polite">Select a marcher, then enable POV.</output>
           <p>Browser: mouse or arrow keys look around. VR: headset look and room-scale motion remain natural; marching moves your viewpoint. Use the palm-menu POV button to exit. Artificial VR movement may cause discomfort; pause the drill or leave POV if needed. POV is not available in AR.</p>
           <label class="radio-option">
