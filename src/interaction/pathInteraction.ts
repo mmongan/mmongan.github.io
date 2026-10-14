@@ -318,12 +318,12 @@ function setTubeLineAppearance(tube: Mesh, color: Color3, alpha: number) {
 // Selected robot's path is always shown fully opaque; every other robot's
 // path becomes visible-but-transparent once anything is selected, so the
 // selected route stands out without hiding the rest of the drill for context.
-function refreshPathLineAppearance() {
+export function refreshPathLineAppearance() {
   robotPathLines.forEach((line, robot) => {
     const isSelected = robot === selectedRobot;
     const color = getRobotColor(robot);
     setTubeLineAppearance(line, color, isSelected ? PATH_SELECTED_ALPHA : PATH_UNSELECTED_ALPHA);
-    line.setEnabled(showAllPaths || isSelected || selectedRobot !== null);
+    line.setEnabled(isMarcherPOVActive() ? isSelected : showAllPaths || isSelected || selectedRobot !== null);
   });
 }
 
@@ -1860,7 +1860,7 @@ export function updateRobotPathFromControllers() {
       const pick = nearPad ? null : pickFloatingPanel(getControllerRay(controller));
       if (nearPad || pick?.hit) {
         beginFloatingPanelGrab(handedness, gripNode.computeWorldMatrix(true),
-          nearPad ? null : pick?.pickedMesh, gripNode.getAbsolutePosition(), 0.06);
+          nearPad ? null : pick?.pickedMesh, nearPad ? gripNode.getAbsolutePosition() : pick?.pickedPoint ?? undefined, 0.06);
         padGrabButtons.set(handedness, "grip");
         return;
       }
@@ -1930,7 +1930,8 @@ export function updateRobotPathFromControllers() {
 
       const panelPick = pickFloatingPanel(getControllerRay(controller));
       if (panelPick?.hit && panelPick.pickedMesh) {
-        beginFloatingPanelGrab(handedness, getControllerPosition(controller).computeWorldMatrix(true), panelPick.pickedMesh);
+        beginFloatingPanelGrab(handedness, getControllerPosition(controller).computeWorldMatrix(true), panelPick.pickedMesh,
+          panelPick.pickedPoint ?? undefined);
         padGrabButtons.set(handedness, "trigger");
         return;
       }

@@ -777,7 +777,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
           padHands.add(handedness);
           if (action) activateChartButton(action);
           else beginFloatingPanelGrab(handedness, getHandGrabMatrix(hand),
-            near ? null : pick?.pickedMesh, point);
+            near ? null : pick?.pickedMesh, near ? point : pick?.pickedPoint ?? point);
         }
       }
       if (!point) padHands.delete(handedness);

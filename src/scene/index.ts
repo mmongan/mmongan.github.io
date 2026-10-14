@@ -15,6 +15,7 @@ import {
   getSelectedMarcher,
   getSelectableMarchers,
   selectRobot,
+  refreshPathLineAppearance,
 } from '../interaction/pathInteraction';
 import { captureContentRootMeshes, attachToARTransform } from '../xr/ar';
 import { createTeleportGrid, initXR } from '../xr/webXR';
@@ -44,7 +45,7 @@ updateFieldLevel();
 initInteraction();
 initMusicStand();
 initMidiPlayback();
-initMarcherPOV(getSelectedMarcher, getSelectableMarchers, selectRobot);
+initMarcherPOV(getSelectedMarcher, getSelectableMarchers, selectRobot, refreshPathLineAppearance);
 
 const startupChartObserver = scene.onBeforeRenderObservable.add(() => {
   scene.onBeforeRenderObservable.remove(startupChartObserver);

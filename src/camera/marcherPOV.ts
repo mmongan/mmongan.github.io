@@ -15,10 +15,21 @@ let getMarchers: () => TransformNode[] = () => [];
 let selectMarcher: (robot: TransformNode | null) => void = () => {};
 let availableVR: () => boolean = () => false;
 let listSignature = '';
+let startupPOVPending = true;
+let refreshPaths: () => void = () => {};
 
 export function isMarcherPOVActive() { return follower.active; }
+export function getMarcherPOVRobot() {
+  const robot = getSelected();
+  return follower.active && robot && !robot.isDisposed() ? robot : null;
+}
+export function getMarcherPOVLabel() {
+  const robot = getMarcherPOVRobot();
+  return robot ? `Marcher ${getMarchers().indexOf(robot) + 1}` : '';
+}
 
 export function setMarcherPOVEnabled(enabled: boolean) {
+  startupPOVPending = false;
   if (!enabled) {
     follower.stop();
     setDesktopMarcherPOV(false);
@@ -50,6 +61,7 @@ function publish(message: string) {
   if (marcherPOVExitButton) marcherPOVExitButton.hidden = !follower.active;
   if (marcherPOVStatus) marcherPOVStatus.textContent = message;
   setMarcherPOVMenuActive(follower.active);
+  refreshPaths();
 }
 
 function updateFollower() {
@@ -63,6 +75,10 @@ function updateFollower() {
 
 function refreshMarcherList() {
   const marchers = getMarchers().filter(robot => !robot.isDisposed() && robot.isEnabled());
+  if (startupPOVPending && marchers.length > 0) {
+    selectMarcher(marchers[0]);
+    setMarcherPOVEnabled(true);
+  }
   const signature = marchers.map(robot => robot.uniqueId).join(',');
   if (marcherPOVSelect && signature !== listSignature) {
     listSignature = signature;
@@ -84,16 +100,18 @@ export function initMarcherPOV(
   selected: () => TransformNode | null,
   marchers: () => TransformNode[],
   select: (robot: TransformNode | null) => void,
+  updatePaths: () => void,
 ) {
   getSelected = selected;
   getMarchers = marchers;
   selectMarcher = select;
+  refreshPaths = updatePaths;
   const toggle = marcherPOVToggle;
-  const select = marcherPOVSelect;
+  const selector = marcherPOVSelect;
   toggle?.addEventListener('change', () => setMarcherPOVEnabled(toggle.checked));
   marcherPOVExitButton?.addEventListener('click', () => setMarcherPOVEnabled(false));
-  select?.addEventListener('change', () => {
-    selectMarcher(getMarchers().find(robot => String(robot.uniqueId) === select.value) ?? null);
+  selector?.addEventListener('change', () => {
+    selectMarcher(getMarchers().find(robot => String(robot.uniqueId) === selector.value) ?? null);
     if (follower.active) updateFollower();
   });
   window.addEventListener('keydown', event => {
@@ -108,11 +126,28 @@ export function initMarcherPOV(
 }
 
 export function connectMarcherPOVXR(experience: WebXRDefaultExperience, allowed: () => boolean) {
+  let resumeOnXRFrame = false;
+  let cameraInitialized = false;
   availableVR = () => experience.baseExperience.state === WebXRState.IN_XR && allowed();
   experience.baseExperience.sessionManager.onXRFrameObservable.add(() => {
-    if (scene.activeCamera === experience.baseExperience.camera) updateFollower();
+    if (scene.activeCamera !== experience.baseExperience.camera) return;
+    if (resumeOnXRFrame && cameraInitialized && availableVR()) {
+      resumeOnXRFrame = false;
+      setMarcherPOVEnabled(true);
+    }
+    updateFollower();
   }, undefined, true);
   experience.baseExperience.onStateChangedObservable.add(state => {
-    if (state === WebXRState.ENTERING_XR || state === WebXRState.EXITING_XR) setMarcherPOVEnabled(false);
+    if (state === WebXRState.ENTERING_XR) {
+      cameraInitialized = false;
+      experience.baseExperience.camera.onXRCameraInitializedObservable.addOnce(() => {
+        cameraInitialized = true;
+      });
+      resumeOnXRFrame = follower.active;
+      setMarcherPOVEnabled(false);
+    } else if (state === WebXRState.EXITING_XR) {
+      resumeOnXRFrame = false;
+      setMarcherPOVEnabled(false);
+    }
   });
 }

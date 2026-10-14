@@ -1565,6 +1565,13 @@ export function getDrillLastCountIndex(): number {
 
 // Each registered marcher's position at a count, holding at its final spot
 // once its own route ends (same as playback does).
+export function getRobotPositionAtCount(robot: TransformNode, countIndex: number): Vector3 | null {
+  if (robot.isDisposed() || !robot.isEnabled()) return null;
+  const state = players.get(robot);
+  if (!state) return robot.position;
+  return state.counts[Math.min(state.counts.length - 1, Math.max(0, countIndex))]?.position ?? null;
+}
+
 export function getRobotPositionsAtCount(countIndex: number): Vector3[] {
   const positions: Vector3[] = [];
   players.forEach((state) => {

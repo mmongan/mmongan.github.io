@@ -13,12 +13,16 @@ import {
   getDrillLastCountIndex,
   getGlobalCountIndex,
   getRobotPositionsAtCount,
+  getRobotPositionAtCount,
   seekToCount,
 } from '../robot/robot';
 import { END_ZONE_DEPTH_YARDS, FIELD_LENGTH_YARDS, FIELD_WIDTH_YARDS, HASH_OFFSETS_YARDS } from '../field/constants';
 import { getSelectedFieldLevel } from '../ui/dom';
 import { registerMenuButton, type HandMenuHit } from './handMenu';
 import { FloatingPanel } from './floatingPanel';
+import { PanelTransparencySlider } from './panelTransparencySlider';
+import { drawPanelButton, PANEL_FRAME_COLOR, PANEL_PAPER_COLOR } from './panelStyle';
+import { getMarcherPOVRobot, getMarcherPOVLabel } from '../camera/marcherPOV';
 
 export const DRILL_CHART_COUNTS_PER_SET = 8;
 
@@ -91,20 +95,13 @@ export function flipDrillChartPage(direction: 1 | -1) {
 
 function createButtonTexture(label: string) {
   const canvas = document.createElement("canvas");
-  canvas.width = 192;
+  canvas.width = label === "X" ? 80 : 192;
   canvas.height = 80;
   const ctx = canvas.getContext("2d")!;
-  ctx.fillStyle = "#24324f";
-  ctx.beginPath();
-  ctx.roundRect(4, 4, 184, 72, 18);
-  ctx.fill();
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "bold 34px 'Segoe UI', Arial";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(label, 96, 42);
+  drawPanelButton(ctx, canvas.width, canvas.height, label);
   const texture = new DynamicTexture(`drillChartButtonTexture-${label}`, canvas, scene, false);
   texture.hasAlpha = true;
+  texture.getAlphaFromRGB = false;
   texture.update(true);
   return texture;
 }
@@ -118,8 +115,10 @@ function createPad(): Pad {
   const buttons = new Map<AbstractMesh, HandMenuHit>();
 
   const backingMaterial = new StandardMaterial("drillChartBackingMaterial", scene);
-  backingMaterial.diffuseColor = new Color3(0.45, 0.33, 0.2);
+  backingMaterial.diffuseColor = Color3.FromHexString(PANEL_FRAME_COLOR);
   backingMaterial.specularColor = Color3.Black();
+  backingMaterial.alpha = 0.08;
+  backingMaterial.disableDepthWrite = true;
   const backing = MeshBuilder.CreateBox("drillChartBacking", {
     width: PAD_WIDTH + 0.02, height: PAD_HEIGHT + 0.04, depth: BACKING_DEPTH,
   }, scene);
@@ -129,6 +128,8 @@ function createPad(): Pad {
   const stackMaterial = new StandardMaterial("drillChartStackMaterial", scene);
   stackMaterial.diffuseColor = new Color3(0.94, 0.93, 0.88);
   stackMaterial.specularColor = Color3.Black();
+  stackMaterial.alpha = 0.06;
+  stackMaterial.disableDepthWrite = true;
   const stack = MeshBuilder.CreateBox("drillChartPageStack", {
     width: PAD_WIDTH, height: PAD_HEIGHT, depth: 0.004,
   }, scene);
@@ -136,7 +137,7 @@ function createPad(): Pad {
   stack.position.z = 0.002;
 
   const bindingMaterial = new StandardMaterial("drillChartBindingMaterial", scene);
-  bindingMaterial.diffuseColor = new Color3(0.12, 0.13, 0.16);
+  bindingMaterial.diffuseColor = Color3.FromHexString(PANEL_FRAME_COLOR);
   bindingMaterial.specularColor = new Color3(0.2, 0.2, 0.2);
   const binding = MeshBuilder.CreateBox("drillChartBinding", {
     width: PAD_WIDTH + 0.024, height: 0.026, depth: 0.018,
@@ -151,15 +152,18 @@ function createPad(): Pad {
   const texture = new DynamicTexture("drillChartPageTexture", canvas, scene, true, Texture.TRILINEAR_SAMPLINGMODE);
   const pageMaterial = new StandardMaterial("drillChartPageMaterial", scene);
   pageMaterial.diffuseTexture = texture;
-  pageMaterial.emissiveColor = new Color3(0.85, 0.85, 0.85);
+  pageMaterial.emissiveColor = Color3.White();
+  pageMaterial.disableLighting = true;
   pageMaterial.specularColor = Color3.Black();
+  pageMaterial.alpha = 0.65;
+  pageMaterial.disableDepthWrite = true;
   const page = MeshBuilder.CreatePlane("drillChartPage", { width: PAD_WIDTH, height: PAD_HEIGHT }, scene);
   page.material = pageMaterial;
   page.position.z = -0.0005;
 
   const buttonDefinitions: { label: string; name: string; x: number; hit: HandMenuHit }[] = [
     { label: "◀ Prev", name: "-1", x: -1, hit: { action: "drillChartPage", direction: -1 } },
-    { label: "Hide", name: "hide", x: 0, hit: { action: "drillChartHide" } },
+    { label: "X", name: "hide", x: 0, hit: { action: "drillChartHide" } },
     { label: "Next ▶", name: "1", x: 1, hit: { action: "drillChartPage", direction: 1 } },
   ];
   for (const { label, name, x, hit } of buttonDefinitions) {
@@ -169,11 +173,13 @@ function createPad(): Pad {
     buttonMaterial.opacityTexture = buttonTexture;
     buttonMaterial.emissiveColor = Color3.White();
     buttonMaterial.disableLighting = true;
+    const isClose = name === "hide";
     const button = MeshBuilder.CreatePlane(`drillChartButton-${name}`, {
-      width: BUTTON_WIDTH, height: BUTTON_HEIGHT,
+      width: isClose ? BUTTON_HEIGHT : BUTTON_WIDTH, height: BUTTON_HEIGHT,
     }, scene);
     button.material = buttonMaterial;
     button.position.set(x * (PAD_WIDTH / 2 - BUTTON_WIDTH / 2 - 0.012), -PAD_HEIGHT / 2 + BUTTON_HEIGHT / 2 + 0.01, -0.002);
+    if (isClose) button.position.set(PAD_WIDTH / 2 - BUTTON_HEIGHT / 2, PAD_HEIGHT / 2 + 0.01, -0.008);
     registerMenuButton(button, hit);
     buttons.set(button, hit);
     button.parent = root;
@@ -185,7 +191,14 @@ function createPad(): Pad {
     meshes.add(mesh);
   }
   root.setEnabled(false);
-  const interaction = new FloatingPanel(root, meshes, root, new Vector3(PAD_WIDTH / 2 + 0.012, PAD_HEIGHT / 2 + 0.03, BACKING_DEPTH), buttons);
+  const slider = new PanelTransparencySlider(root, 'drillChartTransparency', PAD_WIDTH / 2 - 0.085,
+    PAD_HEIGHT / 2 + 0.01, 0.026, 0.06, opacity => {
+      pageMaterial.alpha = opacity;
+      backingMaterial.alpha = opacity * 0.08 / 0.65;
+      stackMaterial.alpha = opacity * 0.06 / 0.65;
+    });
+  meshes.add(slider.mesh);
+  const interaction = new FloatingPanel(root, meshes, root, new Vector3(PAD_WIDTH / 2 + 0.012, PAD_HEIGHT / 2 + 0.03, BACKING_DEPTH), buttons, undefined, slider);
   return { root, meshes, buttons, texture, ctx, interaction };
 }
 
@@ -248,10 +261,11 @@ function drawPage(target: Pad, setCounts: number[], page: number) {
   const previousCount = page > 0 ? setCounts[page - 1] : count;
   const current = getRobotPositionsAtCount(count);
   const previous = getRobotPositionsAtCount(previousCount);
+  const povRobot = getMarcherPOVRobot();
 
-  ctx.fillStyle = "#fbfaf4";
+  ctx.fillStyle = PANEL_PAPER_COLOR;
   ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-  ctx.fillStyle = "#c0392b";
+  ctx.fillStyle = "#38bdf8";
   ctx.fillRect(28, 0, 2, CANVAS_HEIGHT);
 
   ctx.fillStyle = "#1d2636";
@@ -280,6 +294,7 @@ function drawPage(target: Pad, setCounts: number[], page: number) {
     ctx.lineWidth = 2;
     ctx.setLineDash([6, 5]);
     previous.forEach((from, index) => {
+      if (povRobot) return;
       const a = fieldPoint(from);
       const b = fieldPoint(current[index]);
       if (Math.hypot(a.x - b.x, a.y - b.y) < 2) return;
@@ -289,6 +304,20 @@ function drawPage(target: Pad, setCounts: number[], page: number) {
       ctx.stroke();
     });
     ctx.setLineDash([]);
+    if (povRobot) {
+      const from = getRobotPositionAtCount(povRobot, previousCount);
+      const to = getRobotPositionAtCount(povRobot, count);
+      if (from && to) {
+        const a = fieldPoint(from);
+        const b = fieldPoint(to);
+        ctx.setLineDash([6, 5]);
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
     ctx.strokeStyle = "rgba(63, 124, 247, 0.6)";
     previous.forEach((from) => {
       const p = fieldPoint(from);
@@ -307,14 +336,36 @@ function drawPage(target: Pad, setCounts: number[], page: number) {
 
   ctx.fillStyle = "#4a5568";
   ctx.font = "20px 'Segoe UI', Arial";
+  if (povRobot) {
+    const setPosition = getRobotPositionAtCount(povRobot, count);
+    if (setPosition) {
+      const setPoint = fieldPoint(setPosition);
+      ctx.strokeStyle = "#bd5700";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(setPoint.x, setPoint.y, 11, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    const me = fieldPoint(povRobot.position);
+    ctx.fillStyle = "#ffb23e";
+    ctx.strokeStyle = "#713500";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(me.x, me.y, 9, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
   ctx.textAlign = "center";
+  ctx.font = "20px 'Segoe UI', Arial";
+  ctx.fillStyle = "#24324a";
   ctx.fillText(
     `${current.length} marcher${current.length === 1 ? "" : "s"}  ·  playhead count ${getGlobalCountIndex()}`,
     CANVAS_WIDTH / 2, FIELD_BOTTOM + 44
   );
   ctx.font = "16px 'Segoe UI', Arial";
   ctx.fillStyle = "#7a8596";
-  ctx.fillText(page > 0 ? "● this set   ○ previous set   - - path" : "● opening set", CANVAS_WIDTH / 2, FIELD_BOTTOM + 72);
+  ctx.fillText(povRobot ? `${getMarcherPOVLabel()}  ·  orange dot: live position  ·  orange ring: this set`
+    : page > 0 ? "● this set   ○ previous set   - - path" : "● opening set", CANVAS_WIDTH / 2, FIELD_BOTTOM + 72);
   ctx.strokeStyle = "#c9d3e2";
   ctx.lineWidth = 1;
   for (let y = FIELD_BOTTOM + 96; y < CANVAS_HEIGHT - 70; y += 26) {
@@ -335,7 +386,9 @@ function getPageSignature(setCounts: number[], page: number) {
       hash = (hash * 31 + Math.round(position.x * 10) * 7 + Math.round(position.z * 10)) | 0;
     }
   }
-  return `${setCounts.length}:${page}:${count}:${hash}:${getGlobalCountIndex()}:${getSelectedFieldLevel()}`;
+  const povRobot = getMarcherPOVRobot();
+  const povSignature = povRobot ? `${povRobot.uniqueId}:${povRobot.position.x.toFixed(3)}:${povRobot.position.z.toFixed(3)}` : '';
+  return `${setCounts.length}:${page}:${count}:${hash}:${getGlobalCountIndex()}:${getSelectedFieldLevel()}:${povSignature}`;
 }
 
 function refreshPage(force = false) {

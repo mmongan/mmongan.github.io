@@ -5,6 +5,7 @@ import type { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.pure';
 import type { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
 import { scene } from '../scene/engine';
 import type { HandMenuHit } from './handMenu';
+import type { PanelTransparencySlider } from './panelTransparencySlider';
 
 const panels = new Set<FloatingPanel>();
 const FOLLOW_TIME_SECONDS = 0.25;
@@ -33,6 +34,8 @@ export class FloatingPanel {
   private targetPosition = new Vector3();
   private targetRotation = new Quaternion();
   private targetScale = new Vector3();
+  private sliderDrag: { source: string; origin: Vector3; point: Vector3 } | null = null;
+  private viewerPlacement: ViewerPlacement | null = null;
   userPlaced = false;
 
   constructor(
@@ -42,6 +45,7 @@ export class FloatingPanel {
     private halfSize: Vector3,
     private buttons: Map<AbstractMesh, HandMenuHit> = new Map(),
     private resize?: PanelResize,
+    private transparencySlider?: PanelTransparencySlider,
   ) {
     root.rotationQuaternion ??= Quaternion.FromEulerVector(root.rotation);
     panels.add(this);
@@ -99,6 +103,10 @@ export class FloatingPanel {
   }
 
   update(source: string, world: Matrix) {
+    if (this.sliderDrag?.source === source && this.transparencySlider) {
+      this.transparencySlider.setFromWorld(this.sliderDrag.point.add(world.getTranslation().subtract(this.sliderDrag.origin)));
+      return;
+    }
     if (!this.grabWorlds.has(source)) return;
     this.grabWorlds.set(source, world.clone());
     if (this.stretch && this.resize) {
@@ -115,6 +123,10 @@ export class FloatingPanel {
   }
 
   end(source: string) {
+    if (this.sliderDrag?.source === source) {
+      this.release();
+      return;
+    }
     if (!this.grabWorlds.delete(source)) return;
     this.stretch = null;
     const remaining = this.grabWorlds.entries().next().value;
@@ -127,14 +139,17 @@ export class FloatingPanel {
   }
 
   release() {
+    const wasAdjustingSlider = this.sliderDrag !== null;
+    this.sliderDrag = null;
     this.source = null;
     this.grabWorlds.clear();
     this.stretch = null;
     this.dragPlane = null;
-    if (this.viewerOffset) this.captureViewerOffset();
+    if (this.viewerOffset && !wasAdjustingSlider) this.captureViewerOffset();
   }
 
   grabbed(source?: string) {
+    if (this.sliderDrag && (source === undefined || source === this.sliderDrag.source)) return true;
     return source === undefined ? this.source !== null : this.grabWorlds.has(source);
   }
 
@@ -159,6 +174,8 @@ export class FloatingPanel {
     if (inXR && placement.uprightInXR) away.y = 0;
     this.root.lookAt(this.root.position.add(away));
     this.userPlaced = false;
+    this.viewerPlacement = placement;
+    this.viewerOffset = null;
     this.captureViewerOffset();
     return true;
   }
@@ -167,6 +184,14 @@ export class FloatingPanel {
     const camera = scene.activeCamera;
     if (!camera) return;
     camera.getViewMatrix(true);
+    // Do not turn an out-of-view release pose into a permanent follow offset.
+    if (this.viewerOffset && this.viewerPlacement) {
+      const toPanel = this.root.position.subtract(camera.globalPosition);
+      const distance = toPanel.length();
+      const forward = camera.getForwardRay().direction;
+      if (distance < 0.2 || distance > 3 ||
+        Vector3.Dot(toPanel.scale(1 / distance), forward) < 0.5) return;
+    }
     this.viewerOffset = this.root.computeWorldMatrix(true).multiply(camera.getWorldMatrix().clone().invert());
   }
 
@@ -190,19 +215,35 @@ export class FloatingPanel {
 
   beginPointer(ray: Ray) {
     const pick = this.pick(ray);
-    if (!pick?.pickedPoint || this.source !== null) return false;
-    this.begin('pointer', Matrix.Identity());
+    if (!pick?.pickedPoint || this.grabbed()) return false;
+    if (!this.beginSlider('pointer', Matrix.Identity(), pick.pickedMesh, pick.pickedPoint)) {
+      this.begin('pointer', Matrix.Identity());
+    }
     this.dragPlane = Plane.FromPositionAndNormal(pick.pickedPoint, ray.direction.scale(-1));
     this.root.position.subtractToRef(pick.pickedPoint, this.dragOffset);
     return true;
   }
 
   updatePointer(ray: Ray) {
-    if (this.source !== 'pointer' || !this.dragPlane) return;
+    if (!this.grabbed('pointer') || !this.dragPlane) return;
     const distance = ray.intersectsPlane(this.dragPlane);
     if (distance === null || distance <= 0 || distance > 6) return;
+    if (this.sliderDrag && this.transparencySlider) {
+      this.transparencySlider.setFromWorld(ray.origin.add(ray.direction.scale(distance)));
+      return;
+    }
     ray.origin.add(ray.direction.scale(distance)).addToRef(this.dragOffset, this.root.position);
     this.face(ray.origin);
+  }
+
+  beginSlider(source: string, world: Matrix, mesh?: AbstractMesh | null, point?: Vector3) {
+    if (!this.root.isEnabled() || !this.transparencySlider?.hit(mesh, point)) return false;
+    for (const panel of panels) panel.end(source);
+    this.release();
+    const start = point ?? this.transparencySlider.mesh.getAbsolutePosition();
+    this.sliderDrag = { source, origin: world.getTranslation(), point: start.clone() };
+    this.transparencySlider.beginDrag(start);
+    return true;
   }
 
   nudge(ray: Ray, delta: number) {
@@ -246,7 +287,7 @@ export function getFloatingPanelButtonNearPoint(point: Vector3): HandMenuHit | n
 export function beginFloatingPanelGrab(source: string, world: Matrix, mesh?: AbstractMesh | null, point?: Vector3, tolerance = 0.03) {
   const panel = mesh ? [...panels].find(panel => panel.meshes.has(mesh))
     : point ? getFloatingPanelNear(point, tolerance) : undefined;
-  panel?.begin(source, world);
+  if (panel && !panel.beginSlider(source, world, mesh, point)) panel.begin(source, world);
   return !!panel;
 }
 

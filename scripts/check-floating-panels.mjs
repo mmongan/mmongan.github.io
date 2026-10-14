@@ -11,6 +11,7 @@ import { Plane } from '@babylonjs/core/Maths/math.plane.js';
 import { Ray } from '@babylonjs/core/Culling/ray.js';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
 import { FreeCamera } from '@babylonjs/core/Cameras/freeCamera.js';
+import { Color3 } from '@babylonjs/core/Maths/math.color.js';
 
 const engine = new NullEngine();
 const scene = new Scene(engine);
@@ -187,7 +188,80 @@ try {
   score.root.setEnabled(false);
   assert.equal(api.getFloatingPanelNear(score.root.position), undefined);
   assert.equal(api.pickFloatingPanel(ray)?.hit, false);
-  console.log('Floating panel checks passed: closest picking, tilted near contact, pose tracking, hand takeover, two-hand stretching, clamped size, resized picking, release continuity, single-panel ownership, pointer drag, distance bounds, and hidden panels.');
+  score.root.setEnabled(true);
+  camera.position.setAll(0);
+  camera.rotation.setAll(0);
+  const placement = {
+    desktop: { distance: 0.75, height: -0.08 },
+    xr: { distance: 0.55, height: -0.22 }, side: -0.35,
+  };
+  score.panel.placeForViewer(placement);
+  score.panel.begin('left', Matrix.Identity());
+  const beforeLostRelease = score.root.position.clone();
+  camera.rotation.y = Math.PI;
+  score.panel.followViewer(1);
+  assert.ok(score.root.position.equals(beforeLostRelease), 'Turning does not move a held panel');
+  score.panel.end('left');
+  assert.ok(score.root.position.equals(beforeLostRelease), 'Recovery does not snap on release');
+  for (let i = 0; i < 120; i++) score.panel.followViewer(1 / 60);
+  const recoveredLocal = Vector3.TransformCoordinates(score.root.position, camera.getViewMatrix(true));
+  assert.ok(recoveredLocal.z > 0.7 && recoveredLocal.x < -0.3,
+    'Released panel finds viewer again on original left side after a 180-degree turn');
+  score.root.setEnabled(false);
+  const sliderContext = vm.createContext({
+    scene, Vector3, Color3, MeshBuilder, StandardMaterial,
+    drawPanelButton() {},
+    DynamicTexture: class { update() {} dispose() {} },
+    document: { createElement: () => ({
+      getContext: () => new Proxy({}, { get: () => () => {}, set: () => true }),
+    }) },
+  });
+  const sliderSource = readFileSync(new URL('../src/menu/panelTransparencySlider.ts', import.meta.url), 'utf8');
+  vm.runInContext(`${stripTypeScriptTypes(sliderSource, { mode: 'transform' })
+    .replace(/^import .*?;\r?$/gm, '').replace(/export /g, '')}
+globalThis.Slider = PanelTransparencySlider;`, sliderContext);
+  const sliderRoot = new TransformNode('sliderPanel', scene);
+  sliderRoot.position.z = 1;
+  let opacity = -1;
+  const slider = new sliderContext.Slider(sliderRoot, 'slider', 0.4, 0, 0.04, 0.08, value => { opacity = value; });
+  const sliderPanel = new api.FloatingPanel(sliderRoot, new Set([slider.mesh]), sliderRoot,
+    new Vector3(0.45, 0.3, 0.03), undefined, undefined, slider);
+  assert.equal(opacity, 0.65, 'Start at existing 35% transparency');
+  const sliderPoint = slider.mesh.getAbsolutePosition().clone();
+  assert.ok(api.beginFloatingPanelGrab('left', Matrix.Identity(), null, sliderPoint), 'Near pinch targets slider');
+  assert.equal(opacity, 0.65, 'Grabbing header handle does not jump transparency');
+  const panelPose = sliderRoot.position.clone();
+  api.updateFloatingPanelGrab('left', Matrix.Translation(0, 1, 0));
+  assert.equal(opacity, 0, 'Upward drag reaches 100% transparency');
+  api.updateFloatingPanelGrab('left', Matrix.Translation(0, -1, 0));
+  assert.equal(opacity, 1, 'Downward drag reaches 0% transparency');
+  assert.ok(sliderRoot.position.equals(panelPose), 'Slider gesture never moves panel');
+  api.endFloatingPanelGrab('left');
+  assert.equal(sliderPanel.grabbed(), false);
+  slider.setTransparency(35);
+  const sliderRay = new Ray(new Vector3(0.4, 0, 0), Vector3.Forward(), 3);
+  assert.ok(api.beginFloatingPanelPointerDrag(sliderRay), 'Mouse can start slider drag');
+  api.updateFloatingPanelPointerDrag(new Ray(new Vector3(0.4, 0.18, 0), Vector3.Forward(), 3));
+  assert.ok(opacity < 1e-6, 'Mouse reaches clear endpoint');
+  assert.ok(sliderRoot.position.equals(panelPose), 'Mouse slider does not move panel');
+  api.endFloatingPanelGrab('pointer');
+  sliderPanel.placeForViewer({
+    desktop: { distance: 1, height: 0 }, xr: { distance: 1, height: 0 }, side: 0.6,
+  });
+  const beforeSliderTurn = sliderRoot.position.clone();
+  const contact = slider.mesh.getAbsolutePosition().clone();
+  api.beginFloatingPanelGrab('right', Matrix.Identity(), slider.mesh, contact);
+  camera.rotation.y += Math.PI;
+  sliderPanel.followViewer(1);
+  assert.ok(sliderRoot.position.equals(beforeSliderTurn), 'Slider contact suspends follow');
+  api.endFloatingPanelGrab('right');
+  for (let i = 0; i < 120; i++) sliderPanel.followViewer(1 / 60);
+  const sliderRecovered = Vector3.TransformCoordinates(sliderRoot.position, camera.getViewMatrix(true));
+  assert.ok(sliderRecovered.z > 0.99 && sliderRecovered.x > 0.59,
+    'After turning during slider interaction the panel recovers to the right, not behind viewer');
+  sliderRoot.setEnabled(false);
+  assert.equal(api.beginFloatingPanelPointerDrag(sliderRay), false, 'Hidden slider cannot be dragged');
+  console.log('Floating panel checks passed: picking, near contact, pose tracking, two-hand stretching, limits, release, ownership, pointer drag, viewer follow, and independent mouse/pinch transparency sliders with clamped endpoints.');
 } finally {
   scene.dispose();
   engine.dispose();

@@ -6,6 +6,8 @@ import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
 import { scene } from '../scene/engine';
 import { FloatingPanel } from './floatingPanel';
+import { PanelTransparencySlider } from './panelTransparencySlider';
+import { drawPanelButton, PANEL_FRAME_COLOR, PANEL_PAPER_COLOR } from './panelStyle';
 import {
   musicStandToggle, musicStandPlaceButton, musicStandStatus,
   musicStandSizeInput, musicStandSizeValue, musicScoreMeasuresSelect,
@@ -79,8 +81,10 @@ export function initMusicStand() {
   deskNode = desk;
 
   const metal = new StandardMaterial('musicStandMetal', scene);
-  metal.diffuseColor = new Color3(0.09, 0.1, 0.12);
+  metal.diffuseColor = Color3.FromHexString(PANEL_FRAME_COLOR);
   metal.specularColor = new Color3(0.3, 0.3, 0.3);
+  metal.alpha = 0.08;
+  metal.disableDepthWrite = true;
   const backing = MeshBuilder.CreateBox('musicStandBacking', { width: 0.72, height: 0.82, depth: 0.018 }, scene);
   backing.parent = desk;
   backing.position.set(0, -0.02, 0.016);
@@ -89,6 +93,13 @@ export function initMusicStand() {
   lip.parent = desk;
   lip.position.set(0, -0.43, -0.012);
   lip.material = metal;
+  const headerMaterial = new StandardMaterial('musicStandHeaderMaterial', scene);
+  headerMaterial.diffuseColor = Color3.FromHexString(PANEL_FRAME_COLOR);
+  headerMaterial.specularColor = Color3.Black();
+  const header = MeshBuilder.CreateBox('musicStandHeader', { width: 0.74, height: 0.055, depth: 0.018 }, scene);
+  header.parent = desk;
+  header.position.set(0, 0.31, 0.01);
+  header.material = headerMaterial;
   const canvas = document.createElement('canvas');
   canvas.width = WIDTH;
   canvas.height = HEIGHT;
@@ -100,6 +111,8 @@ export function initMusicStand() {
   paper.emissiveColor = Color3.White();
   paper.disableLighting = true;
   paper.specularColor = Color3.Black();
+  paper.alpha = 0.65;
+  paper.disableDepthWrite = true;
   const sheet = MeshBuilder.CreatePlane('musicStandScore', { width: 0.65, height: 0.65 * HEIGHT / WIDTH }, scene);
   sheet.parent = desk;
   sheet.material = paper;
@@ -113,8 +126,11 @@ export function initMusicStand() {
     buttonCanvas.width = 256;
     buttonCanvas.height = 128;
     const buttonTexture = new DynamicTexture(`musicStandButtonTexture-${action}`, buttonCanvas, scene, false);
+    buttonTexture.hasAlpha = true;
+    buttonTexture.getAlphaFromRGB = false;
     const material = new StandardMaterial(`musicStandButtonMaterial-${action}`, scene);
     material.diffuseTexture = buttonTexture;
+    material.opacityTexture = buttonTexture;
     material.emissiveColor = Color3.White();
     material.disableLighting = true;
     const button = MeshBuilder.CreatePlane(`musicStandButton-${action}`, { width: 0.115, height: 0.0575 }, scene);
@@ -157,20 +173,23 @@ export function initMusicStand() {
     {
       name: 'musicStandHide',
       action: { action: 'musicStandHide' },
-      width: 0.11,
+      width: 0.05,
       height: 0.05,
-      x: 0.27,
-      getText: () => 'Hide',
+      x: 0.32,
+      getText: () => 'X',
     },
   ];
 
   for (const def of topBarDefs) {
     const buttonCanvas = document.createElement('canvas');
-    buttonCanvas.width = def.width > 0.2 ? 512 : 256;
+    buttonCanvas.width = def.width > 0.2 ? 512 : 96;
     buttonCanvas.height = 96;
     const buttonTexture = new DynamicTexture(`musicStandButtonTexture-${def.name}`, buttonCanvas, scene, false);
+    buttonTexture.hasAlpha = true;
+    buttonTexture.getAlphaFromRGB = false;
     const material = new StandardMaterial(`musicStandButtonMaterial-${def.name}`, scene);
     material.diffuseTexture = buttonTexture;
+    material.opacityTexture = buttonTexture;
     material.emissiveColor = Color3.White();
     material.disableLighting = true;
     const button = MeshBuilder.CreatePlane(`musicStandButton-${def.name}`, { width: def.width, height: def.height }, scene);
@@ -185,26 +204,22 @@ export function initMusicStand() {
   function updateTopBarButtons() {
     for (const item of topBarTextures) {
       const bCtx = item.canvas.getContext('2d');
-      if (!bCtx) continue;
-      bCtx.fillStyle = '#1e293b';
-      bCtx.fillRect(0, 0, item.canvas.width, item.canvas.height);
-      bCtx.fillStyle = '#38bdf8';
-      bCtx.lineWidth = 4;
-      bCtx.strokeRect(2, 2, item.canvas.width - 4, item.canvas.height - 4);
-      bCtx.fillStyle = '#ffffff';
-      bCtx.font = item.canvas.width > 256 ? 'bold 36px Arial' : 'bold 40px Arial';
-      bCtx.textAlign = 'center';
-      bCtx.textBaseline = 'middle';
-      bCtx.fillText(item.getText(), item.canvas.width / 2, item.canvas.height / 2);
+      if (!bCtx) throw new Error('Music panel buttons require a 2D canvas context.');
+      drawPanelButton(bCtx, item.canvas.width, item.canvas.height, item.getText());
       item.texture.update(true);
     }
   }
   updateTopBarButtonsFn = updateTopBarButtons;
   updateTopBarButtons();
 
-  const interaction = new FloatingPanel(root, new Set([backing, lip, sheet, ...buttons.keys()]),
+  const slider = new PanelTransparencySlider(desk, 'musicStandTransparency', 0.21, 0.31,
+    0.04, 0.08, opacity => {
+      paper.alpha = opacity;
+      metal.alpha = opacity * 0.08 / 0.65;
+    });
+  const interaction = new FloatingPanel(root, new Set([backing, lip, header, sheet, slider.mesh, ...buttons.keys()]),
     desk, new Vector3(0.38, 0.44, 0.055), buttons,
-    { getScale: getMusicStandScale, setScale: setMusicStandScale });
+    { getScale: getMusicStandScale, setScale: setMusicStandScale }, slider);
   let buttonSignature = '';
   function updateMediaButtons() {
     const transport = getDrillTransportState();
@@ -215,13 +230,7 @@ export function initMusicStand() {
       const ctx = button.canvas.getContext('2d');
       if (!ctx) throw new Error('Music media controls require a 2D canvas context.');
       const active = button.action.action === 'playPause' && transport.playing;
-      ctx.fillStyle = active ? '#245a98' : '#24324f';
-      ctx.fillRect(0, 0, 256, 128);
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 44px Arial';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(active ? 'Pause' : button.label, 128, 64);
+      drawPanelButton(ctx, 256, 128, active ? 'Pause' : button.label, active);
       button.texture.update(true);
     }
   }
@@ -238,7 +247,7 @@ export function initMusicStand() {
   root.setEnabled(false);
 
   function draw() {
-    ctx!.fillStyle = '#fffdf7';
+    ctx!.fillStyle = PANEL_PAPER_COLOR;
     ctx!.fillRect(0, 0, WIDTH, HEIGHT);
     ctx!.fillStyle = '#111827';
     ctx!.font = 'bold 36px Arial';
