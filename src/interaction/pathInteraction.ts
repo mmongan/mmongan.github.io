@@ -1860,7 +1860,7 @@ export function updateRobotPathFromControllers() {
       const pick = nearPad ? null : pickFloatingPanel(getControllerRay(controller));
       if (nearPad || pick?.hit) {
         beginFloatingPanelGrab(handedness, gripNode.computeWorldMatrix(true),
-          nearPad ? null : pick?.pickedMesh, nearPad ? gripNode.getAbsolutePosition() : pick?.pickedPoint ?? undefined, 0.06);
+          nearPad ? null : pick?.pickedMesh, nearPad ? gripNode.getAbsolutePosition() : pick?.pickedPoint ?? undefined, 0.06, !nearPad);
         padGrabButtons.set(handedness, "grip");
         return;
       }
@@ -1931,7 +1931,7 @@ export function updateRobotPathFromControllers() {
       const panelPick = pickFloatingPanel(getControllerRay(controller));
       if (panelPick?.hit && panelPick.pickedMesh) {
         beginFloatingPanelGrab(handedness, getControllerPosition(controller).computeWorldMatrix(true), panelPick.pickedMesh,
-          panelPick.pickedPoint ?? undefined);
+          panelPick.pickedPoint ?? undefined, 0.03, true);
         padGrabButtons.set(handedness, "trigger");
         return;
       }

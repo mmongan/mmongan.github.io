@@ -326,9 +326,9 @@ export function initMusicStand() {
     const camera = scene.activeCamera;
     if (!camera) return;
     interaction.placeForViewer({
-      desktop: { distance: 1.35, height: 0.12 },
-      xr: { distance: 1.15, height: -0.4 },
-      side: 0.6,
+      desktop: { distance: 1.6, height: 0.12, side: 0.7 },
+      xr: { distance: 0.42, height: -0.22 },
+      side: 0.3,
       uprightInXR: true,
     });
     placedCamera = camera;

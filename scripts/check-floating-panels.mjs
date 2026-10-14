@@ -261,6 +261,23 @@ globalThis.Slider = PanelTransparencySlider;`, sliderContext);
     'After turning during slider interaction the panel recovers to the right, not behind viewer');
   sliderRoot.setEnabled(false);
   assert.equal(api.beginFloatingPanelPointerDrag(sliderRay), false, 'Hidden slider cannot be dragged');
+  score.root.setEnabled(true);
+  score.root.position.set(0, 0, 2);
+  score.root.rotationQuaternion.copyFrom(Quaternion.Identity());
+  score.mesh.computeWorldMatrix(true);
+  const remotePoint = score.mesh.getAbsolutePosition().clone();
+  const handWorld = Matrix.Translation(0.2, -0.1, 0.4);
+  api.beginFloatingPanelGrab('left', handWorld, score.mesh, remotePoint, 0.03, true);
+  score.mesh.computeWorldMatrix(true);
+  assert.ok(Vector3.Distance(score.mesh.getAbsolutePosition(), handWorld.getTranslation()) < 1e-6,
+    'Ray selection summons picked location directly to hand');
+  assert.ok(score.panel.grabbed('left'), 'Summoned panel starts a hand grab');
+  const summonedPosition = score.root.position.clone();
+  api.updateFloatingPanelGrab('left', Matrix.Translation(0.3, 0, 0.4));
+  assert.ok(Vector3.Distance(score.root.position, summonedPosition.add(new Vector3(0.1, 0.1, 0))) < 1e-6,
+    'Summoned panel follows hand immediately');
+  api.endFloatingPanelGrab('left');
+  score.root.setEnabled(false);
   console.log('Floating panel checks passed: picking, near contact, pose tracking, two-hand stretching, limits, release, ownership, pointer drag, viewer follow, and independent mouse/pinch transparency sliders with clamped endpoints.');
 } finally {
   scene.dispose();

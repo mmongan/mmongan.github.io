@@ -16,7 +16,7 @@ interface PanelResize {
 }
 
 interface ViewerPlacement {
-  desktop: { distance: number; height: number };
+  desktop: { distance: number; height: number; side?: number };
   xr: { distance: number; height: number };
   side: number;
   uprightInXR?: boolean;
@@ -168,7 +168,7 @@ export class FloatingPanel {
     const pose = inXR ? placement.xr : placement.desktop;
     this.release();
     this.root.position.copyFrom(camera.globalPosition.add(forward.scale(pose.distance))
-      .add(right.scale(placement.side)));
+      .add(right.scale(!inXR ? placement.desktop.side ?? placement.side : placement.side)));
     this.root.position.y += pose.height;
     const away = this.root.position.subtract(camera.globalPosition);
     if (inXR && placement.uprightInXR) away.y = 0;
@@ -246,6 +246,14 @@ export class FloatingPanel {
     return true;
   }
 
+  summonToHand(world: Matrix, point: Vector3) {
+    this.release();
+    const hand = world.getTranslation();
+    this.root.position.addInPlace(hand.subtract(point));
+    this.root.computeWorldMatrix(true);
+    return hand;
+  }
+
   nudge(ray: Ray, delta: number) {
     if (!this.pick(ray) || this.grabbed()) return false;
     const offset = this.root.position.subtract(ray.origin);
@@ -284,9 +292,13 @@ export function getFloatingPanelButtonNearPoint(point: Vector3): HandMenuHit | n
   return null;
 }
 
-export function beginFloatingPanelGrab(source: string, world: Matrix, mesh?: AbstractMesh | null, point?: Vector3, tolerance = 0.03) {
+export function beginFloatingPanelGrab(source: string, world: Matrix, mesh?: AbstractMesh | null, point?: Vector3, tolerance = 0.03, summon = false) {
   const panel = mesh ? [...panels].find(panel => panel.meshes.has(mesh))
     : point ? getFloatingPanelNear(point, tolerance) : undefined;
+  if (panel && summon && point && !panel.grabbed() &&
+    Vector3.Distance(point, world.getTranslation()) > 0.15) {
+    point = panel.summonToHand(world, point);
+  }
   if (panel && !panel.beginSlider(source, world, mesh, point)) panel.begin(source, world);
   return !!panel;
 }

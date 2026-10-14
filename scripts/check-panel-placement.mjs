@@ -53,14 +53,26 @@ for (const inXR of [false, true]) {
     const right = new Vector3(forward.z, 0, -forward.x);
     if (right.lengthSquared() < 1e-6) right.copyFrom(camera.getDirection(Vector3.Right()));
     right.normalize();
-    assert.ok(Math.abs(Vector3.Dot(chartOffset, right) + 0.35) < 1e-6, 'Chart opens on viewer left');
-    assert.ok(Math.abs(Vector3.Dot(scoreOffset, right) - 0.6) < 1e-6, 'Score opens on viewer right');
-    const expectedChart = forward.scale(inXR ? 0.55 : 0.75).add(right.scale(-0.35));
+    assert.ok(Math.abs(Vector3.Dot(chartOffset, right) + (inXR ? 0.3 : 0.45)) < 1e-6, 'Chart opens on viewer left');
+    assert.ok(Math.abs(Vector3.Dot(scoreOffset, right) - (inXR ? 0.3 : 0.7)) < 1e-6, 'Score opens on viewer right');
+    const expectedChart = forward.scale(inXR ? 0.42 : 1).add(right.scale(inXR ? -0.3 : -0.45));
     expectedChart.y -= inXR ? 0.22 : 0.08;
-    const expectedScore = forward.scale(inXR ? 1.15 : 1.35).add(right.scale(0.6));
-    expectedScore.y += inXR ? -0.4 : 0.12;
+    const expectedScore = forward.scale(inXR ? 0.42 : 1.6).add(right.scale(inXR ? 0.3 : 0.7));
+    expectedScore.y += inXR ? -0.22 : 0.12;
     assert.ok(Vector3.Distance(chartOffset, expectedChart) < 1e-6);
     assert.ok(Vector3.Distance(scoreOffset, expectedScore) < 1e-6);
+    if (inXR) {
+      assert.ok(chartOffset.length() < 0.6 && scoreOffset.length() < 0.6,
+        'Both XR panel centers remain within 60 cm of the eyes');
+      const chartHandle = Vector3.TransformCoordinates(new Vector3(0.125, 0.1675, -0.01), chart.computeWorldMatrix(true));
+      const scoreDesk = new TransformNode('scoreDesk', scene);
+      scoreDesk.parent = score;
+      scoreDesk.rotation.x = Math.PI / 10;
+      const scoreHandle = Vector3.TransformCoordinates(new Vector3(0.21, 0.31, -0.01), scoreDesk.computeWorldMatrix(true));
+      assert.ok(Vector3.Distance(chartHandle, eye) < 0.75 && Vector3.Distance(scoreHandle, eye) < 0.75,
+        'Header transparency handles remain within 75 cm at default size');
+      scoreDesk.dispose();
+    }
     assert.equal(interaction.userPlaced, false, 'Explicit score placement resets user-positioned state');
     assert.ok([chart.rotationQuaternion, score.rotationQuaternion].every(q =>
       [q.x, q.y, q.z, q.w].every(Number.isFinite)), 'Vertical views must have valid panel rotations');

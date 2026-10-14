@@ -37,10 +37,10 @@ const FIELD_TOP = 118;
 const FIELD_BOTTOM = FIELD_TOP + (FIELD_RIGHT - FIELD_LEFT) * FIELD_WIDTH_YARDS / FIELD_LENGTH_YARDS;
 const BUTTON_WIDTH = 0.075;
 const BUTTON_HEIGHT = 0.032;
-const SPAWN_DISTANCE = 0.55;
+const SPAWN_DISTANCE = 0.42;
 const SPAWN_DROP = 0.22;
 // The desktop camera has a narrower view, so the pad floats farther and higher there.
-const DESKTOP_SPAWN_DISTANCE = 0.75;
+const DESKTOP_SPAWN_DISTANCE = 1;
 const DESKTOP_SPAWN_DROP = 0.08;
 const REDRAW_INTERVAL_FRAMES = 6;
 
@@ -405,9 +405,9 @@ function refreshPage(force = false) {
 function placeInFrontOfViewer() {
   if (!pad) return;
   pad.interaction.placeForViewer({
-    desktop: { distance: DESKTOP_SPAWN_DISTANCE, height: -DESKTOP_SPAWN_DROP },
+    desktop: { distance: DESKTOP_SPAWN_DISTANCE, height: -DESKTOP_SPAWN_DROP, side: -0.45 },
     xr: { distance: SPAWN_DISTANCE, height: -SPAWN_DROP },
-    side: -0.35,
+    side: -0.3,
   });
 }
 
