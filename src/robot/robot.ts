@@ -1157,7 +1157,7 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState) {
   ) => {
     const footZ = localDisplacement.z * offset;
     const angle = Math.asin(Math.max(-0.95, Math.min(0.95, -footZ / 0.47)));
-    const kneeRotationAngle = -Math.min(MAX_KNEE_BEND_RADIANS, Math.max(0, kneeAngle));
+    const kneeRotationAngle = Math.min(MAX_KNEE_BEND_RADIANS, Math.max(0, kneeAngle));
     knee.rotation.x = kneeRotationAngle;
     ankle.rotation.x = ankleAngle;
     leg.rotation.x = angle;
