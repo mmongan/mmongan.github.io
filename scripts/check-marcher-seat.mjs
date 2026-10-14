@@ -52,6 +52,16 @@ try {
       assert.ok(bottom < 0 && top > 0, `${name}: rounded ends enclose joint center`);
       assert.ok(part.getTotalVertices() <= 100, `${name}: bounded geometry for XR`);
     }
+    const jacket = templates.getMarcherJacketTemplate(scene, detail).getVerticesData('position');
+    const hem = [];
+    for (let i = 0; i < jacket.length; i += 3) {
+      if (jacket[i + 1] <= 0.61) hem.push(new Vector3(jacket[i], jacket[i + 1], jacket[i + 2]));
+    }
+    assert.ok(Math.min(...hem.map(p => p.y)) <= 0.48, `${detail}: jacket covers upper thighs`);
+    assert.ok(Math.min(...hem.map(p => p.y)) > 0.4, `${detail}: jacket leaves knees visible`);
+    assert.ok(Math.max(...hem.map(p => p.x)) > 0.2, `${detail}: hem clears both hip joints`);
+    assert.ok(Math.min(...hem.map(p => p.z)) < -0.17 &&
+      Math.max(...hem.map(p => p.z)) > 0.17, `${detail}: hem covers hip motion front and back`);
     const mesh = getMarcherTrimTemplate(scene, detail);
     const positions = mesh.getVerticesData('position');
     const normals = mesh.getVerticesData('normal');
