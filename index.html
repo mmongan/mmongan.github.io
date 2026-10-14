@@ -8,7 +8,7 @@
       content="Babylon.js WebXR VR and AR demo for Meta Quest 3"
     />
     <title>OpenChartxr</title>
-    <script type="module" crossorigin src="/assets/index-DUdDt8Dx.js"></script>
+    <script type="module" crossorigin src="/assets/index-Cq4FJMGf.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/rolldown-runtime-B0Z9INg1.js">
     <link rel="modulepreload" crossorigin href="/assets/engineStore-Bn2tApal.js">
     <link rel="modulepreload" crossorigin href="/assets/internalTexture-B3djGrls.js">
@@ -187,7 +187,13 @@
             <option value="1.25">1.25 (two steps)</option>
             <option value="2.5">2.5</option>
             <option value="5">5 (yard lines)</option>
+            <option value="custom">Custom X/Z</option>
           </select>
+          <label class="settings-label" for="gridSnapX">X rounding (yards)</label>
+          <input id="gridSnapX" type="number" min="0.001" max="10" step="any" value="0.625" required />
+          <label class="settings-label" for="gridSnapZ">Z rounding (yards)</label>
+          <input id="gridSnapZ" type="number" min="0.001" max="10" step="any" value="0.625" required />
+          <p>Hold Shift to temporarily bypass grid and angle snapping. Press 1 outside text fields to round the selected standing form to whole yards.</p>
           <label class="radio-option"><input id="angleSnapToggle" type="checkbox" /><span>Snap rotations to 45 degrees</span></label>
           <label class="settings-label" for="formationPreset">Form tool</label>
           <select id="formationPreset">
@@ -200,19 +206,28 @@
           <label class="settings-label" for="formationSpacing">Marcher spacing (yards)</label>
           <input id="formationSpacing" type="number" min="0.625" max="10" step="any" value="1.25" required />
           <label class="settings-label" for="formationOriginX">New form origin X (yards across field width)</label>
-          <input id="formationOriginX" type="number" min="-25" max="25" step="0.625" value="15" required />
+          <input id="formationOriginX" type="number" min="-25" max="25" step="any" value="15" required />
           <label class="settings-label" for="formationOriginZ">New form origin Z (yards along field length)</label>
-          <input id="formationOriginZ" type="number" min="-50" max="50" step="0.625" value="30" required />
+          <input id="formationOriginZ" type="number" min="-50" max="50" step="any" value="30" required />
           <button type="submit" value="create">Create form</button>
           <label class="settings-label" for="formationSelection">Selected standing form</label>
           <select id="formationSelection"><option value="">Select a form</option></select>
+          <p>Align X makes a line along Z; align Z makes a line along X. Distribution keeps the outermost positions and spaces the others evenly on that axis. Colliding results are rejected.</p>
+          <button type="submit" value="alignX">Align X</button>
+          <button type="submit" value="alignZ">Align Z</button>
+          <button type="submit" value="distributeX">Distribute X evenly</button>
+          <button type="submit" value="distributeZ">Distribute Z evenly</button>
+          <button type="submit" value="round">Round to whole yards (1)</button>
           <button type="submit" value="spacing">Apply spacing to selected form</button>
+          <label class="radio-option"><input id="formationLockX" type="checkbox" /><span>Lock X translation</span></label>
+          <label class="radio-option"><input id="formationLockZ" type="checkbox" /><span>Lock Z translation</span></label>
+          <p>Axis locks constrain standing-form moves and control-point handles, not rotation, scaling, or alignment.</p>
           <label class="settings-label" for="formationMoveX">Move X (yards)</label>
-          <input id="formationMoveX" type="number" min="-100" max="100" step="0.625" value="0" required />
+          <input id="formationMoveX" type="number" min="-100" max="100" step="any" value="0" required />
           <label class="settings-label" for="formationMoveZ">Move Z (yards)</label>
-          <input id="formationMoveZ" type="number" min="-100" max="100" step="0.625" value="0" required />
+          <input id="formationMoveZ" type="number" min="-100" max="100" step="any" value="0" required />
           <label class="settings-label" for="formationRotation">Rotate (degrees, clockwise)</label>
-          <input id="formationRotation" type="number" min="-360" max="360" step="15" value="0" required />
+          <input id="formationRotation" type="number" min="-360" max="360" step="any" value="0" required />
           <label class="settings-label" for="formationScale">Scale selected form</label>
           <input id="formationScale" type="number" min="0.25" max="4" step="0.05" value="1" required />
           <button type="submit" value="transform">Apply group transform</button>
