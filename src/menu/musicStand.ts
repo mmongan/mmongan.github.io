@@ -3,10 +3,9 @@ import { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
 import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.pure';
 import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
-import { Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
+import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
 import { scene } from '../scene/engine';
 import { FloatingPanel } from './floatingPanel';
-import { isCameraIntroComplete } from '../camera/desktopCamera';
 import {
   musicStandToggle, musicStandPlaceButton, musicStandStatus,
   musicStandSizeInput, musicStandSizeValue, musicScoreMeasuresSelect,
@@ -34,7 +33,7 @@ export function setMusicStandVisible(visible: boolean) {
 }
 
 export function setMusicStandScale(scale: number) {
-  const clamped = Math.max(0.6, Math.min(2.5, Math.round(scale * 10) / 10));
+  const clamped = Math.max(0.6, Math.min(2.5, Math.round(scale * 1000) / 1000));
   standScale = clamped;
   if (deskNode) {
     deskNode.scaling.setAll(standScale);
@@ -47,10 +46,6 @@ export function setMusicStandScale(scale: number) {
   }
   setScoreStandScale(standScale);
   updateTopBarButtonsFn?.();
-}
-
-export function adjustMusicStandScale(delta: number) {
-  setMusicStandScale(standScale + delta);
 }
 
 export function getMusicStandScale(): number {
@@ -148,32 +143,16 @@ export function initMusicStand() {
     getText: () => string;
   }[] = [
     {
-      name: 'musicStandSizeDecrease',
-      action: { action: 'musicStandSizeDecrease' },
-      width: 0.11,
-      height: 0.05,
-      x: -0.27,
-      getText: () => 'Pad -',
-    },
-    {
       name: 'musicStandStaffToggle',
       action: { action: 'musicStandStaffToggle' },
-      width: 0.23,
+      width: 0.35,
       height: 0.05,
-      x: -0.085,
+      x: -0.10,
       getText: () => {
         const config = getScoreMeasuresConfig();
         const effective = getEffectiveMeasuresPerPage();
         return config === 'auto' ? `Staff: Auto (${effective})` : `Staff: ${config}m`;
       },
-    },
-    {
-      name: 'musicStandSizeIncrease',
-      action: { action: 'musicStandSizeIncrease' },
-      width: 0.11,
-      height: 0.05,
-      x: 0.12,
-      getText: () => 'Pad +',
     },
     {
       name: 'musicStandHide',
@@ -224,7 +203,8 @@ export function initMusicStand() {
   updateTopBarButtons();
 
   const interaction = new FloatingPanel(root, new Set([backing, lip, sheet, ...buttons.keys()]),
-    desk, new Vector3(0.38, 0.44, 0.055), buttons);
+    desk, new Vector3(0.38, 0.44, 0.055), buttons,
+    { getScale: getMusicStandScale, setScale: setMusicStandScale });
   let buttonSignature = '';
   function updateMediaButtons() {
     const transport = getDrillTransportState();
@@ -336,18 +316,12 @@ export function initMusicStand() {
   function place() {
     const camera = scene.activeCamera;
     if (!camera) return;
-    const forward = camera.getForwardRay().direction.clone();
-    forward.y = 0;
-    if (forward.lengthSquared() < 0.001) forward.set(0, 0, 1);
-    forward.normalize();
-    const inXR = camera.getClassName() === 'WebXRCamera';
-    root.position.copyFrom(camera.globalPosition.add(forward.scale(inXR ? 1.15 : 1.35)));
-    root.position.addInPlace(new Vector3(forward.z, 0, -forward.x).scale(0.6));
-    root.position.y += inXR ? -0.4 : 0.12;
-    interaction.release();
-    interaction.userPlaced = false;
-    root.rotationQuaternion = Quaternion.FromEulerAngles(0,
-      Math.atan2(root.position.x - camera.globalPosition.x, root.position.z - camera.globalPosition.z), 0);
+    interaction.placeForViewer({
+      desktop: { distance: 1.35, height: 0.12 },
+      xr: { distance: 1.15, height: -0.4 },
+      side: 0.6,
+      uprightInXR: true,
+    });
     placedCamera = camera;
     placed = true;
     root.setEnabled(enabled);
@@ -370,7 +344,8 @@ export function initMusicStand() {
     }
   });
   const frameObserver = scene.onBeforeRenderObservable.add(() => {
-    if (enabled && (!placed || placedCamera !== scene.activeCamera) && isCameraIntroComplete()) place();
+    if (enabled && (!placed || placedCamera !== scene.activeCamera)) place();
+    if (enabled && placed) interaction.followViewer(scene.getEngine().getDeltaTime() / 1000);
   });
   scene.onDisposeObservable.addOnce(() => {
     generation++;

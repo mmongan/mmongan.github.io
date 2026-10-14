@@ -1,5 +1,9 @@
 // Shared DOM references for the canvas and application controls.
 export const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
+export const marcherPOVToggle = document.getElementById("marcherPOVToggle") as HTMLInputElement | null;
+export const marcherPOVSelect = document.getElementById("marcherPOVSelect") as HTMLSelectElement | null;
+export const marcherPOVStatus = document.getElementById("marcherPOVStatus") as HTMLOutputElement | null;
+export const marcherPOVExitButton = document.getElementById("marcherPOVExitButton") as HTMLButtonElement | null;
 export const xrModeInputs = Array.from(
   document.querySelectorAll<HTMLInputElement>('input[name="xrMode"]')
 );
@@ -15,6 +19,7 @@ export const handThumbJogToggle = document.getElementById("handThumbJogToggle") 
 export const lowPolygonMarchersToggle = document.getElementById("lowPolygonMarchersToggle") as HTMLInputElement | null;
 export const midiFileInput = document.getElementById("midiFile") as HTMLInputElement | null;
 export const midiAudioButton = document.getElementById("midiAudioButton") as HTMLButtonElement | null;
+export const midiPlaybackHint = document.getElementById("midiPlaybackHint") as HTMLOutputElement | null;
 export const midiClearButton = document.getElementById("midiClearButton") as HTMLButtonElement | null;
 export const midiVolumeInput = document.getElementById("midiVolume") as HTMLInputElement | null;
 export const midiStatus = document.getElementById("midiStatus") as HTMLOutputElement | null;

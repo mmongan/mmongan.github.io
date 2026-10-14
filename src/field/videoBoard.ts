@@ -13,8 +13,7 @@ import { engine, scene } from '../scene/engine';
 import { attachToARTransform } from '../xr/ar';
 import { registerMenuButton } from '../menu/handMenu';
 import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS, HASH_OFFSETS_YARDS } from './constants';
-import { TOP_DOWN_MARKER_LAYER_MASK, playAll } from '../robot/robot';
-import { INTRO_DURATION_MS } from '../camera/desktopCamera';
+import { TOP_DOWN_MARKER_LAYER_MASK } from '../robot/robot';
 
 declare const __BUILD_TIME__: string | undefined;
 declare const __APP_VERSION__: string;
@@ -314,11 +313,6 @@ export function createVideoBoard(
   );
   screen.position = new Vector3(0, boardY, boardZ - 0.45);
   screen.material = feedMaterial;
-
-  // Start marching after the intro camera move finishes.
-  setTimeout(() => {
-    playAll();
-  }, INTRO_DURATION_MS);
 
   const hudHeight = boardHeight * 0.18;
   const hud = MeshBuilder.CreatePlane(

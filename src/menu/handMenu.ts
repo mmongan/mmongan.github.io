@@ -28,11 +28,12 @@ export type FormationLetter =
   | "N" | "O" | "P" | "Q" | "R" | "S" | "T" | "U" | "V" | "W" | "X" | "Y" | "Z";
 
 export type HandMenuHit =
-  | { action: "playPause" | "rewind" | "fastForward" | "stepBack" | "stepForward" | "fullScaleVR" | "tabletopScale" | "commitFormation" | "eraseMode" | "undoErase" | "redoErase" | "musicStandSizeIncrease" | "musicStandSizeDecrease" | "musicStandStaffToggle" }
+  | { action: "playPause" | "rewind" | "fastForward" | "stepBack" | "stepForward" | "fullScaleVR" | "tabletopScale" | "commitFormation" | "eraseMode" | "undoErase" | "redoErase" | "musicStandStaffToggle" }
   | { action: "formationLibrary" | "formationLibraryBack" | "formationLibraryClose" | "lettersLibrary" }
   | { action: "formationPreset"; preset: "line" | "arc" | "circle" | "block" | "triangle" | "square" | "pentagon" | "hexagon" | "star" }
   | { action: "formationLetter"; letter: FormationLetter }
   | { action: "drillChartPad" }
+  | { action: "marcherPOV" }
   | { action: "drillChartHide" | "musicStandHide" }
   | { action: "instrument"; instrument: MarcherInstrument }
   | { action: "drillChartPage"; direction: 1 | -1 }
@@ -180,6 +181,7 @@ let formationLibraryPage: "closed" | "shapes" | "letters" = "closed";
 let formationAnchorAvailable = false;
 let eraseModeActive = false;
 let drillChartPadActive = false;
+let marcherPOVActive = false;
 let undoEraseAvailable = false;
 let redoEraseAvailable = false;
 let activeInstrument: MarcherInstrument = "trumpet";
@@ -196,6 +198,10 @@ export function setEraseHistoryAvailable(undo: boolean, redo: boolean) {
 
 export function setDrillChartPadActive(active: boolean) {
   drillChartPadActive = active;
+}
+
+export function setMarcherPOVMenuActive(active: boolean) {
+  marcherPOVActive = active;
 }
 
 export function setEraseModeActive(active: boolean) {
@@ -267,6 +273,9 @@ function ensureMenuMeshes() {
   const tabletopButton = createButton("Table", spacing / 2, { action: "tabletopScale" });
   tabletopButton.position.z = 0.04;
   buttons.push(fullScaleButton, tabletopButton);
+  const povButton = createButton("POV", spacing * 2, { action: "marcherPOV" });
+  povButton.position.z = 0.04;
+  buttons.push(povButton);
   const commitButton = createButton("Commit", 0, { action: "commitFormation" });
   commitButton.position.z = 0.075;
   commitButton.scaling.x = 3;
@@ -433,6 +442,9 @@ export function updateHandMenu(
     }
     if (action === "drillChartPad" && button.material instanceof StandardMaterial) {
       button.material.emissiveColor.set(drillChartPadActive ? 0.45 : 1, drillChartPadActive ? 0.8 : 1, 1);
+    }
+    if (action === "marcherPOV" && button.material instanceof StandardMaterial) {
+      button.material.emissiveColor.set(marcherPOVActive ? 0.45 : 1, marcherPOVActive ? 0.8 : 1, 1);
     }
     button.setEnabled(formationLibraryPage === "closed" &&
       (action !== "formationLibrary" || formationAnchorAvailable) &&

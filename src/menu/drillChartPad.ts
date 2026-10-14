@@ -351,20 +351,11 @@ function refreshPage(force = false) {
 // Floats the pad below eye level on the viewer's left.
 function placeInFrontOfViewer() {
   if (!pad) return;
-  const camera = scene.activeCamera;
-  if (!camera) return;
-  const eye = camera.globalPosition.clone();
-  const inXR = camera.getClassName() === "WebXRCamera";
-  const forward = camera.getDirection(Vector3.Forward());
-  forward.y = 0;
-  if (forward.lengthSquared() < 1e-6) forward.set(0, 0, 1);
-  forward.normalize();
-  const position = eye.add(forward.scale(inXR ? SPAWN_DISTANCE : DESKTOP_SPAWN_DISTANCE));
-  position.addInPlace(new Vector3(forward.z, 0, -forward.x).scale(-0.35));
-  position.y -= inXR ? SPAWN_DROP : DESKTOP_SPAWN_DROP;
-  pad.root.position.copyFrom(position);
-  // The page's visible face points along local -Z, so aim +Z away from the eye.
-  pad.root.lookAt(position.add(position.subtract(eye)));
+  pad.interaction.placeForViewer({
+    desktop: { distance: DESKTOP_SPAWN_DISTANCE, height: -DESKTOP_SPAWN_DROP },
+    xr: { distance: SPAWN_DISTANCE, height: -SPAWN_DROP },
+    side: -0.35,
+  });
 }
 
 export function isDrillChartPadVisible() {
@@ -454,6 +445,7 @@ export function isDrillChartPadGrabbed(source?: string) {
 }
 
 scene.onBeforeRenderObservable.add(() => {
+  if (visible) pad?.interaction.followViewer(scene.getEngine().getDeltaTime() / 1000);
   if (!visible || --framesUntilRedraw > 0) return;
   framesUntilRedraw = REDRAW_INTERVAL_FRAMES;
   refreshPage();

@@ -248,6 +248,17 @@ const MARCHER_HEIGHT_YARDS = MARCHER_HEIGHT_METERS / METERS_PER_YARD;
 const MARCHER_MODEL_HEIGHT_YARDS = 1.372;
 const MARCHER_BODY_SCALE = MARCHER_HEIGHT_YARDS / MARCHER_MODEL_HEIGHT_YARDS;
 
+export function getMarcherEyePose(robot: TransformNode): { position: Vector3; yaw: number } | null {
+  const parts = marcherParts.get(robot);
+  if (!parts || robot.isDisposed() || !robot.isEnabled()) return null;
+  const world = parts.body.computeWorldMatrix(true);
+  const forward = Vector3.TransformNormal(Vector3.Forward(), robot.computeWorldMatrix(true));
+  return {
+    position: Vector3.TransformCoordinates(new Vector3(0, 1.283, 0.154), world),
+    yaw: Math.atan2(forward.x, forward.z),
+  };
+}
+
 // Walks up from a picked mesh/node to find which spawned robot (if any) owns it.
 export function findRobotRoot(node: Node | null): TransformNode | null {
   let current: Node | null = node;

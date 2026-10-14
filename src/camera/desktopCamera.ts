@@ -7,19 +7,11 @@ import { FIELD_SURFACE_Y } from '../field/constants';
 // FPS-style fly camera: mouse-drag looks around, WASD moves in the direction
 // you're actually facing (including up/down when looking up or down) — the
 // standard control scheme for a free-fly/spectator camera in most games.
-// Video board screen center (see field/videoBoard.ts) — the landing shot
-// starts close enough to it that the title fills the screen, then pulls
-// straight back along the same line so it ends the reveal still facing it.
-const INTRO_CAMERA_TARGET = new Vector3(0, 14, 67.55);
-const INTRO_CAMERA_POSITION = new Vector3(0, 14, 52.5);
-export const INTRO_DURATION_MS = 3200;
+const DEFAULT_CAMERA_POSITION = new Vector3(-28.5, FIELD_SURFACE_Y + 22, 0);
+const DEFAULT_CAMERA_TARGET = new Vector3(0, FIELD_SURFACE_Y, 0);
 
-// Resting spot is the 50 yard line (z=0) at standing eye height, still facing the board.
-const DEFAULT_CAMERA_POSITION = new Vector3(0, FIELD_SURFACE_Y + 1.8, 0);
-const DEFAULT_CAMERA_TARGET = INTRO_CAMERA_TARGET;
-
-export const camera = new UniversalCamera("camera", INTRO_CAMERA_POSITION.clone(), scene);
-camera.setTarget(INTRO_CAMERA_TARGET);
+export const camera = new UniversalCamera("camera", DEFAULT_CAMERA_POSITION.clone(), scene);
+camera.setTarget(DEFAULT_CAMERA_TARGET);
 camera.keysUp = [87]; // W
 camera.keysDown = [83]; // S
 camera.keysLeft = [65]; // A
@@ -33,26 +25,7 @@ camera.checkCollisions = true;
 camera.ellipsoid = new Vector3(0.4, 0.9, 0.4);
 camera.ellipsoidOffset = new Vector3(0, 0, 0);
 
-// Dolly back from the title to the normal spectator framing, then hand
-// control to the player — mouse-look is withheld until the reveal finishes
-// so it can't fight the scripted pull-back.
-let introElapsedMs = 0;
-const introObserver = scene.onBeforeRenderObservable.add(() => {
-  introElapsedMs += engine.getDeltaTime();
-  const t = Math.min(1, introElapsedMs / INTRO_DURATION_MS);
-  const eased = 1 - Math.pow(1 - t, 3);
-  Vector3.LerpToRef(INTRO_CAMERA_POSITION, DEFAULT_CAMERA_POSITION, eased, camera.position);
-  camera.setTarget(Vector3.Lerp(INTRO_CAMERA_TARGET, DEFAULT_CAMERA_TARGET, eased));
-
-  if (t >= 1) {
-    scene.onBeforeRenderObservable.remove(introObserver);
-    camera.attachControl(canvas, true);
-  }
-});
-
-export function isCameraIntroComplete(): boolean {
-  return introElapsedMs >= INTRO_DURATION_MS;
-}
+camera.attachControl(canvas, true);
 
 // Arrow keys turn/look around (yaw with left/right, pitch with up/down),
 // same idea as mouse-look but for keyboard-only navigation.
@@ -78,7 +51,21 @@ const STADIUM_BOUNDARY_X = 29;
 const STADIUM_BOUNDARY_Z = 65;
 // Floor clamp instead of turf collision — the field mesh doesn't need
 // checkCollisions just to keep the camera from dropping below it.
-const FIELD_FLOOR_Y = DEFAULT_CAMERA_POSITION.y;
+const FIELD_FLOOR_Y = FIELD_SURFACE_Y + 1.8;
+let marcherPOVActive = false;
+let spectatorCollisions = camera.checkCollisions;
+
+export function setDesktopMarcherPOV(active: boolean) {
+  if (active && !marcherPOVActive) spectatorCollisions = camera.checkCollisions;
+  marcherPOVActive = active;
+  camera.checkCollisions = active ? false : spectatorCollisions;
+  camera.keysUp = active ? [] : [87];
+  camera.keysDown = active ? [] : [83];
+  camera.keysLeft = active ? [] : [65];
+  camera.keysRight = active ? [] : [68];
+  camera.cameraDirection.setAll(0);
+  camera.cameraRotation.setAll(0);
+}
 
 scene.onBeforeRenderObservable.add(() => {
   const turnAmount = (TURN_SPEED * engine.getDeltaTime()) / 1000;
@@ -88,8 +75,8 @@ scene.onBeforeRenderObservable.add(() => {
   if (turnKeysHeld["ArrowDown"]) camera.rotation.x += turnAmount;
   camera.rotation.x = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, camera.rotation.x));
 
+  if (marcherPOVActive) return;
   camera.position.x = Math.max(-STADIUM_BOUNDARY_X, Math.min(STADIUM_BOUNDARY_X, camera.position.x));
   camera.position.z = Math.max(-STADIUM_BOUNDARY_Z, Math.min(STADIUM_BOUNDARY_Z, camera.position.z));
   camera.position.y = Math.max(FIELD_FLOOR_Y, camera.position.y);
 });
-

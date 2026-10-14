@@ -1,5 +1,5 @@
 import { engine, scene } from './engine';
-import { isCameraIntroComplete } from '../camera/desktopCamera';
+import '../camera/desktopCamera';
 import { drillChartPadToggle, fieldLevelInputs, getSelectedFieldLevel } from '../ui/dom';
 import { createSky } from '../environment/sky';
 import { createHorizonGround } from '../environment/ground';
@@ -12,14 +12,19 @@ import {
   updateHandPathDrawing,
   getActiveControllers,
   getSelectedRobotProgress,
+  getSelectedMarcher,
+  getSelectableMarchers,
+  selectRobot,
 } from '../interaction/pathInteraction';
 import { captureContentRootMeshes, attachToARTransform } from '../xr/ar';
 import { createTeleportGrid, initXR } from '../xr/webXR';
 import { updateHandMenu } from '../menu/handMenu';
 import '../menu/settings';
-import { initMidiPlayback } from '../audio/midiPlayback';
+import { initMidiPlayback, isMidiPlaybackReady } from '../audio/midiPlayback';
+import { getDrillTransportState, playAll } from '../robot/robot';
 import { initMusicStand } from '../menu/musicStand';
 import { setDrillChartPadVisible } from '../menu/drillChartPad';
+import { initMarcherPOV } from '../camera/marcherPOV';
 
 // Build static content before wiring up input and the WebXR experience.
 createSky();
@@ -39,11 +44,18 @@ updateFieldLevel();
 initInteraction();
 initMusicStand();
 initMidiPlayback();
+initMarcherPOV(getSelectedMarcher, getSelectableMarchers, selectRobot);
 
 const startupChartObserver = scene.onBeforeRenderObservable.add(() => {
-  if (!isCameraIntroComplete()) return;
   scene.onBeforeRenderObservable.remove(startupChartObserver);
   if (drillChartPadToggle?.checked) setDrillChartPadVisible(true);
+});
+
+const startupPlaybackObserver = scene.onBeforeRenderObservable.add(() => {
+  const transport = getDrillTransportState();
+  if (transport.lastBeat <= 0 || !isMidiPlaybackReady()) return;
+  scene.onBeforeRenderObservable.remove(startupPlaybackObserver);
+  if (!transport.playing) playAll();
 });
 
 // Snapshot of top-level meshes for AR tabletop mode — must be taken after all

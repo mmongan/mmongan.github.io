@@ -7,12 +7,32 @@ import { scene } from '../scene/engine';
 import type { HandMenuHit } from './handMenu';
 
 const panels = new Set<FloatingPanel>();
+const FOLLOW_TIME_SECONDS = 0.25;
+
+interface PanelResize {
+  getScale(): number;
+  setScale(scale: number): void;
+}
+
+interface ViewerPlacement {
+  desktop: { distance: number; height: number };
+  xr: { distance: number; height: number };
+  side: number;
+  uprightInXR?: boolean;
+}
 
 export class FloatingPanel {
   private source: string | null = null;
+  private grabWorlds = new Map<string, Matrix>();
+  private stretch: { distance: number; scale: number; offset: Vector3 } | null = null;
   private offset = new Matrix();
   private dragPlane: Plane | null = null;
   private dragOffset = new Vector3();
+  private viewerOffset: Matrix | null = null;
+  private targetWorld = new Matrix();
+  private targetPosition = new Vector3();
+  private targetRotation = new Quaternion();
+  private targetScale = new Vector3();
   userPlaced = false;
 
   constructor(
@@ -21,6 +41,7 @@ export class FloatingPanel {
     private surface: TransformNode,
     private halfSize: Vector3,
     private buttons: Map<AbstractMesh, HandMenuHit> = new Map(),
+    private resize?: PanelResize,
   ) {
     root.rotationQuaternion ??= Quaternion.FromEulerVector(root.rotation);
     panels.add(this);
@@ -54,28 +75,111 @@ export class FloatingPanel {
 
   begin(source: string, world: Matrix) {
     if (!this.root.isEnabled()) return;
-    for (const panel of panels) panel.end(source);
+    if (this.grabWorlds.has(source)) return;
+    for (const panel of panels) {
+      if (panel !== this) panel.end(source);
+    }
+    if (this.resize && this.source && this.source !== 'pointer' && source !== 'pointer' &&
+      this.grabWorlds.size === 1) {
+      this.grabWorlds.set(source, world.clone());
+      const points = [...this.grabWorlds.values()].map(matrix => matrix.getTranslation());
+      const midpoint = points[0].add(points[1]).scale(0.5);
+      this.stretch = {
+        distance: Math.max(0.03, Vector3.Distance(points[0], points[1])),
+        scale: this.resize.getScale(),
+        offset: this.root.position.subtract(midpoint),
+      };
+      return;
+    }
+    this.release();
     this.source = source;
+    this.grabWorlds.set(source, world.clone());
     this.userPlaced = true;
     this.root.computeWorldMatrix(true).multiplyToRef(world.clone().invert(), this.offset);
   }
 
   update(source: string, world: Matrix) {
+    if (!this.grabWorlds.has(source)) return;
+    this.grabWorlds.set(source, world.clone());
+    if (this.stretch && this.resize) {
+      const points = [...this.grabWorlds.values()].map(matrix => matrix.getTranslation());
+      const ratio = Vector3.Distance(points[0], points[1]) / this.stretch.distance;
+      this.resize.setScale(this.stretch.scale * ratio);
+      const actualRatio = this.resize.getScale() / this.stretch.scale;
+      this.root.position.copyFrom(points[0].add(points[1]).scale(0.5)
+        .add(this.stretch.offset.scale(actualRatio)));
+      return;
+    }
     if (this.source !== source) return;
     this.offset.multiply(world).decompose(new Vector3(), this.root.rotationQuaternion!, this.root.position);
   }
 
   end(source: string) {
-    if (this.source === source) this.release();
+    if (!this.grabWorlds.delete(source)) return;
+    this.stretch = null;
+    const remaining = this.grabWorlds.entries().next().value;
+    if (!remaining) {
+      this.release();
+      return;
+    }
+    this.source = remaining[0];
+    this.root.computeWorldMatrix(true).multiplyToRef(remaining[1].clone().invert(), this.offset);
   }
 
   release() {
     this.source = null;
+    this.grabWorlds.clear();
+    this.stretch = null;
     this.dragPlane = null;
+    if (this.viewerOffset) this.captureViewerOffset();
   }
 
   grabbed(source?: string) {
-    return source === undefined ? this.source !== null : this.source === source;
+    return source === undefined ? this.source !== null : this.grabWorlds.has(source);
+  }
+
+  placeForViewer(placement: ViewerPlacement) {
+    const camera = scene.activeCamera;
+    if (!camera) return false;
+    camera.getViewMatrix(true);
+    const inXR = camera.getClassName() === 'WebXRCamera';
+    const forward = camera.getForwardRay().direction.clone();
+    if (inXR) forward.y = 0;
+    if (forward.lengthSquared() < 1e-6) forward.set(0, 0, 1);
+    forward.normalize();
+    const right = new Vector3(forward.z, 0, -forward.x);
+    if (right.lengthSquared() < 1e-6) right.copyFrom(camera.getDirection(Vector3.Right()));
+    right.normalize();
+    const pose = inXR ? placement.xr : placement.desktop;
+    this.release();
+    this.root.position.copyFrom(camera.globalPosition.add(forward.scale(pose.distance))
+      .add(right.scale(placement.side)));
+    this.root.position.y += pose.height;
+    const away = this.root.position.subtract(camera.globalPosition);
+    if (inXR && placement.uprightInXR) away.y = 0;
+    this.root.lookAt(this.root.position.add(away));
+    this.userPlaced = false;
+    this.captureViewerOffset();
+    return true;
+  }
+
+  captureViewerOffset() {
+    const camera = scene.activeCamera;
+    if (!camera) return;
+    camera.getViewMatrix(true);
+    this.viewerOffset = this.root.computeWorldMatrix(true).multiply(camera.getWorldMatrix().clone().invert());
+  }
+
+  followViewer(deltaSeconds: number) {
+    if (!this.root.isEnabled() || this.grabbed() || !this.viewerOffset) return;
+    const camera = scene.activeCamera;
+    if (!camera) return;
+    camera.getViewMatrix(true);
+    this.viewerOffset.multiplyToRef(camera.getWorldMatrix(), this.targetWorld);
+    this.targetWorld.decompose(this.targetScale, this.targetRotation, this.targetPosition);
+    const amount = 1 - Math.exp(-Math.max(0, deltaSeconds) / FOLLOW_TIME_SECONDS);
+    Vector3.LerpToRef(this.root.position, this.targetPosition, amount, this.root.position);
+    Quaternion.SlerpToRef(this.root.rotationQuaternion!, this.targetRotation, amount, this.root.rotationQuaternion!);
   }
 
   private face(eye: Vector3) {
@@ -110,6 +214,7 @@ export class FloatingPanel {
     ray.origin.addToRef(offset.scale(next / distance), this.root.position);
     this.face(ray.origin);
     this.userPlaced = true;
+    if (this.viewerOffset) this.captureViewerOffset();
     return true;
   }
 }

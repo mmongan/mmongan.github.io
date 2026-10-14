@@ -1,0 +1,67 @@
+OpenChartxr
+Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+SPDX-License-Identifier: AGPL-3.0-or-later
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+The full license is provided in LICENSE.
+Corresponding source: https://github.com/mmongan/mmongan.github.io
+
+OpenMarch interoperability
+-------------------------
+OpenMarch: https://github.com/OpenMarch/OpenMarch
+OpenMarch's repository root is licensed under AGPL-3.0; some subprojects
+have separate licenses (including GPL-3.0 and Apache-2.0).
+OpenChartxr supports OpenMarch's .dots format. This compatibility does
+not imply affiliation or endorsement, and does not grant OpenMarch LLC's
+separate internal-use licensing exception to this project.
+
+Third-party assets
+------------------
+Other components and assets retain their respective licenses.
+
+BabylonJS left and right hand mesh assets:
+https://github.com/BabylonJS/Assets/tree/master/meshes/HandMeshes
+License: Creative Commons Attribution 4.0 International
+https://creativecommons.org/licenses/by/4.0/
+Used as rigged meshes with an off-white glove material.
+
+The Liberty Bell (1893), John Philip Sousa, full-score MIDI:
+https://archive.org/details/InternetJukebox.JPS.48
+The source item is marked with the Public Domain Mark 1.0.
+https://creativecommons.org/publicdomain/mark/1.0/
+The bundled MIDI is unchanged.
+
+The Stars and Stripes Forever, John Philip Sousa, piano MIDI:
+Public Domain edition maintained by Benjamin Bloomfield.
+https://www.mutopiaproject.org/cgibin/piece-info.cgi?id=626
+
+FluidR3_GM samples:
+Copyright (c) 2000-2008 Frank Wen.
+Loaded from https://paulrosen.github.io/midi-js-soundfonts/
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+of the Software, and to permit persons to whom the Software is furnished to
+do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.

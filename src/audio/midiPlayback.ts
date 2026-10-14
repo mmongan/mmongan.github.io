@@ -1,7 +1,7 @@
 import { getDrillTransportState, onDrillTransportChangedObservable } from '../robot/robot';
 import {
   midiFileInput, midiAudioButton, midiClearButton, midiVolumeInput, midiStatus,
-  midiUrlForm, midiUrlInput, midiExampleButton,
+  midiUrlForm, midiUrlInput, midiExampleButton, midiPlaybackHint,
 } from '../ui/dom';
 import { MidiTimeline, type MidiNote } from './midiTimeline';
 import { SampledMidiSynth } from './sampledMidiSynth';
@@ -22,47 +22,101 @@ let audioEnabled = true;
 let enablingAudio = false;
 let loadRequest = 0;
 let loadedDescription = "";
+let synthLoading = false;
+let midiLoading = false;
+let statusIsError = false;
 
-function status(message: string) {
+export function isMidiPlaybackReady() {
+  return !audioEnabled || (!midiLoading && !timeline) ||
+    (context?.state === "running" && synth !== null);
+}
+
+function updatePlaybackHint(message = midiStatus?.textContent ?? "") {
+  if (midiPlaybackHint) {
+    midiPlaybackHint.hidden = !statusIsError && isMidiPlaybackReady();
+    midiPlaybackHint.textContent = !statusIsError && context?.state === "suspended" && !synthLoading
+      ? "Interact with the field or trigger/pinch in XR to start drill and music."
+      : message;
+  }
+}
+
+function status(message: string, error = false) {
+  statusIsError = error;
   if (midiStatus) midiStatus.textContent = message;
+  updatePlaybackHint(message);
 }
 
 function stopVoices() {
   synth?.stop();
 }
 
-async function enableAudio() {
+function disposeSynth() {
+  synthRequest++;
+  synthLoading = false;
+  synth?.dispose();
+  synth = null;
+}
+
+function initializeAudioContext() {
+  context ??= new AudioContext();
+  if (master) return;
+  master = context.createGain();
+  master.gain.value = Number(midiVolumeInput?.value ?? 60) / 100;
+  const limiter = context.createDynamicsCompressor();
+  master.connect(limiter);
+  limiter.connect(context.destination);
+  context.addEventListener('statechange', () => {
+    if (!audioEnabled) return;
+    if (context?.state === 'running') {
+      status(timeline ? `${loadedDescription}. Following drill playback.` : "Audio enabled. Loading MIDI.");
+      updatePlayback();
+    } else {
+      stopVoices();
+      timeline?.reset();
+      status("Music is waiting for browser permission. Interact with the field or squeeze/pinch in XR to start drill and music.");
+    }
+  });
+}
+
+export function unlockMidiAudio() {
+  if (!audioEnabled || enablingAudio || context?.state === "running") return;
+  void enableAudio(true);
+}
+
+export function connectMidiXRSession(session: XRSession) {
+  const unlock = () => unlockMidiAudio();
+  session.addEventListener('selectstart', unlock);
+  session.addEventListener('selectend', unlock);
+  session.addEventListener('squeezestart', unlock);
+  session.addEventListener('end', () => {
+    session.removeEventListener('selectstart', unlock);
+    session.removeEventListener('selectend', unlock);
+    session.removeEventListener('squeezestart', unlock);
+  }, { once: true });
+  unlockMidiAudio();
+}
+
+async function enableAudio(automatic = false) {
   if (enablingAudio) return;
   enablingAudio = true;
   if (midiAudioButton) midiAudioButton.disabled = true;
   try {
-    context ??= new AudioContext();
-    if (!master) {
-      master = context.createGain();
-      master.gain.value = Number(midiVolumeInput?.value ?? 60) / 100;
-      const limiter = context.createDynamicsCompressor();
-      master.connect(limiter);
-      limiter.connect(context.destination);
-      context.addEventListener('statechange', () => {
-        if (context?.state !== 'running' && audioEnabled) {
-          stopVoices();
-          timeline?.reset();
-          status("MIDI audio is enabled but suspended. Click, tap, or press a key to resume.");
-        }
-      });
-    }
-    await context.resume();
-    if (context.state !== "running") throw new Error("Browser audio is suspended.");
+    initializeAudioContext();
+    const audioContext = context;
+    if (!audioContext) throw new Error("Audio context is unavailable.");
+    await audioContext.resume();
+    if (audioContext.state !== "running") throw new Error("Browser audio is suspended.");
     audioEnabled = true;
     if (midiAudioButton) midiAudioButton.textContent = "Mute MIDI audio";
     status(timeline ? `${loadedDescription}. Following drill playback.` : "Audio enabled. Loading or importing MIDI will play with the drill.");
     timeline?.reset();
-    if (!synth && midiNotes.length) await prepareSynth();
+    if (!synth && midiNotes.length && !synthLoading) await prepareSynth();
     else updatePlayback();
   } catch (error) {
-    audioEnabled = false;
-    if (midiAudioButton) midiAudioButton.textContent = "Enable MIDI audio";
-    status(`Could not enable audio: ${error instanceof Error ? error.message : String(error)}. Enable MIDI audio to retry.`);
+    if (!automatic) audioEnabled = false;
+    if (midiAudioButton) midiAudioButton.textContent = audioEnabled ? "Mute MIDI audio" : "Enable MIDI audio";
+    status(`Could not enable audio: ${error instanceof Error ? error.message : String(error)}. ${
+      automatic ? "Interact with the field or trigger/pinch in XR to retry." : "Enable MIDI audio to retry."}`, true);
   } finally {
     enablingAudio = false;
     if (midiAudioButton) midiAudioButton.disabled = false;
@@ -70,10 +124,10 @@ async function enableAudio() {
 }
 
 async function prepareSynth() {
-  const request = ++synthRequest;
-  synth?.dispose();
-  synth = null;
+  disposeSynth();
+  const request = synthRequest;
   if (!context || !master || !midiNotes.length) return;
+  synthLoading = true;
   const pending = new SampledMidiSynth(context, master,
     message => { if (request === synthRequest) status(message); });
   try {
@@ -83,6 +137,7 @@ async function prepareSynth() {
       return;
     }
     synth = pending;
+    synthLoading = false;
     timeline?.reset();
     status(`${loadedDescription}. Sampled General MIDI ready.`);
     updatePlayback();
@@ -91,7 +146,9 @@ async function prepareSynth() {
     if (request !== synthRequest) return;
     audioEnabled = false;
     if (midiAudioButton) midiAudioButton.textContent = "Enable MIDI audio";
-    status(`Could not load instrument samples: ${error instanceof Error ? error.message : String(error)}. Check your connection and enable audio to retry.`);
+    status(`Could not load instrument samples: ${error instanceof Error ? error.message : String(error)}. Check your connection and enable audio to retry.`, true);
+  } finally {
+    if (request === synthRequest) synthLoading = false;
   }
 }
 
@@ -141,6 +198,7 @@ async function readMidiUrl(input: string): Promise<ArrayBuffer> {
 
 async function loadMidi(name: string, read: () => Promise<ArrayBuffer>, failureHint = "") {
   const request = ++loadRequest;
+  midiLoading = true;
   status(`Loading ${name}…`);
   try {
     const bytes = await read();
@@ -171,9 +229,7 @@ async function loadMidi(name: string, read: () => Promise<ArrayBuffer>, failureH
     notes.sort((a, b) => a.beat - b.beat);
     if (request !== loadRequest) return;
     stopVoices();
-    synthRequest++;
-    synth?.dispose();
-    synth = null;
+    disposeSynth();
     midiNotes = notes;
     timeline = new MidiTimeline(notes);
     const beats = notes.reduce((last, n) => Math.max(last, n.beat + n.duration), 0);
@@ -191,7 +247,12 @@ async function loadMidi(name: string, read: () => Promise<ArrayBuffer>, failureH
     if (audioEnabled) await prepareSynth();
   } catch (error) {
     if (request !== loadRequest) return;
-    status(`Could not load MIDI: ${error instanceof Error ? error.message : String(error)}${timeline ? " Previous MIDI retained." : ""}${failureHint}`);
+    status(`Could not load MIDI: ${error instanceof Error ? error.message : String(error)}${timeline ? " Previous MIDI retained." : ""}${failureHint}`, true);
+  } finally {
+    if (request === loadRequest) {
+      midiLoading = false;
+      updatePlaybackHint();
+    }
   }
 }
 
@@ -201,16 +262,25 @@ function loadMidiFromUrl(input: string, name = input) {
 
 export function initMidiPlayback() {
   initMidiScore();
+  try {
+    initializeAudioContext();
+  } catch (error) {
+    audioEnabled = false;
+    status(`Could not initialize music audio: ${error instanceof Error ? error.message : String(error)}. Enable MIDI audio to retry.`, true);
+  }
   const fileInput = midiFileInput;
   const clearButton = midiClearButton;
   const audioButton = midiAudioButton;
-  if (audioButton) audioButton.textContent = "Mute MIDI audio";
+  if (audioButton) audioButton.textContent = audioEnabled ? "Mute MIDI audio" : "Enable MIDI audio";
   const unlockAudio = (event: Event) => {
     if (!event.isTrusted || !audioEnabled || enablingAudio || context?.state === "running") return;
     if (event.target instanceof Node && audioButton?.contains(event.target)) return;
-    void enableAudio();
+    unlockMidiAudio();
   };
   window.addEventListener('pointerdown', unlockAudio, true);
+  window.addEventListener('pointerup', unlockAudio, true);
+  window.addEventListener('touchend', unlockAudio, true);
+  window.addEventListener('click', unlockAudio, true);
   window.addEventListener('keydown', unlockAudio, true);
   fileInput?.addEventListener('change', () => {
     const file = fileInput.files?.[0];
@@ -229,10 +299,9 @@ export function initMidiPlayback() {
   });
   clearButton?.addEventListener('click', () => {
     loadRequest++;
+    midiLoading = false;
     stopVoices();
-    synthRequest++;
-    synth?.dispose();
-    synth = null;
+    disposeSynth();
     midiNotes = [];
     timeline = null;
     loadedDescription = "";

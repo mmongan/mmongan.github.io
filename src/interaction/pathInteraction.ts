@@ -72,7 +72,8 @@ import { getOpenMarchSectionInstrument, loadOpenMarchFromUrl, OPEN_MARCH_EXAMPLE
 import type { OpenMarchImportedDrill } from '../robot/openMarchFormat';
 import { clearDrillLabels, setDrillLabels, setDrillLabelsVisible } from '../robot/drillLabels';
 import { clearShowInfo, setShowInfo } from '../menu/showInfoPanel';
-import { adjustMusicStandScale, cycleMusicStandStaff, setMusicStandVisible } from '../menu/musicStand';
+import { cycleMusicStandStaff, setMusicStandVisible } from '../menu/musicStand';
+import { isMarcherPOVActive, setMarcherPOVEnabled } from '../camera/marcherPOV';
 import { getHandMenuHit, getHandMenuHitNearPoint, setMenuHandTracking, setFormationCommitAvailable, setFormationLibraryOpen, setFormationLibraryPage, setFormationLibraryAnchorAvailable, setEraseModeActive, setEraseHistoryAvailable, setDrillChartPadActive, setInstrumentMenuActive, isHandMenuVisible, isMenuControl } from '../menu/handMenu';
 import {
   flipDrillChartPage,
@@ -326,12 +327,15 @@ function refreshPathLineAppearance() {
   });
 }
 
-function selectRobot(robot: TransformNode | null) {
+export function selectRobot(robot: TransformNode | null) {
   selectedRobot = robot;
   refreshPathLineAppearance();
   refreshStepHandles();
   segments.forEach(updateSegmentHandleVisibility);
 }
+
+export function getSelectedMarcher() { return selectedRobot; }
+export function getSelectableMarchers() { return [...robotPaths.keys()]; }
 
 // One small grab handle per precalculated marching step (count) of the
 // currently selected robot, so individual footsteps can be nudged directly
@@ -1608,6 +1612,9 @@ function executeMenuAction(hit: NonNullable<ReturnType<typeof getHandMenuHit>>) 
     case "eraseMode":
       setEraseMode(!eraseMode);
       break;
+    case "marcherPOV":
+      setMarcherPOVEnabled(!isMarcherPOVActive());
+      break;
     case "undoErase":
       if (!floorCalibrationToggle?.checked) eraseHistory.undo();
       break;
@@ -1675,12 +1682,6 @@ function executeMenuAction(hit: NonNullable<ReturnType<typeof getHandMenuHit>>) 
       break;
     case "tabletopScale":
       tabletopScaleButton?.click();
-      break;
-    case "musicStandSizeIncrease":
-      adjustMusicStandScale(0.1);
-      break;
-    case "musicStandSizeDecrease":
-      adjustMusicStandScale(-0.1);
       break;
     case "musicStandStaffToggle":
       cycleMusicStandStaff();
@@ -2264,7 +2265,7 @@ function spawnMarchingDrill() {
 
 // Replaces the field with an OpenMarch show, each marcher holding the
 // instrument for its section and playing from the opening set.
-function spawnOpenMarchDrill(drill: OpenMarchImportedDrill, showName: string): number {
+function spawnOpenMarchDrill(drill: OpenMarchImportedDrill, showName: string, autoPlay = true): number {
   clearAllRobots();
   const pickerInstrument = getSelectedInstrument();
   const instruments: MarcherInstrument[] = [];
@@ -2285,7 +2286,7 @@ function spawnOpenMarchDrill(drill: OpenMarchImportedDrill, showName: string): n
   setSelectedInstrument(pickerInstrument);
   const tempoBpm = setMarchTempo(drill.tempoBpm);
   seekToCount(0);
-  playAll();
+  if (autoPlay) playAll();
 
   refreshCollisionMarkers(scene);
   setDrillLabels(scene, pathRoot, labels);
@@ -2306,7 +2307,7 @@ function getOpenMarchShowName(url: string): string {
 
 let openMarchRequest = 0;
 
-async function openMarchFromUrl(url: string): Promise<boolean> {
+async function openMarchFromUrl(url: string, autoPlay = true): Promise<boolean> {
   const request = ++openMarchRequest;
   const setStatus = (message: string, error = false) => {
     if (!openMarchStatus) return;
@@ -2319,7 +2320,7 @@ async function openMarchFromUrl(url: string): Promise<boolean> {
   try {
     const drill = await loadOpenMarchFromUrl(url);
     if (request !== openMarchRequest) return false;
-    const tempoBpm = Math.round(spawnOpenMarchDrill(drill, getOpenMarchShowName(url)));
+    const tempoBpm = Math.round(spawnOpenMarchDrill(drill, getOpenMarchShowName(url), autoPlay));
     const showTempoBpm = Math.round(drill.tempoBpm);
     const lastCount = drill.tracks[0].length - 1;
     const opened = url.trim().toLowerCase() === OPEN_MARCH_EXAMPLE ? "Opened the example show:" : "Opened";
@@ -2379,7 +2380,7 @@ export function initInteraction() {
   const sharedShowUrl = new URLSearchParams(window.location.search).get(OPEN_MARCH_URL_PARAM)?.trim();
   const startupShow = sharedShowUrl || OPEN_MARCH_EXAMPLE;
   if (openMarchUrlInput && startupShow.toLowerCase() !== OPEN_MARCH_EXAMPLE) openMarchUrlInput.value = startupShow;
-  const startupLoad = openMarchFromUrl(startupShow);
+  const startupLoad = openMarchFromUrl(startupShow, false);
   const startupRequest = openMarchRequest;
   void startupLoad.then((opened) => {
     if (!opened && openMarchRequest === startupRequest) spawnMarchingDrill();

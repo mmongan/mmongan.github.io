@@ -18,6 +18,8 @@ import { getNavigationControllerHand, swapControllerRolesToggle } from '../ui/do
 import '@babylonjs/loaders/glTF';
 import { RegisterWebXROculusTouchMotionController } from '@babylonjs/core/XR/motionController/webXROculusTouchMotionController.pure';
 import { scene } from '../scene/engine';
+import { connectMidiXRSession } from '../audio/midiPlayback';
+import { connectMarcherPOVXR, isMarcherPOVActive, setMarcherPOVEnabled } from '../camera/marcherPOV';
 import { setTableHeightForPosture } from '../menu/settings';
 import { xrModeInputs, getSelectedXRMode, floorCalibrationToggle, fullScaleVRButton, tabletopScaleButton, giantModeButton, roomWidthInput, roomLengthInput, sittingModeToggle } from '../ui/dom';
 import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS } from '../field/constants';
@@ -271,6 +273,7 @@ export function initXR(teleportGrid: Mesh) {
 
   async function enterFullScaleVR() {
     if (switchingToFullScaleVR) return;
+    if (isMarcherPOVActive()) setMarcherPOVEnabled(false);
     switchingToFullScaleVR = true;
     try {
       giantModeActive = false;
@@ -302,6 +305,7 @@ export function initXR(teleportGrid: Mesh) {
   fullScaleVRButton?.addEventListener("click", () => { void enterFullScaleVR(); });
   tabletopScaleButton?.addEventListener("click", () => {
     if (switchingToFullScaleVR) return;
+    if (isMarcherPOVActive()) setMarcherPOVEnabled(false);
     giantModeActive = false;
     setARScale(getARScaleRange().default);
     setFieldHeightMode("table");
@@ -317,6 +321,7 @@ export function initXR(teleportGrid: Mesh) {
   function applyRoomScale() {
     if (!roomWidthInput || !roomLengthInput) return;
     if (!roomWidthInput.reportValidity() || !roomLengthInput.reportValidity()) return;
+    if (isMarcherPOVActive()) setMarcherPOVEnabled(false);
     // Scene field coordinates are yards, but XR world coordinates are meters.
     setARScale(Math.min(
       roomWidthInput.valueAsNumber / FIELD_WIDTH_YARDS,
@@ -368,6 +373,7 @@ export function initXR(teleportGrid: Mesh) {
 
   function isTeleportationEnabled() {
     return preferredMode === "immersive-vr" && getFieldHeightMode() === "floor" &&
+      !isMarcherPOVActive() &&
       !floorCalibrationToggle?.checked &&
       Math.max(FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS) * getARScale() >= MIN_TELEPORT_FIELD_SIZE_METERS;
   }
@@ -588,6 +594,8 @@ export function initXR(teleportGrid: Mesh) {
       handTrackingFeature = handTracking;
       setHandTracking(handTracking);
       const sessionManager = xrExperience.baseExperience.sessionManager;
+      sessionManager.onXRSessionInit.add(connectMidiXRSession);
+      connectMarcherPOVXR(xrExperience, () => preferredMode === "immersive-vr" && !floorCalibrationToggle?.checked);
       const setGloveScale = (scale: number) => {
         gloveHandTrackingOptions.customMeshes.left.scaling.setAll(scale);
         gloveHandTrackingOptions.customMeshes.right.scaling.setAll(scale);
@@ -720,6 +728,13 @@ export function initXR(teleportGrid: Mesh) {
 
   // Keep teleportation in sync with the field's current scale.
   scene.onBeforeAnimationsObservable.add(() => {
+    if (isMarcherPOVActive() && scene.activeCamera?.getClassName() === "WebXRCamera") {
+      if (preferredMode !== "immersive-vr" || floorCalibrationToggle?.checked) setMarcherPOVEnabled(false);
+      else {
+        updateTeleportationAvailability();
+        return;
+      }
+    }
     updateFloorCalibration();
     const baseExperience = xrExperience?.baseExperience;
     if (baseExperience?.state === WebXRState.IN_XR) {

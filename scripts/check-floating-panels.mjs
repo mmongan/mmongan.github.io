@@ -10,6 +10,7 @@ import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector.j
 import { Plane } from '@babylonjs/core/Maths/math.plane.js';
 import { Ray } from '@babylonjs/core/Culling/ray.js';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
+import { FreeCamera } from '@babylonjs/core/Cameras/freeCamera.js';
 
 const engine = new NullEngine();
 const scene = new Scene(engine);
@@ -88,10 +89,105 @@ try {
   assert.ok(api.nudgeFloatingPanelDistance(new Ray(Vector3.Zero(), Vector3.Forward(), 4), -10000));
   assert.ok(Math.abs(score.root.position.length() - 0.3) < 1e-6);
   score.panel.release();
+  const stretchRoot = new TransformNode('stretchRoot', scene);
+  stretchRoot.position.set(0, 0, 1);
+  const stretchSurface = new TransformNode('stretchSurface', scene);
+  stretchSurface.parent = stretchRoot;
+  const stretchMesh = MeshBuilder.CreatePlane('stretchSheet', { width: 0.7, height: 0.6 }, scene);
+  stretchMesh.parent = stretchSurface;
+  stretchMesh.material = score.mesh.material;
+  let scale = 1;
+  const resizePanel = new api.FloatingPanel(stretchRoot, new Set([stretchMesh]), stretchSurface,
+    new Vector3(0.35, 0.3, 0.02), new Map(), {
+      getScale: () => scale,
+      setScale(next) { scale = Math.max(0.6, Math.min(2.5, next)); stretchSurface.scaling.setAll(scale); },
+    });
+  const leftPose = Matrix.Translation(-0.2, 0, 1);
+  const rightPose = Matrix.Translation(0.2, 0, 1);
+  api.beginFloatingPanelGrab('left', leftPose, stretchMesh);
+  api.beginFloatingPanelGrab('right', rightPose, stretchMesh);
+  assert.ok(resizePanel.grabbed('left') && resizePanel.grabbed('right'), 'Both sources keep the pad');
+  const originalRotation = stretchRoot.rotationQuaternion.clone();
+  api.updateFloatingPanelGrab('left', Matrix.Translation(-0.4, 0, 1));
+  api.updateFloatingPanelGrab('right', Matrix.Translation(0.4, 0, 1));
+  assert.ok(Math.abs(scale - 2) < 1e-6, 'Doubling grip separation doubles size');
+  assert.ok(Vector3.Distance(stretchRoot.position, new Vector3(0, 0, 1)) < 1e-6);
+  assert.ok(stretchRoot.rotationQuaternion.equals(originalRotation), 'Stretch does not flip pad orientation');
+  assert.ok(resizePanel.near(new Vector3(0.6, 0, 1)), 'Hit surface grows with pad');
+  api.updateFloatingPanelGrab('right', Matrix.Translation(2, 0, 1));
+  assert.equal(scale, 2.5, 'Stretch respects maximum size');
+  api.updateFloatingPanelGrab('right', Matrix.Translation(-0.39, 0, 1));
+  assert.equal(scale, 0.6, 'Pinching hands together respects minimum size');
+  api.updateFloatingPanelGrab('left', Matrix.Translation(-0.4, 0, 1));
+  api.updateFloatingPanelGrab('right', Matrix.Translation(0.4, 0, 1));
+  const beforeRelease = stretchRoot.position.clone();
+  api.endFloatingPanelGrab('left');
+  assert.ok(resizePanel.grabbed('right') && !resizePanel.grabbed('left'));
+  api.updateFloatingPanelGrab('right', Matrix.Translation(0.4, 0, 1));
+  assert.ok(Vector3.Distance(stretchRoot.position, beforeRelease) < 1e-6, 'One-hand release never jumps');
+  api.updateFloatingPanelGrab('right', Matrix.Translation(0.6, 0.1, 1.2));
+  assert.ok(Vector3.Distance(stretchRoot.position, beforeRelease.add(new Vector3(0.2, 0.1, 0.2))) < 1e-6,
+    'Remaining hand continues normal movement');
+  api.beginFloatingPanelGrab('left', Matrix.Translation(-0.2, 0, 1), stretchMesh);
+  chart.root.setEnabled(true);
+  api.beginFloatingPanelGrab('left', Matrix.Identity(), chart.mesh);
+  assert.ok(resizePanel.grabbed('right') && !resizePanel.grabbed('left'), 'Transfer releases only that stretch source');
+  api.endFloatingPanelGrab('left');
+  chart.root.setEnabled(false);
+  resizePanel.release();
+  assert.equal(resizePanel.grabbed(), false, 'Hiding or placing cancels both grabs');
+  const heldScale = scale;
+  api.updateFloatingPanelGrab('right', Matrix.Translation(5, 0, 1));
+  assert.equal(scale, heldScale, 'Released hands do not resize');
+  stretchRoot.dispose();
+  const camera = new FreeCamera('followCamera', Vector3.Zero(), scene);
+  scene.activeCamera = camera;
+  score.root.setEnabled(true);
+  score.root.position.set(-0.35, -0.08, 0.75);
+  score.root.rotationQuaternion.copyFrom(Quaternion.Identity());
+  score.panel.captureViewerOffset();
+  const startFollow = score.root.position.clone();
+  camera.position.x = 1;
+  score.panel.followViewer(1 / 60);
+  assert.ok(score.root.position.x > startFollow.x && score.root.position.x < startFollow.x + 1,
+    'Follow moves partway toward viewer instead of snapping');
+  for (let frame = 0; frame < 120; frame++) score.panel.followViewer(1 / 60);
+  assert.ok(Vector3.Distance(score.root.position, startFollow.add(new Vector3(1, 0, 0))) < 0.001);
+  const compareFrames = fps => {
+    camera.position.setAll(0);
+    score.root.position.copyFrom(startFollow);
+    score.root.rotationQuaternion.copyFrom(Quaternion.Identity());
+    score.panel.captureViewerOffset();
+    camera.position.x = 1;
+    for (let frame = 0; frame < fps; frame++) score.panel.followViewer(1 / fps);
+    return score.root.position.clone();
+  };
+  assert.ok(Vector3.Distance(compareFrames(30), compareFrames(90)) < 1e-6, 'Lag is frame-rate independent');
+  const poseBeforeTurn = score.root.position.clone();
+  camera.rotation.y = Math.PI / 2;
+  camera.rotation.x = 0.4;
+  score.panel.followViewer(1 / 60);
+  assert.ok(Vector3.Distance(score.root.position, poseBeforeTurn) > 0.001, 'Panel follows viewer yaw/pitch');
+  score.panel.begin('left', Matrix.Identity());
+  const heldPose = score.root.position.clone();
+  camera.position.x = 4;
+  score.panel.followViewer(1);
+  assert.ok(score.root.position.equals(heldPose), 'Follow is suspended during grabs');
+  score.panel.end('left');
+  score.panel.followViewer(1 / 60);
+  assert.ok(Vector3.Distance(score.root.position, heldPose) < 1e-6, 'Release captures placement without snapping');
+  camera.position.x = 5;
+  score.panel.followViewer(1);
+  assert.ok(score.root.position.x > heldPose.x + 0.9, 'Released pad resumes following from chosen offset');
+  score.root.setEnabled(false);
+  const hiddenPose = score.root.position.clone();
+  camera.position.x = 10;
+  score.panel.followViewer(1);
+  assert.ok(score.root.position.equals(hiddenPose), 'Hidden panels never follow');
   score.root.setEnabled(false);
   assert.equal(api.getFloatingPanelNear(score.root.position), undefined);
   assert.equal(api.pickFloatingPanel(ray)?.hit, false);
-  console.log('Floating panel checks passed: closest picking, tilted near contact, pose tracking, hand takeover, release, single-panel ownership, pointer drag, distance bounds, and hidden panels.');
+  console.log('Floating panel checks passed: closest picking, tilted near contact, pose tracking, hand takeover, two-hand stretching, clamped size, resized picking, release continuity, single-panel ownership, pointer drag, distance bounds, and hidden panels.');
 } finally {
   scene.dispose();
   engine.dispose();
