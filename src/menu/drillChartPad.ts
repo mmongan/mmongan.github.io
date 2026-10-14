@@ -157,20 +157,25 @@ function createPad(): Pad {
   page.material = pageMaterial;
   page.position.z = -0.0005;
 
-  for (const [label, direction, x] of [["◀ Prev", -1, -1], ["Next ▶", 1, 1]] as const) {
-    const buttonMaterial = new StandardMaterial(`drillChartButtonMaterial-${direction}`, scene);
+  const buttonDefinitions: { label: string; name: string; x: number; hit: HandMenuHit }[] = [
+    { label: "◀ Prev", name: "-1", x: -1, hit: { action: "drillChartPage", direction: -1 } },
+    { label: "Hide", name: "hide", x: 0, hit: { action: "drillChartHide" } },
+    { label: "Next ▶", name: "1", x: 1, hit: { action: "drillChartPage", direction: 1 } },
+  ];
+  for (const { label, name, x, hit } of buttonDefinitions) {
+    const buttonMaterial = new StandardMaterial(`drillChartButtonMaterial-${name}`, scene);
     const buttonTexture = createButtonTexture(label);
     buttonMaterial.diffuseTexture = buttonTexture;
     buttonMaterial.opacityTexture = buttonTexture;
     buttonMaterial.emissiveColor = Color3.White();
     buttonMaterial.disableLighting = true;
-    const button = MeshBuilder.CreatePlane(`drillChartButton-${direction}`, {
+    const button = MeshBuilder.CreatePlane(`drillChartButton-${name}`, {
       width: BUTTON_WIDTH, height: BUTTON_HEIGHT,
     }, scene);
     button.material = buttonMaterial;
     button.position.set(x * (PAD_WIDTH / 2 - BUTTON_WIDTH / 2 - 0.012), -PAD_HEIGHT / 2 + BUTTON_HEIGHT / 2 + 0.01, -0.002);
-    registerMenuButton(button, { action: "drillChartPage", direction });
-    buttons.set(button, { action: "drillChartPage", direction });
+    registerMenuButton(button, hit);
+    buttons.set(button, hit);
     button.parent = root;
     meshes.add(button);
   }
@@ -266,7 +271,7 @@ function drawPage(target: Pad, setCounts: number[], page: number) {
   ctx.textAlign = "left";
   ctx.font = "16px 'Segoe UI', Arial";
   ctx.fillStyle = "#7a8596";
-  ctx.fillText("CHARTXR DRILL CHART", FIELD_LEFT, 96);
+  ctx.fillText("OPENCHARTXR DRILL CHART", FIELD_LEFT, 96);
 
   drawField(ctx);
 
@@ -343,7 +348,7 @@ function refreshPage(force = false) {
   drawPage(pad, setCounts, page);
 }
 
-// Floats the pad just below eye level in front of whichever camera is active.
+// Floats the pad below eye level on the viewer's left.
 function placeInFrontOfViewer() {
   if (!pad) return;
   const camera = scene.activeCamera;
@@ -355,6 +360,7 @@ function placeInFrontOfViewer() {
   if (forward.lengthSquared() < 1e-6) forward.set(0, 0, 1);
   forward.normalize();
   const position = eye.add(forward.scale(inXR ? SPAWN_DISTANCE : DESKTOP_SPAWN_DISTANCE));
+  position.addInPlace(new Vector3(forward.z, 0, -forward.x).scale(-0.35));
   position.y -= inXR ? SPAWN_DROP : DESKTOP_SPAWN_DROP;
   pad.root.position.copyFrom(position);
   // The page's visible face points along local -Z, so aim +Z away from the eye.

@@ -3,8 +3,7 @@ import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
 import { Scene } from '@babylonjs/core/scene.pure';
 import { BRASS, buildInstrumentTemplate, cachedInstrumentTemplate, EBONY, InstrumentGeometry, PEARL } from './lowPolyInstrument';
 
-// Minimal baritone saxophone in the same Quest-friendly style as the alto
-// (see saxophoneModel.ts): one hand-indexed mesh of 111 shared vertices.
+// Baritone saxophone in the same shared-mesh style as the alto.
 // About 1.5 times the alto's height, with a wider bore and bell and the
 // an open S-shaped neck above the body rather than a spiral. Model units ≈ meters. Local
 // axes: +Y up the body, -Z toward the player (mouthpiece tip at
@@ -35,7 +34,7 @@ function createBariSaxophoneTemplate(scene: Scene): Mesh {
     0.024, 0.03, 0.042, 0.046, 0.05, 0.058, 0.095,
   ], 6, BRASS);
 
-  // Black mouthpiece (9) in line with the end of the neck, its square base
+  // Black mouthpiece in line with the end of the neck, its base
   // sleeved over the neck, capped at the tip.
   const [, tip] = geometry.tube([
     new Vector3(0.045, 0.402, -0.135),

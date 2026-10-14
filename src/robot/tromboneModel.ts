@@ -3,8 +3,7 @@ import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
 import { Scene } from '@babylonjs/core/scene.pure';
 import { BRASS, buildInstrumentTemplate, cachedInstrumentTemplate, InstrumentGeometry, SILVER } from './lowPolyInstrument';
 
-// Minimal tenor trombone in the same Quest-friendly style as the trumpet:
-// one hand-indexed mesh of under 100 shared vertices (see lowPolyInstrument.ts).
+// Tenor trombone in the same shared-mesh style as the trumpet.
 // Model units ≈ meters. Local axes match the trumpet: +Y toward the
 // mouthpiece (tip at TROMBONE_MOUTHPIECE_TIP), -Y toward the slide end and
 // bell, +Z up when played, -X the player's left. The slide spans from
@@ -22,7 +21,7 @@ export const TROMBONE_SLIDE_STAY_Y = -0.16;
 function createTromboneTemplate(scene: Scene): Mesh {
   const geometry = new InstrumentGeometry("instrument");
 
-  // Mouthpiece (8): square cone, cup toward the player, shank seated in the receiver.
+  // Mouthpiece cup toward the player, shank seated in the receiver.
   geometry.tube([new Vector3(0, 0.045, 0), TROMBONE_MOUTHPIECE_TIP], [0.004, 0.014], 4, SILVER);
 
   // The widened slide returns directly into the tuning slide and bell,

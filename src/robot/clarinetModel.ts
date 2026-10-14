@@ -3,8 +3,7 @@ import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
 import { Scene } from '@babylonjs/core/scene.pure';
 import { buildInstrumentTemplate, cachedInstrumentTemplate, EBONY, InstrumentGeometry, SILVER } from './lowPolyInstrument';
 
-// Minimal B-flat clarinet in the same Quest-friendly style as the trumpet:
-// one hand-indexed mesh of under 100 shared vertices (see lowPolyInstrument.ts).
+// B-flat clarinet in the same shared-mesh style as the trumpet.
 // Model units ≈ meters. Local axes: +Y toward the mouthpiece (tip at
 // CLARINET_MOUTHPIECE_TIP), -Y toward the bell, +Z the front (tone holes
 // and keys), X across.
@@ -16,7 +15,7 @@ function createClarinetTemplate(scene: Scene): Mesh {
   const geometry = new InstrumentGeometry("instrument");
 
   // Mouthpiece beak, barrel, upper/lower joints, and flared bell as one
-  // tube: hexagonal down to the bell, then 12-sided (67 with the tip cap).
+  // rounded tube with a more finely tessellated bell.
   const [tip] = geometry.tube([
     CLARINET_MOUTHPIECE_TIP,
     new Vector3(0, 0.24, 0),

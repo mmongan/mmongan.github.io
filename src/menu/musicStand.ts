@@ -25,6 +25,12 @@ const HEIGHT = 1280;
 let standScale = 1.0;
 let deskNode: TransformNode | null = null;
 let updateTopBarButtonsFn: (() => void) | null = null;
+let updateVisibility: ((visible: boolean) => void) | null = null;
+
+export function setMusicStandVisible(visible: boolean) {
+  if (musicStandToggle) musicStandToggle.checked = visible;
+  updateVisibility?.(visible);
+}
 
 export function setMusicStandScale(scale: number) {
   const clamped = Math.max(0.6, Math.min(2.5, Math.round(scale * 10) / 10));
@@ -143,17 +149,17 @@ export function initMusicStand() {
     {
       name: 'musicStandSizeDecrease',
       action: { action: 'musicStandSizeDecrease' },
-      width: 0.13,
+      width: 0.11,
       height: 0.05,
-      x: -0.23,
+      x: -0.27,
       getText: () => 'Pad -',
     },
     {
       name: 'musicStandStaffToggle',
       action: { action: 'musicStandStaffToggle' },
-      width: 0.28,
+      width: 0.23,
       height: 0.05,
-      x: 0,
+      x: -0.085,
       getText: () => {
         const config = getScoreMeasuresConfig();
         const effective = getEffectiveMeasuresPerPage();
@@ -163,10 +169,18 @@ export function initMusicStand() {
     {
       name: 'musicStandSizeIncrease',
       action: { action: 'musicStandSizeIncrease' },
-      width: 0.13,
+      width: 0.11,
       height: 0.05,
-      x: 0.23,
+      x: 0.12,
       getText: () => 'Pad +',
+    },
+    {
+      name: 'musicStandHide',
+      action: { action: 'musicStandHide' },
+      width: 0.11,
+      height: 0.05,
+      x: 0.27,
+      getText: () => 'Hide',
     },
   ];
 
@@ -329,7 +343,7 @@ export function initMusicStand() {
     forward.normalize();
     const inXR = camera.getClassName() === 'WebXRCamera';
     root.position.copyFrom(camera.globalPosition.add(forward.scale(inXR ? 1.15 : 1.35)));
-    if (!inXR) root.position.addInPlace(new Vector3(forward.z, 0, -forward.x).scale(0.6));
+    root.position.addInPlace(new Vector3(forward.z, 0, -forward.x).scale(0.6));
     root.position.y += inXR ? -0.4 : 0.12;
     interaction.release();
     interaction.userPlaced = false;
@@ -339,13 +353,16 @@ export function initMusicStand() {
     placed = true;
     root.setEnabled(enabled);
   }
-  musicStandToggle?.addEventListener('change', () => {
-    enabled = musicStandToggle?.checked ?? false;
+  updateVisibility = visible => {
+    enabled = visible;
     if (!enabled) interaction.release();
     else if (placed && scene.activeCamera &&
       Vector3.Distance(scene.activeCamera.globalPosition, root.position) > 2.5) place();
     root.setEnabled(enabled && placed);
     setMidiScoreStandVisible(enabled);
+  };
+  musicStandToggle?.addEventListener('change', () => {
+    setMusicStandVisible(musicStandToggle?.checked ?? false);
   });
   musicStandPlaceButton?.addEventListener('click', place);
   musicStandSizeInput?.addEventListener('input', () => {
@@ -359,6 +376,7 @@ export function initMusicStand() {
   scene.onDisposeObservable.addOnce(() => {
     generation++;
     updateTopBarButtonsFn = null;
+    updateVisibility = null;
     deskNode = null;
     onMidiScoreDisplayChanged.remove(observer);
     onDrillTransportChangedObservable.remove(mediaObserver);

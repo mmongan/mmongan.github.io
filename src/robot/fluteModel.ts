@@ -3,8 +3,7 @@ import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
 import { Scene } from '@babylonjs/core/scene.pure';
 import { buildInstrumentTemplate, cachedInstrumentTemplate, EBONY, InstrumentGeometry, SILVER } from './lowPolyInstrument';
 
-// Minimal concert flute in the same Quest-friendly style as the trumpet:
-// one hand-indexed mesh of under 100 shared vertices (see lowPolyInstrument.ts).
+// Concert flute in the same shared-mesh style as the trumpet.
 // Model units ≈ meters. Local axes: +Y toward the head-joint crown, -Y toward
 // the foot, +Z the front (lip plate and keys), +X the player's side of the
 // tube. The origin is the embouchure hole; FLUTE_MOUTHPIECE_TIP is the point
@@ -14,7 +13,7 @@ export const FLUTE_MOUTHPIECE_TIP = new Vector3(0.012, 0, 0.012);
 function createFluteTemplate(scene: Scene): Mesh {
   const geometry = new InstrumentGeometry("instrument");
 
-  // Head joint and body as one hexagonal tube, capped at the crown (25).
+  // Head joint and body as one rounded tube, capped at the crown.
   const [crown] = geometry.tube([
     new Vector3(0, 0.065, 0),
     new Vector3(0, -0.12, 0),

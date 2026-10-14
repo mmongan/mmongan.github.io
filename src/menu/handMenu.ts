@@ -33,6 +33,7 @@ export type HandMenuHit =
   | { action: "formationPreset"; preset: "line" | "arc" | "circle" | "block" | "triangle" | "square" | "pentagon" | "hexagon" | "star" }
   | { action: "formationLetter"; letter: FormationLetter }
   | { action: "drillChartPad" }
+  | { action: "drillChartHide" | "musicStandHide" }
   | { action: "instrument"; instrument: MarcherInstrument }
   | { action: "drillChartPage"; direction: 1 | -1 }
   | { action: "seek"; fraction: number };

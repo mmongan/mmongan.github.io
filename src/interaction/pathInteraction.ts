@@ -72,7 +72,7 @@ import { getOpenMarchSectionInstrument, loadOpenMarchFromUrl, OPEN_MARCH_EXAMPLE
 import type { OpenMarchImportedDrill } from '../robot/openMarchFormat';
 import { clearDrillLabels, setDrillLabels, setDrillLabelsVisible } from '../robot/drillLabels';
 import { clearShowInfo, setShowInfo } from '../menu/showInfoPanel';
-import { adjustMusicStandScale, cycleMusicStandStaff } from '../menu/musicStand';
+import { adjustMusicStandScale, cycleMusicStandStaff, setMusicStandVisible } from '../menu/musicStand';
 import { getHandMenuHit, getHandMenuHitNearPoint, setMenuHandTracking, setFormationCommitAvailable, setFormationLibraryOpen, setFormationLibraryPage, setFormationLibraryAnchorAvailable, setEraseModeActive, setEraseHistoryAvailable, setDrillChartPadActive, setInstrumentMenuActive, isHandMenuVisible, isMenuControl } from '../menu/handMenu';
 import {
   flipDrillChartPage,
@@ -1616,6 +1616,12 @@ function executeMenuAction(hit: NonNullable<ReturnType<typeof getHandMenuHit>>) 
       break;
     case "drillChartPad":
       setDrillChartPadVisible(!isDrillChartPadVisible());
+      break;
+    case "drillChartHide":
+      setDrillChartPadVisible(false);
+      break;
+    case "musicStandHide":
+      setMusicStandVisible(false);
       break;
     case "drillChartPage":
       flipDrillChartPage(hit.direction);

@@ -61,6 +61,31 @@ try {
   flare.tube([Vector3.Zero(), Vector3.Up()], [0.01, 0.1], [3, 9], BRASS);
   assert.equal(flare.positions.length / 3, 48, 'Bells bridge twelve to thirty-six sides');
   assert.equal(flare.indices.length, 144);
+  const elbowPath = [Vector3.Zero(), Vector3.Up(), new Vector3(0, 1, 1)];
+  const elbow = new InstrumentGeometry('instrument');
+  const elbowRings = elbow.tube(elbowPath, 0.01, 3, BRASS);
+  assert.equal(elbowRings.length, elbowPath.length, 'Tube callers retain one returned ring per original point');
+  assert.equal(elbow.positions.length / 3, 132, 'A ninety-degree bend uses eight curved segments plus straight ends');
+  const ringCenter = (geometry, ring, sides) => {
+    const center = Vector3.Zero();
+    for (let side = 0; side < sides; side++) {
+      center.addInPlace(Vector3.FromArray(geometry.positions, (ring + side) * 3));
+    }
+    return center.scale(1 / sides);
+  };
+  assert.ok(Vector3.Distance(ringCenter(elbow, elbowRings[0], 12), elbowPath[0]) < 1e-6);
+  assert.ok(Vector3.Distance(ringCenter(elbow, elbowRings[2], 12), elbowPath[2]) < 1e-6);
+  assert.ok(Vector3.Distance(ringCenter(elbow, elbowRings[1], 12), new Vector3(0, 0.925, 0.075)) < 1e-6,
+    'The corner is rounded inward rather than merely subdividing the original straight segments');
+  elbow.cap(elbowRings[2], 3, elbowPath[2], BRASS);
+  verify(buildInstrumentTemplate('elbowCheck', elbow, scene));
+  const lowElbow = cachedInstrumentTemplate(scene => {
+    const geometry = new InstrumentGeometry('instrument');
+    geometry.tube(elbowPath, 0.01, 3, BRASS);
+    return buildInstrumentTemplate('lowElbowCheck', geometry, scene);
+  })(scene, 'low');
+  assert.equal(lowElbow.getTotalVertices(), 42, 'Reduced detail still rounds a ninety-degree bend with four segments');
+  verify(lowElbow);
   const drum = new InstrumentGeometry('instrument');
   drum.drum(Vector3.Zero(), Vector3.Up(), 0.1, 0.2, 12, BRASS, BRASS, true);
   assert.equal(drum.positions.length / 3, 194, 'Drum ring multiplier is applied only once');

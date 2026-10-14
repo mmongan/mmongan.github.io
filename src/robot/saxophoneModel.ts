@@ -3,8 +3,7 @@ import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
 import { Scene } from '@babylonjs/core/scene.pure';
 import { BRASS, buildInstrumentTemplate, cachedInstrumentTemplate, EBONY, InstrumentGeometry, PEARL } from './lowPolyInstrument';
 
-// Minimal alto saxophone in the same Quest-friendly style as the trumpet:
-// one hand-indexed mesh of under 100 shared vertices (see lowPolyInstrument.ts).
+// Alto saxophone in the same shared-mesh style as the trumpet.
 // Model units ≈ meters. Local axes: +Y up the body toward the neck, -Z toward
 // the player (mouthpiece tip at SAXOPHONE_MOUTHPIECE_TIP, key stacks on the
 // -Z side under the fingers), +Z toward the bell, X across.
@@ -14,7 +13,7 @@ function createSaxophoneTemplate(scene: Scene): Mesh {
   const geometry = new InstrumentGeometry("instrument");
 
   // Neck from the mouthpiece, curving down into the conical body, U-shaped
-  // bow and upturned bell, as one tube (48).
+  // bow and upturned bell, as one tube.
   geometry.tube([
     new Vector3(0, 0.36, -0.07),
     new Vector3(0, 0.363, -0.037),
@@ -27,7 +26,7 @@ function createSaxophoneTemplate(scene: Scene): Mesh {
     new Vector3(0, -0.1, 0.085),
   ], [0.007, 0.007, 0.009, 0.018, 0.025, 0.028, 0.03, 0.035, 0.06], [3, 3, 6, 6, 6, 6, 6, 6, 6], BRASS);
 
-  // Black mouthpiece (9) in line with the end of the neck, its square base
+  // Black mouthpiece in line with the end of the neck, its base
   // sleeved over the neck, capped at the tip.
   const [, tip] = geometry.tube([
     new Vector3(0, 0.36, -0.07),

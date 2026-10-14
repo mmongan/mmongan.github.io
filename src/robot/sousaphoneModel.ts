@@ -3,8 +3,7 @@ import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
 import { Scene } from '@babylonjs/core/scene.pure';
 import { BRASS, buildInstrumentTemplate, cachedInstrumentTemplate, InstrumentGeometry } from './lowPolyInstrument';
 
-// Minimal sousaphone in the same Quest-friendly style as the trumpet: one
-// hand-indexed mesh of 87 shared vertices (see lowPolyInstrument.ts).
+// Sousaphone in the same shared-mesh style as the trumpet.
 // Worn rather than held, so it is modelled directly in marcher
 // instrument-root coordinates (unrotated, origin at the marcher's feet, +Z
 // forward, +X to the marcher's right; see robot.ts): a tilted body loop
@@ -31,7 +30,7 @@ function createSousaphoneTemplate(scene: Scene): Mesh {
   const geometry = new InstrumentGeometry("instrument");
   const loopSegments = geometry.low ? 16 : 32;
 
-  // Body loop (32), closed: front of the chest, under the right arm, behind
+  // Closed body loop: front of the chest, under the right arm, behind
   // the back, over the left shoulder, and back to the front.
   geometry.tube(
     Array.from({ length: loopSegments + 1 }, (_, index) =>
@@ -40,7 +39,7 @@ function createSousaphoneTemplate(scene: Scene): Mesh {
   );
 
   // Bell neck from the left shoulder, up behind the head, turning straight
-  // on into the huge forward-facing bell above the head (32).
+  // on into the huge forward-facing bell above the head.
   const shoulder = sousaphoneLoopPoint(-Math.PI);
   geometry.tube([
     shoulder,
@@ -51,7 +50,7 @@ function createSousaphoneTemplate(scene: Scene): Mesh {
     new Vector3(-0.06, 1.96, 0.16),
   ], [0.024, 0.028, 0.034, 0.04, 0.12, 0.3], [4, 4, 4, 4, 8, 8], BRASS);
 
-  // Gooseneck and mouthpiece from inside the valves to the lips (15).
+  // Gooseneck and mouthpiece from inside the valves to the lips.
   geometry.tube([
     new Vector3(0.03, 1.02, 0.295),
     new Vector3(0, 1.15, 0.25),

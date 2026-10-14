@@ -3,8 +3,7 @@ import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
 import { Scene } from '@babylonjs/core/scene.pure';
 import { BRASS, buildInstrumentTemplate, cachedInstrumentTemplate, InstrumentGeometry, PEARL, SILVER } from './lowPolyInstrument';
 
-// Minimal marching baritone in the same Quest-friendly style as the trumpet:
-// one hand-indexed mesh of 91 shared vertices (see lowPolyInstrument.ts).
+// Marching baritone in the same shared-mesh style as the trumpet.
 // A front-bell horn held like a trumpet, with heavier tubing, a long oval
 // tuning wrap, and a long, wide bell. Model units ≈ meters. Local axes: +Y
 // toward the mouthpiece (rim at BARITONE_MOUTHPIECE_TIP), -Y toward the bell,
@@ -19,10 +18,10 @@ const BELL_Z = 0.07;
 function createBaritoneTemplate(scene: Scene): Mesh {
   const geometry = new InstrumentGeometry("instrument");
 
-  // Large mouthpiece (8), shank seated in the receiver.
+  // Large mouthpiece, shank seated in the receiver.
   geometry.tube([new Vector3(0, 0.175, 0), BARITONE_MOUTHPIECE_TIP], [0.006, 0.02], 4, SILVER);
 
-  // Receiver and leadpipe into a long oval main tuning wrap, back into the valves (21).
+  // Receiver and leadpipe into a long oval main tuning wrap, back into the valves.
   geometry.tube([
     new Vector3(0, 0.18, 0),
     new Vector3(0, 0.155, 0),
@@ -34,7 +33,7 @@ function createBaritoneTemplate(scene: Scene): Mesh {
   ], [0.017, TUBE_RADIUS, TUBE_RADIUS, TUBE_RADIUS, TUBE_RADIUS, TUBE_RADIUS, TUBE_RADIUS], 3, BRASS);
 
   // Bell pipe out of the valves, over a wide bow, and straight on into the
-  // long, wide 9-sided flare as one continuous tube (33).
+  // long, wide flare as one continuous tube.
   geometry.tube([
     new Vector3(BELL_X, 0, -0.07),
     new Vector3(BELL_X, 0.12, -0.07),
@@ -45,8 +44,7 @@ function createBaritoneTemplate(scene: Scene): Mesh {
     new Vector3(BELL_X, -0.45, BELL_Z),
   ], [TUBE_RADIUS, TUBE_RADIUS, TUBE_RADIUS, TUBE_RADIUS, TUBE_RADIUS, 0.05, 0.14], [3, 3, 3, 3, 3, 9, 9], BRASS);
 
-  // Valve block (8), wide enough to swallow both tube ends, and three capped
-  // pearl finger buttons (21).
+  // Valve block covers both tube ends, with three capped pearl finger buttons.
   geometry.box(new Vector3(-0.04, -0.045, -0.165), new Vector3(0.04, 0.045, 0.05), BRASS);
   geometry.fine(() => [0.03, 0, -0.03].forEach((y) => {
     const [, top] = geometry.tube([new Vector3(0, y, 0.05), new Vector3(0, y, 0.07)], [0.007, 0.011], 3, PEARL);

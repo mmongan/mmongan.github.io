@@ -1,7 +1,7 @@
 import type { Database, SqlJsStatic } from "sql.js";
 
 // OpenMarch (https://openmarch.com) stores a show as a `.dots` SQLite
-// database. This module converts between that file and Chartxr's per-count
+// database. This module converts between that file and OpenChartxr's per-count
 // marcher tracks. It only uses type imports so Node checks can load it without
 // Babylon.js or a bundler.
 
@@ -159,7 +159,7 @@ CREATE TRIGGER prevent_utility_deletion BEFORE DELETE ON utility FOR EACH ROW WH
   BEGIN SELECT RAISE(FAIL, 'Deletion not allowed for the utility record.'); END;
 `;
 
-// Chartxr field coordinates in yards: x crosses the field from the front
+// OpenChartxr field coordinates in yards: x crosses the field from the front
 // sideline (-x) to the back sideline (+x), z runs down the field with side 1
 // (OpenMarch's negative x) at +z, and the origin is the 50-yard line.
 export type FieldPoint = { x: number; z: number };
@@ -228,8 +228,8 @@ const LEVEL_NAMES: Record<string, string> = {
 
 const roundSteps = (yards: number) => Math.round((yards / YARDS_PER_EIGHT_TO_FIVE_STEP) * 100) / 100;
 
-// Mirrors OpenMarch's football templates, with hashes placed where Chartxr
-// draws them for the selected level and end zones included because Chartxr's
+// Mirrors OpenMarch's football templates, with hashes placed where OpenChartxr
+// draws them for the selected level and end zones included because OpenChartxr's
 // field spans the full 120 yards.
 export function createOpenMarchFieldProperties(spec: OpenMarchFieldSpec) {
   const xCheckpoints: Checkpoint[] = [];
@@ -279,7 +279,7 @@ export function createOpenMarchFieldProperties(spec: OpenMarchFieldSpec) {
   const pro = spec.level === "nfl";
   const frame = getFieldFrame({ xCheckpoints, yCheckpoints, stepSizeInches: OPEN_MARCH_STEP_INCHES });
   return {
-    name: `Chartxr ${LEVEL_NAMES[spec.level] ?? spec.level} football field (with end zones)`,
+    name: `OpenChartxr ${LEVEL_NAMES[spec.level] ?? spec.level} football field (with end zones)`,
     xCheckpoints,
     yCheckpoints,
     yardNumberCoordinates: pro
@@ -417,7 +417,7 @@ export function writeOpenMarchDatabase(
           pixels.x,
           pixels.y,
         ]);
-        // OpenMarch moves in straight lines between pages, so curved Chartxr
+        // OpenMarch moves in straight lines between pages, so curved OpenChartxr
         // routes keep their exact per-count spots as midsets.
         if (page > 0) {
           const startCount = setCounts[page - 1];
@@ -480,7 +480,7 @@ function tableExists(db: Database, table: string): boolean {
   }
 }
 
-// Reads an OpenMarch show into one Chartxr position per count. Moves between
+// Reads an OpenMarch show into one OpenChartxr position per count. Moves between
 // pages are straight lines (through any midsets); curved pathways are not
 // reproduced.
 export function readOpenMarchDatabase(SQL: SqlJsStatic, bytes: Uint8Array, widthYards: number): OpenMarchImportedDrill {

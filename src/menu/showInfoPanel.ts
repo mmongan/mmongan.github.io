@@ -50,7 +50,7 @@ export function clearShowInfo() {
   updateHighlightTimer();
 }
 
-// `instruments` holds the Chartxr instrument given to each marcher.
+// `instruments` holds the OpenChartxr instrument given to each marcher.
 export function setShowInfo(showName: string, drill: OpenMarchImportedDrill, instruments: string[], tempoBpm: number) {
   clearShowInfo();
   if (!showInfo || !showInfoPages || !showInfoMarchers) return;

@@ -244,7 +244,7 @@ export function createVideoBoard(
     hudCtx.font = "bold 28px 'Segoe UI', Arial";
     hudCtx.textAlign = "left";
     hudCtx.textBaseline = "middle";
-    hudCtx.fillText("Chartxr", 16, 34);
+    hudCtx.fillText("OpenChartxr", 16, 34, progressBarArea.x - 32);
 
     hudCtx.fillStyle = "#dfe8ff";
     hudCtx.font = "14px 'Segoe UI', Arial";
@@ -455,7 +455,7 @@ function createVideoBoardButtons(y: number, z: number) {
   createTitleBanner(y - panelHeight / 2, z + panelDepth / 2, panelWidth);
 }
 
-// A small "Chartxr" banner mounted just below the media button panel.
+// A small "OpenChartxr" banner mounted just below the media button panel.
 function createTitleBanner(panelBottomY: number, z: number, width: number) {
   const bannerHeight = 1.0;
   const gap = 0.3;
@@ -471,7 +471,7 @@ function createTitleBanner(panelBottomY: number, z: number, width: number) {
   ctx.font = "bold 48px 'Segoe UI', Arial";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(`Chartxr v${__APP_VERSION__}`, canvas.width / 2, canvas.height / 2);
+  ctx.fillText(`OpenChartxr v${__APP_VERSION__}`, canvas.width / 2, canvas.height / 2);
 
   const texture = new DynamicTexture("videoBoardBannerTexture", canvas, scene, false);
   texture.update(true);

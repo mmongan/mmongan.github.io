@@ -20,7 +20,7 @@ export const EBONY = new Color4(0.06, 0.06, 0.07, 1);
 const SIDE_AXIS = new Vector3(1, 0, 0);
 
 // "low" is used while the field is shrunk (Giant and tabletop modes), where
-// marchers are only centimeters tall: instrument rings use six sides,
+// marchers are only centimeters tall: instrument rings use half the full-detail sides,
 // body lathes are about half as round, and fine() details are skipped.
 export type ModelDetail = "high" | "low";
 export type ModelTemplate = (scene: Scene, detail?: ModelDetail) => Mesh;
@@ -43,7 +43,7 @@ export class InstrumentGeometry {
   // A uniform multiplier preserves divisibility at bell transitions; reduced
   // instruments keep round tubing without increasing body tessellation.
   private tubeSides(sides: number) {
-    if (this.surface === "instrument") return this.low ? 6 : sides * 4;
+    if (this.surface === "instrument") return sides * (this.low ? 2 : 4);
     return this.low ? Math.min(sides, 3) : sides;
   }
 
@@ -73,7 +73,53 @@ export class InstrumentGeometry {
   tube(path: Vector3[], radii: number[] | number, sides: number[] | number, color: Color4,
     sideAxis = SIDE_AXIS): number[] {
     const closed = path.length > 3 && path[0].subtract(path[path.length - 1]).length() < 1e-6;
-    const points = closed ? path.slice(0, -1) : path;
+    let points = closed ? path.slice(0, -1) : path;
+    const originalRings: number[] = [];
+    if (this.surface === "instrument") {
+      const sampled: Vector3[] = [];
+      const sampledRadii: number[] = [];
+      const sampledSides: number[] = [];
+      const radiusAt = (index: number) => typeof radii === "number" ? radii : radii[index];
+      const sidesAt = (index: number) => typeof sides === "number" ? sides : sides[index];
+      points.forEach((point, index) => {
+        const previousIndex = (index + points.length - 1) % points.length;
+        const nextIndex = (index + 1) % points.length;
+        const previous = closed || index > 0 ? points[previousIndex] : null;
+        const next = closed || index < points.length - 1 ? points[nextIndex] : null;
+        const incoming = previous ? point.subtract(previous) : null;
+        const outgoing = next ? next.subtract(point) : null;
+        const incomingLength = incoming?.length() ?? 0;
+        const outgoingLength = outgoing?.length() ?? 0;
+        const angle = incoming && outgoing && incomingLength > 1e-6 && outgoingLength > 1e-6
+          ? Math.acos(Math.max(-1, Math.min(1, Vector3.Dot(incoming, outgoing) / (incomingLength * outgoingLength))))
+          : 0;
+        if (!incoming || !outgoing || angle < 0.01) {
+          originalRings.push(sampled.length);
+          sampled.push(point);
+          sampledRadii.push(radiusAt(index));
+          sampledSides.push(sidesAt(index));
+          return;
+        }
+        // Trim locally so neighboring fillets cannot overlap or move endpoints.
+        const trim = Math.min(incomingLength, outgoingLength) * 0.3;
+        const start = point.subtract(incoming.scale(trim / incomingLength));
+        const end = point.add(outgoing.scale(trim / outgoingLength));
+        const startRadius = radiusAt(index) + (radiusAt(previousIndex) - radiusAt(index)) * trim / incomingLength;
+        const endRadius = radiusAt(index) + (radiusAt(nextIndex) - radiusAt(index)) * trim / outgoingLength;
+        const steps = Math.max(2, Math.ceil(angle / (Math.PI / (this.low ? 4 : 8))) * 2);
+        originalRings.push(sampled.length + steps / 2);
+        for (let step = 0; step <= steps; step++) {
+          const t = step / steps;
+          const u = 1 - t;
+          sampled.push(start.scale(u * u).add(point.scale(2 * u * t)).add(end.scale(t * t)));
+          sampledRadii.push(startRadius * u * u + radiusAt(index) * 2 * u * t + endRadius * t * t);
+          sampledSides.push(sidesAt(index));
+        }
+      });
+      points = sampled;
+      radii = sampledRadii;
+      sides = sampledSides;
+    }
     const count = points.length;
     const sideCount = (index: number) => this.tubeSides(typeof sides === "number" ? sides : sides[index]);
     const rings = points.map((point, index) => {
@@ -104,7 +150,7 @@ export class InstrumentGeometry {
       const following = (ring + 1) % count;
       this.bridge(rings[ring], rings[following], sideCount(ring), sideCount(following));
     }
-    return rings;
+    return originalRings.length ? originalRings.map(index => rings[index]) : rings;
   }
 
   // Ring of `sides` vertices around `center`, in the plane perpendicular to `normal`.
