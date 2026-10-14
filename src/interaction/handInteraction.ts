@@ -31,14 +31,9 @@ import {
 import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS } from '../field/constants';
 import { floorCalibrationToggle } from '../ui/dom';
 import {
-  beginDrillChartPadGrab,
-  endDrillChartPadGrab,
-  isDrillChartPadGrabbed,
-  isPointNearDrillChartPad,
-  getDrillChartButtonNearPoint,
-  pickDrillChartPad,
-  updateDrillChartPadGrab,
-} from '../menu/drillChartPad';
+  beginFloatingPanelGrab, endFloatingPanelGrab, getFloatingPanelNear, getFloatingPanelButtonNearPoint,
+  isFloatingPanelGrabbed, pickFloatingPanel, updateFloatingPanelGrab,
+} from '../menu/floatingPanel';
 import { getHandMenuHit } from '../menu/handMenu';
 import { getControllerYaw, rotateAroundY } from './controllers';
 
@@ -740,7 +735,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
   function updateTabletopHands() {
     if (floorCalibrationToggle?.checked || !handTracking) {
       sceneGesture = null;
-      padHands.forEach((handedness) => endDrillChartPadGrab(handedness));
+      padHands.forEach((handedness) => endFloatingPanelGrab(handedness));
       padHands.clear();
       finishFormationPull(false);
       finishCircleResize(false);
@@ -764,23 +759,25 @@ export function createHandInteraction(paths: HandPathDependencies) {
         pinchedPoints.set(handedness, thumb.add(index).scale(0.5));
       }
     }
-    // Pinches that start on the drill chart pad belong to it (page buttons or
+    // Pinches that start on a floating panel belong to it (chart buttons or
     // a grab) until released, so they never also move marchers or the scene.
     for (const handedness of ['left', 'right'] as const) {
       const hand = handTracking.getHandByHandedness(handedness);
       const point = pinchedPoints.get(handedness);
-      if (isDrillChartPadGrabbed(handedness)) {
-        if (hand && point) updateDrillChartPadGrab(handedness, getHandGrabMatrix(hand));
-        else endDrillChartPadGrab(handedness);
+      if (isFloatingPanelGrabbed(handedness)) {
+        if (hand && point) updateFloatingPanelGrab(handedness, getHandGrabMatrix(hand));
+        else endFloatingPanelGrab(handedness);
       } else if (hand && point && !(handPinches.get(handedness) ?? false)) {
         const pointer = hand.xrController.pointer;
         const ray = new Ray(pointer.getAbsolutePosition(), pointer.getDirection(Axis.Z), 3);
-        const pick = pickDrillChartPad(ray);
-        const action = getDrillChartButtonNearPoint(point) ?? (pick ? getHandMenuHit(pick) : null);
-        if (action || isPointNearDrillChartPad(point) || pick) {
+        const pick = pickFloatingPanel(ray);
+        const near = getFloatingPanelNear(point);
+        const action = getFloatingPanelButtonNearPoint(point) ?? (pick?.hit ? getHandMenuHit(pick) : null);
+        if (action || near || pick?.hit) {
           padHands.add(handedness);
           if (action) activateChartButton(action);
-          else beginDrillChartPadGrab(handedness, getHandGrabMatrix(hand));
+          else beginFloatingPanelGrab(handedness, getHandGrabMatrix(hand),
+            near ? null : pick?.pickedMesh, point);
         }
       }
       if (!point) padHands.delete(handedness);
@@ -1099,6 +1096,8 @@ export function createHandInteraction(paths: HandPathDependencies) {
   }
 
   function setHandTracking(tracking: WebXRHandTracking | null) {
+    padHands.forEach(endFloatingPanelGrab);
+    padHands.clear();
     eraseContacts.clear();
     [...fingerPushes].forEach(finishFingerPush);
     finishFingerPath(false);

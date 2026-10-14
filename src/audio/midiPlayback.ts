@@ -3,101 +3,106 @@ import {
   midiFileInput, midiAudioButton, midiClearButton, midiVolumeInput, midiStatus,
   midiUrlForm, midiUrlInput, midiExampleButton,
 } from '../ui/dom';
-import { MidiTimeline, type MidiNote, type ScheduledMidiNote } from './midiTimeline';
+import { MidiTimeline, type MidiNote } from './midiTimeline';
+import { SampledMidiSynth } from './sampledMidiSynth';
+import { initMidiScore, setMidiScoreTracks } from './midiScore';
+import { quantizeScoreNote } from './midiNotation';
 import exampleMidiUrl from '../assets/stars-and-stripes.mid?url';
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_NOTES = 100000;
-const MAX_VOICES = 64;
-interface Voice {
-  source: AudioScheduledSourceNode;
-  gain: GainNode;
-  filter: BiquadFilterNode;
-}
-
 let context: AudioContext | null = null;
 let master: GainNode | null = null;
-let noise: AudioBuffer | null = null;
+let synth: SampledMidiSynth | null = null;
+let midiNotes: MidiNote[] = [];
+let synthRequest = 0;
 let timeline: MidiTimeline | null = null;
-let audioEnabled = false;
+let audioEnabled = true;
+let enablingAudio = false;
 let loadRequest = 0;
 let loadedDescription = "";
-const voices = new Set<Voice>();
 
 function status(message: string) {
   if (midiStatus) midiStatus.textContent = message;
 }
 
 function stopVoices() {
-  for (const voice of voices) {
-    voice.source.stop();
-    voice.source.disconnect();
-    voice.gain.disconnect();
-    voice.filter.disconnect();
-  }
-  voices.clear();
+  synth?.stop();
 }
 
-function createVoice({ note, delaySeconds, durationSeconds }: ScheduledMidiNote) {
-  if (!context || !master || !noise) return;
-  if (voices.size >= MAX_VOICES) {
-    status(`${loadedDescription} — 64-voice limit reached; some notes were omitted.`);
-    return;
+async function enableAudio() {
+  if (enablingAudio) return;
+  enablingAudio = true;
+  if (midiAudioButton) midiAudioButton.disabled = true;
+  try {
+    context ??= new AudioContext();
+    if (!master) {
+      master = context.createGain();
+      master.gain.value = Number(midiVolumeInput?.value ?? 60) / 100;
+      const limiter = context.createDynamicsCompressor();
+      master.connect(limiter);
+      limiter.connect(context.destination);
+      context.addEventListener('statechange', () => {
+        if (context?.state !== 'running' && audioEnabled) {
+          stopVoices();
+          timeline?.reset();
+          status("MIDI audio is enabled but suspended. Click, tap, or press a key to resume.");
+        }
+      });
+    }
+    await context.resume();
+    if (context.state !== "running") throw new Error("Browser audio is suspended.");
+    audioEnabled = true;
+    if (midiAudioButton) midiAudioButton.textContent = "Mute MIDI audio";
+    status(timeline ? `${loadedDescription}. Following drill playback.` : "Audio enabled. Loading or importing MIDI will play with the drill.");
+    timeline?.reset();
+    if (!synth && midiNotes.length) await prepareSynth();
+    else updatePlayback();
+  } catch (error) {
+    audioEnabled = false;
+    if (midiAudioButton) midiAudioButton.textContent = "Enable MIDI audio";
+    status(`Could not enable audio: ${error instanceof Error ? error.message : String(error)}. Enable MIDI audio to retry.`);
+  } finally {
+    enablingAudio = false;
+    if (midiAudioButton) midiAudioButton.disabled = false;
   }
-  const start = context.currentTime + delaySeconds;
-  const end = start + durationSeconds;
-  const gain = context.createGain();
-  const filter = context.createBiquadFilter();
-  let source: OscillatorNode | AudioBufferSourceNode;
-  if (note.percussion) {
-    const drum = context.createBufferSource();
-    drum.buffer = noise;
-    drum.loop = true;
-    source = drum;
-    filter.type = note.pitch <= 36 ? "lowpass" : "highpass";
-    filter.frequency.value = note.pitch <= 36 ? 180 : note.pitch >= 42 ? 6500 : 1200;
-  } else {
-    const oscillator = context.createOscillator();
-    const family = Math.floor(note.program / 8);
-    oscillator.type = family === 7 || family === 5 ? "sawtooth" :
-      family === 8 ? "square" : family === 9 || family === 10 ? "sine" : "triangle";
-    oscillator.frequency.value = 440 * 2 ** ((note.pitch - 69) / 12);
-    source = oscillator;
-    filter.type = "lowpass";
-    filter.frequency.value = Math.min(12000, oscillator.frequency.value * 8);
+}
+
+async function prepareSynth() {
+  const request = ++synthRequest;
+  synth?.dispose();
+  synth = null;
+  if (!context || !master || !midiNotes.length) return;
+  const pending = new SampledMidiSynth(context, master,
+    message => { if (request === synthRequest) status(message); });
+  try {
+    await pending.load(midiNotes);
+    if (request !== synthRequest) {
+      pending.dispose();
+      return;
+    }
+    synth = pending;
+    timeline?.reset();
+    status(`${loadedDescription}. Sampled General MIDI ready.`);
+    updatePlayback();
+  } catch (error) {
+    pending.dispose();
+    if (request !== synthRequest) return;
+    audioEnabled = false;
+    if (midiAudioButton) midiAudioButton.textContent = "Enable MIDI audio";
+    status(`Could not load instrument samples: ${error instanceof Error ? error.message : String(error)}. Check your connection and enable audio to retry.`);
   }
-  const peak = note.velocity * (note.percussion ? 0.18 : 0.1);
-  const attack = Math.min(0.008, durationSeconds / 3);
-  const release = Math.min(0.04, durationSeconds / 3);
-  gain.gain.setValueAtTime(0, start);
-  gain.gain.linearRampToValueAtTime(peak, start + attack);
-  if (note.percussion) gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, peak * 0.03), end - release);
-  else gain.gain.setValueAtTime(peak, end - release);
-  gain.gain.linearRampToValueAtTime(0, end);
-  source.connect(filter);
-  filter.connect(gain);
-  gain.connect(master);
-  const voice = { source, gain, filter };
-  voices.add(voice);
-  source.onended = () => {
-    voices.delete(voice);
-    source.disconnect();
-    gain.disconnect();
-    filter.disconnect();
-  };
-  source.start(start);
-  source.stop(end);
 }
 
 function updatePlayback() {
-  if (!context || context.state !== "running" || !audioEnabled || !timeline) {
+  if (!context || context.state !== "running" || !audioEnabled || !timeline || !synth) {
     stopVoices();
     timeline?.reset();
     return;
   }
   const plan = timeline.update(getDrillTransportState(), context.currentTime);
   if (plan.reset) stopVoices();
-  plan.scheduled.forEach(createVoice);
+  plan.scheduled.forEach(note => synth!.start(note));
 }
 
 async function readMidiUrl(input: string): Promise<ArrayBuffer> {
@@ -164,12 +169,24 @@ async function loadMidi(name: string, read: () => Promise<ArrayBuffer>, failureH
     notes.sort((a, b) => a.beat - b.beat);
     if (request !== loadRequest) return;
     stopVoices();
+    synthRequest++;
+    synth?.dispose();
+    synth = null;
+    midiNotes = notes;
     timeline = new MidiTimeline(notes);
     const beats = notes.reduce((last, n) => Math.max(last, n.beat + n.duration), 0);
     loadedDescription = `${name}: ${midi.tracks.length} tracks, ${notes.length} notes, ${Math.ceil(beats)} beats`;
-    status(`${loadedDescription}. ${audioEnabled ? "Following drill playback." : "Enable MIDI audio to hear it."}`);
+    setMidiScoreTracks(midi.tracks.filter(track => track.notes.length).map((track, index) => ({
+      name: `${index + 1}. ${track.name || track.instrument.name}`,
+      percussion: track.instrument.percussion,
+      notes: track.notes.map(note =>
+        quantizeScoreNote(note.ticks / midi.header.ppq, note.durationTicks / midi.header.ppq, note.midi)),
+    })));
+    status(`${loadedDescription}. ${audioEnabled
+      ? context?.state === "running" ? "Following drill playback." : "MIDI audio is enabled. Click, tap, or press a key to start sound."
+      : "Enable MIDI audio to hear it."}`);
     if (midiClearButton) midiClearButton.disabled = false;
-    updatePlayback();
+    if (audioEnabled) await prepareSynth();
   } catch (error) {
     if (request !== loadRequest) return;
     status(`Could not load MIDI: ${error instanceof Error ? error.message : String(error)}${timeline ? " Previous MIDI retained." : ""}${failureHint}`);
@@ -181,9 +198,18 @@ function loadMidiFromUrl(input: string, name = input) {
 }
 
 export function initMidiPlayback() {
+  initMidiScore();
   const fileInput = midiFileInput;
   const clearButton = midiClearButton;
   const audioButton = midiAudioButton;
+  if (audioButton) audioButton.textContent = "Mute MIDI audio";
+  const unlockAudio = (event: Event) => {
+    if (!event.isTrusted || !audioEnabled || enablingAudio || context?.state === "running") return;
+    if (event.target instanceof Node && audioButton?.contains(event.target)) return;
+    void enableAudio();
+  };
+  window.addEventListener('pointerdown', unlockAudio, true);
+  window.addEventListener('keydown', unlockAudio, true);
   fileInput?.addEventListener('change', () => {
     const file = fileInput.files?.[0];
     if (file) void loadMidi(file.name, async () => {
@@ -202,8 +228,13 @@ export function initMidiPlayback() {
   clearButton?.addEventListener('click', () => {
     loadRequest++;
     stopVoices();
+    synthRequest++;
+    synth?.dispose();
+    synth = null;
+    midiNotes = [];
     timeline = null;
     loadedDescription = "";
+    setMidiScoreTracks([]);
     if (midiFileInput) midiFileInput.value = "";
     if (midiUrlInput) midiUrlInput.value = "";
     clearButton.disabled = true;
@@ -214,7 +245,7 @@ export function initMidiPlayback() {
       master.gain.setTargetAtTime(Number(midiVolumeInput.value) / 100, context.currentTime, 0.02);
     }
   });
-  audioButton?.addEventListener('click', async () => {
+  audioButton?.addEventListener('click', () => {
     if (audioEnabled) {
       audioEnabled = false;
       stopVoices();
@@ -223,40 +254,7 @@ export function initMidiPlayback() {
       status("MIDI audio muted.");
       return;
     }
-    audioButton.disabled = true;
-    try {
-      context ??= new AudioContext();
-      if (!master) {
-        master = context.createGain();
-        master.gain.value = Number(midiVolumeInput?.value ?? 60) / 100;
-        const limiter = context.createDynamicsCompressor();
-        master.connect(limiter);
-        limiter.connect(context.destination);
-        noise = context.createBuffer(1, context.sampleRate, context.sampleRate);
-        const samples = noise.getChannelData(0);
-        for (let i = 0; i < samples.length; i++) samples[i] = Math.random() * 2 - 1;
-        context.addEventListener('statechange', () => {
-          if (context?.state !== 'running' && audioEnabled) {
-            stopVoices();
-            timeline?.reset();
-            audioEnabled = false;
-            if (midiAudioButton) midiAudioButton.textContent = "Enable MIDI audio";
-            status("Audio was suspended. Enable MIDI audio again to resume.");
-          }
-        });
-      }
-      await context.resume();
-      if (context.state !== "running") throw new Error("Browser audio is suspended.");
-      audioEnabled = true;
-      audioButton.textContent = "Mute MIDI audio";
-      status(timeline ? `${loadedDescription}. Following drill playback.` : "Audio enabled. Import a MIDI file.");
-      timeline?.reset();
-      updatePlayback();
-    } catch (error) {
-      status(`Could not enable audio: ${error instanceof Error ? error.message : String(error)}`);
-    } finally {
-      audioButton.disabled = false;
-    }
+    void enableAudio();
   });
   onDrillTransportChangedObservable.add(updatePlayback);
   const sharedUrl = new URLSearchParams(window.location.search).get("midi");

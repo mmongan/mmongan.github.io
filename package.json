@@ -24,7 +24,9 @@
     "@babylonjs/core": "^9.29.0",
     "@babylonjs/loaders": "^9.29.0",
     "@tonejs/midi": "^2.0.28",
+    "smplr": "^1.0.0",
     "sql.js": "^1.14.2",
+    "vexflow": "^4.2.5",
     "vite": "^8.2.2"
   },
   "main": "src/scene/index.ts",

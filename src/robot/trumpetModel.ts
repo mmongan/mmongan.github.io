@@ -13,7 +13,7 @@ const BELL_X = 0.018;
 const BELL_TUBE_Z = 0.04;
 
 function createTrumpetTemplate(scene: Scene): Mesh {
-  const geometry = new InstrumentGeometry();
+  const geometry = new InstrumentGeometry("instrument");
 
   // Mouthpiece (8): square cone, cup toward the player, shank seated in the receiver.
   geometry.tube([new Vector3(0, 0.185, 0), new Vector3(0, 0.25, 0)], [0.004, 0.013], 4, SILVER);

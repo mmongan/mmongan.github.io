@@ -26,7 +26,7 @@ function carrier(geometry: InstrumentGeometry, y: number, frontZ: number) {
 export const SNARE_GRIPS: [Vector3, Vector3] = [new Vector3(-0.1, 0.93, 0.27), new Vector3(0.1, 0.93, 0.27)];
 
 function createSnareTemplate(scene: Scene): Mesh {
-  const geometry = new InstrumentGeometry();
+  const geometry = new InstrumentGeometry("instrument");
   geometry.drum(new Vector3(0, 0.79, 0.33), Vector3.Up(), 0.18, 0.15, 12, SILVER, PEARL, true);
   carrier(geometry, 0.8, 0.17);
   SNARE_GRIPS.forEach((grip, index) => {
@@ -40,7 +40,7 @@ function createSnareTemplate(scene: Scene): Mesh {
 export const TENOR_GRIPS: [Vector3, Vector3] = [new Vector3(-0.11, 0.94, 0.28), new Vector3(0.11, 0.94, 0.28)];
 
 function createTenorTemplate(scene: Scene): Mesh {
-  const geometry = new InstrumentGeometry();
+  const geometry = new InstrumentGeometry("instrument");
   for (const side of [-1, 1]) {
     geometry.drum(new Vector3(side * 0.115, 0.8, 0.42), Vector3.Up(), 0.11, 0.14, 8, NAVY_SHELL, PEARL);
     geometry.drum(new Vector3(side * 0.25, 0.8, 0.26), Vector3.Up(), 0.09, 0.12, 8, NAVY_SHELL, PEARL);
@@ -59,7 +59,7 @@ function createTenorTemplate(scene: Scene): Mesh {
 export const BASS_DRUM_GRIPS: [Vector3, Vector3] = [new Vector3(-0.17, 0.9, 0.36), new Vector3(0.17, 0.9, 0.36)];
 
 function createBassDrumTemplate(scene: Scene): Mesh {
-  const geometry = new InstrumentGeometry();
+  const geometry = new InstrumentGeometry("instrument");
   geometry.drum(new Vector3(0, 0.9, 0.45), new Vector3(1, 0, 0), 0.25, 0.2, 12, NAVY_SHELL, PEARL, true);
   carrier(geometry, 0.9, 0.21);
   BASS_DRUM_GRIPS.forEach((grip, index) => {
@@ -89,7 +89,7 @@ const GLOCK_SHARP_AFTER = [0, 1, 3, 4, 5, 7, 8];
 const MALLET_HEAD = new Color4(0.75, 0.12, 0.14, 1);
 
 function createGlockenspielTemplate(scene: Scene): Mesh {
-  const geometry = new InstrumentGeometry();
+  const geometry = new InstrumentGeometry("instrument");
   const pitch = (GLOCK_RIGHT - GLOCK_LEFT - 0.02) / GLOCK_NATURALS;
   const barLeft = (index: number) => GLOCK_LEFT + 0.01 + index * pitch;
   geometry.box(new Vector3(GLOCK_LEFT, 0.79, 0.24), new Vector3(GLOCK_RIGHT, GLOCK_TOP - 0.005, 0.56), CARRIER);

@@ -5,7 +5,7 @@ import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
 import { VertexData } from '@babylonjs/core/Meshes/mesh.vertexData';
 import { Scene } from '@babylonjs/core/scene.pure';
 
-// Shared builder for the marchers' low-poly instruments, tuned for standalone
+// Shared builder for marcher bodies and instruments, tuned for standalone
 // headsets such as Meta Quest: each instrument is one hand-indexed mesh with
 // shared vertices, colored per vertex so it needs a single material, built
 // once per scene and cloned per marcher (one draw call per instrument).
@@ -20,8 +20,8 @@ export const EBONY = new Color4(0.06, 0.06, 0.07, 1);
 const SIDE_AXIS = new Vector3(1, 0, 0);
 
 // "low" is used while the field is shrunk (Giant and tabletop modes), where
-// marchers are only centimeters tall: tubes and caps become triangular,
-// lathes about half as round, and fine() details are skipped.
+// marchers are only centimeters tall: instrument rings use six sides,
+// body lathes are about half as round, and fine() details are skipped.
 export type ModelDetail = "high" | "low";
 export type ModelTemplate = (scene: Scene, detail?: ModelDetail) => Mesh;
 let buildDetail: ModelDetail = "high";
@@ -33,14 +33,17 @@ export class InstrumentGeometry {
   // Taken from the template being built (see cachedInstrumentTemplate).
   readonly low = buildDetail === "low";
 
+  constructor(private readonly surface: "body" | "instrument" = "body") {}
+
   // Builds small details only at high detail.
   fine(build: () => void) {
     if (!this.low) build();
   }
 
-  // Every tube ring is triangular at low detail, so neighbouring side counts
-  // still divide and nested tubes keep a shared, coaxial orientation.
+  // A uniform multiplier preserves divisibility at bell transitions; reduced
+  // instruments keep round tubing without increasing body tessellation.
   private tubeSides(sides: number) {
+    if (this.surface === "instrument") return this.low ? 6 : sides * 4;
     return this.low ? Math.min(sides, 3) : sides;
   }
 
@@ -152,11 +155,11 @@ export class InstrumentGeometry {
   // colored head at the +axis end, and optionally at the -axis end too.
   drum(center: Vector3, axis: Vector3, radius: number, depth: number, sides: number,
     shell: Color4, head: Color4, bothHeads = false) {
-    sides = this.tubeSides(sides);
+    const ringSides = this.tubeSides(sides);
     const half = axis.normalizeToNew().scale(depth / 2);
     const top = center.add(half);
     const bottom = center.subtract(half);
-    this.bridge(this.ring(bottom, axis, radius, sides, shell), this.ring(top, axis, radius, sides, shell), sides);
+    this.bridge(this.ring(bottom, axis, radius, sides, shell), this.ring(top, axis, radius, sides, shell), ringSides);
     this.cap(this.ring(top, axis, radius, sides, head), sides, top, head);
     // The reversed normal flips the ring's handedness, so this head faces out too.
     if (bothHeads) this.cap(this.ring(bottom, axis.scale(-1), radius, sides, head), sides, bottom, head);

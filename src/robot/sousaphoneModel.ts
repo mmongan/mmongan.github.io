@@ -28,12 +28,14 @@ export function sousaphoneLoopPoint(angle: number): Vector3 {
 }
 
 function createSousaphoneTemplate(scene: Scene): Mesh {
-  const geometry = new InstrumentGeometry();
+  const geometry = new InstrumentGeometry("instrument");
+  const loopSegments = geometry.low ? 16 : 32;
 
   // Body loop (32), closed: front of the chest, under the right arm, behind
   // the back, over the left shoulder, and back to the front.
   geometry.tube(
-    Array.from({ length: 9 }, (_, index) => sousaphoneLoopPoint(Math.PI / 2 - (index * Math.PI) / 4)),
+    Array.from({ length: loopSegments + 1 }, (_, index) =>
+      sousaphoneLoopPoint(Math.PI / 2 - index * Math.PI * 2 / loopSegments)),
     0.024, 4, BRASS, LOOP_NORMAL,
   );
 

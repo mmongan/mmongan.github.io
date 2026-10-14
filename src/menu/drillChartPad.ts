@@ -4,7 +4,6 @@ import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTextur
 import { Texture } from '@babylonjs/core/Materials/Textures/texture.pure';
 import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
 import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
-import { Plane } from '@babylonjs/core/Maths/math.plane';
 import type { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.pure';
 import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
@@ -19,6 +18,7 @@ import {
 import { END_ZONE_DEPTH_YARDS, FIELD_LENGTH_YARDS, FIELD_WIDTH_YARDS, HASH_OFFSETS_YARDS } from '../field/constants';
 import { getSelectedFieldLevel } from '../ui/dom';
 import { registerMenuButton, type HandMenuHit } from './handMenu';
+import { FloatingPanel } from './floatingPanel';
 
 export const DRILL_CHART_COUNTS_PER_SET = 8;
 
@@ -46,20 +46,15 @@ interface Pad {
   buttons: Map<AbstractMesh, HandMenuHit>;
   texture: DynamicTexture;
   ctx: CanvasRenderingContext2D;
+  interaction: FloatingPanel;
 }
 
 let pad: Pad | null = null;
 let visible = false;
-let grabSource: string | null = null;
-const grabOffset = new Matrix();
 // Once the user positions the pad it stays put across hide/show, unless the
 // viewer has since moved too far away to reach or read it.
-let userPlaced = false;
 const USER_PLACEMENT_MAX_DISTANCE = 2.5;
 const POINTER_SOURCE = "pointer";
-const POINTER_MIN_DISTANCE = 0.3;
-const POINTER_MAX_DISTANCE = 3;
-const pointerDrag = { plane: null as Plane | null, offset: new Vector3() };
 let lastSignature = "";
 let framesUntilRedraw = 0;
 const visibilityListeners = new Set<(visible: boolean) => void>();
@@ -185,7 +180,8 @@ function createPad(): Pad {
     meshes.add(mesh);
   }
   root.setEnabled(false);
-  return { root, meshes, buttons, texture, ctx };
+  const interaction = new FloatingPanel(root, meshes, root, new Vector3(PAD_WIDTH / 2 + 0.012, PAD_HEIGHT / 2 + 0.03, BACKING_DEPTH), buttons);
+  return { root, meshes, buttons, texture, ctx, interaction };
 }
 
 function fieldPoint(position: Vector3) {
@@ -377,15 +373,14 @@ export function setDrillChartPadVisible(show: boolean) {
   if (show) {
     pad ??= createPad();
     const eye = scene.activeCamera?.globalPosition;
-    if (!userPlaced || !eye || Vector3.Distance(eye, pad.root.position) > USER_PLACEMENT_MAX_DISTANCE) {
-      userPlaced = false;
+    if (!pad.interaction.userPlaced || !eye || Vector3.Distance(eye, pad.root.position) > USER_PLACEMENT_MAX_DISTANCE) {
+      pad.interaction.userPlaced = false;
       placeInFrontOfViewer();
     }
     refreshPage(true);
   }
   if (!show) {
-    grabSource = null;
-    pointerDrag.plane = null;
+    pad?.interaction.release();
   }
   pad?.root.setEnabled(show);
   if (visible === show) return;
@@ -398,17 +393,11 @@ export function isDrillChartPadMesh(mesh: AbstractMesh) {
 }
 
 export function isPointNearDrillChartPad(point: Vector3, tolerance = 0.03) {
-  if (!pad || !visible) return false;
-  const local = Vector3.TransformCoordinates(point, pad.root.computeWorldMatrix(true).clone().invert());
-  return Math.abs(local.x) <= PAD_WIDTH / 2 + 0.012 + tolerance &&
-    Math.abs(local.y) <= PAD_HEIGHT / 2 + 0.03 + tolerance &&
-    Math.abs(local.z) <= BACKING_DEPTH + tolerance;
+  return pad?.interaction.near(point, tolerance) ?? false;
 }
 
 export function pickDrillChartPad(ray: Ray) {
-  if (!pad || !visible) return null;
-  const pick = scene.pickWithRay(ray, (mesh) => pad!.meshes.has(mesh));
-  return pick?.hit ? pick : null;
+  return pad?.interaction.pick(ray) ?? null;
 }
 
 export function getDrillChartButtonNearPoint(point: Vector3): HandMenuHit | null {
@@ -424,73 +413,38 @@ export function getDrillChartButtonNearPoint(point: Vector3): HandMenuHit | null
 // Grabs keep the pad's pose fixed relative to the grabbing hand/controller;
 // a second hand grabbing takes it over from the first.
 export function beginDrillChartPadGrab(source: string, sourceWorld: Matrix) {
-  if (!pad || !visible) return;
-  grabSource = source;
-  userPlaced = true;
-  pad.root.computeWorldMatrix(true).multiplyToRef(sourceWorld.clone().invert(), grabOffset);
+  pad?.interaction.begin(source, sourceWorld);
 }
 
 export function updateDrillChartPadGrab(source: string, sourceWorld: Matrix) {
-  if (!pad || grabSource !== source) return;
-  const world = grabOffset.multiply(sourceWorld);
-  const scaling = new Vector3();
-  world.decompose(scaling, pad.root.rotationQuaternion!, pad.root.position);
+  pad?.interaction.update(source, sourceWorld);
 }
 
 export function endDrillChartPadGrab(source: string) {
-  if (grabSource === source) grabSource = null;
-}
-
-function facePadToEye(eye: Vector3) {
-  if (!pad) return;
-  const away = pad.root.position.subtract(eye);
-  away.y = 0;
-  if (away.lengthSquared() < 1e-6) return;
-  pad.root.lookAt(pad.root.position.add(away));
+  pad?.interaction.end(source);
 }
 
 // Desktop mouse drags slide the pad across a camera-facing plane through its
 // grab point, turning it to keep facing the viewer.
 export function beginDrillChartPadPointerDrag(ray: Ray) {
-  const pick = pickDrillChartPad(ray);
-  if (!pad || !pick?.pickedPoint || grabSource !== null) return false;
-  const normal = ray.direction.scale(-1);
-  pointerDrag.plane = Plane.FromPositionAndNormal(pick.pickedPoint, normal);
-  pad.root.position.subtractToRef(pick.pickedPoint, pointerDrag.offset);
-  grabSource = POINTER_SOURCE;
-  userPlaced = true;
-  return true;
+  return pad?.interaction.beginPointer(ray) ?? false;
 }
 
 export function updateDrillChartPadPointerDrag(ray: Ray) {
-  if (!pad || grabSource !== POINTER_SOURCE || !pointerDrag.plane) return;
-  const distance = ray.intersectsPlane(pointerDrag.plane);
-  if (distance === null || distance <= 0 || distance > POINTER_MAX_DISTANCE * 2) return;
-  ray.origin.add(ray.direction.scale(distance)).addToRef(pointerDrag.offset, pad.root.position);
-  facePadToEye(ray.origin);
+  pad?.interaction.updatePointer(ray);
 }
 
 export function endDrillChartPadPointerDrag() {
-  pointerDrag.plane = null;
   endDrillChartPadGrab(POINTER_SOURCE);
 }
 
 // Mouse wheel over the pad pushes it away from or pulls it toward the viewer.
 export function nudgeDrillChartPadDistance(ray: Ray, wheelDelta: number) {
-  if (!pad || !pickDrillChartPad(ray)) return false;
-  const eye = ray.origin;
-  const offset = pad.root.position.subtract(eye);
-  const current = offset.length();
-  if (current < 1e-6) return false;
-  const next = Math.min(POINTER_MAX_DISTANCE, Math.max(POINTER_MIN_DISTANCE, current * Math.exp(wheelDelta * 0.001)));
-  eye.addToRef(offset.scale(next / current), pad.root.position);
-  facePadToEye(eye);
-  userPlaced = true;
-  return true;
+  return pad?.interaction.nudge(ray, wheelDelta) ?? false;
 }
 
 export function isDrillChartPadGrabbed(source?: string) {
-  return source === undefined ? grabSource !== null : grabSource === source;
+  return pad?.interaction.grabbed(source) ?? false;
 }
 
 scene.onBeforeRenderObservable.add(() => {

@@ -11,7 +11,7 @@ import { BRASS, buildInstrumentTemplate, cachedInstrumentTemplate, EBONY, Instru
 export const SAXOPHONE_MOUTHPIECE_TIP = new Vector3(0, 0.355, -0.125);
 
 function createSaxophoneTemplate(scene: Scene): Mesh {
-  const geometry = new InstrumentGeometry();
+  const geometry = new InstrumentGeometry("instrument");
 
   // Neck from the mouthpiece, curving down into the conical body, U-shaped
   // bow and upturned bell, as one tube (48).

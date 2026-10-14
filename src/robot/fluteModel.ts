@@ -12,7 +12,7 @@ import { buildInstrumentTemplate, cachedInstrumentTemplate, EBONY, InstrumentGeo
 export const FLUTE_MOUTHPIECE_TIP = new Vector3(0.012, 0, 0.012);
 
 function createFluteTemplate(scene: Scene): Mesh {
-  const geometry = new InstrumentGeometry();
+  const geometry = new InstrumentGeometry("instrument");
 
   // Head joint and body as one hexagonal tube, capped at the crown (25).
   const [crown] = geometry.tube([

@@ -13,7 +13,7 @@ export const CLARINET_MOUTHPIECE_TIP = new Vector3(0, 0.3, 0);
 const GRENADILLA = EBONY;
 
 function createClarinetTemplate(scene: Scene): Mesh {
-  const geometry = new InstrumentGeometry();
+  const geometry = new InstrumentGeometry("instrument");
 
   // Mouthpiece beak, barrel, upper/lower joints, and flared bell as one
   // tube: hexagonal down to the bell, then 12-sided (67 with the tip cap).

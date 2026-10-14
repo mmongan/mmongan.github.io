@@ -13,7 +13,7 @@ import { BRASS, buildInstrumentTemplate, cachedInstrumentTemplate, EBONY, Instru
 export const BARI_SAXOPHONE_MOUTHPIECE_TIP = new Vector3(0.045, 0.4, -0.19);
 
 function createBariSaxophoneTemplate(scene: Scene): Mesh {
-  const geometry = new InstrumentGeometry();
+  const geometry = new InstrumentGeometry("instrument");
 
   // Two opposing neck bends flow into the body without a full turn or crossing.
   geometry.tube([

@@ -17,7 +17,7 @@ const BELL_X = 0.032;
 const BELL_Z = 0.085;
 
 function createEuphoniumTemplate(scene: Scene): Mesh {
-  const geometry = new InstrumentGeometry();
+  const geometry = new InstrumentGeometry("instrument");
 
   // Large mouthpiece (8), shank seated in the receiver.
   geometry.tube([new Vector3(0, 0.19, 0), EUPHONIUM_MOUTHPIECE_TIP], [0.007, 0.022], 4, SILVER);

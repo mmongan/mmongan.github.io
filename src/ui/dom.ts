@@ -21,6 +21,19 @@ export const midiStatus = document.getElementById("midiStatus") as HTMLOutputEle
 export const midiUrlForm = document.getElementById("midiUrlForm") as HTMLFormElement | null;
 export const midiUrlInput = document.getElementById("midiUrl") as HTMLInputElement | null;
 export const midiExampleButton = document.getElementById("midiExampleButton") as HTMLButtonElement | null;
+export const midiScoreDetails = document.getElementById("midiScore") as HTMLDetailsElement | null;
+export const midiScoreTrack = document.getElementById("midiScoreTrack") as HTMLSelectElement | null;
+export const midiScoreFollow = document.getElementById("midiScoreFollow") as HTMLInputElement | null;
+export const midiScorePrevious = document.getElementById("midiScorePrevious") as HTMLButtonElement | null;
+export const midiScoreNext = document.getElementById("midiScoreNext") as HTMLButtonElement | null;
+export const midiScoreStatus = document.getElementById("midiScoreStatus") as HTMLOutputElement | null;
+export const midiScoreCanvas = document.getElementById("midiScoreCanvas");
+export const musicStandToggle = document.getElementById("musicStandToggle") as HTMLInputElement | null;
+export const musicStandPlaceButton = document.getElementById("musicStandPlaceButton") as HTMLButtonElement | null;
+export const musicStandStatus = document.getElementById("musicStandStatus") as HTMLOutputElement | null;
+export const musicStandSizeInput = document.getElementById("musicStandSize") as HTMLInputElement | null;
+export const musicStandSizeValue = document.getElementById("musicStandSizeValue") as HTMLOutputElement | null;
+export const musicScoreMeasuresSelect = document.getElementById("musicScoreMeasures") as HTMLSelectElement | null;
 
 export function getNavigationControllerHand(): "left" | "right" {
   return swapControllerRolesToggle?.checked ? "right" : "left";

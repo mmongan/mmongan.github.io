@@ -1,6 +1,6 @@
 import { engine, scene } from './engine';
-import '../camera/desktopCamera';
-import { fieldLevelInputs, getSelectedFieldLevel } from '../ui/dom';
+import { isCameraIntroComplete } from '../camera/desktopCamera';
+import { drillChartPadToggle, fieldLevelInputs, getSelectedFieldLevel } from '../ui/dom';
 import { createSky } from '../environment/sky';
 import { createHorizonGround } from '../environment/ground';
 import { createFootballField } from '../field/footballField';
@@ -18,6 +18,8 @@ import { createTeleportGrid, initXR } from '../xr/webXR';
 import { updateHandMenu } from '../menu/handMenu';
 import '../menu/settings';
 import { initMidiPlayback } from '../audio/midiPlayback';
+import { initMusicStand } from '../menu/musicStand';
+import { setDrillChartPadVisible } from '../menu/drillChartPad';
 
 // Build static content before wiring up input and the WebXR experience.
 createSky();
@@ -35,7 +37,14 @@ fieldLevelInputs.forEach((input) => {
 updateFieldLevel();
 
 initInteraction();
+initMusicStand();
 initMidiPlayback();
+
+const startupChartObserver = scene.onBeforeRenderObservable.add(() => {
+  if (!isCameraIntroComplete()) return;
+  scene.onBeforeRenderObservable.remove(startupChartObserver);
+  if (drillChartPadToggle?.checked) setDrillChartPadVisible(true);
+});
 
 // Snapshot of top-level meshes for AR tabletop mode — must be taken after all
 // real scene content exists but before the teleport grid is created, since the

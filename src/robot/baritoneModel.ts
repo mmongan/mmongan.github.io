@@ -17,7 +17,7 @@ const BELL_X = 0.026;
 const BELL_Z = 0.07;
 
 function createBaritoneTemplate(scene: Scene): Mesh {
-  const geometry = new InstrumentGeometry();
+  const geometry = new InstrumentGeometry("instrument");
 
   // Large mouthpiece (8), shank seated in the receiver.
   geometry.tube([new Vector3(0, 0.175, 0), BARITONE_MOUTHPIECE_TIP], [0.006, 0.02], 4, SILVER);

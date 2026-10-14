@@ -100,6 +100,36 @@ body {
   color: rgba(237, 244, 255, 0.76);
 }
 
+.midi-score {
+  position: relative;
+  overflow: auto;
+  max-width: 100%;
+  max-height: 420px;
+  margin-top: 8px;
+  color: #111;
+  background: #fff;
+}
+
+.midi-score-measure {
+  width: 760px;
+}
+
+.midi-score-measure.current-measure {
+  background: #e0eeff;
+  box-shadow: inset 4px 0 #3f7cf7;
+}
+
+#midiScoreTrack,
+#musicScoreMeasures {
+  width: 100%;
+  margin: 8px 0;
+}
+
+#musicStandSize {
+  flex: 1;
+  min-width: 0;
+}
+
 .radio-row {
   display: flex;
   gap: 12px;

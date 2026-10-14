@@ -72,24 +72,20 @@ import { getOpenMarchSectionInstrument, loadOpenMarchFromUrl, OPEN_MARCH_EXAMPLE
 import type { OpenMarchImportedDrill } from '../robot/openMarchFormat';
 import { clearDrillLabels, setDrillLabels, setDrillLabelsVisible } from '../robot/drillLabels';
 import { clearShowInfo, setShowInfo } from '../menu/showInfoPanel';
+import { adjustMusicStandScale, cycleMusicStandStaff } from '../menu/musicStand';
 import { getHandMenuHit, getHandMenuHitNearPoint, setMenuHandTracking, setFormationCommitAvailable, setFormationLibraryOpen, setFormationLibraryPage, setFormationLibraryAnchorAvailable, setEraseModeActive, setEraseHistoryAvailable, setDrillChartPadActive, setInstrumentMenuActive, isHandMenuVisible, isMenuControl } from '../menu/handMenu';
 import {
-  beginDrillChartPadGrab,
-  beginDrillChartPadPointerDrag,
-  endDrillChartPadGrab,
-  endDrillChartPadPointerDrag,
   flipDrillChartPage,
-  isDrillChartPadGrabbed,
-  isDrillChartPadMesh,
   isDrillChartPadVisible,
-  isPointNearDrillChartPad,
-  nudgeDrillChartPadDistance,
   onDrillChartPadVisibilityChange,
-  pickDrillChartPad,
   setDrillChartPadVisible,
-  updateDrillChartPadGrab,
-  updateDrillChartPadPointerDrag,
 } from '../menu/drillChartPad';
+import {
+  beginFloatingPanelGrab, beginFloatingPanelPointerDrag, endFloatingPanelGrab,
+  getFloatingPanelNear, isFloatingPanelGrabbed, isFloatingPanelMesh,
+  nudgeFloatingPanelDistance, pickFloatingPanel, updateFloatingPanelGrab,
+  updateFloatingPanelPointerDrag,
+} from '../menu/floatingPanel';
 import type { FormationLetter } from '../menu/handMenu';
 import { createHandInteraction } from './handInteraction';
 import { EditHistory } from './editHistory';
@@ -179,6 +175,8 @@ export function setActiveController(controller: WebXRInputSource) {
 
 export function removeActiveController(controller: WebXRInputSource) {
   unregisterActiveController(controller, (handedness) => {
+    endFloatingPanelGrab(handedness);
+    padGrabButtons.delete(handedness);
     finishMarcherGrab(handedness, false);
     placementDrafts.get(handedness)?.dispose();
     placementDrafts.delete(handedness);
@@ -189,7 +187,7 @@ export function removeActiveController(controller: WebXRInputSource) {
 }
 
 export function updateARResizeFromControllers() {
-  resizeFromControllers(eraseMode || marcherGrabs.size > 0 || isDrillChartPadGrabbed());
+  resizeFromControllers(eraseMode || marcherGrabs.size > 0 || isFloatingPanelGrabbed());
 }
 
 // The path/robot live under the shared AR transform so they scale, move, and
@@ -1598,7 +1596,7 @@ const triggerHeld = new Map<string, boolean>();
 const gripHeld = new Map<string, boolean>();
 const tempoControllerDrags = new Set<string>();
 let tempoPointerDragging = false;
-// Which controller button holds each drill chart pad grab, so releasing that
+// Which controller button holds each floating panel grab, so releasing that
 // button (grip or trigger) lets go.
 const padGrabButtons = new Map<string, "grip" | "trigger">();
 // True while a controller's trigger-down landed on the hand menu, so the rest
@@ -1671,6 +1669,15 @@ function executeMenuAction(hit: NonNullable<ReturnType<typeof getHandMenuHit>>) 
       break;
     case "tabletopScale":
       tabletopScaleButton?.click();
+      break;
+    case "musicStandSizeIncrease":
+      adjustMusicStandScale(0.1);
+      break;
+    case "musicStandSizeDecrease":
+      adjustMusicStandScale(-0.1);
+      break;
+    case "musicStandStaffToggle":
+      cycleMusicStandStaff();
       break;
   }
 }
@@ -1802,6 +1809,12 @@ function getFieldPointFromController(controller: WebXRInputSource): Vector3 | nu
 // Controller triggers select/edit existing content or place standing marchers
 // when placement mode is enabled. They never draw or extend marching paths.
 export function updateRobotPathFromControllers() {
+  padGrabButtons.forEach((_, source) => {
+    if (floorCalibrationToggle?.checked || !controllerRegistry.get(source)) {
+      endFloatingPanelGrab(source);
+      padGrabButtons.delete(source);
+    }
+  });
   if (floorCalibrationToggle?.checked) return;
   updateShowAllPathsToggleFromControllers();
   updatePlacementModeToggleFromControllers();
@@ -1826,20 +1839,21 @@ export function updateRobotPathFromControllers() {
 
     const marcherGrab = marcherGrabs.get(handedness);
     if (marcherGrab?.source === "hand") return;
-    if (isDrillChartPadGrabbed(handedness)) {
+    if (isFloatingPanelGrabbed(handedness)) {
       const holding = padGrabButtons.get(handedness) === "trigger" ? isPressed : gripPressed;
       if (!holding) {
-        endDrillChartPadGrab(handedness);
+        endFloatingPanelGrab(handedness);
         padGrabButtons.delete(handedness);
-      } else updateDrillChartPadGrab(handedness, getControllerPosition(controller).computeWorldMatrix(true));
+      } else updateFloatingPanelGrab(handedness, getControllerPosition(controller).computeWorldMatrix(true));
       return;
     }
     if (!marcherGrab && gripPressed && !wasGripPressed && !menuInteractionHeld.get(handedness)) {
       const gripNode = getControllerPosition(controller);
-      const nearPad = isPointNearDrillChartPad(gripNode.getAbsolutePosition(), 0.06) ||
-        !!pickDrillChartPad(getControllerRay(controller));
-      if (nearPad) {
-        beginDrillChartPadGrab(handedness, gripNode.computeWorldMatrix(true));
+      const nearPad = getFloatingPanelNear(gripNode.getAbsolutePosition(), 0.06);
+      const pick = nearPad ? null : pickFloatingPanel(getControllerRay(controller));
+      if (nearPad || pick?.hit) {
+        beginFloatingPanelGrab(handedness, gripNode.computeWorldMatrix(true),
+          nearPad ? null : pick?.pickedMesh, gripNode.getAbsolutePosition(), 0.06);
         padGrabButtons.set(handedness, "grip");
         return;
       }
@@ -1907,6 +1921,12 @@ export function updateRobotPathFromControllers() {
       }
       menuInteractionHeld.set(handedness, false);
 
+      const panelPick = pickFloatingPanel(getControllerRay(controller));
+      if (panelPick?.hit && panelPick.pickedMesh) {
+        beginFloatingPanelGrab(handedness, getControllerPosition(controller).computeWorldMatrix(true), panelPick.pickedMesh);
+        padGrabButtons.set(handedness, "trigger");
+        return;
+      }
       if (eraseMode) {
         const pick = scene.pickWithRay(ray, (mesh) => findRobotRoot(mesh) !== null);
         const robot = pick?.hit ? findRobotRoot(pick.pickedMesh) : null;
@@ -1916,11 +1936,6 @@ export function updateRobotPathFromControllers() {
       }
 
       const pick = scene.pickWithRay(getControllerRay(controller));
-      if (pick?.pickedMesh && isDrillChartPadMesh(pick.pickedMesh)) {
-        beginDrillChartPadGrab(handedness, getControllerPosition(controller).computeWorldMatrix(true));
-        padGrabButtons.set(handedness, "trigger");
-        return;
-      }
       if (pick?.hit && pick.pickedMesh && seekToCollisionMarker(pick.pickedMesh)) {
         return;
       }
@@ -2369,20 +2384,20 @@ export function initInteraction() {
   // trigger dispatches to.
   scene.onPointerObservable.add((pointerInfo, eventState) => {
     if ("pointerType" in pointerInfo.event && pointerInfo.event.pointerType === "xr") return;
-    // Dragging or wheeling over the drill chart pad moves it; skipping later
+    // Dragging or wheeling over a floating panel moves it; skipping later
     // observers keeps the camera's mouse-look and wheel input from also firing.
     const getPointerRay = () => scene.createPickingRay(scene.pointerX, scene.pointerY, Matrix.Identity(), scene.activeCamera);
-    if (isDrillChartPadGrabbed("pointer")) {
-      if (pointerInfo.type === PointerEventTypes.POINTERMOVE) updateDrillChartPadPointerDrag(getPointerRay());
+    if (isFloatingPanelGrabbed("pointer")) {
+      if (pointerInfo.type === PointerEventTypes.POINTERMOVE) updateFloatingPanelPointerDrag(getPointerRay());
       if (pointerInfo.type === PointerEventTypes.POINTERUP) {
-        endDrillChartPadPointerDrag();
+        endFloatingPanelGrab("pointer");
         canvas.style.cursor = "grab";
       }
       eventState.skipNextObservers = true;
       return;
     }
     if (pointerInfo.type === PointerEventTypes.POINTERWHEEL && pointerInfo.event instanceof WheelEvent &&
-      nudgeDrillChartPadDistance(getPointerRay(), pointerInfo.event.deltaY)) {
+      nudgeFloatingPanelDistance(getPointerRay(), pointerInfo.event.deltaY)) {
       pointerInfo.event.preventDefault();
       eventState.skipNextObservers = true;
       return;
@@ -2390,7 +2405,7 @@ export function initInteraction() {
     if (pointerInfo.type === PointerEventTypes.POINTERDOWN && "button" in pointerInfo.event &&
       pointerInfo.event.button === 0) {
       const menuPick = scene.pick(scene.pointerX, scene.pointerY, isMenuControl);
-      if (!menuPick?.hit && beginDrillChartPadPointerDrag(getPointerRay())) {
+      if (!menuPick?.hit && beginFloatingPanelPointerDrag(getPointerRay())) {
         canvas.style.cursor = "grabbing";
         eventState.skipNextObservers = true;
         return;
@@ -2414,12 +2429,20 @@ export function initInteraction() {
       const pick = scene.pick(
         scene.pointerX,
         scene.pointerY,
-        (mesh) => isMenuControl(mesh) || isScoreboardTempoScreen(mesh) || isDrillChartPadMesh(mesh)
+        (mesh) => isMenuControl(mesh) || isScoreboardTempoScreen(mesh) || isFloatingPanelMesh(mesh)
       );
       canvas.style.cursor = eraseMode ? "crosshair" : pick?.hit && (
         getHandMenuHit(pick) || isScoreboardTempoPick(pick) || isScoreboardGaitPick(pick) ||
         isScoreboardHornPosePick(pick)
-      ) ? "pointer" : pick?.pickedMesh && isDrillChartPadMesh(pick.pickedMesh) ? "grab" : "";
+      ) ? "pointer" : pick?.pickedMesh && isFloatingPanelMesh(pick.pickedMesh) ? "grab" : "";
+      return;
+    }
+    if (pointerInfo.type === PointerEventTypes.POINTERDOUBLETAP) {
+      const pick = pointerInfo.pickInfo;
+      if (pick?.pickedMesh?.name.startsWith("musicStandButton-")) {
+        const hit = getHandMenuHit(pick);
+        if (hit) executeMenuAction(hit);
+      }
       return;
     }
     if (pointerInfo.type !== PointerEventTypes.POINTERTAP) return;
@@ -2433,6 +2456,7 @@ export function initInteraction() {
       executeMenuAction(menuHit);
       return;
     }
+    if (pickFloatingPanel(getPointerRay())?.hit) return;
     if (eraseMode) {
       if (floorCalibrationToggle?.checked) return;
       const pick = scene.pick(scene.pointerX, scene.pointerY, (mesh) => findRobotRoot(mesh) !== null);

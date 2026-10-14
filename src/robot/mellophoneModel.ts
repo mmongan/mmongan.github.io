@@ -18,7 +18,7 @@ const BELL_X = 0.02;
 const BELL_TUBE_Z = 0.045;
 
 function createMellophoneTemplate(scene: Scene): Mesh {
-  const geometry = new InstrumentGeometry();
+  const geometry = new InstrumentGeometry("instrument");
 
   // Mouthpiece (8): square cone, cup toward the player, shank seated in the receiver.
   geometry.tube([new Vector3(0, 0.23, 0), MELLOPHONE_MOUTHPIECE_TIP], [0.0045, 0.015], 4, SILVER);

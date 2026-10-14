@@ -20,7 +20,7 @@ const BELL_Z = 0.06;
 export const TROMBONE_SLIDE_STAY_Y = -0.16;
 
 function createTromboneTemplate(scene: Scene): Mesh {
-  const geometry = new InstrumentGeometry();
+  const geometry = new InstrumentGeometry("instrument");
 
   // Mouthpiece (8): square cone, cup toward the player, shank seated in the receiver.
   geometry.tube([new Vector3(0, 0.045, 0), TROMBONE_MOUTHPIECE_TIP], [0.004, 0.014], 4, SILVER);
