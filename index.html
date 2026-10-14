@@ -8,7 +8,7 @@
       content="Babylon.js WebXR VR and AR demo for Meta Quest 3"
     />
     <title>Chartxr</title>
-    <script type="module" crossorigin src="/assets/index-CpLh0QB3.js"></script>
+    <script type="module" crossorigin src="/assets/index-hyAxGGL5.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/rolldown-runtime-B0Z9INg1.js">
     <link rel="modulepreload" crossorigin href="/assets/engineStore-Bn2tApal.js">
     <link rel="modulepreload" crossorigin href="/assets/internalTexture-B3djGrls.js">
@@ -53,7 +53,7 @@
     <link rel="modulepreload" crossorigin href="/assets/flowGraphExecutionBlockWithOutSignal-Dkj7gfkW.js">
     <link rel="modulepreload" crossorigin href="/assets/flowGraphAsyncExecutionBlock-BG68nGzX.js">
     <link rel="modulepreload" crossorigin href="/assets/flowGraphRichTypes.pure-D2WqOeRI.js">
-    <link rel="stylesheet" crossorigin href="/assets/index-2WdKPPDE.css">
+    <link rel="stylesheet" crossorigin href="/assets/index-BlxqHjLt.css">
   </head>
   <body>
     <canvas id="renderCanvas"></canvas>
@@ -177,7 +177,7 @@
             <button id="redoEraseButton" disabled>Redo erase</button>
           </div>
           <label class="radio-option">
-            <input type="checkbox" id="drillChartPadToggle" />
+            <input type="checkbox" id="drillChartPadToggle" checked />
             <span>Drill chart pad (floating, grabbable; one page per 8-count set)</span>
           </label>
           <label class="settings-label">Instrument (selected marcher and new marchers)</label>
@@ -258,14 +258,50 @@
           </form>
           <button id="midiExampleButton" type="button" class="xr-button secondary">Load public-domain Sousa march</button>
           <p>Startup music: The Stars and Stripes Forever (piano MIDI), J. P. Sousa. Public Domain edition by Benjamin Bloomfield, <a href="https://www.mutopiaproject.org/cgibin/piece-info.cgi?id=626" target="_blank" rel="noopener noreferrer">Mutopia Project</a>. URL servers must allow CORS downloads.</p>
-          <p>One drill count = one quarter-note beat. Music follows drill tempo, playback, and seeking. Enable audio before entering VR/AR.</p>
+          <p>One drill count = one quarter-note beat. Music follows drill tempo, playback, and seeking. MIDI audio is enabled by default; click, tap, or press a key to unlock browser sound before entering VR/AR.</p>
           <div class="radio-row">
-            <button id="midiAudioButton" type="button">Enable MIDI audio</button>
+            <button id="midiAudioButton" type="button">Mute MIDI audio</button>
             <button id="midiClearButton" type="button" disabled>Clear MIDI</button>
           </div>
           <label class="settings-label" for="midiVolume">MIDI volume</label>
           <input id="midiVolume" type="range" min="0" max="100" value="60" aria-label="MIDI volume" />
           <output id="midiStatus" class="settings-status" for="midiFile" aria-live="polite">No MIDI loaded.</output>
+          <label class="radio-option">
+            <input id="musicStandToggle" type="checkbox" checked />
+            <span>Show music stand with score</span>
+          </label>
+          <button id="musicStandPlaceButton" type="button">Place music stand in front of me</button>
+          <p>The score floats without a pole. Drag it with the mouse (wheel adjusts distance), grab with a controller grip or trigger, or pinch near it or along your hand's pointing ray. Its buttons control rewind, previous count, play/pause, next count, and fast-forward for both music and drill; rewind is silent.</p>
+          <output id="musicStandStatus" class="settings-status" aria-live="polite"></output>
+          <label class="settings-label" for="musicStandSize">Music pad size</label>
+          <div class="radio-row">
+            <input id="musicStandSize" type="range" min="60" max="250" step="10" value="100" />
+            <output id="musicStandSizeValue" for="musicStandSize">100%</output>
+          </div>
+          <label class="settings-label" for="musicScoreMeasures">Measures per page (staff layout)</label>
+          <select id="musicScoreMeasures" aria-label="Measures per page">
+            <option value="auto" selected>Auto (scales with pad size)</option>
+            <option value="1">1 measure (large print)</option>
+            <option value="2">2 measures (8 counts / 1 drill set)</option>
+            <option value="3">3 measures</option>
+            <option value="4">4 measures (show more staff)</option>
+          </select>
+          <details id="midiScore">
+            <summary>Sheet music (MIDI preview)</summary>
+            <p>VexFlow notation, rounded to sixteenth notes in 4/4 drill-count measures. Overlapping notes become tied chords; original meter, key spelling, separate voices, and expression are not reconstructed. The music stand shows the same track and measures in desktop, VR, and AR.</p>
+            <label class="settings-label" for="midiScoreTrack">Music track</label>
+            <select id="midiScoreTrack" disabled aria-label="Music track"></select>
+            <label class="radio-option">
+              <input id="midiScoreFollow" type="checkbox" checked />
+              <span>Follow drill playback</span>
+            </label>
+            <div class="radio-row">
+              <button id="midiScorePrevious" type="button" disabled>Previous measures</button>
+              <button id="midiScoreNext" type="button" disabled>Next measures</button>
+            </div>
+            <output id="midiScoreStatus" class="settings-status" aria-live="polite">No MIDI loaded.</output>
+            <div id="midiScoreCanvas" class="midi-score" tabindex="0" aria-label="Sheet music; scroll horizontally for full measures"></div>
+          </details>
           <label class="radio-option">
             <input type="checkbox" id="drillLabelsToggle" />
             <span>Show drill labels above marchers</span>
