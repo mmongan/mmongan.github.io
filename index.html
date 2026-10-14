@@ -8,7 +8,7 @@
       content="Babylon.js WebXR VR and AR demo for Meta Quest 3"
     />
     <title>OpenChartxr</title>
-    <script type="module" crossorigin src="/assets/index-C6WxgJlf.js"></script>
+    <script type="module" crossorigin src="/assets/index-BD4X9pBJ.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/rolldown-runtime-B0Z9INg1.js">
     <link rel="modulepreload" crossorigin href="/assets/engineStore-Bn2tApal.js">
     <link rel="modulepreload" crossorigin href="/assets/internalTexture-B3djGrls.js">
@@ -61,7 +61,9 @@
     <div class="hud">
       <div class="button-row">
         <button id="settingsButton" class="icon-button" aria-label="Settings" title="Settings">⚙</button>
+        <button id="marcherPOVExitButton" class="xr-button" type="button" hidden>Exit POV</button>
       </div>
+      <output id="midiPlaybackHint" class="status-panel" aria-live="polite" hidden></output>
     </div>
 
     <div class="settings-overlay" id="settingsOverlay">
@@ -152,6 +154,14 @@
 
         <div class="settings-group">
           <label class="settings-label">Robot paths</label>
+          <label class="settings-label" for="marcherPOVSelect">POV marcher</label>
+          <select id="marcherPOVSelect" aria-label="POV marcher"><option value="">Select a marcher</option></select>
+          <label class="radio-option">
+            <input id="marcherPOVToggle" type="checkbox" />
+            <span>Marcher POV (eye-level camera follow)</span>
+          </label>
+          <output id="marcherPOVStatus" class="settings-status" aria-live="polite">Select a marcher, then enable POV.</output>
+          <p>Browser: mouse or arrow keys look around. VR: headset look and room-scale motion remain natural; marching moves your viewpoint. Use the palm-menu POV button to exit. Artificial VR movement may cause discomfort; pause the drill or leave POV if needed. POV is not available in AR.</p>
           <label class="radio-option">
             <input id="lowPolygonMarchersToggle" type="checkbox" checked />
             <span>Low-polygon marcher bodies (full-detail instruments)</span>
@@ -324,6 +334,11 @@
               </table>
             </div>
           </details>
+          <p>OpenChartxr &copy; 2026 Marty Mongan.
+            <a href="https://github.com/mmongan/mmongan.github.io/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">AGPL-3.0-or-later</a> &middot;
+            <a href="https://github.com/mmongan/mmongan.github.io" target="_blank" rel="noopener noreferrer">Corresponding source</a> &middot;
+            <a href="https://github.com/mmongan/mmongan.github.io/blob/main/NOTICE" target="_blank" rel="noopener noreferrer">Asset notices</a>
+          </p>
         </div>
       </div>
     </div>
