@@ -81,6 +81,20 @@ export const showInfo = document.getElementById("showInfo") as HTMLDetailsElemen
 export const showInfoSummary = document.getElementById("showInfoSummary");
 export const showInfoPages = document.getElementById("showInfoPages") as HTMLTableSectionElement | null;
 export const showInfoMarchers = document.getElementById("showInfoMarchers") as HTMLTableSectionElement | null;
+export const formationEditor = document.getElementById("formationEditor") as HTMLFormElement | null;
+export const formationPresetSelect = document.getElementById("formationPreset") as HTMLSelectElement | null;
+export const formationSelection = document.getElementById("formationSelection") as HTMLSelectElement | null;
+export const formationSpacingInput = document.getElementById("formationSpacing") as HTMLInputElement | null;
+export const formationOriginX = document.getElementById("formationOriginX") as HTMLInputElement | null;
+export const formationOriginZ = document.getElementById("formationOriginZ") as HTMLInputElement | null;
+export const formationMoveX = document.getElementById("formationMoveX") as HTMLInputElement | null;
+export const formationMoveZ = document.getElementById("formationMoveZ") as HTMLInputElement | null;
+export const formationRotation = document.getElementById("formationRotation") as HTMLInputElement | null;
+export const formationScale = document.getElementById("formationScale") as HTMLInputElement | null;
+export const formationEditorStatus = document.getElementById("formationEditorStatus") as HTMLOutputElement | null;
+export const gridSnapToggle = document.getElementById("gridSnapToggle") as HTMLInputElement | null;
+export const gridSnapInterval = document.getElementById("gridSnapInterval") as HTMLSelectElement | null;
+export const angleSnapToggle = document.getElementById("angleSnapToggle") as HTMLInputElement | null;
 
 export function getSelectedXRMode(): XRSessionMode {
   const selected = xrModeInputs.find((input) => input.checked)?.value as XRSessionMode | undefined;

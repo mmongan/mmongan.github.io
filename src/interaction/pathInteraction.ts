@@ -23,6 +23,12 @@ import {
   isARTabletopModeActive,
 } from '../xr/ar';
 import { scene } from '../scene/engine';
+import { snapDrillPoint, transformFormationPoint, type FormationTransform } from './drillEditing';
+import {
+  formationEditor, formationPresetSelect, formationSelection, formationSpacingInput,
+  formationOriginX, formationOriginZ, formationMoveX, formationMoveZ, formationRotation,
+  formationScale, formationEditorStatus, gridSnapToggle, gridSnapInterval, angleSnapToggle,
+} from '../ui/dom';
 import { getMediaControllerHand, swapControllerRolesToggle, handThumbJogToggle } from '../ui/dom';
 import { resetThumbJog, updateThumbJog } from './thumbJogGesture';
 import type { ThumbJogState } from './thumbJogGesture';
@@ -66,6 +72,7 @@ import {
   setMarcherInstrument,
   setMarchTempo,
   playAll,
+  onMarcherStrideLimited,
 } from '../robot/robot';
 import { onManualPlacementBlocked, tryManualMarcherPose, tryManualMarcherPoses } from '../robot/manualPlacement';
 import type { MarcherInstrument } from '../robot/robot';
@@ -336,6 +343,7 @@ export function selectRobot(robot: TransformNode | null, revealPaths = false) {
   refreshPathLineAppearance();
   refreshStepHandles();
   segments.forEach(updateSegmentHandleVisibility);
+  refreshFormationEditor();
 }
 
 export function getSelectedMarcher() { return selectedRobot; }
@@ -467,6 +475,7 @@ marcherInstrumentRadios.forEach((radio) => radio.addEventListener("change", () =
 }));
 
 function createStandingMarcher(position: Vector3) {
+  position = snapToStepGrid(position);
   const robot = createLowPolyRobot(scene);
   robot.parent = pathRoot;
   robot.setEnabled(tryManualMarcherPose(robot, position, robot.rotation.y, false));
@@ -476,20 +485,24 @@ function createStandingMarcher(position: Vector3) {
 
 let placementNotice: HTMLOutputElement | null = null;
 let placementNoticeTimeout: ReturnType<typeof setTimeout> | undefined;
-const placementBlockedObserver = onManualPlacementBlocked.add(() => {
+function showPlacementNotice(message: string) {
   if (!placementNotice) {
     placementNotice = document.createElement("output");
     placementNotice.className = "placement-collision-notice";
     placementNotice.setAttribute("role", "status");
     document.body.appendChild(placementNotice);
   }
-  placementNotice.textContent = "Move blocked: leave room for the marcher's body and instrument.";
+  placementNotice.textContent = message;
   placementNotice.hidden = false;
   clearTimeout(placementNoticeTimeout);
   placementNoticeTimeout = setTimeout(() => { if (placementNotice) placementNotice.hidden = true; }, 2000);
-});
+}
+const placementBlockedObserver = onManualPlacementBlocked.add(() =>
+  showPlacementNotice("Move blocked: leave room for the marcher's body and instrument."));
+const strideLimitedObserver = onMarcherStrideLimited.add(showPlacementNotice);
 scene.onDisposeObservable.addOnce(() => {
   onManualPlacementBlocked.remove(placementBlockedObserver);
+  onMarcherStrideLimited.remove(strideLimitedObserver);
   clearTimeout(placementNoticeTimeout);
   placementNotice?.remove();
 });
@@ -633,17 +646,13 @@ function updateRobotPathLine(robot: TransformNode, points: Vector3[]) {
 const ANGLE_SNAP_RADIANS = Math.PI / 4;
 
 function snapToStepGrid(point: Vector3): Vector3 {
-  return point;
-  // return new Vector3(
-  //   Math.round(point.x / MARCH_STEP_YARDS) * MARCH_STEP_YARDS,
-  //   point.y,
-  //   Math.round(point.z / MARCH_STEP_YARDS) * MARCH_STEP_YARDS
-  // );
+  if (!gridSnapToggle?.checked) return point;
+  const snapped = snapDrillPoint(point, Number(gridSnapInterval?.value ?? MARCH_STEP_YARDS));
+  return new Vector3(snapped.x, snapped.y, snapped.z);
 }
 
 function snapAngle(angle: number): number {
-  return angle;
-  //return Math.round(angle / ANGLE_SNAP_RADIANS) * ANGLE_SNAP_RADIANS;
+  return angleSnapToggle?.checked ? Math.round(angle / ANGLE_SNAP_RADIANS) * ANGLE_SNAP_RADIANS : angle;
 }
 
 function resampleLineEvenly(points: Vector3[], spacingYards: number, closed = false): Vector3[] {
@@ -809,22 +818,27 @@ function sampleVerticalFormationCircle(
   return points;
 }
 
-function getFormationPoints(controlPoints: Vector3[], fitClosedCircle = true) {
+function getFormationPoints(controlPoints: Vector3[], fitClosedCircle = true,
+  spacing = Number(formationSpacingInput?.value ?? FORMATION_SPACING_YARDS)) {
+  if (!Number.isFinite(spacing) || spacing < 0.625 || spacing > 10) {
+    publishFormationEdit("Spacing must be between 0.625 and 10 yards.");
+    return [];
+  }
   const closed = isClosedFormation(controlPoints);
   if (closed && fitClosedCircle) {
     if (isVerticalFormation(controlPoints)) {
       const circle = fitVerticalFormationCircle(controlPoints);
-      const count = Math.max(3, Math.round(Math.PI * 2 * circle.radius / FORMATION_SPACING_YARDS));
+      const count = Math.max(3, Math.round(Math.PI * 2 * circle.radius / spacing));
       return sampleVerticalFormationCircle(circle, count, false);
     }
     const circle = fitFormationCircle(controlPoints);
-    const count = Math.max(3, Math.round(Math.PI * 2 * circle.radius / FORMATION_SPACING_YARDS));
+    const count = Math.max(3, Math.round(Math.PI * 2 * circle.radius / spacing));
     return sampleFormationCircle(circle, count, false);
   }
-  if (closed) return resampleLineEvenly(controlPoints, FORMATION_SPACING_YARDS, true);
+  if (closed) return resampleLineEvenly(controlPoints, spacing, true);
   const curvePoints = buildCurvePoints(controlPoints);
   return curvePoints.length >= 2
-    ? resampleLineEvenly(curvePoints, FORMATION_SPACING_YARDS, closed)
+    ? resampleLineEvenly(curvePoints, spacing, closed)
     : curvePoints;
 }
 
@@ -847,6 +861,7 @@ interface Segment {
   copyHandle: Mesh | null;
   anchorRobot?: TransformNode;
   fitClosedCircle: boolean;
+  spacing?: number;
   erasedFormationIndices?: Set<number>;
   robots: TransformNode[]; // formation: every robot in the rank; path: the one marching robot
 }
@@ -866,8 +881,6 @@ const pathSegmentByRobot = new Map<TransformNode, Segment>();
 // Proximity is only ever used to break an existing formation connection
 // (e.g. once a robot marches away via copy-to-path), never to create one.
 const FORMATION_CONNECTION_BREAK_DISTANCE_YARDS = FORMATION_SPACING_YARDS * 2.5;
-const FORMATION_CONNECTION_BREAK_DISTANCE_SQUARED =
-  FORMATION_CONNECTION_BREAK_DISTANCE_YARDS * FORMATION_CONNECTION_BREAK_DISTANCE_YARDS;
 const FORMATION_CONNECTION_RADIUS_YARDS = 0.02;
 const FORMATION_CONNECTION_UPDATE_INTERVAL_FRAMES = 6;
 
@@ -926,7 +939,9 @@ function updateFormationConnections() {
   formationConnectionsBySegment.forEach((connections, segment) => {
     const stillConnected = connections.filter((connection) => {
       const distanceSq = Vector3.DistanceSquared(connection.robotA.position, connection.robotB.position);
-      if (distanceSq > FORMATION_CONNECTION_BREAK_DISTANCE_SQUARED) {
+      const breakDistance = Math.max(FORMATION_CONNECTION_BREAK_DISTANCE_YARDS,
+        (segment.spacing ?? FORMATION_SPACING_YARDS) * 2.5);
+      if (distanceSq > breakDistance * breakDistance) {
         connection.mesh.dispose();
         return false;
       }
@@ -1070,10 +1085,10 @@ function updateRotationHandleDrag(handedness: string, point: Vector3) {
     const distance = Math.hypot(dx, dz);
     if (distance <= 0.001) return;
     const angle = Math.atan2(dx, dz);
-    const rotation = Math.atan2(
+    const rotation = snapAngle(Math.atan2(
       Math.sin(angle - twoHandPathManipulation.startAngle),
       Math.cos(angle - twoHandPathManipulation.startAngle)
-    );
+    ));
     const scale = distance / twoHandPathManipulation.startDistance;
     const translation = new Vector3(
       midpoint.x - twoHandPathManipulation.startMidpoint.x,
@@ -1094,10 +1109,10 @@ function updateRotationHandleDrag(handedness: string, point: Vector3) {
 
   if (!rotatingSegment) return;
   const angle = Math.atan2(point.x - rotatingSegment.center.x, point.z - rotatingSegment.center.z);
-  const rotation = Math.atan2(
+  const rotation = snapAngle(Math.atan2(
     Math.sin(angle - rotatingSegment.startAngle),
     Math.cos(angle - rotatingSegment.startAngle)
-  );
+  ));
   rotatingSegment.segment.controlPoints = rotatingSegment.originalControlPoints.map((controlPoint) =>
     rotatePointAroundSegmentCenter(controlPoint, rotatingSegment!.center, rotation)
   );
@@ -1180,13 +1195,12 @@ function rebuildSegmentContent(segment: Segment) {
     const previousRobots = segment.robots;
     const candidates: TransformNode[] = [];
     const poses: Array<{ robot: TransformNode; position: Vector3; rotationY: number }> = [];
-    const formationPoints = getFormationPoints(segment.controlPoints, segment.fitClosedCircle);
+    const formationPoints = getFormationPoints(segment.controlPoints, segment.fitClosedCircle, segment.spacing);
 
     formationPoints.forEach((point, index) => {      
       if (segment.erasedFormationIndices?.has(index)) return;
-      const robotPrimitives = index === 0 && segment.anchorRobot
-        ? segment.anchorRobot
-        : createLowPolyRobot(scene);
+      const robotPrimitives = previousRobots[candidates.length] ??
+        (index === 0 && segment.anchorRobot ? segment.anchorRobot : createLowPolyRobot(scene));
       if (index !== 0 || !segment.anchorRobot) {
         robotPrimitives.parent = pathRoot;
       }
@@ -1204,16 +1218,21 @@ function rebuildSegmentContent(segment: Segment) {
       poses.push({ robot: robotPrimitives, position: point, rotationY });
     });
     if (!tryManualMarcherPoses(poses, false, new Set(previousRobots))) {
-      candidates.forEach((robot) => { if (robot !== segment.anchorRobot) robot.dispose(); });
+      candidates.forEach((robot) => {
+        if (robot !== segment.anchorRobot && !previousRobots.includes(robot)) robot.dispose();
+      });
       const controls = acceptedFormationControls.get(segment);
       if (controls) segment.controlPoints = controls.map((point) => point.clone());
       return;
     }
-    previousRobots.forEach((robot) => { if (robot !== segment.anchorRobot) robot.dispose(); });
+    previousRobots.forEach((robot) => {
+      if (robot !== segment.anchorRobot && !candidates.includes(robot)) robot.dispose();
+    });
     segment.robots = candidates;
     candidates.forEach((robot) => robot.setEnabled(true));
     acceptedFormationControls.set(segment, segment.controlPoints.map((point) => point.clone()));
     rebuildFormationConnections(segment);
+    refreshFormationEditor();
   } else {
     const curvePoints = buildCurvePoints(segment.controlPoints);
     const robot = segment.robots[0];
@@ -1261,6 +1280,7 @@ function createSegment(
   const segment: Segment = {
     kind, controlPoints, line, moveHandle, pointHandles, rotationHandles, copyHandle,
     anchorRobot, fitClosedCircle, robots,
+    spacing: kind === "formation" ? Number(formationSpacingInput?.value ?? FORMATION_SPACING_YARDS) : undefined,
   };
   pointHandles.forEach((handle, index) => segmentPointHandleOwner.set(handle, { segment, index }));
   segmentMoveHandleOwner.set(moveHandle, segment);
@@ -1270,6 +1290,7 @@ function createSegment(
   rebuildSegmentContent(segment);
   refreshSegmentVisuals(segment);
   segments.push(segment);
+  refreshFormationEditor();
   if (kind === "path" && robots[0]) pathSegmentByRobot.set(robots[0], segment);
   return segment;
 }
@@ -1426,17 +1447,22 @@ function createHandFormation(
 type FormationPreset = "line" | "arc" | "circle" | "block" |
   "triangle" | "square" | "pentagon" | "hexagon" | "star";
 
-function createFormationPreset(preset: FormationPreset) {
+function createFormationPreset(preset: FormationPreset, suppliedAnchor?: TransformNode) {
   const heldRobot = [...handInteraction.marcherGrabs.values()]
     .find((grab) => !grab.robot.isDisposed())?.robot;
-  const anchor = heldRobot ?? selectedRobot;
+  const anchor = suppliedAnchor ?? heldRobot ?? selectedRobot;
   if (!anchor || anchor.isDisposed()) return;
 
-  const origin = anchor.position.clone();
+  const spacing = Number(formationSpacingInput?.value ?? FORMATION_SPACING_YARDS);
+  if (!Number.isFinite(spacing) || spacing < 0.625 || spacing > 10) {
+    publishFormationEdit("Spacing must be between 0.625 and 10 yards.");
+    return;
+  }
+  const origin = snapToStepGrid(anchor.position.clone());
   const forward = new Vector3(Math.sin(anchor.rotation.y), 0, Math.cos(anchor.rotation.y));
   const across = new Vector3(Math.cos(anchor.rotation.y), 0, -Math.sin(anchor.rotation.y));
-  const side = forward.scale(FORMATION_SPACING_YARDS);
-  const rowStep = across.scale(FORMATION_SPACING_YARDS);
+  const side = forward.scale(spacing);
+  const rowStep = across.scale(spacing);
 
   if (preset === "line") {
     createHandFormation(anchor, [origin, origin.add(side.scale(4))]);
@@ -1454,7 +1480,7 @@ function createFormationPreset(preset: FormationPreset) {
   }
 
   if (preset === "circle") {
-    const radius = FORMATION_SPACING_YARDS * 3;
+    const radius = spacing * 3;
     const center = origin.add(forward.scale(radius));
     const points: Vector3[] = [];
     for (let index = 0; index <= 8; index++) {
@@ -1472,7 +1498,7 @@ function createFormationPreset(preset: FormationPreset) {
     const isStar = preset === "star";
     const sides = preset === "triangle" ? 3 : preset === "square" ? 4 :
       preset === "pentagon" ? 5 : preset === "hexagon" ? 6 : 10;
-    const radius = FORMATION_SPACING_YARDS * 3;
+    const radius = spacing * 3;
     const center = origin.add(forward.scale(radius));
     const points: Vector3[] = [];
     for (let index = 0; index < sides; index++) {
@@ -1496,6 +1522,183 @@ function createFormationPreset(preset: FormationPreset) {
   refreshCollisionMarkers(scene);
   selectRobot(anchor);
 }
+
+function publishFormationEdit(message: string) {
+  if (formationEditorStatus) formationEditorStatus.textContent = message;
+  showPlacementNotice(message);
+}
+
+function getEditorFormation(): Segment | undefined {
+  const forms = segments.filter((segment) => segment.kind === "formation" && segment.robots.length > 0);
+  return forms.find((segment) => segment.robots.some((robot) =>
+    String(robot.uniqueId) === formationSelection?.value)) ??
+    forms.find((segment) => selectedRobot !== null && segment.robots.includes(selectedRobot));
+}
+
+function refreshFormationEditor() {
+  if (!formationSelection) return;
+  const selector = formationSelection;
+  const forms = segments.filter((segment) => segment.kind === "formation" &&
+    segment.robots.some((robot) => !robot.isDisposed() && robot.isEnabled()));
+  const current = forms.find((segment) => selectedRobot !== null && segment.robots.includes(selectedRobot)) ??
+    forms.find((segment) => segment.robots.some((robot) => String(robot.uniqueId) === selector.value));
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = "Select a form";
+  formationSelection.replaceChildren(placeholder, ...forms.map((segment, index) => {
+    const option = document.createElement("option");
+    option.value = String(segment.robots[0].uniqueId);
+    option.textContent = `Form ${index + 1} (${segment.robots.length} marchers)`;
+    return option;
+  }));
+  formationSelection.value = current ? String(current.robots[0].uniqueId) : "";
+}
+
+function transformEditorFormation(transform: FormationTransform, spacing?: number): boolean {
+  const segment = getEditorFormation();
+  if (!segment) {
+    publishFormationEdit("Select a standing form first. Imported marching routes are unchanged.");
+    return false;
+  }
+  if (segment.robots.some((robot) => getRobotCounts(robot) !== null || robot.isDisposed())) {
+    publishFormationEdit("This form contains marching routes. Stop using it as a route before editing the standing form.");
+    return false;
+  }
+  const nextSpacing = spacing ?? (segment.spacing ?? FORMATION_SPACING_YARDS) * transform.scale;
+  if (!Number.isFinite(nextSpacing) || nextSpacing < 0.625 || nextSpacing > 10) {
+    publishFormationEdit("Scaling must keep marcher spacing between 0.625 and 10 yards.");
+    return false;
+  }
+  const center = getSegmentCenter(segment.controlPoints);
+  if (gridSnapToggle?.checked) {
+    const target = snapToStepGrid(center.add(new Vector3(transform.x, 0, transform.z)));
+    transform = { ...transform, x: target.x - center.x, z: target.z - center.z };
+  }
+  transform = { ...transform, rotation: snapAngle(transform.rotation) };
+  const move = (point: Vector3) => {
+    const result = transformFormationPoint(point, center, transform);
+    return new Vector3(result.x, result.y, result.z);
+  };
+  const poses = segment.robots.map((robot) => ({
+    robot, position: move(robot.position), rotationY: robot.rotation.y + transform.rotation,
+  }));
+  if (!tryManualMarcherPoses(poses, false)) {
+    publishFormationEdit("Form edit blocked: leave room for every marcher's body and instrument. Nothing was changed.");
+    return false;
+  }
+  eraseHistory.clear();
+  segment.controlPoints = segment.controlPoints.map(move);
+  segment.spacing = nextSpacing;
+  acceptedFormationControls.set(segment, segment.controlPoints.map((point) => point.clone()));
+  rebuildFormationConnections(segment);
+  refreshSegmentVisuals(segment);
+  refreshCollisionMarkers(scene);
+  publishFormationEdit(`Updated ${segment.robots.length} marchers; spacing ${segment.spacing.toFixed(3)} yards. Routes unchanged.`);
+  return true;
+}
+
+function editFormationSpacing(factor: number) {
+  const segment = getEditorFormation();
+  const current = segment?.spacing ?? Number(formationSpacingInput?.value ?? FORMATION_SPACING_YARDS);
+  const spacing = current * factor;
+  if (spacing < 0.625 || spacing > 10) {
+    publishFormationEdit("Spacing must remain between 0.625 and 10 yards.");
+    return;
+  }
+  if (segment && !transformEditorFormation({ x: 0, z: 0, rotation: 0, scale: factor }, spacing)) return;
+  if (formationSpacingInput) formationSpacingInput.value = String(spacing);
+  if (!segment) publishFormationEdit(`New form spacing: ${spacing.toFixed(3)} yards.`);
+}
+
+function removeEditorForm(segment: Segment) {
+  segment.robots.forEach((robot) => robot.dispose());
+  formationConnectionsBySegment.get(segment)?.forEach((connection) => connection.mesh.dispose());
+  formationConnectionsBySegment.delete(segment);
+  segment.line.dispose(false, true);
+  segmentMoveHandleOwner.delete(segment.moveHandle);
+  segment.moveHandle.dispose();
+  segment.pointHandles.forEach((handle) => { segmentPointHandleOwner.delete(handle); handle.dispose(); });
+  segment.rotationHandles.forEach((handle) => { segmentRotationHandleOwner.delete(handle); handle.dispose(); });
+  if (segment.copyHandle) {
+    segmentCopyHandleOwner.delete(segment.copyHandle);
+    segment.copyHandle.dispose();
+  }
+  segments.splice(segments.indexOf(segment), 1);
+}
+
+formationSelection?.addEventListener("change", () => {
+  const segment = getEditorFormation();
+  if (!formationSelection?.value) return;
+  if (segment) {
+    setMarcherPOVEnabled(false);
+    selectRobot(segment.robots[0], true);
+    if (formationSpacingInput) formationSpacingInput.value = String(segment.spacing ?? FORMATION_SPACING_YARDS);
+    publishFormationEdit(`Selected a standing form with ${segment.robots.length} marchers.`);
+  }
+});
+
+formationEditor?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  if (!formationEditor?.reportValidity()) return;
+  if (floorCalibrationToggle?.checked) {
+    publishFormationEdit("Finish floor calibration before editing forms.");
+    return;
+  }
+  const action = event.submitter instanceof HTMLButtonElement ? event.submitter.value : "create";
+  const spacing = Number(formationSpacingInput?.value);
+  if (!Number.isFinite(spacing) || spacing < 0.625 || spacing > 10) {
+    publishFormationEdit("Spacing must be between 0.625 and 10 yards.");
+    return;
+  }
+  if (action === "create") {
+    const preset = formationPresetSelect?.value;
+    const presets: FormationPreset[] = ["line", "arc", "circle", "block", "triangle", "square", "pentagon", "hexagon", "star"];
+    if (!presets.some((value) => value === preset)) {
+      publishFormationEdit("Choose a supported form tool.");
+      return;
+    }
+    const origin = snapToStepGrid(new Vector3(Number(formationOriginX?.value), FIELD_SURFACE_Y, Number(formationOriginZ?.value)));
+    if (!Number.isFinite(origin.x + origin.z)) {
+      publishFormationEdit("Form origin must be finite.");
+      return;
+    }
+    const anchor = createStandingMarcher(origin);
+    if (!anchor.isEnabled()) {
+      anchor.dispose();
+      publishFormationEdit("Form origin is occupied. Choose an empty area of the field.");
+      return;
+    }
+    const previousForms = new Set(segments);
+    const validPreset = presets.find((value) => value === preset)!;
+    setMarcherPOVEnabled(false);
+    createFormationPreset(validPreset, anchor);
+    const created = segments.filter((segment) => !previousForms.has(segment));
+    if (created.length === 0 || created.some((segment) => segment.robots.length === 0)) {
+      created.forEach(removeEditorForm);
+      if (!anchor.isDisposed()) anchor.dispose();
+      selectRobot(null);
+      refreshCollisionMarkers(scene);
+      publishFormationEdit("Form could not fit without collisions. Increase spacing or choose another origin.");
+      return;
+    }
+    selectRobot(created[0].robots[0], true);
+    publishFormationEdit(`Created ${created.length} standing form${created.length === 1 ? "" : "s"} with ${created.reduce((sum, form) => sum + form.robots.length, 0)} marchers.`);
+    return;
+  }
+  if (action === "spacing") {
+    const segment = getEditorFormation();
+    if (!segment) {
+      publishFormationEdit("Select a standing form before applying spacing.");
+      return;
+    }
+    transformEditorFormation({ x: 0, z: 0, rotation: 0, scale: spacing / (segment.spacing ?? FORMATION_SPACING_YARDS) }, spacing);
+    return;
+  }
+  transformEditorFormation({
+    x: Number(formationMoveX?.value), z: Number(formationMoveZ?.value),
+    rotation: Number(formationRotation?.value) * Math.PI / 180, scale: Number(formationScale?.value),
+  });
+});
 
 const LETTER_BITMAPS: Record<FormationLetter, string[]> = {
   A: [".###.", "#...#", "#...#", "#####", "#...#", "#...#", "#...#"],
@@ -1694,6 +1897,21 @@ function executeMenuAction(hit: NonNullable<ReturnType<typeof getHandMenuHit>>) 
     case "formationPreset":
       setFormationLibraryOpen(false);
       createFormationPreset(hit.preset);
+      break;
+    case "formationGridSnap":
+      if (gridSnapToggle) {
+        gridSnapToggle.checked = !gridSnapToggle.checked;
+        publishFormationEdit(`Field grid snap ${gridSnapToggle.checked ? "enabled" : "disabled"}.`);
+      }
+      break;
+    case "formationSpacing":
+      editFormationSpacing(hit.factor);
+      break;
+    case "formationRotate":
+      transformEditorFormation({ x: 0, z: 0, rotation: hit.radians, scale: 1 });
+      break;
+    case "formationScale":
+      transformEditorFormation({ x: 0, z: 0, rotation: 0, scale: hit.factor });
       break;
     case "formationLetter":
       setFormationLibraryOpen(false);
@@ -2282,6 +2500,7 @@ function clearAllRobots() {
   clearDrillLabels();
   clearShowInfo();
   disposeAllRobots();
+  refreshFormationEditor();
 }
 
 // True when the viewer is looking at the +Z half of the field: where their

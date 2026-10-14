@@ -51,17 +51,25 @@ assert.match(pick(0, deg(-90), yard).label, /Crab Walk Left$/);
 assert.equal(pick(0, deg(60), yard).relation, 'sideways');
 assert.equal(pick(0, deg(120), yard).relation, 'sideways');
 
-// 16-to-5 marches half time at a standard 8-to-5 stride; 4-to-5 double times.
-result = pick(0, 0, 5 / 16);
+// Small strides can half-time; longer strides double-time before exceeding leg reach.
+result = pick(0, 0, 0.15);
 assert.equal(result.stepsPerCount, 0.5);
-near(result.strideYards, yard);
+near(result.strideYards, 0.3);
 assert.equal(result.label, 'Half Time Field March');
 result = pick(0, Math.PI, 5 / 4);
 assert.equal(result.stepsPerCount, 2);
 near(result.strideYards, yard);
 assert.equal(result.label, 'Double Time Backward March');
-assert.equal(pick(0, 0, 5 / 6).stepsPerCount, 1);
+assert.equal(pick(0, 0, 5 / 6).stepsPerCount, 2);
 assert.equal(pick(0, 0, 5 / 12).stepsPerCount, 1);
+assert.equal(selectAutoGait(0, 0, 0.625, 'Field March', 1.5).stepsPerCount, 2,
+  'Compound MIDI pulses cover more route distance and require faster cadence');
+for (const unit of [0.5, 1, 1.5, 2]) {
+  for (const distance of [0.1, 0.2, 0.3, 0.4]) {
+    const gait = selectAutoGait(0, 0, distance, 'Field March', unit);
+    if (distance * unit <= 1.25) assert.ok(gait.strideYards <= 0.625 + 1e-9);
+  }
+}
 
 assert.deepEqual(Array.from(buildGaitStepPhaseOffsets([0.5, 0.5, 2, 1])), [0, 0.5, 1, 3, 4]);
 

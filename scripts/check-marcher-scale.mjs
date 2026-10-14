@@ -6,17 +6,15 @@ import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure.js';
 
 const source = readFileSync(new URL('../src/robot/robot.ts', import.meta.url), 'utf8');
 const constants = source.slice(source.indexOf('const MARCHER_BUILD_SCALE ='),
-  source.indexOf('// Walks up from'));
-const conversion = source.slice(source.indexOf('    const sin = Math.sin(legWorldRotation);'),
-  source.indexOf('  const stepPhase ='));
+  source.indexOf('export function getMarcherEyePose'));
+const conversion = readFileSync(new URL('../src/robot/marcherFootTargets.ts', import.meta.url), 'utf8');
 const context = vm.createContext({ Math, Vector3 });
 vm.runInContext(`${stripTypeScriptTypes(constants)}
+${stripTypeScriptTypes(conversion, { mode: 'transform' }).replace(/^import .*?;\r?$/gm, '').replace(/export /g, '')}
 globalThis.convert = (displacement, stepsPerCount, legWorldRotation) => {
-  const localDisplacement = Vector3.Zero();
-  ${conversion.slice(0, conversion.lastIndexOf('  }'))}
-  return localDisplacement;
+  return marcherSoleInRig(displacement.scale(1 / stepsPerCount), legWorldRotation, MARCHER_BODY_SCALE);
 };
-globalThis.scale = MARCHER_BODY_SCALE * MARCHER_BUILD_SCALE;
+globalThis.scale = MARCHER_BODY_SCALE;
 globalThis.height = MARCHER_BODY_SCALE * MARCHER_MODEL_HEIGHT_YARDS * METERS_PER_YARD;
 `, context);
 assert.ok(Math.abs(context.height - 1.8) < 1e-9);

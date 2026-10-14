@@ -42,13 +42,18 @@ globalThis.Follower = MarcherPOVCamera;`, context);
   secondBody.scaling.copyFrom(body.scaling);
   const parts = new Map([[robot, { body }], [second, { body: secondBody }]]);
   const eyeSource = read('../src/robot/robot.ts').match(/export function getMarcherEyePose[\s\S]*?\n}/)[0];
-  const eyeContext = vm.createContext({ marcherParts: parts, Vector3 });
+  const eyeContext = vm.createContext({ marcherParts: parts, Vector3,
+    MARCHER_BODY_SCALE: height, MARCHER_BUILD_SCALE: 0.64 });
   vm.runInContext(`${compile(eyeSource)};globalThis.eyePose = getMarcherEyePose;`, eyeContext);
   const eyePose = eyeContext.eyePose;
   const eye = eyePose(robot);
   near(eye.position, Vector3.TransformCoordinates(new Vector3(0, 1.283, 0.154), body.computeWorldMatrix(true)),
     'Eye anchor uses actual body and scaled/rotated field world matrix');
   assert.ok(Math.abs(eye.position.y - (parent.position.y + 1.8 * 1.283 / 1.372)) < 1e-6);
+  for (const offset of [0, -0.05, -0.15, -0.05, 0]) {
+    body.position.y = offset;
+    near(eyePose(robot).position, eye.position, 'POV ignores animated body height and never bounces');
+  }
   const camera = new UniversalCamera('viewer', new Vector3(-28.5, 21.52, 0), scene);
   camera.rotation.set(0.7, 1.2, 0);
   const originalPosition = camera.position.clone();

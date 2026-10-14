@@ -28,12 +28,11 @@ export interface AutoGaitSelection {
   label: string;
 }
 
-// 8-to-5 is 0.625 yd per count. Below half that, two counts per step keeps the
-// stride near standard (16-to-5 becomes a half-time 8-to-5); above ~5-to-5 the
-// marcher must double time to stay marchable (4-to-5 becomes a double-time 8-to-5).
+// Cadence must fit the fixed-length legs: at most a standard 8-to-5 stride.
 export const IN_PLACE_STEP_YARDS = 0.05;
-export const HALF_TIME_BELOW_YARDS = 0.36;
-export const DOUBLE_TIME_ABOVE_YARDS = 1.05;
+export const MAX_MARCHING_STRIDE_YARDS = 0.625;
+export const HALF_TIME_BELOW_YARDS = 0.18;
+export const DOUBLE_TIME_ABOVE_YARDS = MAX_MARCHING_STRIDE_YARDS;
 // Travel within 50° of facing reads as forward, beyond 130° as backward,
 // and anything in between as a sideways slide/crab walk.
 export const FORWARD_MAX_ANGLE = (50 * Math.PI) / 180;
@@ -66,7 +65,9 @@ export function selectAutoGait(
   facingYaw: number,
   travelX: number,
   travelZ: number,
-  style: AutoGaitStyle = "Field March"
+  style: AutoGaitStyle = "Field March",
+  quarterNotesPerPulse = 1,
+  cadenceTravelYards?: number
 ): AutoGaitSelection {
   const stepYards = Math.hypot(travelX, travelZ);
   const highLift = HIGH_LIFT_STYLES.has(style);
@@ -75,8 +76,9 @@ export function selectAutoGait(
     return { gait, stepsPerCount: 1, legYawOffset: 0, relation: "in-place", strideYards: 0, label: gait };
   }
 
-  const stepsPerCount = stepYards < HALF_TIME_BELOW_YARDS ? 0.5 : stepYards > DOUBLE_TIME_ABOVE_YARDS ? 2 : 1;
-  const strideYards = stepYards / stepsPerCount;
+  const pulseYards = Math.max(stepYards, cadenceTravelYards ?? stepYards) * quarterNotesPerPulse;
+  const stepsPerCount = pulseYards <= HALF_TIME_BELOW_YARDS ? 0.5 : pulseYards > DOUBLE_TIME_ABOVE_YARDS ? 2 : 1;
+  const strideYards = stepYards * quarterNotesPerPulse / stepsPerCount;
   const cadence = stepsPerCount === 0.5 ? "Half Time " : stepsPerCount === 2 ? "Double Time " : "";
   const relative = wrapAngle(Math.atan2(travelX, travelZ) - facingYaw);
   const turn = Math.abs(relative);

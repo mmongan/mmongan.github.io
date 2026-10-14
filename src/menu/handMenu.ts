@@ -31,6 +31,10 @@ export type FormationLetter =
 export type HandMenuHit =
   | { action: "playPause" | "rewind" | "fastForward" | "stepBack" | "stepForward" | "fullScaleVR" | "tabletopScale" | "commitFormation" | "eraseMode" | "undoErase" | "redoErase" | "musicStandStaffToggle" }
   | { action: "formationLibrary" | "formationLibraryBack" | "formationLibraryClose" | "lettersLibrary" }
+  | { action: "formationGridSnap" }
+  | { action: "formationSpacing"; factor: number }
+  | { action: "formationRotate"; radians: number }
+  | { action: "formationScale"; factor: number }
   | { action: "formationPreset"; preset: "line" | "arc" | "circle" | "block" | "triangle" | "square" | "pentagon" | "hexagon" | "star" }
   | { action: "formationLetter"; letter: FormationLetter }
   | { action: "drillChartPad" }
@@ -354,6 +358,20 @@ function ensureMenuMeshes() {
   lettersButton.position.z = backButton.position.z;
   lettersButton.position.x = librarySpacing * 2;
   formationButtons.push(lettersButton);
+  const editButtons: Array<{ label: string; action: HandMenuHit }> = [
+    { label: "Snap", action: { action: "formationGridSnap" } },
+    { label: "Space-", action: { action: "formationSpacing", factor: 0.8 } },
+    { label: "Space+", action: { action: "formationSpacing", factor: 1.25 } },
+    { label: "Turn-", action: { action: "formationRotate", radians: -Math.PI / 4 } },
+    { label: "Turn+", action: { action: "formationRotate", radians: Math.PI / 4 } },
+    { label: "Size-", action: { action: "formationScale", factor: 0.8 } },
+    { label: "Size+", action: { action: "formationScale", factor: 1.25 } },
+  ];
+  editButtons.forEach(({ label, action }, index) => {
+    const button = createButton(label, (index % 4 - 1.5) * librarySpacing, action);
+    button.position.z = backButton.position.z + librarySpacing * (1 + Math.floor(index / 4));
+    formationButtons.push(button);
+  });
 
   const alphabet: FormationLetter[] = [
     "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M",

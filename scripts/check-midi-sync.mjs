@@ -125,6 +125,15 @@ await assert.rejects(() => urlContext.readUrl('https://music.example/stream.mid'
 const example = new Midi(readFileSync(new URL('../src/assets/liberty-bell-band.mid', import.meta.url)));
 assert.equal(example.header.tempos[0].bpm, 180.00018000018);
 const bandTracks = example.tracks.filter(track => track.notes.length);
+const pulseSource = readFileSync(new URL('../src/audio/midiBeatPulse.ts', import.meta.url), 'utf8');
+vm.runInContext(`${stripTypeScriptTypes(pulseSource, { mode: 'transform' }).replace(/export /g, '')}
+globalThis.units = midiBeatUnits;
+globalThis.pulse = midiPulseAtBeat;`, context);
+const units = context.units(example.header.timeSignatures, example.header.ppq);
+assert.equal(units[0].quarterNotesPerPulse, 1.5, 'Bundled 6/8 march uses dotted-quarter pulses');
+assert.equal(context.pulse(3, units), 2);
+assert.equal(context.pulse(2, [{ beat: 0, quarterNotesPerPulse: 1 },
+  { beat: 1, quarterNotesPerPulse: 0.5 }]), 3, 'Meter changes preserve cumulative pulse position');
 assert.equal(bandTracks.length, 20);
 assert.ok(bandTracks.some(track => track.instrument.percussion));
 assert.ok(bandTracks.some(track => track.instrument.number === 56), 'Full band includes trumpet/cornet');

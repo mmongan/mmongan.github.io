@@ -3,6 +3,7 @@ import {
   setPlaybackRepeat,
   setPlaybackSongLength,
   setPlaybackTempoMap,
+  setPlaybackBeatUnits,
   onDrillTransportChangedObservable,
 } from '../robot/robot';
 import {
@@ -14,6 +15,7 @@ import { SampledMidiSynth } from './sampledMidiSynth';
 import { initMidiScore, setMidiScoreTracks } from './midiScore';
 import { quantizeScoreNote } from './midiNotation';
 import exampleMidiUrl from '../assets/liberty-bell-band.mid?url';
+import { midiBeatUnits } from './midiBeatPulse';
 
 const EXAMPLE_MIDI_DESCRIPTION = "Sousa — The Liberty Bell (full band, Public Domain)";
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
@@ -216,6 +218,11 @@ async function loadMidi(name: string, read: () => Promise<ArrayBuffer>, failureH
     const { Midi } = await import('@tonejs/midi');
     const midi = new Midi(bytes);
     if (!Number.isFinite(midi.header.ppq) || midi.header.ppq <= 0) throw new Error("The MIDI file has invalid beat resolution.");
+    const beatUnits = midiBeatUnits(midi.header.timeSignatures, midi.header.ppq);
+    if (beatUnits.some(unit => !Number.isFinite(unit.beat) || unit.beat < 0 ||
+      !Number.isFinite(unit.quarterNotesPerPulse) || unit.quarterNotesPerPulse <= 0)) {
+      throw new Error("The MIDI file contains invalid time signatures.");
+    }
     const tempoMap = midi.header.tempos.length
       ? midi.header.tempos.map(tempo => ({ beat: tempo.ticks / midi.header.ppq, bpm: tempo.bpm }))
       : [{ beat: 0, bpm: 120 }];
@@ -247,6 +254,7 @@ async function loadMidi(name: string, read: () => Promise<ArrayBuffer>, failureH
     timeline = new MidiTimeline(notes);
     const beats = notes.reduce((last, n) => Math.max(last, n.beat + n.duration), 0);
     setPlaybackTempoMap(tempoMap);
+    setPlaybackBeatUnits(beatUnits);
     setPlaybackSongLength(beats);
     loadedDescription = `${name}: ${musicTracks.length} parts, ${notes.length} notes, ${Math.ceil(beats)} beats`;
     setMidiScoreTracks(musicTracks.map((track, index) => ({
@@ -325,6 +333,7 @@ export function initMidiPlayback() {
     midiNotes = [];
     timeline = null;
     setPlaybackTempoMap(null);
+    setPlaybackBeatUnits([]);
     setPlaybackSongLength(0);
     loadedDescription = "";
     setMidiScoreTracks([]);

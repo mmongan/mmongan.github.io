@@ -10,7 +10,7 @@ import { readOpenMarchDatabase, writeOpenMarchDatabase, type FieldPoint } from "
 const OUTPUT = new URL("../src/assets/openmarch/example-show.dots", import.meta.url);
 const FILES = 8;
 const RANKS = 5;
-const COUNTS_PER_MOVE = 16;
+const COUNTS_PER_MOVE = 48;
 
 // Front to back, each rank lists files from the side 2 end to the side 1 end.
 const SECTIONS: Record<string, [section: string, drillPrefix: string]> = {
@@ -112,11 +112,14 @@ const bytes = writeOpenMarchDatabase(
   },
   { level: "highschool", widthYards: 53.333, hashOffsetYards: 8.8889 }
 );
-const reopened = readOpenMarchDatabase(SQL, bytes);
+const reopened = readOpenMarchDatabase(SQL, bytes, 53.333);
 const lastCount = (sets.length - 1) * COUNTS_PER_MOVE;
 if (reopened.tracks.length !== marchers.length || reopened.pages.length !== sets.length
   || reopened.pages.at(-1)?.count !== lastCount) {
   throw new Error("Generated example did not preserve its marchers, sets, and counts");
+}
+if (reopened.tracks.some(track => track.some(point => !Number.isFinite(point.x + point.z)))) {
+  throw new Error("Generated example contains non-finite field coordinates");
 }
 writeFileSync(OUTPUT, bytes);
 console.log(`Wrote ${bytes.length} bytes, ${tracks.length} marchers, ${sets.length} sets, ${lastCount} counts to ${OUTPUT.pathname}`);

@@ -11,7 +11,7 @@ import { Observable, Observer } from '@babylonjs/core/Misc/observable.pure';
 import { Node } from '@babylonjs/core/node';
 import { Scene } from '@babylonjs/core/scene.pure';
 import { createCollisionMarkerManager, COLLISION_MARKER_RADIUS_YARDS } from './collisionMarkers';
-import { buildGaitStepPhaseOffsets, gaitPhaseAtBeat, isAutoGaitStyle, selectAutoGait } from './gaitSelection';
+import { buildGaitStepPhaseOffsets, DOUBLE_TIME_ABOVE_YARDS, gaitPhaseAtBeat, isAutoGaitStyle, selectAutoGait } from './gaitSelection';
 import { resolveRepeatPlayback } from './playbackRepeat';
 import { registerManualPlacementMarcher, tryManualMarcherPose } from './manualPlacement';
 import { CLARINET_MOUTHPIECE_TIP, getClarinetTemplate } from './clarinetModel';
@@ -24,7 +24,7 @@ import { getMellophoneTemplate, MELLOPHONE_MOUTHPIECE_TIP } from './mellophoneMo
 import { getRobotEyesTemplate } from './robotFaceModel';
 import {
   getMarcherCalfTemplate, getMarcherForearmTemplate, getMarcherGloveTemplate, getMarcherJacketTemplate,
-  getMarcherShoeTemplate, getMarcherThighTemplate, getMarcherTrimTemplate, getMarcherUpperArmTemplate,
+  getMarcherShoeTemplate, getMarcherThighTemplate, getMarcherKneeTemplate, getMarcherTrimTemplate, getMarcherUpperArmTemplate,
 } from './marcherBodyModel';
 import { getSaxophoneTemplate, SAXOPHONE_MOUTHPIECE_TIP } from './saxophoneModel';
 import { BARI_SAXOPHONE_MOUTHPIECE_TIP, getBariSaxophoneTemplate } from './bariSaxophoneModel';
@@ -34,11 +34,18 @@ import { getTrumpetTemplate } from './trumpetModel';
 import type { ModelDetail, ModelTemplate } from './lowPolyInstrument';
 import { isFieldShrunk, onARScaleChangedObservable } from '../xr/ar';
 import { lowPolygonMarchersToggle } from '../ui/dom';
+import { registerJacketLegSource, updateJacketLegPlane, updateJacketLegPlanes } from './jacketLegOcclusion';
+import { boundMarcherFootTarget, boundMarcherFootLift, MARCHER_CALF_LENGTH, MARCHER_THIGH_LENGTH,
+  MARCHER_SHOE_FORWARD_OFFSET, MARCHER_SHOE_HALF_HEIGHT, solvePlantedMarcherLeg } from './marcherLegPose';
+import { marcherFootTarget, marcherSoleInRig } from './marcherFootTargets';
+import { midiBeatAtPulse, midiPulseAtBeat, type MidiBeatUnit } from '../audio/midiBeatPulse';
 
 export { COLLISION_MARKER_RADIUS_YARDS } from './collisionMarkers';
 
 const allRobots = new Set<TransformNode>();
 const heldRobots = new Set<TransformNode>();
+export const onMarcherStrideLimited = new Observable<string>();
+const limitedStrideCounts = new WeakMap<TransformNode, number>();
 
 // Marcher parts and instruments are hardware instances of one hidden source
 // mesh per template, so every copy of a part draws in a single call instead
@@ -61,7 +68,7 @@ let instrumentDetail: ModelDetail = isFieldShrunk() ? "low" : "high";
 const bodyTemplates = new Set<ModelTemplate>([
   getMarcherCalfTemplate, getMarcherForearmTemplate, getMarcherGloveTemplate,
   getMarcherJacketTemplate, getMarcherShoeTemplate, getMarcherThighTemplate,
-  getMarcherTrimTemplate, getMarcherUpperArmTemplate, getRobotEyesTemplate,
+  getMarcherTrimTemplate, getMarcherUpperArmTemplate, getMarcherKneeTemplate, getRobotEyesTemplate,
 ]);
 
 function getTemplateDetail(template: ModelTemplate): ModelDetail {
@@ -81,6 +88,9 @@ function getPartSource(template: ModelTemplate, scene: Scene, tinted: boolean): 
     source.material = detailTemplate.material;
     source.isVisible = false;
     source.isPickable = false;
+    if (template === getMarcherThighTemplate || template === getMarcherCalfTemplate) {
+      registerJacketLegSource(source);
+    }
     if (tinted) {
       source.registerInstancedBuffer(VertexBuffer.ColorKind, 4);
       source.instancedBuffers.color = new Color4(1, 1, 1, 1);
@@ -106,6 +116,10 @@ function createModelPart(template: ModelTemplate, scene: Scene, name: string, pa
   }
   mesh.isPickable = true;
   modelPartInfo.set(mesh, { template, tinted });
+  if (template === getMarcherThighTemplate || template === getMarcherCalfTemplate) {
+    const body = robot.getChildren().find((child) => child.name === 'marcherBody');
+    if (body instanceof TransformNode) updateJacketLegPlane(mesh, body);
+  }
   return mesh;
 }
 
@@ -201,6 +215,10 @@ export function setMarcherRenderingGroup(robot: TransformNode, group: number) {
     parts.gloves = [swap(parts.gloves[0]), swap(parts.gloves[1])];
     parts.leftShoe = swap(parts.leftShoe);
     parts.rightShoe = swap(parts.rightShoe);
+    parts.leftThigh = swap(parts.leftThigh);
+    parts.rightThigh = swap(parts.rightThigh);
+    parts.leftCalf = swap(parts.leftCalf);
+    parts.rightCalf = swap(parts.rightCalf);
   }
 }
 type GeometrySwapMesh = Mesh & {
@@ -253,10 +271,11 @@ const MARCHER_BODY_SCALE = MARCHER_HEIGHT_YARDS / MARCHER_MODEL_HEIGHT_YARDS;
 export function getMarcherEyePose(robot: TransformNode): { position: Vector3; yaw: number } | null {
   const parts = marcherParts.get(robot);
   if (!parts || robot.isDisposed() || !robot.isEnabled()) return null;
-  const world = parts.body.computeWorldMatrix(true);
-  const forward = Vector3.TransformNormal(Vector3.Forward(), robot.computeWorldMatrix(true));
+  const world = robot.computeWorldMatrix(true);
+  const forward = Vector3.TransformNormal(Vector3.Forward(), world);
   return {
-    position: Vector3.TransformCoordinates(new Vector3(0, 1.283, 0.154), world),
+    position: Vector3.TransformCoordinates(new Vector3(0,
+      1.283 * MARCHER_BODY_SCALE, 0.154 * MARCHER_BODY_SCALE * MARCHER_BUILD_SCALE), world),
     yaw: Math.atan2(forward.x, forward.z),
   };
 }
@@ -465,6 +484,8 @@ const marcherParts = new Map<TransformNode, {
   rightKnee: TransformNode;
   leftThigh: ModelPart;
   rightThigh: ModelPart;
+  leftCalf: ModelPart;
+  rightCalf: ModelPart;
   leftAnkle: TransformNode;
   rightAnkle: TransformNode;
   leftShoe: ModelPart;
@@ -476,39 +497,47 @@ const marcherParts = new Map<TransformNode, {
   appliedInstrumentRestPose?: boolean;
   horn: ModelPart;
   body: TransformNode;
+  instrumentRoot: TransformNode;
+  legRoot: TransformNode;
 }>();
 
 function orientMarcherShoes(leftShoe: ModelPart, rightShoe: ModelPart, legFacingOffset: number) {
   const shoeFacing = -legFacingOffset;
   for (const shoe of [leftShoe, rightShoe]) {
     shoe.rotation.y = shoeFacing;
-    shoe.position.x = Math.sin(shoeFacing) * 0.07;
-    shoe.position.z = Math.cos(shoeFacing) * 0.07;
+    shoe.position.x = Math.sin(shoeFacing) * MARCHER_SHOE_FORWARD_OFFSET;
+    shoe.position.z = Math.cos(shoeFacing) * MARCHER_SHOE_FORWARD_OFFSET;
   }
 }
 
 const thighDirection = Vector3.Zero();
 const thighUp = Vector3.Up();
 
-function attachMarcherThigh(thigh: ModelPart, leg: TransformNode, hipX: number) {
+function attachMarcherThigh(thigh: ModelPart, leg: TransformNode, hipX: number, kneeDistance = MARCHER_THIGH_LENGTH) {
   const dx = hipX - leg.position.x;
   const dy = 0.69 - leg.position.y;
   const dz = -leg.position.z;
-  const sinY = Math.sin(leg.rotation.y);
-  const cosY = Math.cos(leg.rotation.y);
-  const sinX = Math.sin(leg.rotation.x);
-  const cosX = Math.cos(leg.rotation.x);
-  const localZ = dx * sinY + dz * cosY;
-  // Hip in the leg's local frame, measured from the knee at y = -0.37.
-  thighDirection.set(dx * cosY - dz * sinY,
-    dy * cosX + localZ * sinX + 0.37,
-    -dy * sinX + localZ * cosX);
+  const inverseRotation = Quaternion.FromEulerAngles(
+    leg.rotation.x, leg.rotation.y, leg.rotation.z).conjugate();
+  thighDirection.set(dx, dy, dz).rotateByQuaternionToRef(inverseRotation, thighDirection);
+  thighDirection.y += kneeDistance;
   const length = thighDirection.length();
-  thigh.position.copyFrom(thighDirection).scaleInPlace(0.21 / 0.37);
-  thigh.position.y -= 0.37;
-  thigh.scaling.y = length / 0.37;
+  thigh.position.copyFrom(thighDirection).scaleInPlace(0.155 / MARCHER_THIGH_LENGTH);
+  thigh.position.y -= kneeDistance;
+  thigh.scaling.y = length / MARCHER_THIGH_LENGTH;
   thighDirection.scaleInPlace(1 / length);
   Quaternion.FromUnitVectorsToRef(thighUp, thighDirection, thigh.rotationQuaternion!);
+}
+
+const kneeFlexion = Quaternion.Identity();
+
+function alignMarcherKnee(thigh: ModelPart, knee: TransformNode) {
+  // The visible thigh is re-aimed at the fixed hip, independently of the leg root.
+  // Measure flexion from that thigh, not from the root's increasingly steep pitch.
+  Quaternion.FromEulerAnglesToRef(
+    Math.max(0, Math.min(MAX_KNEE_BEND_RADIANS, knee.rotation.x)), 0, 0, kneeFlexion);
+  knee.rotationQuaternion ??= Quaternion.Identity();
+  thigh.rotationQuaternion!.multiplyToRef(kneeFlexion, knee.rotationQuaternion);
 }
 
 function hornRotationMatrix(horn: ModelPart): Matrix {
@@ -679,6 +708,9 @@ function createMarcherModel(scene: Scene, gaitIndex: number): TransformNode {
   const body = new TransformNode("marcherBody", scene);
   body.parent = robot;
   body.scaling.set(MARCHER_BODY_SCALE * MARCHER_BUILD_SCALE, MARCHER_BODY_SCALE, MARCHER_BODY_SCALE * MARCHER_BUILD_SCALE);
+  const legRoot = new TransformNode("marcherLegRoot", scene);
+  legRoot.parent = robot;
+  legRoot.scaling.setAll(MARCHER_BODY_SCALE);
   const part = (template: ModelTemplate, name: string, parent: Node | null, tinted = false) =>
     createModelPart(template, scene, name, parent, robot, tinted);
 
@@ -688,22 +720,28 @@ function createMarcherModel(scene: Scene, gaitIndex: number): TransformNode {
 
   const appendages = ([-1, 1] as const).map((side) => {
     const leg = new TransformNode("marcherLeg", scene);
-    leg.position.set(side * 0.09, 0.69, 0);
-    leg.parent = body;
+    leg.position.set(side * 0.09 * MARCHER_BUILD_SCALE, 0.69, 0);
+    leg.parent = legRoot;
     const thigh = part(getMarcherThighTemplate, "marcherThigh", leg);
     thigh.position.y = -0.16;
     thigh.rotationQuaternion = Quaternion.Identity();
 
     const knee = new TransformNode("marcherKnee", scene);
-    knee.position.y = -0.37;
+    knee.position.y = -MARCHER_THIGH_LENGTH;
     knee.parent = leg;
-    part(getMarcherCalfTemplate, "marcherCalf", knee);
+    const calf = part(getMarcherCalfTemplate, "marcherCalf", knee);
+    const kneeJoint = part(getMarcherKneeTemplate, "marcherKneeJoint", knee);
+    for (const mesh of [thigh, calf, kneeJoint]) {
+      mesh.scaling.x = MARCHER_BUILD_SCALE;
+      mesh.scaling.z = MARCHER_BUILD_SCALE;
+    }
 
     const ankle = new TransformNode("marcherAnkle", scene);
-    ankle.position.y = -0.2;
+    ankle.position.y = -MARCHER_CALF_LENGTH;
     ankle.parent = knee;
     const shoe = part(getMarcherShoeTemplate, "marcherShoe", ankle);
-    shoe.position.set(0, -0.06, 0.07);
+    shoe.scaling.x = MARCHER_BUILD_SCALE;
+    shoe.position.set(0, -MARCHER_SHOE_HALF_HEIGHT, MARCHER_SHOE_FORWARD_OFFSET);
 
     const arm = new TransformNode("marcherArm", scene);
     arm.position.set(side * 0.31, 1.02, 0);
@@ -715,7 +753,7 @@ function createMarcherModel(scene: Scene, gaitIndex: number): TransformNode {
     forearm.parent = body;
     part(getMarcherForearmTemplate, "marcherForearm", forearm, true);
     const glove = part(getMarcherGloveTemplate, "marcherHand", null);
-    return { leg, knee, ankle, shoe, thigh, arm, forearm, glove };
+    return { leg, knee, ankle, shoe, thigh, calf, arm, forearm, glove };
   });
 
   const instrumentRoot = new TransformNode("marcherInstrumentRoot", scene);
@@ -728,9 +766,7 @@ function createMarcherModel(scene: Scene, gaitIndex: number): TransformNode {
     glove.position.copyFrom(INSTRUMENTS[instrument].grips[index]);
   });
   const resolvedGaitIndex = Math.min(MARCHING_GAITS.length - 1, Math.max(0, gaitIndex));
-  const initialGait = MARCHING_GAITS[resolvedGaitIndex];
-  orientMarcherShoes(appendages[0].shoe, appendages[1].shoe,
-    "legFacingOffset" in initialGait ? initialGait.legFacingOffset : 0);
+  orientMarcherShoes(appendages[0].shoe, appendages[1].shoe, 0);
 
   marcherParts.set(robot, {
     gaitIndex: resolvedGaitIndex,
@@ -740,10 +776,11 @@ function createMarcherModel(scene: Scene, gaitIndex: number): TransformNode {
     leftLeg: appendages[0].leg, rightLeg: appendages[1].leg,
     leftKnee: appendages[0].knee, rightKnee: appendages[1].knee,
     leftThigh: appendages[0].thigh, rightThigh: appendages[1].thigh,
+    leftCalf: appendages[0].calf, rightCalf: appendages[1].calf,
     leftAnkle: appendages[0].ankle, rightAnkle: appendages[1].ankle,
     leftShoe: appendages[0].shoe, rightShoe: appendages[1].shoe,
     leftArm: appendages[0].arm, rightArm: appendages[1].arm,
-    leftForearm: appendages[0].forearm, rightForearm: appendages[1].forearm, horn, body,
+    leftForearm: appendages[0].forearm, rightForearm: appendages[1].forearm, horn, body, instrumentRoot, legRoot,
   });
   applyInstrumentPose(marcherParts.get(robot)!, instrumentCarryPose);
 
@@ -862,6 +899,12 @@ let transportRevision = 0;
 let repeatElapsed: number | null = null;
 let repeatOptions = { drill: false, song: false, songLength: 0 };
 let playbackTempoMap: ReadonlyArray<PlaybackTempoEvent> | null = null;
+let playbackBeatUnits: ReadonlyArray<MidiBeatUnit> = [];
+
+export function setPlaybackBeatUnits(units: ReadonlyArray<MidiBeatUnit>) {
+  playbackBeatUnits = units.map(unit => ({ ...unit }));
+  notifyDrillTransport(true);
+}
 
 export function setPlaybackRepeat(drill: boolean, song: boolean) {
   repeatElapsed ??= getDrillTransportState().beat;
@@ -1103,7 +1146,30 @@ function resolveSegmentGait(
   const dz = to.position.z - from.position.z;
   const travelYaw = dx * dx + dz * dz > 0.0001 ? Math.atan2(dx, dz) : from.rotationY;
   const bodyYaw = to.facingY ?? from.facingY ?? travelYaw;
-  const selection = selectAutoGait(bodyYaw, dx, dz, style.name);
+  const musicBeat = segmentStart + getMusicTransportState().beat - getDrillTransportState().beat;
+  const pulse = midiPulseAtBeat(musicBeat, playbackBeatUnits);
+  const quarterNotesPerPulse = repeatOptions.songLength > 0
+    ? midiBeatAtPulse(pulse + 1, playbackBeatUnits) - musicBeat : 1;
+  let cadenceTravelYards = Math.hypot(dx, dz);
+  // A half-time footfall spans three quarter-note counts in 6/8. Include
+  // neighboring travel so a cadence change cannot overreach across a set.
+  for (let nearby = Math.max(0, segmentStart - 3); nearby < Math.min(last, segmentStart + 4); nearby++) {
+    const a = state.counts[nearby].position;
+    const b = state.counts[nearby + 1].position;
+    cadenceTravelYards = Math.max(cadenceTravelYards, Math.hypot(b.x - a.x, b.z - a.z));
+    if (nearby + 2 <= last) {
+      const c = state.counts[nearby + 2].position;
+      const beforeLength = Math.hypot(b.x - a.x, b.z - a.z);
+      const afterLength = Math.hypot(c.x - b.x, c.z - b.z);
+      if (beforeLength > 0.0001 && afterLength > 0.0001 &&
+        ((b.x - a.x) * (c.x - b.x) + (b.z - a.z) * (c.z - b.z)) /
+          (beforeLength * afterLength) < Math.cos(Math.PI / 3)) {
+        cadenceTravelYards = Math.max(cadenceTravelYards,
+          (DOUBLE_TIME_ABOVE_YARDS + 0.0001) / quarterNotesPerPulse);
+      }
+    }
+  }
+  const selection = selectAutoGait(bodyYaw, dx, dz, style.name, quarterNotesPerPulse, cadenceTravelYards);
   return {
     gaitIndex: GAIT_INDEX_BY_NAME.get(selection.gait) ?? styleIndex,
     stepsPerCount: selection.stepsPerCount,
@@ -1145,7 +1211,6 @@ function lerpAngle(from: number, to: number, t: number): number {
 // Applies the shared global count (clamped to this robot's own table length,
 // so a shorter route just holds at its last position) to one robot.
 const playbackDisplacement = Vector3.Zero();
-const playbackLocalDisplacement = Vector3.Zero();
 
 function applyGlobalCount(robot: TransformNode, state: PlayerState) {
   if (heldRobots.has(robot) || state.counts.length === 0) return;
@@ -1164,23 +1229,18 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState) {
   const resolved = resolveSegmentGait(state, segmentStart, parts.gaitIndex);
   const previous = resolveSegmentGait(state, segmentStart - 1, parts.gaitIndex);
   const gaitIndex = resolved?.gaitIndex ?? parts.gaitIndex;
-  const hipHalfSpacing = resolved?.sideways ? 0.115 : 0.09;
+  const hipHalfSpacing = (resolved?.sideways ? 0.115 : 0.09) * MARCHER_BUILD_SCALE;
   const forwardProgress = drillBeat - segmentStart;
   // Turn over the count instead of snapping at its boundary: ease body and
   // leg facing from the previous segment's facing into this segment's.
   const targetBodyYaw = resolved?.bodyYaw ?? count.facingY ?? count.rotationY;
-  const targetLegYaw = targetBodyYaw + (resolved?.legYawOffset ?? 0);
   const turnBlend = forwardProgress * forwardProgress * (3 - 2 * forwardProgress);
   const bodyRotation = previous
     ? lerpAngle(previous.bodyYaw, targetBodyYaw, turnBlend)
     : targetBodyYaw;
-  const legWorldRotation = previous
-    ? lerpAngle(previous.bodyYaw + previous.legYawOffset, targetLegYaw, turnBlend)
-    : targetLegYaw;
-  const legFacingOffset = wrapAngle(legWorldRotation - bodyRotation);
-  orientMarcherShoes(parts.leftShoe, parts.rightShoe, legFacingOffset);
-  parts.leftLeg.rotation.y = legFacingOffset;
-  parts.rightLeg.rotation.y = legFacingOffset;
+  orientMarcherShoes(parts.leftShoe, parts.rightShoe, 0);
+  parts.leftLeg.rotation.y = 0;
+  parts.rightLeg.rotation.y = 0;
   const instrumentRest = parts.instrumentRestPose;
   const inPlace = resolved?.inPlace ?? false;
   const from = state.counts[Math.min(last, Math.max(0, segmentStart))];
@@ -1195,10 +1255,16 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState) {
   if (!moving) {
     parts.leftLeg.rotation.x = 0;
     parts.rightLeg.rotation.x = 0;
+    parts.leftLeg.rotation.z = 0;
+    parts.rightLeg.rotation.z = 0;
     parts.leftKnee.rotation.x = 0;
     parts.rightKnee.rotation.x = 0;
+    parts.leftKnee.position.y = -MARCHER_THIGH_LENGTH;
+    parts.rightKnee.position.y = -MARCHER_THIGH_LENGTH;
     parts.leftAnkle.rotation.x = 0;
     parts.rightAnkle.rotation.x = 0;
+    parts.leftAnkle.rotationQuaternion = null;
+    parts.rightAnkle.rotationQuaternion = null;
     parts.leftLeg.position.y = 0.69;
     parts.rightLeg.position.y = 0.69;
     parts.leftLeg.position.x = -hipHalfSpacing;
@@ -1207,27 +1273,19 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState) {
     parts.rightLeg.position.z = 0;
     attachMarcherThigh(parts.leftThigh, parts.leftLeg, -hipHalfSpacing);
     attachMarcherThigh(parts.rightThigh, parts.rightLeg, hipHalfSpacing);
+    alignMarcherKnee(parts.leftThigh, parts.leftKnee);
+    alignMarcherKnee(parts.rightThigh, parts.rightKnee);
     applyInstrumentPose(parts, instrumentRest);
     parts.body.position.y = 0;
+    parts.instrumentRoot.position.y = 0;
+    parts.legRoot.position.y = 0;
+    limitedStrideCounts.delete(robot);
     return;
   }
   if (!inPlace) Vector3.LerpToRef(from.position, to.position, forwardProgress, robot.position);
   const stepsPerCount = resolved!.stepsPerCount;
-  // One footfall covers 1/stepsPerCount counts, so its stride scales the same way.
-  const localDisplacement = playbackLocalDisplacement;
-  if (inPlace) {
-    localDisplacement.setAll(0);
-  } else {
-    const sin = Math.sin(legWorldRotation);
-    const cos = Math.cos(legWorldRotation);
-    localDisplacement.set(
-      (displacement.x * cos - displacement.z * sin) / (stepsPerCount * MARCHER_BODY_SCALE * MARCHER_BUILD_SCALE),
-      displacement.y / (stepsPerCount * MARCHER_BODY_SCALE),
-      (displacement.x * sin + displacement.z * cos) / (stepsPerCount * MARCHER_BODY_SCALE * MARCHER_BUILD_SCALE),
-    );
-  }
   const phase = repeatOptions.songLength > 0
-    ? gaitPhaseAtBeat(getMusicTransportState().beat, stepsPerCount)
+    ? gaitPhaseAtBeat(midiPulseAtBeat(getMusicTransportState().beat, playbackBeatUnits), stepsPerCount)
     : gaitPhaseAtBeat(
       getGaitStepPhaseOffsets(state, parts.gaitIndex)[segmentStart] + forwardProgress * stepsPerCount,
       1
@@ -1241,59 +1299,106 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState) {
   const second = gaitPoses[Math.min(Math.floor(frame) + 1, gaitPoses.length - 1)];
   const blend = frame - Math.floor(frame);
   const mix = (start: number, end: number) => start + (end - start) * blend;
-  const stance = mix(first.stance, second.stance);
-  const swing = mix(first.swing, second.swing);
   const lift = mix(first.lift, second.lift);
-  const kneeBend = mix(first.kneeBend, second.kneeBend);
-  const ankleFlex = mix(first.ankleFlex, second.ankleFlex);
   const footLift = mix(first.footLift, second.footLift);
   const leftStance = ((stepNumber % 2) + 2) % 2 === 0;
+  const musicBeat = getMusicTransportState().beat;
+  const beatForStep = (step: number) => {
+    if (repeatOptions.songLength > 0) {
+      return drillBeat + midiBeatAtPulse(step / stepsPerCount, playbackBeatUnits) - musicBeat;
+    }
+    const offsets = getGaitStepPhaseOffsets(state, parts.gaitIndex);
+    let index = 0;
+    while (index + 1 < offsets.length && offsets[index + 1] <= step) index++;
+    if (index + 1 >= offsets.length) return last;
+    return index + (step - offsets[index]) / (offsets[index + 1] - offsets[index]);
+  };
+  const landingBeat = (step: number) => {
+    const beat = beatForStep(step + 0.5);
+    return repeatOptions.drill && last > 0
+      ? ((beat % last) + last) % last
+      : Math.max(0, Math.min(last, beat));
+  };
+  const landingFacing = (step: number) => {
+    const beat = landingBeat(step);
+    const index = Math.min(last - 1, Math.floor(beat));
+    const selection = resolveSegmentGait(state, index, parts.gaitIndex);
+    if (!selection) return bodyRotation;
+    const before = resolveSegmentGait(state, index - 1, parts.gaitIndex);
+    const yaw = selection.bodyYaw;
+    const progress = beat - Math.floor(beat);
+    return before ? lerpAngle(before.bodyYaw, yaw,
+      progress * progress * (3 - 2 * progress)) : yaw;
+  };
+  const landing = (step: number, left: boolean) => {
+    const beat = landingBeat(step);
+    const index = Math.floor(beat);
+    const position = inPlace ? robot.position.clone() :
+      Vector3.Lerp(state.counts[index].position,
+        state.counts[Math.min(last, index + 1)].position, beat - index);
+    const yaw = landingFacing(step);
+    const side = left ? -1 : 1;
+    const lateral = side * hipHalfSpacing * MARCHER_BODY_SCALE;
+    position.x += Math.cos(yaw) * lateral;
+    position.z -= Math.sin(yaw) * lateral;
+    const footYaw = yaw;
+    position.x += Math.sin(footYaw) * MARCHER_SHOE_FORWARD_OFFSET * MARCHER_BODY_SCALE;
+    position.z += Math.cos(footYaw) * MARCHER_SHOE_FORWARD_OFFSET * MARCHER_BODY_SCALE;
+    return position;
+  };
+  const footTarget = (side: number, lift: number) => {
+    const target = marcherFootTarget(stepNumber, gaitProgress, side < 0, landing).subtract(robot.position);
+    const sole = marcherSoleInRig(target, bodyRotation, MARCHER_BODY_SCALE);
+    sole.y += lift;
+    const yaw = 0;
+    return { ...boundMarcherFootTarget(new Vector3(side * hipHalfSpacing, 0.69, 0), sole, yaw), yaw };
+  };
+  const leftTarget = footTarget(-1, !leftStance ? gait.inPlace ? footLift : lift : 0);
+  const rightTarget = footTarget(1, leftStance ? gait.inPlace ? footLift : lift : 0);
+  if (leftTarget.limited || rightTarget.limited) {
+    if (limitedStrideCounts.get(robot) !== segmentStart) {
+      limitedStrideCounts.set(robot, segmentStart);
+      onMarcherStrideLimited.notifyObservers(
+        `Unmarchable move at count ${segmentStart + 1}: steps are bounded; the authored route is unchanged and may slide.`);
+    }
+  }
+  parts.body.position.y = 0;
+  parts.instrumentRoot.position.y = 0;
+  parts.legRoot.position.y = 0;
   const placeLeg = (
     leg: TransformNode,
     knee: TransformNode,
     ankle: TransformNode,
     side: number,
-    offset: number,
-    kneeAngle: number,
-    ankleAngle: number,
-    lift: number
+    target: typeof leftTarget
   ) => {
-    const footZ = localDisplacement.z * offset;
-    const angle = Math.asin(Math.max(-0.95, Math.min(0.95, -footZ / 0.47)));
-    const kneeRotationAngle = Math.min(MAX_KNEE_BEND_RADIANS, Math.max(0, kneeAngle));
-    knee.rotation.x = kneeRotationAngle;
-    ankle.rotation.x = ankleAngle;
-    leg.rotation.x = angle;
-    leg.position.x = side * hipHalfSpacing + Math.max(-0.015, Math.min(0.015, localDisplacement.x * offset));
-    const ankleY = -0.2 * Math.cos(kneeRotationAngle);
-    const ankleZ = -0.2 * Math.sin(kneeRotationAngle);
-    const shoeYInAnkle = -0.06 * Math.cos(ankleAngle) - 0.07 * Math.sin(ankleAngle);
-    const shoeZInAnkle = -0.06 * Math.sin(ankleAngle) + 0.07 * Math.cos(ankleAngle);
-    const shoeY = ankleY + shoeYInAnkle * Math.cos(kneeRotationAngle)
-      - shoeZInAnkle * Math.sin(kneeRotationAngle);
-    const shoeZ = ankleZ + shoeYInAnkle * Math.sin(kneeRotationAngle)
-      + shoeZInAnkle * Math.cos(kneeRotationAngle);
-    const totalLegAngle = angle + kneeRotationAngle + ankleAngle;
-    leg.position.z = Math.max(-0.015, Math.min(0.015, footZ - (-0.37 + shoeY) * Math.sin(angle) - shoeZ * Math.cos(angle) + 0.07));
-    const plantedHipHeight = (0.37 - shoeY) * Math.cos(angle) + shoeZ * Math.sin(angle)
-      + 0.06 * Math.abs(Math.cos(totalLegAngle))
-      + 0.135 * Math.abs(Math.sin(totalLegAngle));
-    leg.position.y = plantedHipHeight + lift;
+    const hip = new Vector3(side * hipHalfSpacing, 0.69, 0);
+    const sole = boundMarcherFootLift(hip, target.sole, target.yaw);
+    const pose = solvePlantedMarcherLeg(hip, sole, target.yaw);
+    knee.position.y = -pose.thighLength;
+    knee.rotation.x = pose.kneeAngle;
+    knee.rotationQuaternion = pose.kneeRotation;
+    ankle.rotationQuaternion = pose.ankleRotation;
+    pose.legRotation.toEulerAnglesToRef(leg.rotation);
+    leg.position.set(side * hipHalfSpacing, 0.69, 0);
+    const shoe = side < 0 ? parts.leftShoe : parts.rightShoe;
+    shoe.rotation.y = 0;
+    shoe.position.set(0, -MARCHER_SHOE_HALF_HEIGHT, MARCHER_SHOE_FORWARD_OFFSET);
   };
-  placeLeg(parts.leftLeg, parts.leftKnee, parts.leftAnkle, -1, leftStance ? stance : swing,
-    leftStance ? kneeBend * 0.12 : kneeBend + lift * 2, leftStance ? 0 : -ankleFlex,
-    gait.inPlace && !leftStance ? footLift : 0);
-  placeLeg(parts.rightLeg, parts.rightKnee, parts.rightAnkle, 1, leftStance ? swing : stance,
-    leftStance ? kneeBend + lift * 2 : kneeBend * 0.12, leftStance ? -ankleFlex : 0,
-    gait.inPlace && leftStance ? footLift : 0);
-  attachMarcherThigh(parts.leftThigh, parts.leftLeg, -hipHalfSpacing);
-  attachMarcherThigh(parts.rightThigh, parts.rightLeg, hipHalfSpacing);
+  placeLeg(parts.leftLeg, parts.leftKnee, parts.leftAnkle, -1, leftTarget);
+  placeLeg(parts.rightLeg, parts.rightKnee, parts.rightAnkle, 1, rightTarget);
+  attachMarcherThigh(parts.leftThigh, parts.leftLeg, -hipHalfSpacing, -parts.leftKnee.position.y);
+  attachMarcherThigh(parts.rightThigh, parts.rightLeg, hipHalfSpacing, -parts.rightKnee.position.y);
   applyInstrumentPose(parts, instrumentRest);
-  parts.body.position.y = 0;
 }
 
 function applyGlobalCountToAllRobots() {
   players.forEach((state, robot) => applyGlobalCount(robot, state));
+  allRobots.forEach((robot) => {
+    const parts = marcherParts.get(robot);
+    if (!parts) return;
+    updateJacketLegPlanes([parts.leftThigh, parts.rightThigh, parts.leftCalf, parts.rightCalf], parts.body);
+  });
   notifyDrillTransport();
 }
 

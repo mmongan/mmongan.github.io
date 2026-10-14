@@ -131,6 +131,49 @@
           </div>
         </div>
 
+        <form id="formationEditor" class="settings-group">
+          <h3>Drill form editor</h3>
+          <p>Create standing forms without replacing the show. Select a form here or select one of its marchers. Moves, rotations, and scaling apply to the whole form; collision checks reject overlapping edits.</p>
+          <label class="radio-option"><input id="gridSnapToggle" type="checkbox" /><span>Snap editing to field grid</span></label>
+          <label class="settings-label" for="gridSnapInterval">Grid interval (yards)</label>
+          <select id="gridSnapInterval">
+            <option value="0.3125">0.3125 (half step)</option>
+            <option value="0.625" selected>0.625 (8-to-5 step)</option>
+            <option value="1.25">1.25 (two steps)</option>
+            <option value="2.5">2.5</option>
+            <option value="5">5 (yard lines)</option>
+          </select>
+          <label class="radio-option"><input id="angleSnapToggle" type="checkbox" /><span>Snap rotations to 45 degrees</span></label>
+          <label class="settings-label" for="formationPreset">Form tool</label>
+          <select id="formationPreset">
+            <option value="line">Line</option><option value="arc">Arc</option>
+            <option value="circle">Circle</option><option value="block">Block</option>
+            <option value="triangle">Triangle</option><option value="square">Square</option>
+            <option value="pentagon">Pentagon</option><option value="hexagon">Hexagon</option>
+            <option value="star">Star</option>
+          </select>
+          <label class="settings-label" for="formationSpacing">Marcher spacing (yards)</label>
+          <input id="formationSpacing" type="number" min="0.625" max="10" step="any" value="1.25" required />
+          <label class="settings-label" for="formationOriginX">New form origin X (yards across field width)</label>
+          <input id="formationOriginX" type="number" min="-25" max="25" step="0.625" value="15" required />
+          <label class="settings-label" for="formationOriginZ">New form origin Z (yards along field length)</label>
+          <input id="formationOriginZ" type="number" min="-50" max="50" step="0.625" value="30" required />
+          <button type="submit" value="create">Create form</button>
+          <label class="settings-label" for="formationSelection">Selected standing form</label>
+          <select id="formationSelection"><option value="">Select a form</option></select>
+          <button type="submit" value="spacing">Apply spacing to selected form</button>
+          <label class="settings-label" for="formationMoveX">Move X (yards)</label>
+          <input id="formationMoveX" type="number" min="-100" max="100" step="0.625" value="0" required />
+          <label class="settings-label" for="formationMoveZ">Move Z (yards)</label>
+          <input id="formationMoveZ" type="number" min="-100" max="100" step="0.625" value="0" required />
+          <label class="settings-label" for="formationRotation">Rotate (degrees, clockwise)</label>
+          <input id="formationRotation" type="number" min="-360" max="360" step="15" value="0" required />
+          <label class="settings-label" for="formationScale">Scale selected form</label>
+          <input id="formationScale" type="number" min="0.25" max="4" step="0.05" value="1" required />
+          <button type="submit" value="transform">Apply group transform</button>
+          <output id="formationEditorStatus" class="settings-status" aria-live="polite">No standing form selected. Imported routes are not edited by these controls.</output>
+        </form>
+
         <div class="settings-group">
           <label class="settings-label">Robot paths</label>
           <output id="marcherPOVStatus" class="settings-status" aria-live="polite">Select a marcher, then enable POV.</output>
