@@ -150,8 +150,8 @@ try {
   const startFollow = score.root.position.clone();
   camera.position.x = 1;
   score.panel.followViewer(1 / 60);
-  assert.ok(score.root.position.x > startFollow.x && score.root.position.x < startFollow.x + 1,
-    'Follow moves partway toward viewer instead of snapping');
+  assert.ok(Vector3.Distance(score.root.position, startFollow.add(new Vector3(1, 0, 0))) < 1e-6,
+    'Panel is locked to its placed viewer offset immediately, without lag');
   for (let frame = 0; frame < 120; frame++) score.panel.followViewer(1 / 60);
   assert.ok(Vector3.Distance(score.root.position, startFollow.add(new Vector3(1, 0, 0))) < 0.001);
   const compareFrames = fps => {
@@ -163,12 +163,18 @@ try {
     for (let frame = 0; frame < fps; frame++) score.panel.followViewer(1 / fps);
     return score.root.position.clone();
   };
-  assert.ok(Vector3.Distance(compareFrames(30), compareFrames(90)) < 1e-6, 'Lag is frame-rate independent');
+  assert.ok(Vector3.Distance(compareFrames(30), compareFrames(90)) < 1e-6, 'View lock is frame-rate independent');
   const poseBeforeTurn = score.root.position.clone();
   camera.rotation.y = Math.PI / 2;
   camera.rotation.x = 0.4;
   score.panel.followViewer(1 / 60);
-  assert.ok(Vector3.Distance(score.root.position, poseBeforeTurn) > 0.001, 'Panel follows viewer yaw/pitch');
+  assert.ok(Vector3.Distance(score.root.position, poseBeforeTurn) < 1e-6, 'Looking toward a panel never moves it');
+  const lockedRotation = score.root.computeWorldMatrix(true).clone();
+  camera.rotation.set(-0.2, -0.8, 0.15);
+  scene.onBeforeCameraRenderObservable.notifyObservers(camera);
+  const renderedLocal = score.root.computeWorldMatrix(true);
+  assert.ok(renderedLocal.asArray().every((value, i) => Math.abs(value - lockedRotation.asArray()[i]) < 1e-6),
+    'Head yaw, pitch, and roll do not move or rotate either panel');
   score.panel.begin('left', Matrix.Identity());
   const heldPose = score.root.position.clone();
   camera.position.x = 4;
@@ -204,9 +210,8 @@ try {
   score.panel.end('left');
   assert.ok(score.root.position.equals(beforeLostRelease), 'Recovery does not snap on release');
   for (let i = 0; i < 120; i++) score.panel.followViewer(1 / 60);
-  const recoveredLocal = Vector3.TransformCoordinates(score.root.position, camera.getViewMatrix(true));
-  assert.ok(recoveredLocal.z > 0.7 && recoveredLocal.x < -0.3,
-    'Released panel finds viewer again on original left side after a 180-degree turn');
+  assert.ok(Vector3.Distance(score.root.position, beforeLostRelease) < 1e-6,
+    'Release after turning keeps placed direction instead of chasing gaze');
   score.root.setEnabled(false);
   const sliderContext = vm.createContext({
     scene, Vector3, Color3, MeshBuilder, StandardMaterial,
@@ -256,9 +261,8 @@ globalThis.Slider = PanelTransparencySlider;`, sliderContext);
   assert.ok(sliderRoot.position.equals(beforeSliderTurn), 'Slider contact suspends follow');
   api.endFloatingPanelGrab('right');
   for (let i = 0; i < 120; i++) sliderPanel.followViewer(1 / 60);
-  const sliderRecovered = Vector3.TransformCoordinates(sliderRoot.position, camera.getViewMatrix(true));
-  assert.ok(sliderRecovered.z > 0.99 && sliderRecovered.x > 0.59,
-    'After turning during slider interaction the panel recovers to the right, not behind viewer');
+  assert.ok(Vector3.Distance(sliderRoot.position, beforeSliderTurn) < 1e-6,
+    'Turning during transparency adjustment keeps the panel in its placed direction');
   sliderRoot.setEnabled(false);
   assert.equal(api.beginFloatingPanelPointerDrag(sliderRay), false, 'Hidden slider cannot be dragged');
   score.root.setEnabled(true);

@@ -8,7 +8,6 @@ import type { HandMenuHit } from './handMenu';
 import type { PanelTransparencySlider } from './panelTransparencySlider';
 
 const panels = new Set<FloatingPanel>();
-const FOLLOW_TIME_SECONDS = 0.25;
 
 interface PanelResize {
   getScale(): number;
@@ -35,7 +34,6 @@ export class FloatingPanel {
   private targetRotation = new Quaternion();
   private targetScale = new Vector3();
   private sliderDrag: { source: string; origin: Vector3; point: Vector3 } | null = null;
-  private viewerPlacement: ViewerPlacement | null = null;
   userPlaced = false;
 
   constructor(
@@ -49,7 +47,13 @@ export class FloatingPanel {
   ) {
     root.rotationQuaternion ??= Quaternion.FromEulerVector(root.rotation);
     panels.add(this);
-    root.onDisposeObservable.addOnce(() => panels.delete(this));
+    const cameraObserver = scene.onBeforeCameraRenderObservable.add(camera => {
+      if (camera === scene.activeCamera) this.followViewer();
+    });
+    root.onDisposeObservable.addOnce(() => {
+      panels.delete(this);
+      scene.onBeforeCameraRenderObservable.remove(cameraObserver);
+    });
   }
 
   near(point: Vector3, tolerance = 0.03) {
@@ -174,7 +178,6 @@ export class FloatingPanel {
     if (inXR && placement.uprightInXR) away.y = 0;
     this.root.lookAt(this.root.position.add(away));
     this.userPlaced = false;
-    this.viewerPlacement = placement;
     this.viewerOffset = null;
     this.captureViewerOffset();
     return true;
@@ -184,27 +187,21 @@ export class FloatingPanel {
     const camera = scene.activeCamera;
     if (!camera) return;
     camera.getViewMatrix(true);
-    // Do not turn an out-of-view release pose into a permanent follow offset.
-    if (this.viewerOffset && this.viewerPlacement) {
-      const toPanel = this.root.position.subtract(camera.globalPosition);
-      const distance = toPanel.length();
-      const forward = camera.getForwardRay().direction;
-      if (distance < 0.2 || distance > 3 ||
-        Vector3.Dot(toPanel.scale(1 / distance), forward) < 0.5) return;
-    }
-    this.viewerOffset = this.root.computeWorldMatrix(true).multiply(camera.getWorldMatrix().clone().invert());
+    this.viewerOffset = this.root.computeWorldMatrix(true).clone();
+    this.viewerOffset.setTranslation(this.root.position.subtract(camera.globalPosition));
   }
 
-  followViewer(deltaSeconds: number) {
+  followViewer(_deltaSeconds?: number) {
     if (!this.root.isEnabled() || this.grabbed() || !this.viewerOffset) return;
     const camera = scene.activeCamera;
     if (!camera) return;
     camera.getViewMatrix(true);
-    this.viewerOffset.multiplyToRef(camera.getWorldMatrix(), this.targetWorld);
+    this.targetWorld.copyFrom(this.viewerOffset);
+    this.targetWorld.setTranslation(this.viewerOffset.getTranslation().add(camera.globalPosition));
     this.targetWorld.decompose(this.targetScale, this.targetRotation, this.targetPosition);
-    const amount = 1 - Math.exp(-Math.max(0, deltaSeconds) / FOLLOW_TIME_SECONDS);
-    Vector3.LerpToRef(this.root.position, this.targetPosition, amount, this.root.position);
-    Quaternion.SlerpToRef(this.root.rotationQuaternion!, this.targetRotation, amount, this.root.rotationQuaternion!);
+    this.root.position.copyFrom(this.targetPosition);
+    this.root.rotationQuaternion!.copyFrom(this.targetRotation);
+    this.root.computeWorldMatrix(true);
   }
 
   private face(eye: Vector3) {
