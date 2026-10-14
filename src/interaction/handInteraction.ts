@@ -36,6 +36,7 @@ import {
 } from '../menu/floatingPanel';
 import { getHandMenuHit } from '../menu/handMenu';
 import { getControllerYaw, rotateAroundY } from './controllers';
+import { tryManualMarcherPose } from '../robot/manualPlacement';
 
 type TrackedHand = NonNullable<ReturnType<WebXRHandTracking['getHandByHandedness']>>;
 
@@ -257,27 +258,30 @@ export function createHandInteraction(paths: HandPathDependencies) {
       return;
     }
     pathRoot.computeWorldMatrix(true);
-    grab.robot.position.copyFrom(Vector3.TransformCoordinates(
+    const position = Vector3.TransformCoordinates(
       point.add(grab.offset), Matrix.Invert(pathRoot.getWorldMatrix())
-    ));
+    );
+    let yaw = grab.robot.rotation.y;
     if (facingYaw !== null && grab.initialFacingYaw !== null) {
       const yawDelta = facingYaw - grab.initialFacingYaw;
-      grab.robot.rotation.y = grab.initialRotationY + Math.atan2(Math.sin(yawDelta), Math.cos(yawDelta));
+      yaw = grab.initialRotationY + Math.atan2(Math.sin(yawDelta), Math.cos(yawDelta));
     }
+    if (tryManualMarcherPose(grab.robot, position, yaw, grab.robot.isEnabled())) grab.robot.setEnabled(true);
   }
 
   // A deliberate wrist twist on a scheduled marcher sets the facing it holds
   // for its route, so auto gait turns the move into a slide or back-march.
   // Twisting back to face the path restores facing the direction of travel.
-  function commitMarcherTwist(grab: MarcherGrab) {
+  function commitMarcherTwist(grab: MarcherGrab, yaw: number) {
     if (grab.source !== 'hand') return;
     const counts = getRobotCounts(grab.robot);
     if (!counts || counts.length < 2) return;
-    const yaw = grab.robot.rotation.y;
     const twist = Math.atan2(Math.sin(yaw - grab.initialRotationY), Math.cos(yaw - grab.initialRotationY));
     if (Math.abs(twist) < MARCHER_TWIST_COMMIT_RADIANS) return;
     const travel = counts[Math.min(counts.length - 1, getGlobalCountIndex())].rotationY;
     const fromTravel = Math.atan2(Math.sin(yaw - travel), Math.cos(yaw - travel));
+    const facing = Math.abs(fromTravel) < MARCHER_TWIST_COMMIT_RADIANS ? travel : yaw;
+    if (!tryManualMarcherPose(grab.robot, grab.robot.position, facing)) return;
     setRobotFacing(grab.robot, Math.abs(fromTravel) < MARCHER_TWIST_COMMIT_RADIANS ? null : yaw);
   }
 
@@ -294,8 +298,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
         grab.robot.dispose();
         return;
       }
-      grab.robot.position.copyFrom(grab.originalPosition);
-      grab.robot.rotation.y = grab.originalRotationY;
+      tryManualMarcherPose(grab.robot, grab.originalPosition, grab.originalRotationY, false);
       setRobotHeld(grab.robot, false);
       return;
     }
@@ -313,8 +316,25 @@ export function createHandInteraction(paths: HandPathDependencies) {
       Matrix.Invert(pathRoot.getWorldMatrix())
     );
     position.y += 0.02;
-    commitMarcherTwist(grab);
+    if (!tryManualMarcherPose(grab.robot, position, grab.robot.rotation.y, grab.robot.isEnabled())) {
+      if (handPlacementDrafts.delete(grab.robot)) {
+        setRobotHeld(grab.robot, false);
+        grab.robot.dispose();
+      } else {
+        tryManualMarcherPose(grab.robot, grab.originalPosition, grab.originalRotationY, false);
+        setRobotHeld(grab.robot, false);
+      }
+      return;
+    }
+    grab.robot.setEnabled(true);
+    const dropYaw = grab.robot.rotation.y;
     const delta = placeRobot(grab.robot, position, scene);
+    if (!delta) {
+      tryManualMarcherPose(grab.robot, grab.originalPosition, grab.originalRotationY, false);
+      setRobotHeld(grab.robot, false);
+      return;
+    }
+    commitMarcherTwist(grab, dropYaw);
     handPlacementDrafts.delete(grab.robot);
     const oldPath = robotPaths.get(grab.robot);
     if (oldPath) {
@@ -616,8 +636,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
         pull.previewRobots.push(robot);
         highlightPendingMarcher(robot);
       }
-      robot.position.copyFrom(points[index + 1]);
-      robot.rotation.y = pull.robot.rotation.y;
+      robot.setEnabled(tryManualMarcherPose(robot, points[index + 1], pull.robot.rotation.y, false));
     }
   }
 
@@ -777,7 +796,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
           padHands.add(handedness);
           if (action) activateChartButton(action);
           else beginFloatingPanelGrab(handedness, getHandGrabMatrix(hand),
-            near ? null : pick?.pickedMesh, near ? point : pick?.pickedPoint ?? point, 0.03, !near);
+            near ? null : pick?.pickedMesh, near ? point : pick?.pickedPoint ?? point);
         }
       }
       if (!point) padHands.delete(handedness);
@@ -976,7 +995,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
     const stroke = fingerPath;
     fingerPath = null;
     if (!stroke) return;
-    if (!commit) {
+    if (!commit || !stroke.robot?.isEnabled()) {
       stroke.robot?.dispose();
       return;
     }
@@ -1056,7 +1075,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
         fingerPushes.add(handedness);
       }
       const position = getFormationFieldPoint(finger.add(grab.offset), false);
-      if (position) grab.robot.position.copyFrom(position);
+      if (position) tryManualMarcherPose(grab.robot, position);
     }
   }
 
@@ -1092,7 +1111,9 @@ export function createHandInteraction(paths: HandPathDependencies) {
       return;
     }
     if (!stroke.robot) stroke.robot = createStandingMarcher(point);
-    stroke.robot.position.copyFrom(point);
+    if (tryManualMarcherPose(stroke.robot, point, stroke.robot.rotation.y, stroke.robot.isEnabled())) {
+      stroke.robot.setEnabled(true);
+    }
   }
 
   function setHandTracking(tracking: WebXRHandTracking | null) {

@@ -12,6 +12,7 @@ import { WebXRInputSource } from '@babylonjs/core/XR/webXRInputSource';
 import { WebXRHandJoint, WebXRHandTracking } from '@babylonjs/core/XR/features/WebXRHandTracking.pure';
 import { scene } from '../scene/engine';
 import type { MarcherInstrument } from '../robot/robot';
+import { addInstrumentButtonModel } from './instrumentButtonModel';
 
 // How closely the controller's local "up" must line up with world up to
 // count as palm-up (like checking a smartwatch). May need tuning per headset.
@@ -33,6 +34,7 @@ export type HandMenuHit =
   | { action: "formationPreset"; preset: "line" | "arc" | "circle" | "block" | "triangle" | "square" | "pentagon" | "hexagon" | "star" }
   | { action: "formationLetter"; letter: FormationLetter }
   | { action: "drillChartPad" }
+  | { action: "musicStandSummon" }
   | { action: "marcherPOV" }
   | { action: "drillChartHide" | "musicStandHide" }
   | { action: "instrument"; instrument: MarcherInstrument }
@@ -133,7 +135,7 @@ function createButton(label: string, x: number, action: HandMenuHit): Mesh {
   ctx.font = `bold ${label.length > 3 ? 16 : 22}px 'Segoe UI', Arial`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(label, 32, 34);
+  if (action.action !== "instrument") ctx.fillText(label, 32, 34);
 
   const texture = new DynamicTexture(`handMenuButtonTexture-${label}`, canvas, scene, false);
   texture.hasAlpha = true;
@@ -158,6 +160,7 @@ function createButton(label: string, x: number, action: HandMenuHit): Mesh {
   button.position = new Vector3(x, BUTTON_Y, 0);
 
   buttonActions.set(button, action);
+  if (action.action === "instrument") addInstrumentButtonModel(button, action.instrument, BUTTON_SIZE);
   return button;
 }
 
@@ -276,6 +279,9 @@ function ensureMenuMeshes() {
   const povButton = createButton("POV", spacing * 2, { action: "marcherPOV" });
   povButton.position.z = 0.04;
   buttons.push(povButton);
+  const scoreButton = createButton("Score", -spacing * 2, { action: "musicStandSummon" });
+  scoreButton.position.z = 0.04;
+  buttons.push(scoreButton);
   const commitButton = createButton("Commit", 0, { action: "commitFormation" });
   commitButton.position.z = 0.075;
   commitButton.scaling.x = 3;

@@ -415,6 +415,11 @@ export function isDrillChartPadVisible() {
   return visible;
 }
 
+export function summonDrillChartPad() {
+  setDrillChartPadVisible(true);
+  placeInFrontOfViewer();
+}
+
 export function onDrillChartPadVisibilityChange(listener: (visible: boolean) => void) {
   visibilityListeners.add(listener);
 }
@@ -498,7 +503,6 @@ export function isDrillChartPadGrabbed(source?: string) {
 }
 
 scene.onBeforeRenderObservable.add(() => {
-  if (visible) pad?.interaction.followViewer(scene.getEngine().getDeltaTime() / 1000);
   if (!visible || --framesUntilRedraw > 0) return;
   framesUntilRedraw = REDRAW_INTERVAL_FRAMES;
   refreshPage();

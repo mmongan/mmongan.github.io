@@ -67,17 +67,18 @@ import {
   setMarchTempo,
   playAll,
 } from '../robot/robot';
+import { onManualPlacementBlocked, tryManualMarcherPose, tryManualMarcherPoses } from '../robot/manualPlacement';
 import type { MarcherInstrument } from '../robot/robot';
 import { getOpenMarchSectionInstrument, loadOpenMarchFromUrl, OPEN_MARCH_EXAMPLE, OPEN_MARCH_URL_PARAM } from '../robot/openMarchUrl';
 import type { OpenMarchImportedDrill } from '../robot/openMarchFormat';
 import { clearDrillLabels, setDrillLabels, setDrillLabelsVisible } from '../robot/drillLabels';
 import { clearShowInfo, setShowInfo } from '../menu/showInfoPanel';
-import { cycleMusicStandStaff, setMusicStandVisible } from '../menu/musicStand';
+import { cycleMusicStandStaff, setMusicStandVisible, summonMusicStand } from '../menu/musicStand';
 import { isMarcherPOVActive, setMarcherPOVEnabled } from '../camera/marcherPOV';
 import { getHandMenuHit, getHandMenuHitNearPoint, setMenuHandTracking, setFormationCommitAvailable, setFormationLibraryOpen, setFormationLibraryPage, setFormationLibraryAnchorAvailable, setEraseModeActive, setEraseHistoryAvailable, setDrillChartPadActive, setInstrumentMenuActive, isHandMenuVisible, isMenuControl } from '../menu/handMenu';
 import {
   flipDrillChartPage,
-  isDrillChartPadVisible,
+  summonDrillChartPad,
   onDrillChartPadVisibilityChange,
   setDrillChartPadVisible,
 } from '../menu/drillChartPad';
@@ -468,10 +469,30 @@ marcherInstrumentRadios.forEach((radio) => radio.addEventListener("change", () =
 function createStandingMarcher(position: Vector3) {
   const robot = createLowPolyRobot(scene);
   robot.parent = pathRoot;
-  robot.position.copyFrom(position);
-  robot.setEnabled(true);
+  robot.setEnabled(tryManualMarcherPose(robot, position, robot.rotation.y, false));
+  if (!robot.isEnabled()) robot.position.copyFrom(position);
   return robot;
 }
+
+let placementNotice: HTMLOutputElement | null = null;
+let placementNoticeTimeout: ReturnType<typeof setTimeout> | undefined;
+const placementBlockedObserver = onManualPlacementBlocked.add(() => {
+  if (!placementNotice) {
+    placementNotice = document.createElement("output");
+    placementNotice.className = "placement-collision-notice";
+    placementNotice.setAttribute("role", "status");
+    document.body.appendChild(placementNotice);
+  }
+  placementNotice.textContent = "Move blocked: leave room for the marcher's body and instrument.";
+  placementNotice.hidden = false;
+  clearTimeout(placementNoticeTimeout);
+  placementNoticeTimeout = setTimeout(() => { if (placementNotice) placementNotice.hidden = true; }, 2000);
+});
+scene.onDisposeObservable.addOnce(() => {
+  onManualPlacementBlocked.remove(placementBlockedObserver);
+  clearTimeout(placementNoticeTimeout);
+  placementNotice?.remove();
+});
 
 placementModeToggle?.addEventListener("change", () => {
   setPlacementMode(!!placementModeToggle?.checked);
@@ -1151,14 +1172,14 @@ function refreshSegmentVisuals(segment: Segment) {
 // Rebuilds a segment's content from its (smoothed) curve: a formation segment
 // respaces its rank of standing robots; a path segment re-registers its one
 // robot's marching route so playback follows the updated curve.
+const acceptedFormationControls = new WeakMap<Segment, Vector3[]>();
+
 function rebuildSegmentContent(segment: Segment) {
   eraseHistory.clear();
   if (segment.kind === "formation") {
-    segment.robots.forEach((robot) => {
-      if (robot !== segment.anchorRobot) robot.dispose();
-    });
-    segment.robots = [];
-
+    const previousRobots = segment.robots;
+    const candidates: TransformNode[] = [];
+    const poses: Array<{ robot: TransformNode; position: Vector3; rotationY: number }> = [];
     const formationPoints = getFormationPoints(segment.controlPoints, segment.fitClosedCircle);
 
     formationPoints.forEach((point, index) => {      
@@ -1169,19 +1190,29 @@ function rebuildSegmentContent(segment: Segment) {
       if (index !== 0 || !segment.anchorRobot) {
         robotPrimitives.parent = pathRoot;
       }
-      segment.robots.push(robotPrimitives);
-      robotPrimitives.position.copyFrom(point);
+      candidates.push(robotPrimitives);
+      let rotationY = robotPrimitives.rotation.y;
       const next = formationPoints[index + 1] ??
         (isClosedFormation(segment.controlPoints) ? formationPoints[0] : undefined);
       if (next) {
         const dx = next.x - point.x;
         const dz = next.z - point.z;
         if (dx * dx + dz * dz > 0.0001) {
-          robotPrimitives.rotation.y = snapAngle(Math.atan2(dx, dz));
+          rotationY = snapAngle(Math.atan2(dx, dz));
         }
       }
-      robotPrimitives.setEnabled(true);
+      poses.push({ robot: robotPrimitives, position: point, rotationY });
     });
+    if (!tryManualMarcherPoses(poses, false, new Set(previousRobots))) {
+      candidates.forEach((robot) => { if (robot !== segment.anchorRobot) robot.dispose(); });
+      const controls = acceptedFormationControls.get(segment);
+      if (controls) segment.controlPoints = controls.map((point) => point.clone());
+      return;
+    }
+    previousRobots.forEach((robot) => { if (robot !== segment.anchorRobot) robot.dispose(); });
+    segment.robots = candidates;
+    candidates.forEach((robot) => robot.setEnabled(true));
+    acceptedFormationControls.set(segment, segment.controlPoints.map((point) => point.clone()));
     rebuildFormationConnections(segment);
   } else {
     const curvePoints = buildCurvePoints(segment.controlPoints);
@@ -1522,11 +1553,12 @@ function createLetterFormation(letter: FormationLetter) {
         .add(side.scale(3 - row));
       if (startColumn === endColumn) {
         if (!anchorUsed) {
-          anchor.position.copyFrom(rowOrigin);
+          if (!tryManualMarcherPose(anchor, rowOrigin)) continue;
           anchor.setEnabled(true);
           anchorUsed = true;
         } else {
-          createStandingMarcher(rowOrigin);
+          const marcher = createStandingMarcher(rowOrigin);
+          if (!marcher.isEnabled()) marcher.dispose();
         }
         continue;
       }
@@ -1627,7 +1659,10 @@ function executeMenuAction(hit: NonNullable<ReturnType<typeof getHandMenuHit>>) 
       if (!floorCalibrationToggle?.checked) eraseHistory.redo();
       break;
     case "drillChartPad":
-      setDrillChartPadVisible(!isDrillChartPadVisible());
+      summonDrillChartPad();
+      break;
+    case "musicStandSummon":
+      summonMusicStand();
       break;
     case "drillChartHide":
       setDrillChartPadVisible(false);
@@ -1865,7 +1900,7 @@ export function updateRobotPathFromControllers() {
       const pick = nearPad ? null : pickFloatingPanel(getControllerRay(controller));
       if (nearPad || pick?.hit) {
         beginFloatingPanelGrab(handedness, gripNode.computeWorldMatrix(true),
-          nearPad ? null : pick?.pickedMesh, nearPad ? gripNode.getAbsolutePosition() : pick?.pickedPoint ?? undefined, 0.06, !nearPad);
+          nearPad ? null : pick?.pickedMesh, nearPad ? gripNode.getAbsolutePosition() : pick?.pickedPoint ?? undefined, 0.06);
         padGrabButtons.set(handedness, "grip");
         return;
       }
@@ -1936,7 +1971,7 @@ export function updateRobotPathFromControllers() {
       const panelPick = pickFloatingPanel(getControllerRay(controller));
       if (panelPick?.hit && panelPick.pickedMesh) {
         beginFloatingPanelGrab(handedness, getControllerPosition(controller).computeWorldMatrix(true), panelPick.pickedMesh,
-          panelPick.pickedPoint ?? undefined, 0.03, true);
+          panelPick.pickedPoint ?? undefined);
         padGrabButtons.set(handedness, "trigger");
         return;
       }
@@ -2061,9 +2096,15 @@ export function updateRobotPathFromControllers() {
         if (point) {
           if (lastMovePoint) {
             const delta = point.subtract(lastMovePoint);
-            movingSegment.controlPoints = movingSegment.controlPoints.map((p) => p.add(delta));
-            movingSegment.robots.forEach((robot) => robot.position.addInPlace(delta));
-            refreshSegmentVisuals(movingSegment);
+            if (tryManualMarcherPoses(movingSegment.robots.map((robot) => ({
+              robot, position: robot.position.add(delta),
+            })))) {
+              movingSegment.controlPoints = movingSegment.controlPoints.map((p) => p.add(delta));
+              refreshSegmentVisuals(movingSegment);
+              if (movingSegment.kind === "formation") {
+                acceptedFormationControls.set(movingSegment, movingSegment.controlPoints.map((p) => p.clone()));
+              }
+            }
           }
           lastMovePoint = point;
         }
@@ -2084,7 +2125,7 @@ export function updateRobotPathFromControllers() {
         const point = getFieldPointFromController(controller);
         if (point) {
           const draft = placementDrafts.get(handedness) ?? createStandingMarcher(point);
-          draft.position.copyFrom(point);
+          if (tryManualMarcherPose(draft, point, draft.rotation.y, draft.isEnabled())) draft.setEnabled(true);
           placementDrafts.set(handedness, draft);
         }
         return;
@@ -2124,8 +2165,12 @@ export function updateRobotPathFromControllers() {
         const draft = placementDrafts.get(handedness);
         if (point) {
           const robot = draft ?? createStandingMarcher(point);
-          robot.position.copyFrom(point);
-          selectRobot(robot);
+          if (tryManualMarcherPose(robot, point, robot.rotation.y, robot.isEnabled())) {
+            robot.setEnabled(true);
+            selectRobot(robot);
+          } else if (!robot.isEnabled()) {
+            robot.dispose();
+          }
         } else {
           draft?.dispose();
         }

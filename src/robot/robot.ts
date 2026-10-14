@@ -12,6 +12,8 @@ import { Node } from '@babylonjs/core/node';
 import { Scene } from '@babylonjs/core/scene.pure';
 import { createCollisionMarkerManager, COLLISION_MARKER_RADIUS_YARDS } from './collisionMarkers';
 import { isAutoGaitStyle, selectAutoGait } from './gaitSelection';
+import { resolveRepeatPlayback } from './playbackRepeat';
+import { registerManualPlacementMarcher, tryManualMarcherPose } from './manualPlacement';
 import { CLARINET_MOUTHPIECE_TIP, getClarinetTemplate } from './clarinetModel';
 import { FLUTE_MOUTHPIECE_TIP, getFluteTemplate } from './fluteModel';
 import { getSousaphoneTemplate, SOUSAPHONE_MOUTHPIECE_TIP, SOUSAPHONE_VALVE_GRIP, sousaphoneLoopPoint } from './sousaphoneModel';
@@ -766,6 +768,8 @@ function createMarcherModel(scene: Scene, gaitIndex: number): TransformNode {
   });
 
   robot.setEnabled(false);
+  registerManualPlacementMarcher(robot, () =>
+    robot.getChildMeshes().filter((mesh) => modelPartInfo.has(mesh)));
 
   return robot;
 }
@@ -850,6 +854,30 @@ export interface DrillTransportState {
 }
 
 let transportRevision = 0;
+let repeatElapsed: number | null = null;
+let repeatOptions = { drill: false, song: false, songLength: 0 };
+
+export function setPlaybackRepeat(drill: boolean, song: boolean) {
+  repeatElapsed ??= getDrillTransportState().beat;
+  repeatOptions = { ...repeatOptions, drill, song };
+  if (!drill && !song) repeatElapsed = null;
+  notifyDrillTransport(true);
+}
+
+export function setPlaybackSongLength(songLength: number) {
+  repeatOptions.songLength = songLength;
+  repeatElapsed = repeatOptions.drill || repeatOptions.song ? getDrillTransportState().beat : null;
+  notifyDrillTransport(true);
+}
+
+export function getMusicTransportState(): DrillTransportState {
+  const state = getDrillTransportState();
+  if (repeatElapsed === null) return state;
+  const frame = resolveRepeatPlayback(repeatElapsed, state.lastBeat, repeatOptions);
+  return { ...state, beat: frame.songBeat, lastBeat: frame.songEnd,
+    revision: state.revision + frame.songCycle };
+}
+
 export const onDrillTransportChangedObservable = new Observable<DrillTransportState>();
 
 export function getDrillTransportState(): DrillTransportState {
@@ -1192,14 +1220,28 @@ function ensureSharedObserver(scene: Scene) {
 
       const countInterval = STEP_INTERVAL_SECONDS /
         (globalPlayback.tempoMultiplier * MARCHING_GAITS[selectedMarchingGait].tempoFactor);
-      while (globalPlayback.stepAccumulatorSeconds >= countInterval) {
-        const nextIndex = globalPlayback.countIndex + direction;
-        if (nextIndex < 0 || nextIndex > maxCountIndex) {
+      if (repeatElapsed !== null && direction > 0 && maxCountIndex > 0) {
+        const frame = resolveRepeatPlayback(repeatElapsed + deltaSeconds *
+          Math.abs(globalPlayback.speedMultiplier) / countInterval, maxCountIndex, repeatOptions);
+        repeatElapsed = frame.elapsed;
+        globalPlayback.countIndex = Math.floor(frame.drillBeat);
+        globalPlayback.stepAccumulatorSeconds = (frame.drillBeat % 1) * countInterval;
+        if (frame.ended) {
           globalPlayback.playing = false;
-          break;
+          globalPlayback.stepAccumulatorSeconds = 0;
         }
-        globalPlayback.stepAccumulatorSeconds -= countInterval;
-        globalPlayback.countIndex = nextIndex;
+      } else {
+        while (globalPlayback.stepAccumulatorSeconds >= countInterval) {
+          const nextIndex = globalPlayback.countIndex + direction;
+          if (nextIndex < 0 || nextIndex > maxCountIndex) {
+            globalPlayback.playing = false;
+            break;
+          }
+          globalPlayback.stepAccumulatorSeconds -= countInterval;
+          globalPlayback.countIndex = nextIndex;
+        }
+        if (repeatElapsed !== null) repeatElapsed = globalPlayback.countIndex +
+          direction * Math.min(1, globalPlayback.stepAccumulatorSeconds / countInterval);
       }
     }
 
@@ -1404,8 +1446,19 @@ export function setRobotHeld(robot: TransformNode, held: boolean) {
 }
 
 export function placeRobot(robot: TransformNode, position: Vector3, scene: Scene) {
+  const previous = robot.position.clone();
+  const previousYaw = robot.rotation.y;
+  const wasHeld = heldRobots.has(robot);
+  if (!tryManualMarcherPose(robot, position)) return null;
+  robot.position.copyFrom(previous);
   setRobotHeld(robot, false);
   const delta = position.subtract(robot.position);
+  if (!tryManualMarcherPose(robot, position, robot.rotation.y, false)) {
+    robot.position.copyFrom(previous);
+    robot.rotation.y = previousYaw;
+    if (wasHeld) heldRobots.add(robot);
+    return null;
+  }
   const state = players.get(robot);
   if (state) {
     state.points = state.points.map((point) => point.add(delta));
@@ -1431,15 +1484,39 @@ export function setRobotCountPosition(
   const state = players.get(robot);
   const count = state?.counts[index];
   if (!state || !count) return;
-  count.position.copyFrom(position);
 
   const from = state.counts[index - 1] ?? count;
   const to = state.counts[index + 1] ?? count;
-  const dx = to.position.x - from.position.x;
-  const dz = to.position.z - from.position.z;
-  if (dx * dx + dz * dz > 0.0001) {
-    count.rotationY = Math.atan2(dx, dz);
+  const fromPosition = from === count ? position : from.position;
+  const toPosition = to === count ? position : to.position;
+  const dx = toPosition.x - fromPosition.x;
+  const dz = toPosition.z - fromPosition.z;
+  const rotationY = dx * dx + dz * dz > 0.0001 ? Math.atan2(dx, dz) : count.rotationY;
+  const snapshots = [...allRobots].map((other) => ({
+    robot: other, position: other.position.clone(), yaw: other.rotation.y,
+  }));
+  let accepted: boolean;
+  try {
+    for (const other of allRobots) {
+      if (other === robot) continue;
+      const counts = players.get(other)?.counts;
+      const otherCount = counts?.[Math.min(index, counts.length - 1)];
+      if (otherCount) {
+        other.position.copyFrom(otherCount.position);
+        other.rotation.y = otherCount.facingY ?? otherCount.rotationY;
+      }
+    }
+    accepted = tryManualMarcherPose(robot, position, count.facingY ?? rotationY, false);
+  } finally {
+    snapshots.forEach(({ robot: other, position: original, yaw }) => {
+      other.position.copyFrom(original);
+      other.rotation.y = yaw;
+      other.computeWorldMatrix(true);
+    });
   }
+  if (!accepted) return;
+  count.position.copyFrom(position);
+  count.rotationY = rotationY;
 
   applyGlobalCount(robot, state);
   recalculateCollisionMarkers(scene);
@@ -1528,6 +1605,7 @@ export function stepAll(direction: 1 | -1) {
   globalPlayback.playing = false;
   globalPlayback.stepAccumulatorSeconds = 0;
   globalPlayback.countIndex = Math.min(getMaxCountIndex(), Math.max(0, globalPlayback.countIndex + direction));
+  if (repeatElapsed !== null) repeatElapsed = globalPlayback.countIndex;
   applyGlobalCountToAllRobots();
 }
 
@@ -1536,6 +1614,7 @@ export function seekAll(fraction: number) {
   transportRevision++;
   globalPlayback.stepAccumulatorSeconds = 0;
   globalPlayback.countIndex = Math.round(Math.min(1, Math.max(0, fraction)) * getMaxCountIndex());
+  if (repeatElapsed !== null) repeatElapsed = globalPlayback.countIndex;
   applyGlobalCountToAllRobots();
 }
 
@@ -1545,6 +1624,7 @@ export function seekToCount(countIndex: number) {
   transportRevision++;
   globalPlayback.stepAccumulatorSeconds = 0;
   globalPlayback.countIndex = Math.min(getMaxCountIndex(), Math.max(0, countIndex));
+  if (repeatElapsed !== null) repeatElapsed = globalPlayback.countIndex;
   globalPlayback.playing = false;
   applyGlobalCountToAllRobots();
 }

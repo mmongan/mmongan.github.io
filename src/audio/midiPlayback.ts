@@ -1,4 +1,4 @@
-import { getDrillTransportState, onDrillTransportChangedObservable } from '../robot/robot';
+import { getMusicTransportState, setPlaybackRepeat, setPlaybackSongLength, onDrillTransportChangedObservable } from '../robot/robot';
 import {
   midiFileInput, midiAudioButton, midiClearButton, midiVolumeInput, midiStatus,
   midiUrlForm, midiUrlInput, midiExampleButton, midiPlaybackHint,
@@ -158,7 +158,7 @@ function updatePlayback() {
     timeline?.reset();
     return;
   }
-  const plan = timeline.update(getDrillTransportState(), context.currentTime);
+  const plan = timeline.update(getMusicTransportState(), context.currentTime);
   if (plan.reset) stopVoices();
   plan.scheduled.forEach(note => synth!.start(note));
 }
@@ -233,6 +233,7 @@ async function loadMidi(name: string, read: () => Promise<ArrayBuffer>, failureH
     midiNotes = notes;
     timeline = new MidiTimeline(notes);
     const beats = notes.reduce((last, n) => Math.max(last, n.beat + n.duration), 0);
+    setPlaybackSongLength(beats);
     loadedDescription = `${name}: ${musicTracks.length} parts, ${notes.length} notes, ${Math.ceil(beats)} beats`;
     setMidiScoreTracks(musicTracks.map((track, index) => ({
       name: `${index + 1}. ${track.name || track.instrument.name}`,
@@ -261,6 +262,11 @@ function loadMidiFromUrl(input: string, name = input) {
 }
 
 export function initMidiPlayback() {
+  const repeatDrill = document.getElementById('repeatDrill') as HTMLInputElement | null;
+  const repeatSong = document.getElementById('repeatSong') as HTMLInputElement | null;
+  const updateRepeat = () => setPlaybackRepeat(!!repeatDrill?.checked, !!repeatSong?.checked);
+  repeatDrill?.addEventListener('change', updateRepeat);
+  repeatSong?.addEventListener('change', updateRepeat);
   initMidiScore();
   try {
     initializeAudioContext();
@@ -304,6 +310,7 @@ export function initMidiPlayback() {
     disposeSynth();
     midiNotes = [];
     timeline = null;
+    setPlaybackSongLength(0);
     loadedDescription = "";
     setMidiScoreTracks([]);
     if (midiFileInput) midiFileInput.value = "";

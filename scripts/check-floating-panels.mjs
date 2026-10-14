@@ -146,50 +146,25 @@ try {
   score.root.setEnabled(true);
   score.root.position.set(-0.35, -0.08, 0.75);
   score.root.rotationQuaternion.copyFrom(Quaternion.Identity());
-  score.panel.captureViewerOffset();
-  const startFollow = score.root.position.clone();
-  camera.position.x = 1;
-  score.panel.followViewer(1 / 60);
-  assert.ok(Vector3.Distance(score.root.position, startFollow.add(new Vector3(1, 0, 0))) < 1e-6,
-    'Panel is locked to its placed viewer offset immediately, without lag');
-  for (let frame = 0; frame < 120; frame++) score.panel.followViewer(1 / 60);
-  assert.ok(Vector3.Distance(score.root.position, startFollow.add(new Vector3(1, 0, 0))) < 0.001);
-  const compareFrames = fps => {
-    camera.position.setAll(0);
-    score.root.position.copyFrom(startFollow);
-    score.root.rotationQuaternion.copyFrom(Quaternion.Identity());
-    score.panel.captureViewerOffset();
-    camera.position.x = 1;
-    for (let frame = 0; frame < fps; frame++) score.panel.followViewer(1 / fps);
-    return score.root.position.clone();
-  };
-  assert.ok(Vector3.Distance(compareFrames(30), compareFrames(90)) < 1e-6, 'View lock is frame-rate independent');
-  const poseBeforeTurn = score.root.position.clone();
+  const placedWorld = score.root.computeWorldMatrix(true).clone();
+  camera.position.set(4, 2, -3);
   camera.rotation.y = Math.PI / 2;
   camera.rotation.x = 0.4;
-  score.panel.followViewer(1 / 60);
-  assert.ok(Vector3.Distance(score.root.position, poseBeforeTurn) < 1e-6, 'Looking toward a panel never moves it');
-  const lockedRotation = score.root.computeWorldMatrix(true).clone();
-  camera.rotation.set(-0.2, -0.8, 0.15);
   scene.onBeforeCameraRenderObservable.notifyObservers(camera);
-  const renderedLocal = score.root.computeWorldMatrix(true);
-  assert.ok(renderedLocal.asArray().every((value, i) => Math.abs(value - lockedRotation.asArray()[i]) < 1e-6),
-    'Head yaw, pitch, and roll do not move or rotate either panel');
+  scene.onBeforeRenderObservable.notifyObservers(scene);
+  assert.ok(score.root.computeWorldMatrix(true).asArray().every((v, i) => Math.abs(v - placedWorld.asArray()[i]) < 1e-6),
+    'Walking and looking do not move or rotate a world-fixed panel');
   score.panel.begin('left', Matrix.Identity());
   const heldPose = score.root.position.clone();
-  camera.position.x = 4;
-  score.panel.followViewer(1);
-  assert.ok(score.root.position.equals(heldPose), 'Follow is suspended during grabs');
   score.panel.end('left');
-  score.panel.followViewer(1 / 60);
-  assert.ok(Vector3.Distance(score.root.position, heldPose) < 1e-6, 'Release captures placement without snapping');
+  assert.ok(Vector3.Distance(score.root.position, heldPose) < 1e-6, 'Release preserves world placement');
   camera.position.x = 5;
-  score.panel.followViewer(1);
-  assert.ok(score.root.position.x > heldPose.x + 0.9, 'Released pad resumes following from chosen offset');
+  scene.onBeforeCameraRenderObservable.notifyObservers(camera);
+  assert.ok(score.root.position.equals(heldPose), 'Released panel does not chase viewer translation');
   score.root.setEnabled(false);
   const hiddenPose = score.root.position.clone();
   camera.position.x = 10;
-  score.panel.followViewer(1);
+  scene.onBeforeCameraRenderObservable.notifyObservers(camera);
   assert.ok(score.root.position.equals(hiddenPose), 'Hidden panels never follow');
   score.root.setEnabled(false);
   assert.equal(api.getFloatingPanelNear(score.root.position), undefined);
@@ -205,11 +180,11 @@ try {
   score.panel.begin('left', Matrix.Identity());
   const beforeLostRelease = score.root.position.clone();
   camera.rotation.y = Math.PI;
-  score.panel.followViewer(1);
+  scene.onBeforeCameraRenderObservable.notifyObservers(camera);
   assert.ok(score.root.position.equals(beforeLostRelease), 'Turning does not move a held panel');
   score.panel.end('left');
   assert.ok(score.root.position.equals(beforeLostRelease), 'Recovery does not snap on release');
-  for (let i = 0; i < 120; i++) score.panel.followViewer(1 / 60);
+  scene.onBeforeCameraRenderObservable.notifyObservers(camera);
   assert.ok(Vector3.Distance(score.root.position, beforeLostRelease) < 1e-6,
     'Release after turning keeps placed direction instead of chasing gaze');
   score.root.setEnabled(false);
@@ -257,10 +232,10 @@ globalThis.Slider = PanelTransparencySlider;`, sliderContext);
   const contact = slider.mesh.getAbsolutePosition().clone();
   api.beginFloatingPanelGrab('right', Matrix.Identity(), slider.mesh, contact);
   camera.rotation.y += Math.PI;
-  sliderPanel.followViewer(1);
+  scene.onBeforeCameraRenderObservable.notifyObservers(camera);
   assert.ok(sliderRoot.position.equals(beforeSliderTurn), 'Slider contact suspends follow');
   api.endFloatingPanelGrab('right');
-  for (let i = 0; i < 120; i++) sliderPanel.followViewer(1 / 60);
+  scene.onBeforeCameraRenderObservable.notifyObservers(camera);
   assert.ok(Vector3.Distance(sliderRoot.position, beforeSliderTurn) < 1e-6,
     'Turning during transparency adjustment keeps the panel in its placed direction');
   sliderRoot.setEnabled(false);
@@ -271,11 +246,11 @@ globalThis.Slider = PanelTransparencySlider;`, sliderContext);
   score.mesh.computeWorldMatrix(true);
   const remotePoint = score.mesh.getAbsolutePosition().clone();
   const handWorld = Matrix.Translation(0.2, -0.1, 0.4);
-  api.beginFloatingPanelGrab('left', handWorld, score.mesh, remotePoint, 0.03, true);
+  const beforeRayGrab = score.root.position.clone();
+  api.beginFloatingPanelGrab('left', handWorld, score.mesh, remotePoint);
   score.mesh.computeWorldMatrix(true);
-  assert.ok(Vector3.Distance(score.mesh.getAbsolutePosition(), handWorld.getTranslation()) < 1e-6,
-    'Ray selection summons picked location directly to hand');
-  assert.ok(score.panel.grabbed('left'), 'Summoned panel starts a hand grab');
+  assert.ok(score.root.position.equals(beforeRayGrab), 'Ray grabbing does not summon or jump panel');
+  assert.ok(score.panel.grabbed('left'), 'Ray selection starts a remote grab');
   const summonedPosition = score.root.position.clone();
   api.updateFloatingPanelGrab('left', Matrix.Translation(0.3, 0, 0.4));
   assert.ok(Vector3.Distance(score.root.position, summonedPosition.add(new Vector3(0.1, 0.1, 0))) < 1e-6,

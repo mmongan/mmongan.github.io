@@ -28,11 +28,6 @@ export class FloatingPanel {
   private offset = new Matrix();
   private dragPlane: Plane | null = null;
   private dragOffset = new Vector3();
-  private viewerOffset: Matrix | null = null;
-  private targetWorld = new Matrix();
-  private targetPosition = new Vector3();
-  private targetRotation = new Quaternion();
-  private targetScale = new Vector3();
   private sliderDrag: { source: string; origin: Vector3; point: Vector3 } | null = null;
   userPlaced = false;
 
@@ -47,12 +42,8 @@ export class FloatingPanel {
   ) {
     root.rotationQuaternion ??= Quaternion.FromEulerVector(root.rotation);
     panels.add(this);
-    const cameraObserver = scene.onBeforeCameraRenderObservable.add(camera => {
-      if (camera === scene.activeCamera) this.followViewer();
-    });
     root.onDisposeObservable.addOnce(() => {
       panels.delete(this);
-      scene.onBeforeCameraRenderObservable.remove(cameraObserver);
     });
   }
 
@@ -143,13 +134,11 @@ export class FloatingPanel {
   }
 
   release() {
-    const wasAdjustingSlider = this.sliderDrag !== null;
     this.sliderDrag = null;
     this.source = null;
     this.grabWorlds.clear();
     this.stretch = null;
     this.dragPlane = null;
-    if (this.viewerOffset && !wasAdjustingSlider) this.captureViewerOffset();
   }
 
   grabbed(source?: string) {
@@ -178,30 +167,7 @@ export class FloatingPanel {
     if (inXR && placement.uprightInXR) away.y = 0;
     this.root.lookAt(this.root.position.add(away));
     this.userPlaced = false;
-    this.viewerOffset = null;
-    this.captureViewerOffset();
     return true;
-  }
-
-  captureViewerOffset() {
-    const camera = scene.activeCamera;
-    if (!camera) return;
-    camera.getViewMatrix(true);
-    this.viewerOffset = this.root.computeWorldMatrix(true).clone();
-    this.viewerOffset.setTranslation(this.root.position.subtract(camera.globalPosition));
-  }
-
-  followViewer(_deltaSeconds?: number) {
-    if (!this.root.isEnabled() || this.grabbed() || !this.viewerOffset) return;
-    const camera = scene.activeCamera;
-    if (!camera) return;
-    camera.getViewMatrix(true);
-    this.targetWorld.copyFrom(this.viewerOffset);
-    this.targetWorld.setTranslation(this.viewerOffset.getTranslation().add(camera.globalPosition));
-    this.targetWorld.decompose(this.targetScale, this.targetRotation, this.targetPosition);
-    this.root.position.copyFrom(this.targetPosition);
-    this.root.rotationQuaternion!.copyFrom(this.targetRotation);
-    this.root.computeWorldMatrix(true);
   }
 
   private face(eye: Vector3) {
@@ -243,14 +209,6 @@ export class FloatingPanel {
     return true;
   }
 
-  summonToHand(world: Matrix, point: Vector3) {
-    this.release();
-    const hand = world.getTranslation();
-    this.root.position.addInPlace(hand.subtract(point));
-    this.root.computeWorldMatrix(true);
-    return hand;
-  }
-
   nudge(ray: Ray, delta: number) {
     if (!this.pick(ray) || this.grabbed()) return false;
     const offset = this.root.position.subtract(ray.origin);
@@ -260,7 +218,6 @@ export class FloatingPanel {
     ray.origin.addToRef(offset.scale(next / distance), this.root.position);
     this.face(ray.origin);
     this.userPlaced = true;
-    if (this.viewerOffset) this.captureViewerOffset();
     return true;
   }
 }
@@ -289,13 +246,9 @@ export function getFloatingPanelButtonNearPoint(point: Vector3): HandMenuHit | n
   return null;
 }
 
-export function beginFloatingPanelGrab(source: string, world: Matrix, mesh?: AbstractMesh | null, point?: Vector3, tolerance = 0.03, summon = false) {
+export function beginFloatingPanelGrab(source: string, world: Matrix, mesh?: AbstractMesh | null, point?: Vector3, tolerance = 0.03) {
   const panel = mesh ? [...panels].find(panel => panel.meshes.has(mesh))
     : point ? getFloatingPanelNear(point, tolerance) : undefined;
-  if (panel && summon && point && !panel.grabbed() &&
-    Vector3.Distance(point, world.getTranslation()) > 0.15) {
-    point = panel.summonToHand(world, point);
-  }
   if (panel && !panel.beginSlider(source, world, mesh, point)) panel.begin(source, world);
   return !!panel;
 }

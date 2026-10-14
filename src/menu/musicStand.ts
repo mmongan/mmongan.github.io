@@ -28,6 +28,12 @@ let standScale = 1.0;
 let deskNode: TransformNode | null = null;
 let updateTopBarButtonsFn: (() => void) | null = null;
 let updateVisibility: ((visible: boolean) => void) | null = null;
+let placeStand: (() => void) | null = null;
+
+export function summonMusicStand() {
+  setMusicStandVisible(true);
+  placeStand?.();
+}
 
 export function setMusicStandVisible(visible: boolean) {
   if (musicStandToggle) musicStandToggle.checked = visible;
@@ -237,7 +243,7 @@ export function initMusicStand() {
   const mediaObserver = onDrillTransportChangedObservable.add(updateMediaButtons);
   updateMediaButtons();
 
-  let enabled = musicStandToggle?.checked ?? true;
+  let enabled = musicStandToggle?.checked ?? false;
   let placedCamera = scene.activeCamera;
   let placed = false;
   let generation = 0;
@@ -335,11 +341,11 @@ export function initMusicStand() {
     placed = true;
     root.setEnabled(enabled);
   }
+  placeStand = place;
   updateVisibility = visible => {
     enabled = visible;
     if (!enabled) interaction.release();
-    else if (placed && scene.activeCamera &&
-      Vector3.Distance(scene.activeCamera.globalPosition, root.position) > 2.5) place();
+    else if (!root.isEnabled()) place();
     root.setEnabled(enabled && placed);
     setMidiScoreStandVisible(enabled);
   };
@@ -354,12 +360,12 @@ export function initMusicStand() {
   });
   const frameObserver = scene.onBeforeRenderObservable.add(() => {
     if (enabled && (!placed || placedCamera !== scene.activeCamera)) place();
-    if (enabled && placed) interaction.followViewer(scene.getEngine().getDeltaTime() / 1000);
   });
   scene.onDisposeObservable.addOnce(() => {
     generation++;
     updateTopBarButtonsFn = null;
     updateVisibility = null;
+    placeStand = null;
     deskNode = null;
     onMidiScoreDisplayChanged.remove(observer);
     onDrillTransportChangedObservable.remove(mediaObserver);

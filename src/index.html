@@ -160,7 +160,7 @@
             <button id="redoEraseButton" disabled>Redo erase</button>
           </div>
           <label class="radio-option">
-            <input type="checkbox" id="drillChartPadToggle" checked />
+            <input type="checkbox" id="drillChartPadToggle" />
             <span>Drill chart pad (floating, grabbable; one page per 8-count set)</span>
           </label>
           <label class="settings-label">Instrument (selected marcher and new marchers)</label>
@@ -247,10 +247,12 @@
             <button id="midiClearButton" type="button" disabled>Clear MIDI</button>
           </div>
           <label class="settings-label" for="midiVolume">MIDI volume</label>
+          <label class="radio-option"><input id="repeatDrill" type="checkbox" /><span>Repeat drill</span></label>
+          <label class="radio-option"><input id="repeatSong" type="checkbox" /><span>Repeat song</span></label>
           <input id="midiVolume" type="range" min="0" max="100" value="60" aria-label="MIDI volume" />
           <output id="midiStatus" class="settings-status" for="midiFile" aria-live="polite">No MIDI loaded.</output>
           <label class="radio-option">
-            <input id="musicStandToggle" type="checkbox" checked />
+            <input id="musicStandToggle" type="checkbox" />
             <span>Show music stand with score</span>
           </label>
           <button id="musicStandPlaceButton" type="button">Place music stand to my right</button>

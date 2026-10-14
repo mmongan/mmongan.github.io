@@ -444,3 +444,17 @@ body {
     flex: 1;
   }
 }
+.placement-collision-notice {
+  position: fixed;
+  bottom: 5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  max-width: 90vw;
+  padding: 0.7rem 1rem;
+  border: 1px solid #ffb454;
+  border-radius: 0.5rem;
+  color: #fff;
+  background: #282018;
+  pointer-events: none;
+}

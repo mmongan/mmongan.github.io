@@ -2,7 +2,7 @@ import {
   midiScoreDetails, midiScoreTrack, midiScoreFollow, midiScorePrevious,
   midiScoreNext, midiScoreStatus, midiScoreCanvas, musicScoreMeasuresSelect,
 } from '../ui/dom';
-import { getDrillTransportState, onDrillTransportChangedObservable } from '../robot/robot';
+import { getMusicTransportState, onDrillTransportChangedObservable } from '../robot/robot';
 import {
   scoreBeatPositionsMulti, scoreMeasure, scoreMeasureCount,
   scorePitch, type ScoreTrack, type ScoreSegment,
@@ -385,7 +385,7 @@ export function setMidiScoreTracks(nextTracks: ScoreTrack[]) {
 }
 
 function updateScoreTransport() {
-  const nextBeat = Math.floor(getDrillTransportState().beat);
+  const nextBeat = Math.floor(getMusicTransportState().beat);
   const changed = nextBeat !== currentBeat;
   currentBeat = nextBeat;
   currentMeasure = Math.floor(nextBeat / 4);
