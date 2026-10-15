@@ -8,7 +8,7 @@
       content="Babylon.js WebXR VR and AR demo for Meta Quest 3"
     />
     <title>OpenChartxr</title>
-    <script type="module" crossorigin src="/assets/index-uS6j7_gD.js"></script>
+    <script type="module" crossorigin src="/assets/index-CfLFWvdm.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/rolldown-runtime-B0Z9INg1.js">
     <link rel="modulepreload" crossorigin href="/assets/engineStore-Bn2tApal.js">
     <link rel="modulepreload" crossorigin href="/assets/internalTexture-B3djGrls.js">
@@ -53,7 +53,7 @@
     <link rel="modulepreload" crossorigin href="/assets/flowGraphExecutionBlockWithOutSignal-Dkj7gfkW.js">
     <link rel="modulepreload" crossorigin href="/assets/flowGraphAsyncExecutionBlock-BG68nGzX.js">
     <link rel="modulepreload" crossorigin href="/assets/flowGraphRichTypes.pure-D2WqOeRI.js">
-    <link rel="stylesheet" crossorigin href="/assets/index-TVVGcBEL.css">
+    <link rel="stylesheet" crossorigin href="/assets/index-B43R0Min.css">
   </head>
   <body>
     <canvas id="renderCanvas"></canvas>
@@ -232,6 +232,66 @@
           <input id="formationScale" type="number" min="0.25" max="4" step="0.05" value="1" required />
           <button type="submit" value="transform">Apply group transform</button>
           <output id="formationEditorStatus" class="settings-status" aria-live="polite">No standing form selected. Imported routes are not edited by these controls.</output>
+        </form>
+
+        <form id="selectionEditor" class="settings-group">
+          <h3>Selection, shapes, and sets</h3>
+          <label class="radio-option"><input id="drillSelectionMode" type="checkbox" /><span>Enable multi-marcher editing (pauses playback)</span></label>
+          <p>Close Settings to select on the field. Drag a rectangle, Shift-drag a lasso, Ctrl/Cmd-click to toggle a marcher, or Ctrl/Cmd+A to select all eligible marchers. Cyan circles show selection; orange and green handles rotate and scale it. Drag selected marchers to move the selection. Desktop selection gestures replace camera dragging only while enabled.</p>
+          <button type="submit" value="selectAll">Select all eligible marchers</button>
+          <button type="submit" value="selectForm">Select current standing form</button>
+          <button type="submit" value="clearSelection">Clear selection</button>
+          <label class="radio-option"><input id="drillSetEditMode" type="checkbox" /><span>Edit authored drill sets (explicit opt-in)</span></label>
+          <p>Set edits change selected marchers at the destination set and linearly rebuild their transitions to adjacent sets. Other marchers and distant counts remain unchanged. Existing midsets within those transitions are replaced. Destination collisions are rejected; inspect collision previews and stride warnings during playback. Changes are session-local, with no show export or edit undo.</p>
+          <label class="settings-label" for="drillEditSet">Destination set</label>
+          <select id="drillEditSet"><option value="">No drill sets loaded</option></select>
+          <button type="submit" value="copyPrevious">Copy positions from previous set</button>
+          <button type="submit" value="copyNext">Copy positions from next set</button>
+          <button type="submit" value="shapePrevious">Copy grouped shape to previous set</button>
+          <button type="submit" value="shapeNext">Copy grouped shape to next set</button>
+          <p>Transforms, alignment, locks, and rounding use the shared form-editor settings above, but act on this selection.</p>
+          <button type="submit" value="transform">Transform selection using form settings</button>
+          <button type="submit" value="alignX">Align selection X</button>
+          <button type="submit" value="alignZ">Align selection Z</button>
+          <button type="submit" value="distributeX">Distribute selection X</button>
+          <button type="submit" value="distributeZ">Distribute selection Z</button>
+          <div class="radio-row">
+            <button type="submit" value="roundX">Cycle X rounding</button>
+            <button type="submit" value="roundZ">Cycle Z rounding</button>
+            <button type="submit" value="round">Round selection to whole yards</button>
+          </div>
+          <h4>Shape inspector</h4>
+          <p>Selection order assigns marchers along the shape. Start a shape, append segments, then apply coordinates or group. Move starts a disconnected section; Close returns to the first point. Blue field handles edit endpoints and curve controls. Applying never creates or deletes marchers.</p>
+          <label class="settings-label" for="drillShapeStartX">Shape start X (yards)</label>
+          <input id="drillShapeStartX" type="number" step="any" value="-10" required />
+          <label class="settings-label" for="drillShapeStartZ">Shape start Z (yards)</label>
+          <input id="drillShapeStartZ" type="number" step="any" value="-30" required />
+          <button type="submit" value="startShape">Start / reset shape</button>
+          <label class="settings-label" for="drillShapeKind">Next segment</label>
+          <select id="drillShapeKind">
+            <option value="line">Line</option><option value="curve">Single curve (quadratic)</option>
+            <option value="doubleCurve">Double curve (cubic)</option><option value="move">Move (new section)</option>
+            <option value="close">Close</option>
+          </select>
+          <label class="settings-label" for="drillShapeEndX">Endpoint X</label>
+          <input id="drillShapeEndX" type="number" step="any" value="10" required />
+          <label class="settings-label" for="drillShapeEndZ">Endpoint Z</label>
+          <input id="drillShapeEndZ" type="number" step="any" value="-30" required />
+          <label class="settings-label" for="drillShapeControlX">First curve control X</label>
+          <input id="drillShapeControlX" type="number" step="any" value="-5" required />
+          <label class="settings-label" for="drillShapeControlZ">First curve control Z</label>
+          <input id="drillShapeControlZ" type="number" step="any" value="-20" required />
+          <label class="settings-label" for="drillShapeControl2X">Second curve control X</label>
+          <input id="drillShapeControl2X" type="number" step="any" value="5" required />
+          <label class="settings-label" for="drillShapeControl2Z">Second curve control Z</label>
+          <input id="drillShapeControl2Z" type="number" step="any" value="-40" required />
+          <button type="submit" value="appendShape">Append segment</button>
+          <button type="submit" value="deleteSegment">Delete last segment</button>
+          <button type="submit" value="line">Create line from selected marchers</button>
+          <button type="submit" value="applyShape">Apply shape coordinates</button>
+          <button type="submit" value="group">Group selection into shape</button>
+          <button type="submit" value="ungroup">Ungroup without deleting marchers</button>
+          <output id="drillSelectionStatus" class="settings-status" aria-live="polite">Multi-marcher editing disabled.</output>
         </form>
 
         <div class="settings-group">
