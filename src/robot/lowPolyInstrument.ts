@@ -268,6 +268,7 @@ export class InstrumentGeometry {
   // face, not an edge, points forward.
   lathe(profile: Array<[number, number]>, sides: number, color: Color4,
     place: (point: Vector3) => Vector3 = (point) => point) {
+    if (this.surface === "body") profile = this.simplifyBodyProfile(profile);
     const turn = this.low ? 0.5 : 0;
     if (this.low) sides = Math.max(4, Math.ceil(sides / 2));
     let previous: { start: number; pole: boolean } | null = null;
@@ -288,6 +289,25 @@ export class InstrumentGeometry {
       }
       previous = { start, pole };
     }
+  }
+
+  private simplifyBodyProfile(profile: Array<[number, number]>): Array<[number, number]> {
+    const result = profile.slice();
+    for (let index = 1; index + 1 < result.length;) {
+      const [radius, height] = result[index];
+      const [beforeRadius, beforeHeight] = result[index - 1];
+      const [afterRadius, afterHeight] = result[index + 1];
+      const span = afterHeight - beforeHeight;
+      const interpolated = beforeRadius + (afterRadius - beforeRadius) * (height - beforeHeight) / span;
+      // Keep caps, silhouette extrema and joint rounding; only remove redundant straight rings.
+      if (radius > 0 && beforeRadius > 0 && afterRadius > 0 && span > 0 &&
+        height > beforeHeight && height < afterHeight &&
+        radius >= Math.min(beforeRadius, afterRadius) && radius <= Math.max(beforeRadius, afterRadius) &&
+        Math.abs(interpolated - radius) < 1e-10) {
+        result.splice(index, 1);
+      } else index++;
+    }
+    return result;
   }
 }
 

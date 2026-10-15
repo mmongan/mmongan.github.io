@@ -71,13 +71,15 @@ export function selectAutoGait(
 ): AutoGaitSelection {
   const stepYards = Math.hypot(travelX, travelZ);
   const highLift = HIGH_LIFT_STYLES.has(style);
-  if (stepYards < IN_PLACE_STEP_YARDS) {
-    const gait = highLift ? "High Mark Time" : "Mark Time";
-    return { gait, stepsPerCount: 1, legYawOffset: 0, relation: "in-place", strideYards: 0, label: gait };
-  }
-
   const pulseYards = Math.max(stepYards, cadenceTravelYards ?? stepYards) * quarterNotesPerPulse;
   const stepsPerCount = pulseYards <= HALF_TIME_BELOW_YARDS ? 0.5 : pulseYards > DOUBLE_TIME_ABOVE_YARDS ? 2 : 1;
+  if (stepYards < IN_PLACE_STEP_YARDS) {
+    const gait = highLift ? "High Mark Time" : "Mark Time";
+    // A short move can share a footfall with a longer neighboring move.
+    const markCadence = pulseYards > DOUBLE_TIME_ABOVE_YARDS ? 2 : 1;
+    return { gait, stepsPerCount: markCadence, legYawOffset: 0, relation: "in-place", strideYards: 0, label: gait };
+  }
+
   const strideYards = stepYards * quarterNotesPerPulse / stepsPerCount;
   const cadence = stepsPerCount === 0.5 ? "Half Time " : stepsPerCount === 2 ? "Double Time " : "";
   const relative = wrapAngle(Math.atan2(travelX, travelZ) - facingYaw);

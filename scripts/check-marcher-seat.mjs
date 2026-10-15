@@ -19,10 +19,10 @@ const context = vm.createContext({
   Mesh, InstancedMesh, Matrix, Vector4, MaterialPluginBase,
   VertexData, StandardMaterial, Color3, Color4, Vector3,
 });
-function load(file, names) {
+function load(file, names, transform = source => source) {
   const source = readFileSync(new URL(`../src/robot/${file}.ts`, import.meta.url), 'utf8');
   return vm.runInContext(`(() => {
-    ${stripTypeScriptTypes(source, { mode: 'transform' })
+    ${stripTypeScriptTypes(transform(source), { mode: 'transform' })
       .replace(/^import .*?;\r?$/gm, '').replace(/export /g, '')}
     return { ${names.join(', ')} };
   })()`, context);
@@ -33,14 +33,40 @@ Object.assign(context, load('robotFaceModel', ['addRobotHead']));
 const clipping = load('jacketLegOcclusion',
   ['JacketLegOcclusion', 'updateJacketLegPlane', 'updateJacketLegPlanes', 'registerJacketLegSource', 'JACKET_LEG_CLIP_HEIGHT']);
 Object.assign(context, clipping);
-const { marcherShoeGroundDepth } = load('marcherLegPose', ['marcherShoeGroundDepth']);
+const { marcherShoeGroundDepth, marcherShoeRollOffset } = load('marcherLegPose',
+  ['marcherShoeGroundDepth', 'marcherShoeRollOffset']);
 const templates = load('marcherBodyModel', [
   'getMarcherTrimTemplate', 'getMarcherJacketTemplate', 'getMarcherUpperArmTemplate',
   'getMarcherForearmTemplate', 'getMarcherThighTemplate', 'getMarcherCalfTemplate',
   'getMarcherShoeTemplate', 'getMarcherGloveTemplate', 'getMarcherKneeTemplate',
 ]);
 const { getMarcherTrimTemplate } = templates;
+const partNames = Object.keys(templates);
+const baselineShared = load('lowPolyInstrument',
+  ['InstrumentGeometry', 'cachedInstrumentTemplate', 'buildLowPolyTemplate'],
+  source => source.replace('profile = this.simplifyBodyProfile(profile)', 'profile = profile'));
+const optimizedShared = {
+  InstrumentGeometry: context.InstrumentGeometry,
+  cachedInstrumentTemplate: context.cachedInstrumentTemplate,
+  buildLowPolyTemplate: context.buildLowPolyTemplate,
+};
+Object.assign(context, baselineShared);
+const baselineTemplates = load('marcherBodyModel', partNames,
+  source => source.replaceAll('geometry.low ? 12 : 8', '12')
+    .replace('new Vector3(x * 0.75, y, z * 0.75)', 'new Vector3(x, y, z)')
+    .replace('new Vector3(x * 0.8, y, z * 0.8)', 'new Vector3(x, y, z)'));
+const baselineMeshes = Object.fromEntries(['high', 'low'].map(detail => [detail,
+  Object.fromEntries(partNames.map(name => [name, baselineTemplates[name](scene, detail)]))]));
+Object.assign(context, optimizedShared);
 try {
+  for (let sample = -120; sample <= 120; sample++) {
+    const pitch = sample / 100;
+    const epsilon = 1e-5;
+    const derivative = (marcherShoeRollOffset(pitch + epsilon) -
+      marcherShoeRollOffset(pitch - epsilon)) / (2 * epsilon);
+    assert.ok(Math.abs(derivative - marcherShoeGroundDepth(pitch)) < 1e-6,
+      'Rolling translation derivative matches sole depth without slip');
+  }
   const body = new TransformNode('clipTestBody', scene);
   const legRoot = new TransformNode('clipTestLegRoot', scene);
   const leg = new TransformNode('clipTestLeg', scene);
@@ -103,6 +129,52 @@ try {
       assert.ok(bottom < 0 && top > 0, `${name}: rounded ends enclose joint center`);
       assert.ok(part.getTotalVertices() <= 100, `${name}: bounded geometry for XR`);
     }
+    for (const [name, jointY, capSide] of [
+      ['getMarcherUpperArmTemplate', -0.3, -1],
+      ['getMarcherForearmTemplate', 0, 1],
+    ]) {
+      const vertices = templates[name](scene, detail).getVerticesData('position');
+      const normals = templates[name](scene, detail).getVerticesData('normal');
+      for (let index = 0; index < vertices.length; index += 3) {
+        const relativeY = vertices[index + 1] - jointY;
+        if (relativeY * capSide < -1e-6) continue;
+        const radius = Math.hypot(vertices[index], relativeY, vertices[index + 2]);
+        assert.ok(Math.abs(radius - 0.045) < 1e-6,
+          `${name} ${detail}: elbow caps share a slim 0.045-radius sphere at the same joint center`);
+        const radial = new Vector3(vertices[index], relativeY, vertices[index + 2]).normalize();
+        const normal = Vector3.FromArray(normals, index);
+        for (const bend of [0, Math.PI / 4, Math.PI / 2, 2 * Math.PI / 3]) {
+          const rotation = Matrix.RotationYawPitchRoll(0.4, bend, -0.2);
+          assert.ok(Vector3.Distance(Vector3.TransformNormal(radial, rotation),
+            Vector3.TransformNormal(normal, rotation)) < 1e-6,
+          `${name} ${detail}: bent elbow shading follows the shared sphere, not the sleeve seam`);
+        }
+      }
+    }
+    const sleeve = templates.getMarcherForearmTemplate(scene, detail).getVerticesData('position');
+    const glove = templates.getMarcherGloveTemplate(scene, detail);
+    const gloveVertices = glove.getVerticesData('position');
+    const gloveIndices = glove.getIndices();
+    let gloveInradius = Infinity;
+    for (let index = 0; index < gloveIndices.length; index += 3) {
+      const a = Vector3.FromArray(gloveVertices, gloveIndices[index] * 3);
+      const b = Vector3.FromArray(gloveVertices, gloveIndices[index + 1] * 3);
+      const c = Vector3.FromArray(gloveVertices, gloveIndices[index + 2] * 3);
+      const normal = Vector3.Cross(b.subtract(a), c.subtract(a)).normalize();
+      gloveInradius = Math.min(gloveInradius, Math.abs(Vector3.Dot(normal, a)));
+    }
+    const cuffY = Math.min(...sleeve.filter((_, index) => index % 3 === 1));
+    assert.ok(Math.abs(cuffY + 0.39) < 1e-6, `${detail}: cuff stops before the wrist grip center`);
+    for (let index = 0; index < sleeve.length; index += 3) {
+      if (Math.abs(sleeve[index + 1] - cuffY) > 1e-6) continue;
+      const radius = Math.hypot(sleeve[index], sleeve[index + 2]);
+      assert.ok(radius <= 0.032 + 1e-6, `${detail}: cuff tapers inside the glove`);
+      for (const stretch of [1, 1.04, 1.25]) {
+        const wristDistance = Math.hypot(radius, (cuffY + 0.4) * stretch);
+        assert.ok(wristDistance < gloveInradius,
+          `${detail}: flat cuff stays inside the actual glove at any wrist orientation`);
+      }
+    }
     const jacket = templates.getMarcherJacketTemplate(scene, detail).getVerticesData('position');
     const hem = [];
     for (let i = 0; i < jacket.length; i += 3) {
@@ -153,6 +225,28 @@ try {
     assert.ok(positions.filter((_, i) => i % 3 === 1).every(y => y > 0.71),
       `${detail}: trim contains no buttock or pelvis geometry`);
     assert.equal(mesh, getMarcherTrimTemplate(scene, detail), 'Trim uses a shared cached mesh');
+  }
+  for (const detail of ['high', 'low']) {
+    let before = 0;
+    let after = 0;
+    for (const name of partNames) {
+      const oldMesh = baselineMeshes[detail][name];
+      const mesh = templates[name](scene, detail);
+      const copies = name === 'getMarcherTrimTemplate' || name === 'getMarcherJacketTemplate' ? 1 : 2;
+      before += copies * oldMesh.getTotalVertices();
+      after += copies * mesh.getTotalVertices();
+      const oldBounds = oldMesh.getBoundingInfo().boundingBox;
+      const bounds = mesh.getBoundingInfo().boundingBox;
+      const radiusScale = name === 'getMarcherUpperArmTemplate' ? 0.75 :
+        name === 'getMarcherForearmTemplate' ? 0.8 : 1;
+      const scale = new Vector3(radiusScale, 1, radiusScale);
+      assert.ok(Vector3.Distance(oldBounds.minimum.multiply(scale), bounds.minimum) < 1e-6 &&
+        Vector3.Distance(oldBounds.maximum.multiply(scale), bounds.maximum) < 1e-6,
+      `${name} ${detail}: arm radii slimmed without changing lengths; other bounds unchanged`);
+      assert.ok(mesh.getTotalVertices() <= oldMesh.getTotalVertices(), `${name}: never adds vertices`);
+    }
+    assert.ok(after < before, `${detail}: marcher body vertex count reduced`);
+    console.log(`Marcher body ${detail}: ${before} -> ${after} vertices (${(100 * (1 - after / before)).toFixed(1)}% fewer, eyes/instrument excluded).`);
   }
   console.log('Marcher body checks passed: rounded joint ends, bounded XR geometry, cached body parts, and no buttock or pelvis geometry at both detail levels.');
 } finally {

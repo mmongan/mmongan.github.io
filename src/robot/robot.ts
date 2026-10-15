@@ -37,7 +37,7 @@ import { lowPolygonMarchersToggle } from '../ui/dom';
 import { registerJacketLegSource, updateJacketLegPlane, updateJacketLegPlanes } from './jacketLegOcclusion';
 import { boundMarcherFootTarget, boundMarcherFootLift, MARCHER_CALF_LENGTH, MARCHER_THIGH_LENGTH,
   MARCHER_SHOE_FORWARD_OFFSET, MARCHER_SHOE_HALF_HEIGHT, marcherSwingLift, marcherGroundFootPitch,
-  marcherSwingFootPitch, solvePlantedMarcherLeg } from './marcherLegPose';
+  marcherSwingFootPitch, precalculateMarcherLegPose } from './marcherLegPose';
 import { marcherFootTarget, marcherSoleInRig } from './marcherFootTargets';
 import { midiBeatAtPulse, midiPulseAtBeat, type MidiBeatUnit } from '../audio/midiBeatPulse';
 
@@ -838,6 +838,15 @@ interface PlayerState {
   stepSizeYards: number;
   counts: RobotCount[];
   gaitPhaseCache?: Map<number, { counts: RobotCount[]; offsets: number[] }>;
+  stepCache?: {
+    counts: RobotCount[];
+    beatUnits: ReadonlyArray<MidiBeatUnit>;
+    key: string;
+    landings: Map<string, Vector3>;
+    facings: Map<number, number>;
+    directions: Map<string, number | undefined>;
+    rolls: Map<string, { pitch: number; velocity: number }>;
+  };
   // Facing held for the whole route; reapplied whenever counts are rebuilt.
   fixedFacingY?: number;
 }
@@ -1227,16 +1236,20 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState) {
   parts.leftLeg.rotation.y = 0;
   parts.rightLeg.rotation.y = 0;
   const instrumentRest = parts.instrumentRestPose;
-  const inPlace = resolved?.inPlace ?? false;
   const from = state.counts[Math.min(last, Math.max(0, segmentStart))];
   const to = state.counts[Math.min(last, Math.max(0, segmentStart + 1))];
+  // Auto mark-time is a leg style for short moves, not permission to freeze
+  // authored travel and jump to the next count.
+  const inPlace = (resolved?.inPlace ?? false) &&
+    (!isAutoGaitStyle(MARCHING_GAITS[parts.gaitIndex].name) ||
+      Vector3.DistanceSquared(from.position, to.position) < 1e-12);
   robot.position.copyFrom((inPlace && !isAutoGaitStyle(MARCHING_GAITS[parts.gaitIndex].name)
     ? state.counts[0]
     : count).position);
   robot.rotation.y = bodyRotation;
   to.position.subtractToRef(from.position, playbackDisplacement);
   const displacement = playbackDisplacement;
-  const moving = !!resolved && (inPlace || displacement.lengthSquared() > 0.0001);
+  const moving = !!resolved && (inPlace || displacement.lengthSquared() > 1e-12);
   if (!moving) {
     parts.leftLeg.rotation.x = 0;
     parts.rightLeg.rotation.x = 0;
@@ -1281,6 +1294,20 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState) {
   const lift = marcherSwingLift(gaitProgress, gait.lift);
   const leftStance = ((stepNumber % 2) + 2) % 2 === 0;
   const musicBeat = getMusicTransportState().beat;
+  // Keep only the current step. Quantization removes clock-subtraction noise,
+  // not authored timing; seeks and edits invalidate the cache independently.
+  const clockOffset = Math.round((drillBeat - musicBeat) * 1e8) / 1e8;
+  const cacheKey = [transportRevision, stepNumber, stepsPerCount, parts.gaitIndex, hipHalfSpacing,
+    clockOffset, repeatOptions.songLength, repeatOptions.drill, targetBodyYaw, previous?.bodyYaw,
+    inPlace, inPlace ? robot.position.asArray().join(",") : ""].join(":");
+  if (state.stepCache?.counts !== state.counts || state.stepCache.beatUnits !== playbackBeatUnits ||
+    state.stepCache.key !== cacheKey) {
+    state.stepCache = {
+      counts: state.counts, beatUnits: playbackBeatUnits, key: cacheKey,
+      landings: new Map(), facings: new Map(), directions: new Map(), rolls: new Map(),
+    };
+  }
+  const stepCache = state.stepCache;
   const beatForStep = (step: number) => {
     if (repeatOptions.songLength > 0) {
       return drillBeat + midiBeatAtPulse(step / stepsPerCount, playbackBeatUnits) - musicBeat;
@@ -1298,6 +1325,8 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState) {
       : Math.max(0, Math.min(last, beat));
   };
   const landingFacing = (step: number) => {
+    const cached = stepCache.facings.get(step);
+    if (cached !== undefined) return cached;
     const beat = landingBeat(step);
     const index = Math.min(last - 1, Math.floor(beat));
     const selection = resolveSegmentGait(state, index, parts.gaitIndex);
@@ -1305,10 +1334,15 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState) {
     const before = resolveSegmentGait(state, index - 1, parts.gaitIndex);
     const yaw = selection.bodyYaw;
     const progress = beat - Math.floor(beat);
-    return before ? lerpAngle(before.bodyYaw, yaw,
+    const facing = before ? lerpAngle(before.bodyYaw, yaw,
       progress * progress * (3 - 2 * progress)) : yaw;
+    stepCache.facings.set(step, facing);
+    return facing;
   };
   const landing = (step: number, left: boolean) => {
+    const key = `${step}:${left}`;
+    const cached = stepCache.landings.get(key);
+    if (cached) return cached;
     const beat = landingBeat(step);
     const index = Math.floor(beat);
     const position = inPlace ? robot.position.clone() :
@@ -1322,6 +1356,7 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState) {
     const footYaw = yaw;
     position.x += Math.sin(footYaw) * MARCHER_SHOE_FORWARD_OFFSET * MARCHER_BODY_SCALE;
     position.z += Math.cos(footYaw) * MARCHER_SHOE_FORWARD_OFFSET * MARCHER_BODY_SCALE;
+    stepCache.landings.set(key, position);
     return position;
   };
   const footTarget = (side: number, lift: number) => {
@@ -1332,23 +1367,53 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState) {
     const hip = new Vector3(side * hipHalfSpacing, 0.69, 0);
     const swinging = side < 0 ? !leftStance : leftStance;
     let pitch = 0;
+    const contactTarget = (step: number, plantedStep: number) => {
+      // Landing targets sample midstance; the contact boundary is half a step earlier.
+      const beat = landingBeat(step - 0.5);
+      const index = Math.floor(beat);
+      const position = inPlace ? robot.position : Vector3.Lerp(state.counts[index].position,
+        state.counts[Math.min(last, index + 1)].position, beat - index);
+      const target = marcherSoleInRig(landing(plantedStep, side < 0).subtract(position),
+        landingFacing(step - 0.5), MARCHER_BODY_SCALE);
+      const bounded = boundMarcherFootTarget(hip, target, yaw);
+      return bounded.sole;
+    };
+    const contactDirection = (plantedStep: number) => {
+      const key = `${side}:${plantedStep}`;
+      if (stepCache.directions.has(key)) return stepCache.directions.get(key);
+      // Retain an endpoint's necessary fallback instead of switching roll branches midstance.
+      for (const step of [plantedStep, plantedStep + 1]) {
+        const sole = contactTarget(step, plantedStep);
+        if (sole.z > MARCHER_SHOE_FORWARD_OFFSET &&
+          marcherGroundFootPitch(hip, sole, yaw) > 0) {
+          stepCache.directions.set(key, 1);
+          return 1;
+        }
+      }
+      stepCache.directions.set(key, undefined);
+      return undefined;
+    };
+    const plantedStep = swinging
+      ? (gaitProgress < 0.5 ? stepNumber - 1 : stepNumber + 1)
+      : stepNumber;
+    const rollDirection = contactDirection(plantedStep);
     if (swinging) {
-      const boundaryPitch = (step: number, plantedStep: number) => {
-        const beat = landingBeat(step - 0.5);
-        const index = Math.floor(beat);
-        const position = inPlace ? robot.position : Vector3.Lerp(state.counts[index].position,
-          state.counts[Math.min(last, index + 1)].position, beat - index);
-        const target = marcherSoleInRig(landing(plantedStep, side < 0).subtract(position),
-          landingFacing(step - 0.5), MARCHER_BODY_SCALE);
-        const bounded = boundMarcherFootTarget(hip, target, yaw);
-        return marcherGroundFootPitch(hip, bounded.sole, yaw);
-      };
-      const contactPitch = gaitProgress < 0.5
-        ? boundaryPitch(stepNumber, stepNumber - 1)
-        : boundaryPitch(stepNumber + 1, stepNumber + 1);
-      pitch = marcherSwingFootPitch(gaitProgress, contactPitch);
+      const boundary = gaitProgress < 0.5 ? stepNumber : stepNumber + 1;
+      const key = `${side}:${plantedStep}:${boundary}`;
+      let roll = stepCache.rolls.get(key);
+      if (!roll) {
+        const contactPitch = marcherGroundFootPitch(hip, contactTarget(boundary, plantedStep), yaw, rollDirection);
+        const epsilon = 0.001;
+        const nearby = gaitProgress < 0.5 ? boundary - epsilon : boundary + epsilon;
+        const nearbyPitch = marcherGroundFootPitch(hip, contactTarget(nearby, plantedStep), yaw, rollDirection);
+        const velocity = gaitProgress < 0.5
+          ? (contactPitch - nearbyPitch) / epsilon : (nearbyPitch - contactPitch) / epsilon;
+        roll = { pitch: contactPitch, velocity };
+        stepCache.rolls.set(key, roll);
+      }
+      pitch = marcherSwingFootPitch(gaitProgress, roll.pitch, roll.velocity);
     }
-    return { ...boundMarcherFootTarget(hip, sole, yaw), yaw, pitch };
+    return { ...boundMarcherFootTarget(hip, sole, yaw), yaw, pitch, rollDirection };
   };
   const leftTarget = footTarget(-1, !leftStance ? lift : 0);
   const rightTarget = footTarget(1, leftStance ? lift : 0);
@@ -1371,7 +1436,7 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState) {
   ) => {
     const hip = new Vector3(side * hipHalfSpacing, 0.69, 0);
     const sole = boundMarcherFootLift(hip, target.sole, target.yaw);
-    const pose = solvePlantedMarcherLeg(hip, sole, target.yaw, target.pitch);
+    const pose = precalculateMarcherLegPose(hip, sole, target.yaw, target.pitch, target.rollDirection);
     knee.position.y = -pose.thighLength;
     knee.rotation.x = pose.kneeAngle;
     knee.rotationQuaternion = pose.kneeRotation;
@@ -1633,6 +1698,8 @@ function applyFixedFacing(state: PlayerState) {
 export function setRobotFacing(robot: TransformNode, facingY: number | null) {
   const state = players.get(robot);
   if (!state) return;
+  state.stepCache = undefined;
+  state.gaitPhaseCache?.clear();
   if (facingY === null) {
     state.fixedFacingY = undefined;
     state.counts.forEach((count) => { delete count.facingY; });
@@ -1760,6 +1827,7 @@ export function setRobotCountPosition(
   count.position.copyFrom(position);
   count.rotationY = rotationY;
   state.gaitPhaseCache?.clear();
+  state.stepCache = undefined;
 
   applyGlobalCount(robot, state);
   recalculateCollisionMarkers(scene);
@@ -1830,6 +1898,7 @@ export function setRobotSetPoses(
     }
     state.points = state.counts.map(count => count.position.clone());
     state.gaitPhaseCache?.clear();
+    state.stepCache = undefined;
   }
   applyGlobalCountToAllRobots();
   recalculateCollisionMarkers(scene);

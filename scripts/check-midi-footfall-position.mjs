@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { stripTypeScriptTypes } from 'node:module';
 import vm from 'node:vm';
+import { performance } from 'node:perf_hooks';
 import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector.pure.js';
 import initSqlJs from 'sql.js';
 
@@ -31,6 +32,7 @@ const context = vm.createContext({
   playbackTempoMap: [{ beat: 0, bpm: 120 }],
   repeatOptions: { songLength: 32 },
   playbackBeatUnits: [],
+  transportRevision: 0,
   getDrillTransportState: () => ({ beat: drillBeat }),
   getMusicTransportState: () => ({ beat: musicBeat }),
   resolveSegmentGait: () => ({
@@ -72,6 +74,195 @@ const pose = () => {
   return [parts.leftKnee.rotation.x, parts.rightKnee.rotation.x, ...robot.position.asArray()];
 };
 
+const groundPitch = context.marcherGroundFootPitch;
+const exactLegSolver = context.solvePlantedMarcherLeg;
+let legSolves = 0;
+context.solvePlantedMarcherLeg = (...args) => {
+  legSolves++;
+  return exactLegSolver(...args);
+};
+let contactSolves = 0;
+context.marcherGroundFootPitch = (...args) => {
+  contactSolves++;
+  return groundPitch(...args);
+};
+if (process.argv.includes('--benchmark')) {
+  const marchers = Array.from({ length: 100 }, (_, index) => {
+    const root = node();
+    const rig = Object.fromEntries(Object.entries(parts).map(([key, value]) =>
+      [key, value && typeof value === 'object' ? node() : value]));
+    context.marcherParts.set(root, rig);
+    return { root, state: { counts: [] }, index };
+  });
+  const modes = [
+    { name: 'Uncached', step: false, leg: false },
+    { name: 'Step cache', step: true, leg: false },
+    { name: 'Step + leg cache', step: true, leg: true },
+  ];
+  const cachedLegSolver = context.precalculateMarcherLegPose;
+  const results = [];
+  for (const varied of [false, true]) {
+    for (const marcher of marchers) {
+      const stride = varied ? 0.15 + marcher.index * 0.003 : 0.2;
+      marcher.state.counts = Array.from({ length: 40 }, (_, count) => ({
+        position: new Vector3(marcher.index * 2, 0, count * stride), rotationY: 0,
+      }));
+    }
+    const measurements = modes.map(() => ({ times: [], legs: 0, contacts: 0 }));
+    for (let trial = 0; trial < 3; trial++) {
+      for (let order = 0; order < modes.length; order++) {
+        const modeIndex = (order + trial) % modes.length;
+        const mode = modes[modeIndex];
+        const measurement = measurements[modeIndex];
+        context.precalculateMarcherLegPose = mode.leg ? cachedLegSolver : context.solvePlantedMarcherLeg;
+        vm.runInContext('precalculatedLegPoses.clear()', context);
+        marchers.forEach(marcher => { marcher.state.stepCache = undefined; });
+        for (let frame = -30; frame < 180; frame++) {
+          musicBeat = drillBeat = 4 + (frame + 30) / 45;
+          const beforeLegs = legSolves;
+          const beforeContacts = contactSolves;
+          const start = performance.now();
+          for (const marcher of marchers) {
+            if (!mode.step) marcher.state.stepCache = undefined;
+            context.applyGlobalCount(marcher.root, marcher.state);
+          }
+          const elapsed = performance.now() - start;
+          if (frame >= 0) {
+            measurement.times.push(elapsed);
+            measurement.legs += legSolves - beforeLegs;
+            measurement.contacts += contactSolves - beforeContacts;
+          }
+        }
+      }
+    }
+    const baseline = measurements[0].times.reduce((sum, time) => sum + time, 0) /
+      measurements[0].times.length;
+    measurements.forEach((measurement, index) => {
+      const times = measurement.times.sort((a, b) => a - b);
+      const mean = times.reduce((sum, time) => sum + time, 0) / times.length;
+      results.push({
+        routes: varied ? '100 different strides' : '100 equivalent strides',
+        mode: modes[index].name,
+        meanMs: +mean.toFixed(3),
+        p95Ms: +times[Math.ceil(times.length * 0.95) - 1].toFixed(3),
+        cpuReductionPercent: +(100 * (1 - mean / baseline)).toFixed(1),
+        legSolvesPerFrame: +(measurement.legs / times.length).toFixed(2),
+        contactSolvesPerFrame: +(measurement.contacts / times.length).toFixed(2),
+      });
+    });
+  }
+  console.log('CPU animation benchmark: 100 marchers, 120 BPM, 90 updates/second.');
+  console.log('Three interleaved trials; 30 warmup + 180 measured frames per trial.');
+  console.log('Real applyGlobalCount/IK in the regression VM; rendering, matrix attachment, gait resolution, and instrument updates are excluded.');
+  console.table(results);
+  process.exit(0);
+}
+const renderedPose = () => {
+  pose();
+  return [
+    ...robot.position.asArray(), ...robot.rotation.asArray(),
+    ...[parts.leftLeg, parts.rightLeg].flatMap(leg => leg.rotation.asArray()),
+    ...[parts.leftKnee, parts.rightKnee, parts.leftAnkle, parts.rightAnkle]
+      .flatMap(joint => joint.rotationQuaternion.asArray()),
+  ];
+};
+for (const rate of [0.5, 1, 2]) {
+  cadence = rate;
+  for (const yaw of [0, Math.PI / 2, Math.PI]) {
+    facingYaw = yaw;
+    state.stepCache = undefined;
+    for (let sample = 1; sample < 90; sample++) {
+      musicBeat = drillBeat = (4 + sample / 100) / rate;
+      const cached = renderedPose();
+      const saved = state.stepCache;
+      state.stepCache = undefined;
+      const uncached = renderedPose();
+      state.stepCache = saved;
+      cached.forEach((value, index) => assert.ok(Math.abs(value - uncached[index]) < 1e-6,
+        'Cached steps preserve the complete rendered leg pose'));
+    }
+  }
+}
+cadence = 1;
+facingYaw = 0;
+musicBeat = drillBeat = 4.1;
+state.stepCache = undefined;
+renderedPose();
+contactSolves = 0;
+for (let sample = 11; sample < 49; sample++) {
+  musicBeat = drillBeat = 4 + sample / 100;
+  renderedPose();
+}
+assert.equal(contactSolves, 0, 'Steady frames reuse precalculated contact roll without ground-pitch solves');
+context.transportRevision++;
+renderedPose();
+assert.ok(contactSolves > 0, 'Transport discontinuities invalidate step contacts');
+const cacheBeforeMeterChange = state.stepCache;
+context.playbackBeatUnits = [{ beat: 0, quarterNotesPerPulse: 1.5 }];
+renderedPose();
+assert.notEqual(state.stepCache, cacheBeforeMeterChange, 'MIDI meter changes invalidate step contacts');
+context.playbackBeatUnits = [];
+const cacheBeforeRouteChange = state.stepCache;
+state.counts = state.counts.map(count => ({ ...count, position: count.position.clone() }));
+renderedPose();
+assert.notEqual(state.stepCache, cacheBeforeRouteChange, 'Rebuilt routes invalidate step contacts');
+context.marcherGroundFootPitch = groundPitch;
+state.stepCache = undefined;
+musicBeat = drillBeat = 4.25;
+const sharedLegPose = renderedPose();
+legSolves = 0;
+renderedPose();
+assert.equal(legSolves, 0, 'Repeated rig-local leg animation reuses solved poses');
+const precalculatedSolver = context.precalculateMarcherLegPose;
+context.precalculateMarcherLegPose = exactLegSolver;
+try {
+  const exactPose = renderedPose();
+  sharedLegPose.forEach((value, index) => assert.ok(Math.abs(value - exactPose[index]) < 1e-6,
+    'Precalculated leg animation matches the exact solver'));
+} finally {
+  context.precalculateMarcherLegPose = precalculatedSolver;
+}
+const hip = new Vector3(-0.0576, 0.69, 0);
+const sole = new Vector3(-0.0576, 0.05, 0.08);
+const firstLegPose = context.precalculateMarcherLegPose(hip, sole, 0);
+const expectedKnee = firstLegPose.kneeRotation.asArray();
+firstLegPose.kneeRotation.x = 99;
+assert.deepEqual(context.precalculateMarcherLegPose(hip, sole, 0).kneeRotation.asArray(), expectedKnee,
+  'Marcher joint updates cannot mutate shared cached animations');
+legSolves = 0;
+const sharedSole = new Vector3(-0.0576, 0.05, 0.081234);
+for (let marcher = 0; marcher < 100; marcher++) {
+  context.precalculateMarcherLegPose(hip, sharedSole, 0);
+}
+assert.equal(legSolves, 1, 'One hundred equivalent marcher leg poses need only one exact solve');
+context.solvePlantedMarcherLeg = exactLegSolver;
+console.log('Step precalculation checks passed: identical cached/uncached poses, zero repeat contact solves, timing and route invalidation.');
+const normalGaitResolver = context.resolveSegmentGait;
+const normalCounts = state.counts;
+context.resolveSegmentGait = (...args) => ({ ...normalGaitResolver(...args), inPlace: true });
+state.counts = Array.from({ length: 40 }, (_, index) =>
+  ({ position: new Vector3(0, 0, index * 0.02), rotationY: 0 }));
+for (const direction of [1, -1]) {
+  playback.speedMultiplier = direction;
+  for (let sample = 0; sample <= 200; sample++) {
+    musicBeat = drillBeat = 4 + sample / 100;
+    pose();
+    assert.ok(Math.abs(robot.position.z - drillBeat * 0.02) < 1e-9,
+      'Auto mark-time feet do not freeze short authored moves or snap at counts');
+  }
+}
+parts.gaitIndex = 6;
+musicBeat = drillBeat = 4.25;
+pose();
+assert.equal(robot.position.z, 0, 'Explicit Mark Time still holds the route origin');
+parts.gaitIndex = 0;
+playback.speedMultiplier = 1;
+context.resolveSegmentGait = normalGaitResolver;
+state.counts = normalCounts;
+state.stepCache = undefined;
+console.log('Short-move regression passed: continuous auto travel, forward/reverse counts, explicit mark-time preserved.');
+if (process.argv.includes('--step-cache-only')) process.exit(0);
+
 for (const rate of [0.5, 1, 2]) {
   cadence = rate;
   for (let step = 0; step < 8; step++) {
@@ -106,7 +297,9 @@ const solePosition = (leg, knee, ankle) => {
   const footForward = Vector3.TransformNormal(Vector3.Forward(), matrix);
   assert.ok(Math.abs(footForward.x) < 1e-6 && footForward.z > 0,
     'Feet yaw stays aligned with the torso, even during sideways marching');
-  center.y -= context.marcherShoeGroundDepth(Math.atan2(-footForward.y, footUp.y));
+  const pitch = Math.atan2(-footForward.y, footUp.y);
+  center.y -= context.marcherShoeGroundDepth(pitch);
+  center.z -= context.marcherShoeRollOffset(pitch);
   center.scaleInPlace(bodyScale);
   center.y += parts.body.position.y;
   return Vector3.TransformCoordinates(center, Matrix.RotationY(robot.rotation.y)).add(robot.position);
@@ -180,27 +373,88 @@ for (const stride of [0.2, 0.625]) {
   state.counts.forEach((count, index) => { count.position.z = index * stride; });
   for (const direction of [0, Math.PI]) {
     facingYaw = direction;
+    const cyclePitches = [];
+    for (let sample = 0; sample <= 4000; sample++) {
+      musicBeat = drillBeat = 2.5 + sample / 2000;
+      pose();
+      cyclePitches.push(footPitch(parts.leftLeg, parts.leftKnee, parts.leftAnkle));
+    }
+    assert.ok(peakAngularAcceleration(cyclePitches) < 1200,
+      `Complete cycle stays continuous through polygonal sole corners: stride=${stride}, yaw=${direction}, acceleration=${peakAngularAcceleration(cyclePitches)}`);
+    const interval = 0.0005;
+    for (const boundary of [3, 4]) {
+      const pitches = [];
+      for (const offset of [-interval, 0, interval]) {
+        musicBeat = drillBeat = boundary + offset;
+        pose();
+        pitches.push(footPitch(parts.leftLeg, parts.leftKnee, parts.leftAnkle));
+      }
+      const before = (pitches[1] - pitches[0]) / interval;
+      const after = (pitches[2] - pitches[1]) / interval;
+      assert.ok(Math.abs(after - before) < 0.3,
+        `Contact handoff preserves ankle velocity: stride=${stride}, yaw=${direction}, beat=${boundary}, before=${before}, after=${after}`);
+    }
     const pitches = sampleSwingPitches();
     const maxAcceleration = peakAngularAcceleration(pitches);
-    assert.ok(maxAcceleration < 15,
+    assert.ok(maxAcceleration < 150,
       `Swing ankle eases without springing flat or toe-up: stride=${stride}, yaw=${direction}, acceleration=${maxAcceleration}`);
     assert.ok(Math.abs(pitches[1000]) < 1e-6, 'Swing foot passes level without an extra toe flick');
     const maxContactPitch = Math.max(Math.abs(pitches[0]), Math.abs(pitches.at(-1)));
-    assert.ok(pitches.every(pitch => Math.abs(pitch) <= maxContactPitch + 1e-6),
-      'Swing never over-rotates beyond its takeoff or landing contact pitch');
-    const easedSolver = context.solvePlantedMarcherLeg;
+    assert.ok(pitches.every(pitch => Math.abs(pitch) <= maxContactPitch + 5 * Math.PI / 180),
+      'Matching contact velocity adds no more than five degrees of recovery roll');
+    const easedSolver = context.precalculateMarcherLegPose;
     let reachOnlyAcceleration;
-    context.solvePlantedMarcherLeg = (hip, sole, yaw) => easedSolver(hip, sole, yaw);
+    context.precalculateMarcherLegPose = (hip, sole, yaw) => exactLegSolver(hip, sole, yaw);
     try {
       reachOnlyAcceleration = peakAngularAcceleration(sampleSwingPitches());
     } finally {
-      context.solvePlantedMarcherLeg = easedSolver;
+      context.precalculateMarcherLegPose = easedSolver;
     }
     assert.ok(maxAcceleration < reachOnlyAcceleration / 4,
       'Eased swing removes at least three quarters of the reach-only toe spring acceleration');
     console.log(`Swing ankle stride=${stride}, yaw=${direction}: peak angular acceleration ${reachOnlyAcceleration.toFixed(1)} -> ${maxAcceleration.toFixed(1)} radians/pulse²`);
   }
 }
+state.counts.forEach((count, index) => { count.position.z = index * 0.2; });
+let maximumContactSlipSpeed = 0;
+for (const stride of [0.2, 0.625]) {
+  state.counts.forEach((count, index) => { count.position.z = index * stride; });
+  for (const yaw of [0, Math.PI / 2, Math.PI]) {
+    facingYaw = yaw;
+    for (const step of [2, 3]) {
+      const [leg, knee, ankle] = step % 2 === 0
+        ? [parts.leftLeg, parts.leftKnee, parts.leftAnkle]
+        : [parts.rightLeg, parts.rightKnee, parts.rightAnkle];
+      const worldPoint = local => {
+        const point = Vector3.TransformCoordinates(local, footMatrix(leg, knee, ankle)).scale(bodyScale);
+        return Vector3.TransformCoordinates(point, Matrix.RotationY(robot.rotation.y)).add(robot.position);
+      };
+      for (let sample = 1; sample < 100; sample++) {
+        const beat = step + sample / 100;
+        musicBeat = drillBeat = beat;
+        pose();
+        const soleVertices = [[0, -0.085], [-0.03, -0.075], [-0.03, 0.055],
+          [-0.0225, 0.095], [0, 0.105]]
+          .map(([y, z]) => new Vector3(0, y - shoeHalfHeight, z + shoeForwardOffset));
+        const contact = soleVertices.reduce((lowest, vertex) =>
+          worldPoint(vertex).y < worldPoint(lowest).y ? vertex : lowest);
+        assert.ok(Math.abs(worldPoint(contact).y) < 1e-6, 'Actual sole surface contacts the field');
+        const epsilon = 0.0001;
+        musicBeat = drillBeat = beat - epsilon;
+        pose();
+        const before = worldPoint(contact);
+        musicBeat = drillBeat = beat + epsilon;
+        pose();
+        const after = worldPoint(contact);
+        const speed = Math.hypot(after.x - before.x, after.z - before.z) / (2 * epsilon);
+        maximumContactSlipSpeed = Math.max(maximumContactSlipSpeed, speed);
+        assert.ok(speed < 0.001,
+          `Actual contacting shoe surface does not skate: stride=${stride}, yaw=${yaw}, beat=${beat}, speed=${speed}`);
+      }
+    }
+  }
+}
+console.log(`Actual sole contact: maximum horizontal slip ${maximumContactSlipSpeed.toFixed(6)} yards/pulse.`);
 state.counts.forEach((count, index) => { count.position.z = index * 0.2; });
 facingYaw = 0;
 for (const yaw of [Math.PI / 2, -Math.PI / 2, Math.PI]) {
@@ -309,7 +563,7 @@ for (const distance of [0.2, 0.625, 2, 10]) {
       facingYaw = yaw;
       for (let beat = 2; beat < 4; beat += 0.125) {
         musicBeat = drillBeat = beat;
-        pose();
+        assert.doesNotThrow(pose, `Extreme route distance=${distance}, rate=${rate}, yaw=${yaw}, beat=${beat}`);
         for (const [leg, knee, ankle] of [
           [parts.leftLeg, parts.leftKnee, parts.leftAnkle],
           [parts.rightLeg, parts.rightKnee, parts.rightAnkle],

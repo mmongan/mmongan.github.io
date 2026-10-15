@@ -11,8 +11,9 @@ import { BRASS, buildInstrumentTemplate, cachedInstrumentTemplate, InstrumentGeo
 // X across.
 export const EUPHONIUM_MOUTHPIECE_TIP = new Vector3(0, 0.27, 0);
 
-const LEADPIPE_X = -0.032;
-const BELL_X = 0.032;
+// +X is the player's right: leadpipe right, bell bow left.
+const LEADPIPE_X = 0.032;
+const BELL_X = -0.032;
 const BELL_Z = 0.085;
 
 function createEuphoniumTemplate(scene: Scene): Mesh {

@@ -12,8 +12,9 @@ import { BRASS, buildInstrumentTemplate, cachedInstrumentTemplate, InstrumentGeo
 export const MELLOPHONE_MOUTHPIECE_TIP = new Vector3(0, 0.3, 0);
 
 const TUBE_RADIUS = 0.0085;
-const LEADPIPE_X = -0.02;
-const BELL_X = 0.02;
+// +X is the player's right: leadpipe right, bell bow left.
+const LEADPIPE_X = 0.02;
+const BELL_X = -0.02;
 const BELL_TUBE_Z = 0.045;
 
 function createMellophoneTemplate(scene: Scene): Mesh {

@@ -7,8 +7,9 @@ import { BRASS, buildInstrumentTemplate, cachedInstrumentTemplate, InstrumentGeo
 // Model units ≈ meters. Local axes: +Y toward the mouthpiece (rim at
 // y = 0.25), -Y toward the bell, +Z toward the valve buttons, X across.
 const TUBE_RADIUS = 0.0075;
-const LEADPIPE_X = -0.018;
-const BELL_X = 0.018;
+// +X is the player's right: leadpipe right, bell bow left.
+const LEADPIPE_X = 0.018;
+const BELL_X = -0.018;
 const BELL_TUBE_Z = 0.04;
 
 function createTrumpetTemplate(scene: Scene): Mesh {

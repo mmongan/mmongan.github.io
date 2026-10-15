@@ -100,6 +100,35 @@ try {
   assert.equal(reduced.getTotalVertices(), 13, 'Reduced instruments keep six-sided tubes and caps');
   verify(reduced);
 
+  const tubeEnds = [];
+  class HandednessGeometry extends InstrumentGeometry {
+    tube(...args) {
+      const rings = super.tube(...args);
+      const sides = Array.isArray(args[2]) ? args[2].at(-1) : args[2];
+      tubeEnds.push(ringCenter(this, rings.at(-1), sides * (this.low ? 2 : 3)));
+      return rings;
+    }
+  }
+  context.InstrumentGeometry = HandednessGeometry;
+  for (const [file, name, offset, mouthHeight] of [
+    ['trumpetModel', 'getTrumpetTemplate', 0.018, 0.25],
+    ['mellophoneModel', 'getMellophoneTemplate', 0.02, 0.3],
+    ['euphoniumModel', 'getEuphoniumTemplate', 0.032, 0.27],
+  ]) {
+    const horn = load(file, [name]);
+    for (const detail of ['high', 'low']) {
+      tubeEnds.length = 0;
+      verify(horn[name](scene, detail));
+      assert.ok(Vector3.Distance(tubeEnds[0], new Vector3(0, mouthHeight, 0)) < 1e-9,
+        `${name} ${detail}: mouthpiece remains centered at the lips`);
+      assert.ok(Math.abs(tubeEnds[1].x - offset) < 1e-9,
+        `${name} ${detail}: leadpipe is on the player's right`);
+      assert.ok(Math.abs(tubeEnds[2].x + offset) < 1e-9,
+        `${name} ${detail}: bell bow is on the player's left`);
+    }
+  }
+  context.InstrumentGeometry = InstrumentGeometry;
+
   const models = [
     ['trumpetModel', ['getTrumpetTemplate']],
     ['mellophoneModel', ['getMellophoneTemplate']],

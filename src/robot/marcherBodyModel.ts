@@ -35,7 +35,8 @@ function getMarcherPartMaterial(scene: Scene): StandardMaterial {
   return material;
 }
 
-function partTemplate(name: string, build: (geometry: InstrumentGeometry) => void, underJacket = false) {
+function partTemplate(name: string, build: (geometry: InstrumentGeometry) => void, underJacket = false,
+  elbow?: { centerY: number; capDirection: number }) {
   return cachedInstrumentTemplate((scene) => {
     const geometry = new InstrumentGeometry();
     build(geometry);
@@ -49,7 +50,21 @@ function partTemplate(name: string, build: (geometry: InstrumentGeometry) => voi
       }
       material = legMaterial;
     }
-    return buildLowPolyTemplate(name, geometry, material, scene);
+    const mesh = buildLowPolyTemplate(name, geometry, material, scene);
+    if (elbow) {
+      const normals = mesh.getVerticesData('normal')!;
+      for (let index = 0; index < geometry.positions.length; index += 3) {
+        const offsetY = geometry.positions[index + 1] - elbow.centerY;
+        if (offsetY * elbow.capDirection < -1e-8) continue;
+        // Independently rotated elbow caps need the same radial shading at their overlap.
+        const normal = new Vector3(geometry.positions[index], offsetY, geometry.positions[index + 2]).normalize();
+        normals[index] = normal.x;
+        normals[index + 1] = normal.y;
+        normals[index + 2] = normal.z;
+      }
+      mesh.setVerticesData('normal', normals);
+    }
+    return mesh;
   });
 }
 
@@ -78,17 +93,19 @@ export const getMarcherJacketTemplate = partTemplate("marcherJacketTemplate", (g
 // continuous without changing the rig's joint centers or instrument grips.
 export const getMarcherUpperArmTemplate = partTemplate("marcherUpperArmTemplate", (geometry) => {
   geometry.lathe(geometry.low
-    ? [[0, -0.37], [0.075, -0.3], [0.085, -0.15], [0.095, 0], [0, 0.095]]
-    : [[0, -0.375], [0.053, -0.353], [0.075, -0.3], [0.08, -0.23],
-      [0.085, -0.15], [0.09, -0.07], [0.095, 0], [0.067, 0.067], [0, 0.095]], 12, TINTED);
-});
+    ? [[0, -0.345], [0.0424264069, -0.3318198052], [0.06, -0.3], [0.095, 0], [0, 0.095]]
+    : [[0, -0.345], [0.0229610059, -0.3415745790], [0.0424264069, -0.3318198052], [0.06, -0.3], [0.08, -0.23],
+      [0.085, -0.15], [0.09, -0.07], [0.095, 0], [0.067, 0.067], [0, 0.095]], geometry.low ? 12 : 8, TINTED,
+    ({ x, y, z }) => new Vector3(x * 0.75, y, z * 0.75));
+}, false, { centerY: -0.3, capDirection: -1 });
 
 export const getMarcherForearmTemplate = partTemplate("marcherForearmTemplate", (geometry) => {
   geometry.lathe(geometry.low
-    ? [[0, -0.44], [0.055, -0.4], [0.07, -0.2], [0.075, 0], [0, 0.075]]
-    : [[0, -0.445], [0.039, -0.432], [0.055, -0.4], [0.065, -0.3], [0.07, -0.2],
-      [0.075, -0.08], [0.075, 0], [0.053, 0.053], [0, 0.075]], 12, TINTED);
-});
+    ? [[0, -0.39], [0.035, -0.39], [0.05625, 0], [0.0397747564, 0.0318198052], [0, 0.045]]
+    : [[0, -0.39], [0.035, -0.39], [0.055, -0.35], [0.065, -0.3], [0.07, -0.2],
+      [0.06, -0.08], [0.05625, 0], [0.0397747564, 0.0318198052], [0.0215259431, 0.0415745790], [0, 0.045]], geometry.low ? 12 : 8, TINTED,
+    ({ x, y, z }) => new Vector3(x * 0.8, y, z * 0.8));
+}, false, { centerY: 0, capDirection: 1 });
 
 export const getMarcherThighTemplate = partTemplate("marcherThighTemplate", (geometry) => {
   geometry.lathe(geometry.low
@@ -122,5 +139,5 @@ export const getMarcherShoeTemplate = partTemplate("marcherShoeTemplate", (geome
 export const getMarcherGloveTemplate = partTemplate("marcherGloveTemplate", (geometry) => {
   geometry.lathe(geometry.low
     ? [[0, -0.0475], [0.0475, 0], [0, 0.0475]]
-    : [[0, -0.0475], [0.034, -0.034], [0.0475, 0], [0.034, 0.034], [0, 0.0475]], 12, GLOVE);
+    : [[0, -0.0475], [0.034, -0.034], [0.0475, 0], [0.034, 0.034], [0, 0.0475]], geometry.low ? 12 : 8, GLOVE);
 });

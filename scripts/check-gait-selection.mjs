@@ -26,6 +26,16 @@ let result = pick(0, 0, 0, 'Field March');
 assert.equal(result.gait, 'Mark Time');
 assert.equal(result.relation, 'in-place');
 assert.equal(pick(0, 0, 0.01, 'High Step').gait, 'High Mark Time');
+for (const style of ['Field March', 'High Step']) {
+  const shortMove = selectAutoGait(0, 0, 0.02, style, 1, 1.25);
+  assert.equal(shortMove.gait, style === 'High Step' ? 'High Mark Time' : 'Mark Time');
+  assert.equal(shortMove.stepsPerCount, 2,
+    'Short travel retains neighboring double-time cadence for shared footfalls');
+  assert.equal(selectAutoGait(0, 0, 0.02, style, 1, 0.15).stepsPerCount, 1,
+    'Ordinary mark time remains on the pulse rather than half time');
+  assert.equal(selectAutoGait(0, 0, 0.02, style, 1.5, 0.75).stepsPerCount, 2,
+    'Neighbor-aware mark time respects compound MIDI pulses');
+}
 
 result = pick(0, 0, yard);
 assert.equal(result.gait, 'Field March');
