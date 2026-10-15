@@ -42,6 +42,23 @@ To check automatic gait selection:
 node scripts/check-gait-selection.mjs
 ```
 
+To check standing-form editing and collision-safe placement:
+
+```bash
+node scripts/check-drill-editing.mjs
+node scripts/check-manual-placement.mjs
+```
+
+To check MIDI-locked footfalls, smooth swing-foot lift, anatomical leg limits, and stable marcher POV:
+
+```bash
+node scripts/check-midi-footfall-position.mjs
+node scripts/check-thigh-attachment.mjs
+node scripts/check-marcher-pov.mjs
+```
+
+Run strict TypeScript validation with `npx tsc --noEmit`. These are standalone checks; there is no `npm test` script. The Node.js checks that strip TypeScript require Node.js 22.13 or newer.
+
 To check controller hand assignments and media jogging:
 
 ```bash
@@ -85,6 +102,19 @@ GitHub file-page links and Dropbox share links are converted to download URLs. O
 The reader checks the required tables rather than promising compatibility with every past or future OpenMarch release. The database writer used by the bundled-example generator targets the OpenMarch schema through migration `0016` (`user_version = 7`), but **there is currently no user-facing `.dots` export or lossless round-trip editing workflow**. Preserve your original show and use OpenMarch for full-fidelity editing.
 
 Implementation: [OpenMarch database conversion](src/robot/openMarchFormat.ts), [URL loading](src/robot/openMarchUrl.ts), and [example generator](scripts/make-openmarch-example.mts). Format compatibility does not imply affiliation with OpenMarch.
+
+## Edit a standing formation
+
+1. Open **Settings -> Drill form editor**.
+2. Choose a form tool, an empty field origin, and marcher spacing, then press **Create form**. A block creates three independently selectable rows.
+3. Choose the form in **Selected standing form**, or select one of its marchers.
+4. Enter movement, clockwise rotation, or scale and press **Apply group transform**. To change spacing while retaining marcher count and instruments, use **Apply spacing to selected form**.
+5. Use **Align X** to make a line along Z, or **Align Z** to make a line along X. **Distribute X/Z evenly** preserves the outermost coordinates on that axis and spaces the other marchers between them.
+6. Enable grid snapping and choose a preset, or enter separate **X/Z rounding** intervals. Hold **Shift** to bypass grid and angle snapping temporarily. Use **Round to whole yards**, or press **1** outside input fields, to round the selected form explicitly.
+
+**Lock X/Z translation** prevents movement on that axis during group translation and standing-form controller move/control-point edits. Rotation, scaling, alignment, individual marcher grabs, and route edits are not constrained by these locks.
+
+Every group edit checks body and instrument collisions before applying changes. Rejected edits leave the entire form unchanged. Imported or attached marching routes are not edited by these controls. Selection is one standing form at a time; rectangle/lasso multi-selection, adjacent-set copying, form saving/export, and transform undo/redo are not provided. Successful form edits clear erase undo/redo history.
 
 ## Features
 
