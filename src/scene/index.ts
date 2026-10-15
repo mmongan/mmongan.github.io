@@ -1,6 +1,6 @@
 import { engine, scene } from './engine';
 import '../camera/desktopCamera';
-import { drillChartPadToggle, fieldLevelInputs, getSelectedFieldLevel } from '../ui/dom';
+import { drillChartPadToggle, drillSelectionMode, fieldLevelInputs, getSelectedFieldLevel } from '../ui/dom';
 import { createSky } from '../environment/sky';
 import { createHorizonGround } from '../environment/ground';
 import { createFootballField } from '../field/footballField';
@@ -56,7 +56,7 @@ const startupPlaybackObserver = scene.onBeforeRenderObservable.add(() => {
   const transport = getDrillTransportState();
   if (transport.lastBeat <= 0 || !isMidiPlaybackReady()) return;
   scene.onBeforeRenderObservable.remove(startupPlaybackObserver);
-  if (!transport.playing) playAll();
+  if (!transport.playing && !drillSelectionMode.checked) playAll();
 });
 
 // Snapshot of top-level meshes for AR tabletop mode — must be taken after all

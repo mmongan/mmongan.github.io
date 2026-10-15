@@ -99,6 +99,22 @@ export const gridSnapZ = document.getElementById("gridSnapZ") as HTMLInputElemen
 export const formationLockX = document.getElementById("formationLockX") as HTMLInputElement | null;
 export const formationLockZ = document.getElementById("formationLockZ") as HTMLInputElement | null;
 export const angleSnapToggle = document.getElementById("angleSnapToggle") as HTMLInputElement | null;
+export const selectionEditor = document.getElementById("selectionEditor") as HTMLFormElement;
+export const drillSelectionMode = document.getElementById("drillSelectionMode") as HTMLInputElement;
+export const drillSetEditMode = document.getElementById("drillSetEditMode") as HTMLInputElement;
+export const drillEditSet = document.getElementById("drillEditSet") as HTMLSelectElement;
+export const drillSelectionStatus = document.getElementById("drillSelectionStatus") as HTMLOutputElement;
+export const drillShapeKind = document.getElementById("drillShapeKind") as HTMLSelectElement;
+export const drillShapeInputs = {
+  startX: document.getElementById("drillShapeStartX") as HTMLInputElement,
+  startZ: document.getElementById("drillShapeStartZ") as HTMLInputElement,
+  endX: document.getElementById("drillShapeEndX") as HTMLInputElement,
+  endZ: document.getElementById("drillShapeEndZ") as HTMLInputElement,
+  controlX: document.getElementById("drillShapeControlX") as HTMLInputElement,
+  controlZ: document.getElementById("drillShapeControlZ") as HTMLInputElement,
+  control2X: document.getElementById("drillShapeControl2X") as HTMLInputElement,
+  control2Z: document.getElementById("drillShapeControl2Z") as HTMLInputElement,
+};
 
 export function getSelectedXRMode(): XRSessionMode {
   const selected = xrModeInputs.find((input) => input.checked)?.value as XRSessionMode | undefined;

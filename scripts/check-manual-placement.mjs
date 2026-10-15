@@ -113,8 +113,8 @@ try {
     applyGlobalCount: () => applied++, recalculateCollisionMarkers: () => {},
   });
   const robotSource = readFileSync(new URL('../src/robot/robot.ts', import.meta.url), 'utf8');
-  const countEdit = robotSource.slice(robotSource.indexOf('export function setRobotCountPosition('),
-    robotSource.indexOf('// Prepends "hold in place"'));
+  const countStart = robotSource.indexOf('export function setRobotCountPosition(');
+  const countEdit = robotSource.slice(countStart, robotSource.indexOf('\n}', countStart) + 2);
   vm.runInContext(`${stripTypeScriptTypes(countEdit).replace('export ', '')}
 globalThis.edit = setRobotCountPosition;`, context);
   context.edit(editA, 0, new Vector3(0, 0, -1.3), scene);
@@ -124,6 +124,20 @@ globalThis.edit = setRobotCountPosition;`, context);
   assert.equal(applied, 0, 'Rejected count edit does not update playback');
   context.edit(editA, 0, new Vector3(-4, 0, 0), scene);
   assert.equal(applied, 1, 'Clear explicit count edit succeeds');
+  const setStart = robotSource.indexOf('export function setRobotSetPoses(');
+  Object.assign(context, {
+    Vector3, tryManualMarcherPoses, applyGlobalCountToAllRobots: () => applied++,
+  });
+  vm.runInContext(stripTypeScriptTypes(robotSource.slice(setStart, robotSource.indexOf('\n}', setStart) + 2))
+    .replace('export ', ''), context);
+  const beforeSet = JSON.stringify([...players.values()].map(state => state.counts));
+  assert.equal(context.setRobotSetPoses(0, [
+    { robot: editA, position: Vector3.Zero() }, { robot: editB, position: Vector3.Zero() },
+  ], 0, 0, scene), false, 'Actual body/instrument bounds reject a colliding destination set atomically');
+  assert.equal(JSON.stringify([...players.values()].map(state => state.counts)), beforeSet);
+  assert.equal(context.setRobotSetPoses(0, [
+    { robot: editA, position: new Vector3(-6, 0, 0) }, { robot: editB, position: new Vector3(6, 0, 0) },
+  ], 0, 0, scene), true, 'Clear set transaction succeeds with actual transformed bounds');
   editA.dispose();
   editB.dispose();
 

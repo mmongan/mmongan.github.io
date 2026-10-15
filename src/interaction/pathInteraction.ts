@@ -23,6 +23,7 @@ import {
   isARTabletopModeActive,
 } from '../xr/ar';
 import { scene } from '../scene/engine';
+import { createSelectionEditor } from './selectionEditor';
 import {
   alignFormationPoints, constrainDrillMovement, snapDrillPoint, transformFormationPoint,
   type FormationAlignment, type FormationTransform,
@@ -442,6 +443,7 @@ const placementDrafts = new Map<string, TransformNode>();
 function setEraseMode(enabled: boolean) {
   if (enabled === eraseMode) return;
   if (enabled) {
+    selectionTools?.disable();
     setPlacementMode(false);
     handInteraction.prepareForErase();
     selectRobot(null);
@@ -516,7 +518,10 @@ placementModeToggle?.addEventListener("change", () => {
 });
 
 function setPlacementMode(enabled: boolean) {
-  if (enabled) setEraseMode(false);
+  if (enabled) {
+    selectionTools?.disable();
+    setEraseMode(false);
+  }
   if (enabled === placementMode) return;
   placementDrafts.forEach((robot, handedness) => {
     robot.dispose();
@@ -1220,6 +1225,49 @@ function refreshSegmentVisuals(segment: Segment) {
 // respaces its rank of standing robots; a path segment re-registers its one
 // robot's marching route so playback follows the updated curve.
 const acceptedFormationControls = new WeakMap<Segment, Vector3[]>();
+let selectionTools: ReturnType<typeof createSelectionEditor> | null = null;
+
+function detachStandingSelection(robots: readonly TransformNode[]) {
+  for (const segment of [...segments]) {
+    if (segment.kind !== "formation" || !segment.robots.some(robot => robots.includes(robot))) continue;
+    segment.robots = segment.robots.filter(robot => !robots.includes(robot));
+    if (segment.anchorRobot && robots.includes(segment.anchorRobot)) segment.anchorRobot = undefined;
+    if (segment.robots.length < 2) {
+      segment.robots = [];
+      removeEditorForm(segment);
+      continue;
+    }
+    segment.controlPoints = segment.robots.map(robot => robot.position.clone());
+    segment.erasedFormationIndices?.clear();
+    segment.fitClosedCircle = false;
+    refreshEditedFormation(segment);
+  }
+  refreshFormationEditor();
+}
+
+function refreshSelectionEdits(robots: readonly TransformNode[]) {
+  eraseHistory.clear();
+  robots.forEach(robot => {
+    const counts = getRobotCounts(robot);
+    if (!counts) return;
+    const points = counts.map(count => count.position.clone());
+    robotPaths.set(robot, points);
+    const segment = pathSegmentByRobot.get(robot);
+    if (segment) {
+      segment.controlPoints = points;
+      refreshSegmentVisuals(segment);
+    } else updateRobotPathLine(robot, points);
+  });
+  for (const segment of segments) {
+    if (segment.kind !== "formation" || !segment.robots.some(robot => robots.includes(robot))) continue;
+    segment.controlPoints = segment.robots.map(robot => robot.position.clone());
+    segment.erasedFormationIndices?.clear();
+    segment.fitClosedCircle = false;
+    refreshEditedFormation(segment);
+  }
+  refreshStepHandles();
+  refreshFormationEditor();
+}
 
 function rebuildSegmentContent(segment: Segment) {
   eraseHistory.clear();
@@ -2534,6 +2582,7 @@ function spawnRandomRobots(count: number) {
 // lines, segments/handles, formation connections) so a fresh drill starts on
 // an empty field instead of piling onto whatever was already there.
 function clearAllRobots() {
+  selectionTools?.clear();
   eraseHistory.clear();
   finishFingerPath(false);
   placementDrafts.forEach((robot) => robot.dispose());
@@ -2606,6 +2655,10 @@ function spawnMarchingDrill() {
   setSelectedInstrument(pickerInstrument);
 
   refreshCollisionMarkers(scene);
+  const last = Math.max(0, ...paths.map(path => path.length - 1));
+  const counts = Array.from({ length: Math.floor(last / 8) + 1 }, (_, index) => index * 8);
+  if (counts[counts.length - 1] !== last) counts.push(last);
+  selectionTools?.setPages(counts.map((count, index) => ({ name: `Set ${index + 1}`, count })));
 }
 
 // Replaces the field with an OpenMarch show, each marcher holding the
@@ -2636,6 +2689,7 @@ function spawnOpenMarchDrill(drill: OpenMarchImportedDrill, showName: string, au
   refreshCollisionMarkers(scene);
   setDrillLabels(scene, pathRoot, labels);
   setShowInfo(showName, drill, instruments, tempoBpm);
+  selectionTools?.setPages(drill.pages);
   return tempoBpm;
 }
 
@@ -2682,6 +2736,25 @@ async function openMarchFromUrl(url: string, autoPlay = true): Promise<boolean> 
 }
 
 export function initInteraction() {
+  selectionTools = createSelectionEditor({
+    root: pathRoot,
+    getMarchers: () => scene.transformNodes.filter(node => node.name === "pathRobot" && node.parent === pathRoot),
+    getStandingForm: () => getEditorFormation()?.robots ?? [],
+    detachStandingMembers: detachStandingSelection,
+    changed: refreshSelectionEdits,
+    prepare: () => {
+      setEraseMode(false);
+      if (placementModeToggle?.checked) {
+        placementModeToggle.checked = false;
+        placementModeToggle.dispatchEvent(new Event("change"));
+      }
+      handInteraction.prepareForErase();
+    },
+    notify: showPlacementNotice,
+    snap: snapToStepGrid,
+    snapAngle,
+    constrain: constrainFormationMovement,
+  });
   setEraseMode(!!eraseModeToggle?.checked);
   undoEraseButton?.addEventListener("click", () => executeMenuAction({ action: "undoErase" }));
   redoEraseButton?.addEventListener("click", () => executeMenuAction({ action: "redoErase" }));
@@ -2691,7 +2764,7 @@ export function initInteraction() {
     if (target instanceof HTMLElement && (
       target.isContentEditable || target.closest("input, textarea, select")
     )) return;
-    if (event.key === "1" && !event.ctrlKey && !event.metaKey && !event.altKey) {
+    if (event.key === "1" && !selectionTools?.enabled() && !event.ctrlKey && !event.metaKey && !event.altKey) {
       if (floorCalibrationToggle?.checked) {
         publishFormationEdit("Finish floor calibration before editing forms.");
         return;

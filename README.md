@@ -46,6 +46,7 @@ To check standing-form editing and collision-safe placement:
 
 ```bash
 node scripts/check-drill-editing.mjs
+node scripts/check-drill-shapes.mjs
 node scripts/check-manual-placement.mjs
 ```
 
@@ -114,13 +115,56 @@ Implementation: [OpenMarch database conversion](src/robot/openMarchFormat.ts), [
 
 **Lock X/Z translation** prevents movement on that axis during group translation and standing-form controller move/control-point edits. Rotation, scaling, alignment, individual marcher grabs, and route edits are not constrained by these locks.
 
-Every group edit checks body and instrument collisions before applying changes. Rejected edits leave the entire form unchanged. Imported or attached marching routes are not edited by these controls. Selection is one standing form at a time; rectangle/lasso multi-selection, adjacent-set copying, form saving/export, and transform undo/redo are not provided. Successful form edits clear erase undo/redo history.
+Every group edit checks body and instrument collisions before applying changes. Rejected edits leave the entire form unchanged. Imported or attached marching routes are not edited by these standing-form controls. Use the separate selection and set editor below for arbitrary selections and explicit authored-set changes. Successful form edits clear erase undo/redo history.
+
+## Select marchers, build shapes, and edit sets
+
+Open **Settings -> Selection, shapes, and sets** and enable **multi-marcher editing**. Playback pauses and marcher POV exits. Close Settings to use the desktop field gestures:
+
+| Gesture | Action |
+| --- | --- |
+| Click a marcher | Select that marcher, or its grouped shape. |
+| Ctrl/Cmd-click | Add or remove one marcher from the selection. |
+| Drag empty field space | Rectangle selection; Ctrl/Cmd-drag adds to the selection. |
+| Shift-drag | Lasso selection, including loops ending at their starting point. |
+| Ctrl/Cmd+A | Select all eligible marchers; text inputs retain native select-all. |
+| Drag a selected marcher | Translate the selection. |
+| Drag the orange handle | Rotate the selection about its center. |
+| Drag a green corner handle | Uniformly scale the selection. |
+| Escape | Cancel the current gesture and clear selection; accepted edits are not undone. |
+
+Cyan circles mark selected marchers. Standing mode excludes marchers with routes. **Select current standing form** brings an existing form into the selection. Selection actions use the shared translation, rotation, scale, axis-lock, and grid-rounding settings in the form editor. Alignment and distribution also work on arbitrary selections. **Cycle X/Z rounding** advances the common presets; right-click cycles backward. Hold Shift to bypass configured snapping; the explicit whole-yard rounding action always rounds.
+
+### Custom shapes and grouping
+
+1. Select existing marchers in assignment order, then use **Create line from selected marchers**, or enter a start coordinate and press **Start / reset shape**.
+2. Append **Line**, **Single curve** (one quadratic control), **Double curve** (two cubic controls), **Move** (start a disconnected section), or **Close** (connect back to the first point).
+3. Use the blue field handles to adjust endpoints and curve controls. **Delete last segment** removes only the most recently appended segment.
+4. Press **Apply shape coordinates** to distribute the selected marchers along the drawable length, skipping disconnected gaps, or **Group selection into shape** to retain an editable group. Closed shapes do not duplicate the first marcher.
+5. Click a grouped member to select the whole group. Group transforms preserve the guide, and dragging its blue handles reapplies the shape. **Ungroup** removes grouping without deleting marchers or their routes.
+
+These operations reuse marcher identities and instruments; they do not create replacement performers. Grouping standing members detaches them from their previous standing-form guides. Editing only part of a selection shape dissolves that grouping rather than retaining an incorrect guide.
+
+### Explicit authored-set editing
+
+Enable **Edit authored drill sets**, choose a **Destination set**, then select scheduled marchers. Imported page names/counts are retained in the set list; generated drills use eight-count boundaries and their final count.
+
+- Selection transforms, alignment, and shapes edit that set only, rebuilding the selected marchers' transitions linearly to its previous and next set positions. Intermediate midsets in those two transitions are replaced; other marchers and distant counts remain unchanged.
+- **Copy positions from previous/next set** reads an adjacent set into the selected destination.
+- **Copy grouped shape to previous/next set** applies the current grouped shape to an adjacent destination while retaining the same marcher assignments. Select every member of the source group first.
+- Destination body/instrument collision checks are atomic. Intermediate travel is not guaranteed collision-free or physically marchable; inspect playback collision markers and stride warnings afterward.
+
+Resuming playback or seeking away from the edit set disables multi-marcher editing. Enabling placement or erase also disables it. Desktop selection gestures are not headset controller/lasso gestures; the existing XR interaction tools remain available outside this mode.
+
+Edits and shape groups are session-local and reset when the show is replaced or the page reloads. There is no transform/set-edit undo, form persistence, or user-facing `.dots` export. Successful edits clear erase history. Keep your original OpenMarch file for full-fidelity editing and saving.
+
+Implementation: [selection editor](src/interaction/selectionEditor.ts), [shape geometry](src/interaction/drillShapes.ts), and [focused selection-geometry/set transaction checks](scripts/check-drill-shapes.mjs).
 
 ## Features
 
 - Settings -> **Drill form editor** exposes line, arc, circle, block, polygon, and star tools for standing formations. Choose an empty origin and target spacing to add forms without replacing an imported show. Select a form in the list or select one of its marchers, then translate, rotate, scale, or adjust spacing for the whole form. Spacing changes scale the form while preserving its marcher count, identities, and instruments; original curve sampling may round intervals to fit endpoints.
 - Optional field-grid snap uses 0.3125, 0.625, 1.25, 2.5, or 5-yard intervals; angle snap uses 45 degrees. Settings and the XR palm form library share snap/spacing settings. The palm library also provides spacing, rotation, and scale buttons; existing controller/hand handles still move and reshape forms. Group edits validate all marchers together and roll back on collisions. Imported marching routes are intentionally excluded from these standing-form controls. Run `node scripts/check-drill-editing.mjs` for focused checks.
-- Each block row is a separate selectable form. Group controls edit one standing form at a time, not arbitrary multi-selection. These tools do not add form saving/export or transform undo/redo; successful edits clear existing erase history.
+- Each block row is a separate selectable form. The original form controls edit one standing form at a time; the selection editor supports arbitrary multi-selection. Neither editor adds form saving/export or transform undo/redo; successful edits clear existing erase history.
 - OpenMarch-style alignment tools in the same editor align X or Z to the form's average coordinate, distribute marchers evenly between the existing axis extremes, or round positions to whole yards (keyboard `1` outside text fields). Marcher order, identity, height, facing, and instruments are preserved; collisions reject the entire operation, and imported/attached routes remain protected. Alignment replaces the form's guide with a connected guide through the edited marcher positions rather than fitting it back to a circle.
 - Grid presets populate independently editable X/Z rounding intervals (0.001–10 yards). Hold `Shift` to bypass grid and angle snapping temporarily; releasing Shift or leaving the window restores the configured settings. X/Z translation locks apply to the form transform and standing-form controller move/control-point handles, including when snapping is enabled. They do not constrain rotation, scaling, alignment, individual marcher grabs, or marching-route edits.
 

@@ -13,7 +13,7 @@ import { Scene } from '@babylonjs/core/scene.pure';
 import { createCollisionMarkerManager, COLLISION_MARKER_RADIUS_YARDS } from './collisionMarkers';
 import { buildGaitStepPhaseOffsets, DOUBLE_TIME_ABOVE_YARDS, gaitPhaseAtBeat, isAutoGaitStyle, selectAutoGait } from './gaitSelection';
 import { resolveRepeatPlayback } from './playbackRepeat';
-import { registerManualPlacementMarcher, tryManualMarcherPose } from './manualPlacement';
+import { registerManualPlacementMarcher, tryManualMarcherPose, tryManualMarcherPoses } from './manualPlacement';
 import { CLARINET_MOUTHPIECE_TIP, getClarinetTemplate } from './clarinetModel';
 import { FLUTE_MOUTHPIECE_TIP, getFluteTemplate } from './fluteModel';
 import { getSousaphoneTemplate, SOUSAPHONE_MOUTHPIECE_TIP, SOUSAPHONE_VALVE_GRIP, sousaphoneLoopPoint } from './sousaphoneModel';
@@ -1743,6 +1743,77 @@ export function setRobotCountPosition(
 
   applyGlobalCount(robot, state);
   recalculateCollisionMarkers(scene);
+}
+
+export interface MarcherSetPose {
+  robot: TransformNode;
+  position: Vector3;
+  facingY?: number;
+}
+
+// Validate the destination set as one transaction before rewriting its adjacent transitions.
+export function setRobotSetPoses(
+  index: number, poses: readonly MarcherSetPose[], previousSet: number, nextSet: number, scene: Scene
+): boolean {
+  if (!Number.isInteger(index) || !Number.isInteger(previousSet) || !Number.isInteger(nextSet) ||
+    previousSet < 0 || previousSet > index || nextSet < index || poses.length === 0 ||
+    new Set(poses.map(pose => pose.robot)).size !== poses.length ||
+    poses.some(pose => !players.get(pose.robot)?.counts[index] ||
+      ![pose.position.x, pose.position.y, pose.position.z, pose.facingY ?? 0].every(Number.isFinite))) {
+    throw new RangeError("Set edit requires valid counts and finite, unique marcher poses.");
+  }
+  const snapshots = [...allRobots].map(robot => ({
+    robot, position: robot.position.clone(), yaw: robot.rotation.y,
+  }));
+  let accepted: boolean;
+  try {
+    for (const robot of allRobots) {
+      const counts = players.get(robot)?.counts;
+      const count = counts?.[Math.min(index, counts.length - 1)];
+      if (count) {
+        robot.position.copyFrom(count.position);
+        robot.rotation.y = count.facingY ?? count.rotationY;
+      }
+    }
+    accepted = tryManualMarcherPoses(poses.map(pose => ({
+      robot: pose.robot, position: pose.position,
+      rotationY: pose.facingY ?? players.get(pose.robot)!.counts[index].facingY ??
+        players.get(pose.robot)!.counts[index].rotationY,
+    })), false);
+  } finally {
+    snapshots.forEach(({ robot, position, yaw }) => {
+      robot.position.copyFrom(position);
+      robot.rotation.y = yaw;
+      robot.computeWorldMatrix(true);
+    });
+  }
+  if (!accepted) return false;
+  for (const pose of poses) {
+    const state = players.get(pose.robot)!;
+    const last = Math.min(nextSet, state.counts.length - 1);
+    const first = Math.min(previousSet, index);
+    const from = state.counts[first].position.clone();
+    const to = state.counts[last].position.clone();
+    for (let count = first; count <= last; count++) {
+      const position = count <= index
+        ? Vector3.Lerp(from, pose.position, index === first ? 1 : (count - first) / (index - first))
+        : Vector3.Lerp(pose.position, to, (count - index) / (last - index));
+      state.counts[count].position.copyFrom(position);
+    }
+    if (pose.facingY !== undefined) state.counts[index].facingY = pose.facingY;
+    for (let count = first; count <= last; count++) {
+      const before = state.counts[Math.max(0, count - 1)].position;
+      const after = state.counts[Math.min(state.counts.length - 1, count + 1)].position;
+      if (Vector3.DistanceSquared(before, after) > 1e-8) {
+        state.counts[count].rotationY = Math.atan2(after.x - before.x, after.z - before.z);
+      }
+    }
+    state.points = state.counts.map(count => count.position.clone());
+    state.gaitPhaseCache?.clear();
+  }
+  applyGlobalCountToAllRobots();
+  recalculateCollisionMarkers(scene);
+  return true;
 }
 
 // Prepends "hold in place" counts to a robot's route so it departs later than
