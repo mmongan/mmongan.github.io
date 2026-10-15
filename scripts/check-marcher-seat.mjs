@@ -128,8 +128,11 @@ try {
     const modelToMeters = 1.8 / 1.372;
     const shoeAxis = axis => shoeVertices.filter((_, index) => index % 3 === axis);
     const shoeExtent = axis => Math.max(...shoeAxis(axis)) - Math.min(...shoeAxis(axis));
-    assert.ok(Math.abs(shoeExtent(2) * modelToMeters - 0.276) < 0.001,
-      `${detail}: adult shoe length is about 27.6 cm`);
+    assert.ok(Math.abs(shoeExtent(2) * modelToMeters - 0.249) < 0.001,
+      `${detail}: adult shoe length is about 24.9 cm`);
+    const heelOverhang = -(Math.min(...shoeAxis(2)) + 0.055) * modelToMeters;
+    assert.ok(heelOverhang > 0.035 && heelOverhang < 0.04,
+      `${detail}: heel extends less than 4 cm behind the ankle`);
     assert.ok(shoeExtent(0) * 0.64 * modelToMeters > 0.075 &&
       shoeExtent(0) * 0.64 * modelToMeters < 0.1, `${detail}: shoe width stays within 7.5-10 cm`);
     assert.ok(Math.abs(shoeExtent(1) * modelToMeters - 0.079) < 0.001,

@@ -85,16 +85,25 @@ for (const rate of [0.5, 1, 2]) {
   }
 }
 cadence = 1;
-const solePosition = (leg, knee, ankle) => {
+const footMatrix = (leg, knee, ankle) => {
   const legMatrix = Matrix.Compose(Vector3.One(),
     Quaternion.FromEulerAngles(leg.rotation.x, leg.rotation.y, leg.rotation.z), leg.position);
   const kneeMatrix = Matrix.Compose(Vector3.One(), knee.rotationQuaternion, knee.position);
   const ankleMatrix = Matrix.Compose(Vector3.One(), ankle.rotationQuaternion,
     new Vector3(0, -calfLength, 0));
-  const footMatrix = ankleMatrix.multiply(kneeMatrix).multiply(legMatrix);
-  const center = Vector3.TransformCoordinates(new Vector3(0, -shoeHalfHeight, shoeForwardOffset), footMatrix);
-  const footUp = Vector3.TransformNormal(Vector3.Up(), footMatrix);
-  const footForward = Vector3.TransformNormal(Vector3.Forward(), footMatrix);
+  return ankleMatrix.multiply(kneeMatrix).multiply(legMatrix);
+};
+const footPitch = (leg, knee, ankle) => {
+  const matrix = footMatrix(leg, knee, ankle);
+  const forward = Vector3.TransformNormal(Vector3.Forward(), matrix);
+  const up = Vector3.TransformNormal(Vector3.Up(), matrix);
+  return Math.atan2(-forward.y, up.y);
+};
+const solePosition = (leg, knee, ankle) => {
+  const matrix = footMatrix(leg, knee, ankle);
+  const center = Vector3.TransformCoordinates(new Vector3(0, -shoeHalfHeight, shoeForwardOffset), matrix);
+  const footUp = Vector3.TransformNormal(Vector3.Up(), matrix);
+  const footForward = Vector3.TransformNormal(Vector3.Forward(), matrix);
   assert.ok(Math.abs(footForward.x) < 1e-6 && footForward.z > 0,
     'Feet yaw stays aligned with the torso, even during sideways marching');
   center.y -= context.marcherShoeGroundDepth(Math.atan2(-footForward.y, footUp.y));
@@ -127,6 +136,11 @@ for (let beat = 0; beat < 8; beat += 0.125) {
   assert.ok(Vector3.Dot(Vector3.Down(), calfDirection) > 1 - 1e-6,
     'Rendered support calf and thigh are collinear, not just the diagnostic knee angle');
   const planted = plantedLeft ? left : right;
+  const supportPitch = plantedLeft
+    ? footPitch(parts.leftLeg, parts.leftKnee, parts.leftAnkle)
+    : footPitch(parts.rightLeg, parts.rightKnee, parts.rightAnkle);
+  if (progress < 0.5) assert.ok(supportPitch < -1e-6, 'Toe is up at forward heel strike, not at push-off');
+  if (progress > 0.5) assert.ok(supportPitch > 1e-6, 'Heel rises and toe lowers behind the body at push-off');
   const key = Math.floor(beat);
   if (!plantedPositions.has(key)) plantedPositions.set(key, planted);
   assert.ok(Vector3.Distance(plantedPositions.get(key), planted) < 1e-6,
@@ -145,6 +159,50 @@ for (let sample = 0; sample <= 200; sample++) {
   assert.ok(Math.abs(swingSole.y - fieldLift(progress)) < 1e-6,
     `Rendered swing follows the smooth arc without reach clipping: progress=${progress}`);
 }
+const sampleSwingPitches = () => {
+  const pitches = [];
+  for (let sample = 0; sample <= 2000; sample++) {
+    musicBeat = drillBeat = 3 + sample / 2000;
+    pose();
+    pitches.push(footPitch(parts.leftLeg, parts.leftKnee, parts.leftAnkle));
+  }
+  return pitches;
+};
+const peakAngularAcceleration = pitches => {
+  let peak = 0;
+  for (let sample = 1; sample + 1 < pitches.length; sample++) {
+    const acceleration = Math.abs(pitches[sample + 1] - 2 * pitches[sample] + pitches[sample - 1]) * 2000 ** 2;
+    peak = Math.max(peak, acceleration);
+  }
+  return peak;
+};
+for (const stride of [0.2, 0.625]) {
+  state.counts.forEach((count, index) => { count.position.z = index * stride; });
+  for (const direction of [0, Math.PI]) {
+    facingYaw = direction;
+    const pitches = sampleSwingPitches();
+    const maxAcceleration = peakAngularAcceleration(pitches);
+    assert.ok(maxAcceleration < 15,
+      `Swing ankle eases without springing flat or toe-up: stride=${stride}, yaw=${direction}, acceleration=${maxAcceleration}`);
+    assert.ok(Math.abs(pitches[1000]) < 1e-6, 'Swing foot passes level without an extra toe flick');
+    const maxContactPitch = Math.max(Math.abs(pitches[0]), Math.abs(pitches.at(-1)));
+    assert.ok(pitches.every(pitch => Math.abs(pitch) <= maxContactPitch + 1e-6),
+      'Swing never over-rotates beyond its takeoff or landing contact pitch');
+    const easedSolver = context.solvePlantedMarcherLeg;
+    let reachOnlyAcceleration;
+    context.solvePlantedMarcherLeg = (hip, sole, yaw) => easedSolver(hip, sole, yaw);
+    try {
+      reachOnlyAcceleration = peakAngularAcceleration(sampleSwingPitches());
+    } finally {
+      context.solvePlantedMarcherLeg = easedSolver;
+    }
+    assert.ok(maxAcceleration < reachOnlyAcceleration / 4,
+      'Eased swing removes at least three quarters of the reach-only toe spring acceleration');
+    console.log(`Swing ankle stride=${stride}, yaw=${direction}: peak angular acceleration ${reachOnlyAcceleration.toFixed(1)} -> ${maxAcceleration.toFixed(1)} radians/pulse²`);
+  }
+}
+state.counts.forEach((count, index) => { count.position.z = index * 0.2; });
+facingYaw = 0;
 for (const yaw of [Math.PI / 2, -Math.PI / 2, Math.PI]) {
   facingYaw = yaw;
   let planted;
@@ -154,6 +212,46 @@ for (const yaw of [Math.PI / 2, -Math.PI / 2, Math.PI]) {
     const foot = solePosition(parts.leftLeg, parts.leftKnee, parts.leftAnkle);
     planted ??= foot;
     assert.ok(Vector3.Distance(planted, foot) < 1e-6, 'No skating during sideways or backward marching');
+  }
+}
+facingYaw = 0;
+for (const direction of [1, -1]) {
+  facingYaw = direction === 1 ? 0 : Math.PI;
+  let previousPitch;
+  for (let sample = 0; sample <= 200; sample++) {
+    musicBeat = drillBeat = 4 + sample / 201;
+    pose();
+    const pitch = footPitch(parts.leftLeg, parts.leftKnee, parts.leftAnkle);
+    const expectedSign = direction * (sample / 201 < 0.5 ? -1 : 1);
+    if (Math.abs(sample / 201 - 0.5) > .02) {
+      assert.ok(pitch * expectedSign > 0, 'Foot roll follows body-relative placement for forward and backward travel');
+    }
+    if (previousPitch !== undefined) assert.ok(Math.abs(pitch - previousPitch) < .02,
+      `Heel-to-toe roll remains continuous: direction=${direction}, sample=${sample}, previous=${previousPitch}, pitch=${pitch}`);
+    previousPitch = pitch;
+  }
+}
+facingYaw = 0;
+for (const yaw of [0, Math.PI / 2, Math.PI]) {
+  facingYaw = yaw;
+  for (const step of [2, 3]) {
+    let previousRecovery;
+    let previousBody;
+    for (let sample = 0; sample <= 200; sample++) {
+      musicBeat = drillBeat = step + sample / 200;
+      pose();
+      const swing = step % 2 === 0
+        ? solePosition(parts.rightLeg, parts.rightKnee, parts.rightAnkle)
+        : solePosition(parts.leftLeg, parts.leftKnee, parts.leftAnkle);
+      const recovery = swing.z - robot.position.z;
+      if (previousRecovery !== undefined) {
+        assert.ok(recovery >= previousRecovery - 1e-6,
+          `Swing never doubles back relative to advancing hips: yaw=${yaw}, step=${step}, sample=${sample}`);
+        assert.ok(robot.position.z >= previousBody - 1e-9, 'Body never rocks backward along a straight forward route');
+      }
+      previousRecovery = recovery;
+      previousBody = robot.position.z;
+    }
   }
 }
 facingYaw = 0;

@@ -46,13 +46,12 @@ export function boundMarcherFootLift(hip: Vector3, sole: Vector3, facingYaw: num
 export function marcherShoeGroundDepth(pitch: number): number {
   const sin = Math.abs(Math.sin(pitch));
   const cos = Math.cos(pitch);
+  if (pitch < 0) return Math.max(MARCHER_SHOE_HALF_HEIGHT * cos + 0.075 * sin, 0.085 * sin);
   return Math.max(MARCHER_SHOE_HALF_HEIGHT * cos + 0.055 * sin,
     0.0225 * cos + 0.095 * sin, 0.105 * sin);
 }
 
-export function solvePlantedMarcherLeg(
-  hip: Vector3, sole: Vector3, facingYaw: number
-) {
+function solveMarcherFootContact(hip: Vector3, sole: Vector3, facingYaw: number, preferredPitch = 0) {
   const ankleForPitch = (pitch: number) => {
     const rotation = Quaternion.FromEulerAngles(pitch, facingYaw, 0);
     const offset = new Vector3(0, -MARCHER_SHOE_HALF_HEIGHT, MARCHER_SHOE_FORWARD_OFFSET)
@@ -62,8 +61,9 @@ export function solvePlantedMarcherLeg(
   const neutralAnkle = ankleAtSole(sole, facingYaw);
   const forwardDistance = (neutralAnkle.x - hip.x) * Math.sin(facingYaw) +
     (neutralAnkle.z - hip.z) * Math.cos(facingYaw);
-  let sign = forwardDistance >= 0 ? 1 : -1;
-  let pitch = 0;
+  // Positive X pitch lowers the toe: heel strike ahead, toe push-off behind.
+  let sign = forwardDistance >= 0 ? -1 : 1;
+  let pitch = preferredPitch;
   let ankle = ankleForPitch(pitch);
   if (Vector3.Distance(hip, ankle) > MAX_LEG_REACH) {
     let low = 0;
@@ -93,6 +93,23 @@ export function solvePlantedMarcherLeg(
     pitch = sign * high;
     ankle = ankleForPitch(pitch);
   }
+  return { pitch, ankle };
+}
+
+export function marcherGroundFootPitch(hip: Vector3, sole: Vector3, facingYaw: number): number {
+  return solveMarcherFootContact(hip, sole, facingYaw).pitch;
+}
+
+export function marcherSwingFootPitch(progress: number, boundaryPitch: number): number {
+  // Ease to a level mid-swing foot, without reach-driven pitch branch changes.
+  const roll = Math.cos(Math.PI * progress);
+  return boundaryPitch * roll * roll;
+}
+
+export function solvePlantedMarcherLeg(
+  hip: Vector3, sole: Vector3, facingYaw: number, preferredPitch = 0
+) {
+  const { pitch, ankle } = solveMarcherFootContact(hip, sole, facingYaw, preferredPitch);
   const footRotation = Quaternion.FromEulerAngles(pitch, facingYaw, 0);
   const delta = ankle.subtract(hip);
   const distance = delta.length();

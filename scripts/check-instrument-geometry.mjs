@@ -53,19 +53,19 @@ try {
   assert.equal(body.positions.length / 3, 6, 'Body tubes keep their original tessellation');
   const instrument = new InstrumentGeometry('instrument');
   const [, top] = instrument.tube([Vector3.Zero(), Vector3.Up()], 0.1, 3, BRASS);
-  assert.equal(top, 12);
+  assert.equal(top, 9);
   instrument.cap(top, 3, Vector3.Up(), BRASS);
-  assert.equal(instrument.positions.length / 3, 25);
-  assert.equal(instrument.indices.length, 108, 'Tube cap covers all twelve sides');
+  assert.equal(instrument.positions.length / 3, 19);
+  assert.equal(instrument.indices.length, 81, 'Tube cap covers all nine sides');
   const flare = new InstrumentGeometry('instrument');
   flare.tube([Vector3.Zero(), Vector3.Up()], [0.01, 0.1], [3, 9], BRASS);
-  assert.equal(flare.positions.length / 3, 48, 'Bells bridge twelve to thirty-six sides');
-  assert.equal(flare.indices.length, 144);
+  assert.equal(flare.positions.length / 3, 36, 'Bells bridge nine to twenty-seven sides');
+  assert.equal(flare.indices.length, 108);
   const elbowPath = [Vector3.Zero(), Vector3.Up(), new Vector3(0, 1, 1)];
   const elbow = new InstrumentGeometry('instrument');
   const elbowRings = elbow.tube(elbowPath, 0.01, 3, BRASS);
   assert.equal(elbowRings.length, elbowPath.length, 'Tube callers retain one returned ring per original point');
-  assert.equal(elbow.positions.length / 3, 132, 'A ninety-degree bend uses eight curved segments plus straight ends');
+  assert.equal(elbow.positions.length / 3, 99, 'A ninety-degree bend retains eight curved segments plus straight ends');
   const ringCenter = (geometry, ring, sides) => {
     const center = Vector3.Zero();
     for (let side = 0; side < sides; side++) {
@@ -73,9 +73,9 @@ try {
     }
     return center.scale(1 / sides);
   };
-  assert.ok(Vector3.Distance(ringCenter(elbow, elbowRings[0], 12), elbowPath[0]) < 1e-6);
-  assert.ok(Vector3.Distance(ringCenter(elbow, elbowRings[2], 12), elbowPath[2]) < 1e-6);
-  assert.ok(Vector3.Distance(ringCenter(elbow, elbowRings[1], 12), new Vector3(0, 0.925, 0.075)) < 1e-6,
+  assert.ok(Vector3.Distance(ringCenter(elbow, elbowRings[0], 9), elbowPath[0]) < 1e-6);
+  assert.ok(Vector3.Distance(ringCenter(elbow, elbowRings[2], 9), elbowPath[2]) < 1e-6);
+  assert.ok(Vector3.Distance(ringCenter(elbow, elbowRings[1], 9), new Vector3(0, 0.925, 0.075)) < 1e-6,
     'The corner is rounded inward rather than merely subdividing the original straight segments');
   elbow.cap(elbowRings[2], 3, elbowPath[2], BRASS);
   verify(buildInstrumentTemplate('elbowCheck', elbow, scene));
@@ -88,8 +88,8 @@ try {
   verify(lowElbow);
   const drum = new InstrumentGeometry('instrument');
   drum.drum(Vector3.Zero(), Vector3.Up(), 0.1, 0.2, 12, BRASS, BRASS, true);
-  assert.equal(drum.positions.length / 3, 194, 'Drum ring multiplier is applied only once');
-  assert.equal(drum.indices.length, 576, 'Both drum heads and shell cover all forty-eight sides');
+  assert.equal(drum.positions.length / 3, 146, 'Drum ring multiplier is applied only once');
+  assert.equal(drum.indices.length, 432, 'Both drum heads and shell cover all thirty-six sides');
   verify(buildInstrumentTemplate('drumCheck', drum, scene));
   const reduced = cachedInstrumentTemplate(scene => {
     const geometry = new InstrumentGeometry('instrument');
@@ -113,16 +113,36 @@ try {
     ['fluteModel', ['getFluteTemplate']],
     ['percussionModels', ['getSnareTemplate', 'getTenorTemplate', 'getBassDrumTemplate', 'getGlockenspielTemplate']],
   ];
+  const denseShared = load('lowPolyInstrument', Object.keys(shared),
+    source => source.replace('this.low ? 2 : 3', 'this.low ? 2 : 4'));
+  let denseVertices = 0;
+  let optimizedVertices = 0;
   for (const [file, names] of models) {
     const current = load(file, names);
     const original = load(file, names, source => source
       .replaceAll('new InstrumentGeometry("instrument")', 'new InstrumentGeometry()')
       .replace('geometry.low ? 16 : 32', '8'));
+    Object.assign(context, denseShared);
+    const dense = load(file, names);
+    // Build while the prior builder is installed; model factories resolve these shared bindings lazily.
+    const denseMeshes = names.map(name => dense[name](scene, 'high'));
+    Object.assign(context, shared);
     for (const name of names) {
       for (const detail of ['high', 'low']) {
         const mesh = current[name](scene, detail);
         const baseline = original[name](scene, detail);
         verify(mesh);
+        if (detail === 'high') {
+          const previousDense = denseMeshes[names.indexOf(name)];
+          denseVertices += previousDense.getTotalVertices();
+          optimizedVertices += mesh.getTotalVertices();
+          assert.ok(mesh.getTotalVertices() <= previousDense.getTotalVertices());
+          const denseBounds = previousDense.getBoundingInfo().boundingBox;
+          const optimizedBounds = mesh.getBoundingInfo().boundingBox;
+          assert.ok(Vector3.Distance(denseBounds.minimum, optimizedBounds.minimum) < .003 &&
+            Vector3.Distance(denseBounds.maximum, optimizedBounds.maximum) < .003,
+          `${name}: silhouette bounds change by less than 3mm in model coordinates`);
+        }
         assert.ok(mesh.getTotalVertices() > baseline.getTotalVertices(), `${name} ${detail}: increased tessellation`);
         const bounds = mesh.getBoundingInfo().boundingBox;
         const previous = original[name](scene, 'high').getBoundingInfo().boundingBox;
@@ -136,6 +156,8 @@ try {
       }
     }
   }
+  assert.ok(optimizedVertices < denseVertices * .8, 'Full-detail instrument library saves at least 20% of vertices');
+  console.log(`Full-detail library: ${denseVertices} -> ${optimizedVertices} vertices (${(100 * (1 - optimizedVertices / denseVertices)).toFixed(1)}% fewer).`);
   console.log('Instrument geometry checks passed: tessellation, caps, drum shells, bell transitions, bounds, both detail levels, and shared templates.');
 } finally {
   scene.dispose();

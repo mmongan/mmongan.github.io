@@ -17,6 +17,8 @@ export function marcherFootTarget(
   if (left === leftStance) return landing(stepNumber, left);
   const from = landing(stepNumber - 1, left);
   const to = landing(stepNumber + 1, left);
-  const blend = progress * progress * (3 - 2 * progress);
+  // The hips keep advancing during swing. Half-linear easing keeps recovery
+  // monotone relative to them, with zero relative speed at either end.
+  const blend = 0.5 * progress + 0.5 * progress * progress * (3 - 2 * progress);
   return Vector3.Lerp(from, to, blend);
 }

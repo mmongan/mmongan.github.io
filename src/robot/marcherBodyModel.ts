@@ -114,8 +114,8 @@ export const getMarcherKneeTemplate = partTemplate("marcherKneeTemplate", (geome
 // Toe along +Z (rotated about X), widened sideways.
 export const getMarcherShoeTemplate = partTemplate("marcherShoeTemplate", (geometry) => {
   geometry.lathe(geometry.low
-    ? [[0, -0.105], [0.0225, -0.095], [0.03, -0.055], [0.03, 0.055], [0.0225, 0.095], [0, 0.105]]
-    : [[0, -0.105], [0.0225, -0.095], [0.03, -0.055], [0.03, 0.055], [0.0225, 0.095], [0, 0.105]], 12, BOOT,
+    ? [[0, -0.085], [0.03, -0.075], [0.03, -0.055], [0.03, 0.055], [0.0225, 0.095], [0, 0.105]]
+    : [[0, -0.085], [0.03, -0.075], [0.03, -0.055], [0.03, 0.055], [0.0225, 0.095], [0, 0.105]], 12, BOOT,
     ({ x, y, z }) => new Vector3(x * 1.8, -z * (geometry.low ? 1 / Math.cos(Math.PI / 6) : 1), y));
 });
 

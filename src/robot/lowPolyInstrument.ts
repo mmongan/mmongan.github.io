@@ -20,7 +20,7 @@ export const EBONY = new Color4(0.06, 0.06, 0.07, 1);
 const SIDE_AXIS = new Vector3(1, 0, 0);
 
 // "low" is used while the field is shrunk (Giant and tabletop modes), where
-// marchers are only centimeters tall: instrument rings use half the full-detail sides,
+// marchers are only centimeters tall: instrument rings use two thirds of the full-detail sides,
 // body lathes are about half as round, and fine() details are skipped.
 export type ModelDetail = "high" | "low";
 export type ModelTemplate = (scene: Scene, detail?: ModelDetail) => Mesh;
@@ -43,7 +43,7 @@ export class InstrumentGeometry {
   // A uniform multiplier preserves divisibility at bell transitions; reduced
   // instruments keep round tubing without increasing body tessellation.
   private tubeSides(sides: number) {
-    if (this.surface === "instrument") return sides * (this.low ? 2 : 4);
+    if (this.surface === "instrument") return sides * (this.low ? 2 : 3);
     return this.low ? Math.min(sides, 3) : sides;
   }
 

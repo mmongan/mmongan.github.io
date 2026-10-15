@@ -36,7 +36,8 @@ import { isFieldShrunk, onARScaleChangedObservable } from '../xr/ar';
 import { lowPolygonMarchersToggle } from '../ui/dom';
 import { registerJacketLegSource, updateJacketLegPlane, updateJacketLegPlanes } from './jacketLegOcclusion';
 import { boundMarcherFootTarget, boundMarcherFootLift, MARCHER_CALF_LENGTH, MARCHER_THIGH_LENGTH,
-  MARCHER_SHOE_FORWARD_OFFSET, MARCHER_SHOE_HALF_HEIGHT, marcherSwingLift, solvePlantedMarcherLeg } from './marcherLegPose';
+  MARCHER_SHOE_FORWARD_OFFSET, MARCHER_SHOE_HALF_HEIGHT, marcherSwingLift, marcherGroundFootPitch,
+  marcherSwingFootPitch, solvePlantedMarcherLeg } from './marcherLegPose';
 import { marcherFootTarget, marcherSoleInRig } from './marcherFootTargets';
 import { midiBeatAtPulse, midiPulseAtBeat, type MidiBeatUnit } from '../audio/midiBeatPulse';
 
@@ -1328,7 +1329,26 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState) {
     const sole = marcherSoleInRig(target, bodyRotation, MARCHER_BODY_SCALE);
     sole.y += lift;
     const yaw = 0;
-    return { ...boundMarcherFootTarget(new Vector3(side * hipHalfSpacing, 0.69, 0), sole, yaw), yaw };
+    const hip = new Vector3(side * hipHalfSpacing, 0.69, 0);
+    const swinging = side < 0 ? !leftStance : leftStance;
+    let pitch = 0;
+    if (swinging) {
+      const boundaryPitch = (step: number, plantedStep: number) => {
+        const beat = landingBeat(step - 0.5);
+        const index = Math.floor(beat);
+        const position = inPlace ? robot.position : Vector3.Lerp(state.counts[index].position,
+          state.counts[Math.min(last, index + 1)].position, beat - index);
+        const target = marcherSoleInRig(landing(plantedStep, side < 0).subtract(position),
+          landingFacing(step - 0.5), MARCHER_BODY_SCALE);
+        const bounded = boundMarcherFootTarget(hip, target, yaw);
+        return marcherGroundFootPitch(hip, bounded.sole, yaw);
+      };
+      const contactPitch = gaitProgress < 0.5
+        ? boundaryPitch(stepNumber, stepNumber - 1)
+        : boundaryPitch(stepNumber + 1, stepNumber + 1);
+      pitch = marcherSwingFootPitch(gaitProgress, contactPitch);
+    }
+    return { ...boundMarcherFootTarget(hip, sole, yaw), yaw, pitch };
   };
   const leftTarget = footTarget(-1, !leftStance ? lift : 0);
   const rightTarget = footTarget(1, leftStance ? lift : 0);
@@ -1351,7 +1371,7 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState) {
   ) => {
     const hip = new Vector3(side * hipHalfSpacing, 0.69, 0);
     const sole = boundMarcherFootLift(hip, target.sole, target.yaw);
-    const pose = solvePlantedMarcherLeg(hip, sole, target.yaw);
+    const pose = solvePlantedMarcherLeg(hip, sole, target.yaw, target.pitch);
     knee.position.y = -pose.thighLength;
     knee.rotation.x = pose.kneeAngle;
     knee.rotationQuaternion = pose.kneeRotation;
