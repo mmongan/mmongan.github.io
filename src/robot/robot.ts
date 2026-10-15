@@ -36,7 +36,7 @@ import { isFieldShrunk, onARScaleChangedObservable } from '../xr/ar';
 import { lowPolygonMarchersToggle } from '../ui/dom';
 import { registerJacketLegSource, updateJacketLegPlane, updateJacketLegPlanes } from './jacketLegOcclusion';
 import { boundMarcherFootTarget, boundMarcherFootLift, MARCHER_CALF_LENGTH, MARCHER_THIGH_LENGTH,
-  MARCHER_SHOE_FORWARD_OFFSET, MARCHER_SHOE_HALF_HEIGHT, solvePlantedMarcherLeg } from './marcherLegPose';
+  MARCHER_SHOE_FORWARD_OFFSET, MARCHER_SHOE_HALF_HEIGHT, marcherSwingLift, solvePlantedMarcherLeg } from './marcherLegPose';
 import { marcherFootTarget, marcherSoleInRig } from './marcherFootTargets';
 import { midiBeatAtPulse, midiPulseAtBeat, type MidiBeatUnit } from '../audio/midiBeatPulse';
 
@@ -848,22 +848,6 @@ const DEFAULT_STEP_SIZE_YARDS = 0.625;
 const COUNTS_PER_SECOND = 4;
 export const MIN_MARCH_TEMPO_BPM = 60;
 export const MAX_MARCH_TEMPO_BPM = 120;
-const MARCHING_GAIT_POSES = MARCHING_GAITS.map((gait) =>
-  Array.from({ length: 9 }, (_, index) => {
-    const progress = index / 8;
-    const swing = gait.stanceTravel * (progress - 0.5);
-    const arc = Math.sin(Math.PI * progress);
-    return {
-      stance: -swing,
-      swing,
-      lift: arc * gait.lift,
-      kneeBend: arc * gait.kneeBend,
-      ankleFlex: arc * gait.ankleFlex,
-      footLift: gait.inPlace ? arc * gait.lift : 0,
-    };
-  })
-);
-
 // A single shared transport drives every robot's playback: all robots march
 // on the same marching-band "count" clock, each just holding at its own last
 // position once the count runs past the end of its own (possibly shorter) route.
@@ -1292,15 +1276,8 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState) {
     );
   const stepNumber = phase.stepNumber;
   const gaitProgress = phase.progress;
-  const gaitPoses = MARCHING_GAIT_POSES[gaitIndex];
   const gait = MARCHING_GAITS[gaitIndex];
-  const frame = gaitProgress * (gaitPoses.length - 1);
-  const first = gaitPoses[Math.floor(frame)];
-  const second = gaitPoses[Math.min(Math.floor(frame) + 1, gaitPoses.length - 1)];
-  const blend = frame - Math.floor(frame);
-  const mix = (start: number, end: number) => start + (end - start) * blend;
-  const lift = mix(first.lift, second.lift);
-  const footLift = mix(first.footLift, second.footLift);
+  const lift = marcherSwingLift(gaitProgress, gait.lift);
   const leftStance = ((stepNumber % 2) + 2) % 2 === 0;
   const musicBeat = getMusicTransportState().beat;
   const beatForStep = (step: number) => {
@@ -1353,8 +1330,8 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState) {
     const yaw = 0;
     return { ...boundMarcherFootTarget(new Vector3(side * hipHalfSpacing, 0.69, 0), sole, yaw), yaw };
   };
-  const leftTarget = footTarget(-1, !leftStance ? gait.inPlace ? footLift : lift : 0);
-  const rightTarget = footTarget(1, leftStance ? gait.inPlace ? footLift : lift : 0);
+  const leftTarget = footTarget(-1, !leftStance ? lift : 0);
+  const rightTarget = footTarget(1, leftStance ? lift : 0);
   if (leftTarget.limited || rightTarget.limited) {
     if (limitedStrideCounts.get(robot) !== segmentStart) {
       limitedStrideCounts.set(robot, segmentStart);

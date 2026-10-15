@@ -51,10 +51,20 @@ run(readFileSync(new URL('../src/robot/marcherLegPose.ts', import.meta.url), 'ut
 const { calfLength, shoeForwardOffset, shoeHalfHeight } = vm.runInContext(
   '({ calfLength: MARCHER_CALF_LENGTH, shoeForwardOffset: MARCHER_SHOE_FORWARD_OFFSET, shoeHalfHeight: MARCHER_SHOE_HALF_HEIGHT })', context);
 run(readFileSync(new URL('../src/robot/marcherFootTargets.ts', import.meta.url), 'utf8'));
+const fieldLift = progress => context.marcherSwingLift(progress, 0.16) * bodyScale;
+assert.equal(fieldLift(0), 0, 'Swing starts on the field');
+assert.ok(fieldLift(1) < 1e-12, 'Swing lands exactly on the beat');
+assert.ok(fieldLift(0.5) * 0.9144 > 0.15 && fieldLift(0.5) * 0.9144 < 0.2,
+  'Field march has visible, anatomically reachable 15-20 cm swing clearance');
+const epsilon = 1e-5;
+assert.ok(fieldLift(epsilon) / epsilon < 1e-4 &&
+  fieldLift(1 - epsilon) / epsilon < 1e-4, 'Vertical foot speed eases to zero at lift-off and landing');
+for (let progress = 0.01; progress < 0.5; progress += 0.01) {
+  assert.ok(fieldLift(progress) > fieldLift(progress - 0.01), 'Swing rises smoothly without a clipped plateau');
+  assert.ok(Math.abs(fieldLift(progress) - fieldLift(1 - progress)) < 1e-9, 'Swing lift and landing are symmetric');
+}
 run(robotSource.slice(robotSource.indexOf('export const MARCHING_GAITS ='),
   robotSource.indexOf('let selectedMarchingGait')));
-run(robotSource.slice(robotSource.indexOf('const MARCHING_GAIT_POSES ='),
-  robotSource.indexOf('// A single shared transport')));
 run(robotSource.slice(robotSource.indexOf('function wrapAngle(angle:'),
   robotSource.indexOf('function applyGlobalCountToAllRobots')));
 const pose = () => {
@@ -126,6 +136,14 @@ for (let beat = 0; beat < 8; beat += 0.125) {
   } else {
     assert.ok((plantedLeft ? rightY : leftY) > 0.01, 'Swing sole is airborne between MIDI beats');
   }
+}
+for (let sample = 0; sample <= 200; sample++) {
+  const progress = sample / 200;
+  musicBeat = drillBeat = 2 + progress;
+  pose();
+  const swingSole = solePosition(parts.rightLeg, parts.rightKnee, parts.rightAnkle);
+  assert.ok(Math.abs(swingSole.y - fieldLift(progress)) < 1e-6,
+    `Rendered swing follows the smooth arc without reach clipping: progress=${progress}`);
 }
 for (const yaw of [Math.PI / 2, -Math.PI / 2, Math.PI]) {
   facingYaw = yaw;

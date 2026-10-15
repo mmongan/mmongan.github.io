@@ -10,6 +10,13 @@ const MAX_LEG_REACH = MARCHER_THIGH_LENGTH + MARCHER_CALF_LENGTH;
 const MIN_LEG_REACH = Math.sqrt(MARCHER_THIGH_LENGTH ** 2 + MARCHER_CALF_LENGTH ** 2 +
   2 * MARCHER_THIGH_LENGTH * MARCHER_CALF_LENGTH * Math.cos(MAX_KNEE_FLEXION));
 
+export function marcherSwingLift(progress: number, requestedLift: number): number {
+  // Reserve knee reach before shaping the arc, rather than flattening its peak with IK clipping.
+  const clearance = 0.95 * (0.69 - 2 * MARCHER_SHOE_HALF_HEIGHT - MIN_LEG_REACH);
+  const arc = Math.sin(Math.PI * Math.max(0, Math.min(1, progress)));
+  return Math.min(requestedLift, clearance) * arc * arc;
+}
+
 function ankleAtSole(sole: Vector3, facingYaw: number): Vector3 {
   return sole.add(new Vector3(-MARCHER_SHOE_FORWARD_OFFSET * Math.sin(facingYaw), 2 * MARCHER_SHOE_HALF_HEIGHT,
     -MARCHER_SHOE_FORWARD_OFFSET * Math.cos(facingYaw)));
