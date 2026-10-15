@@ -13,21 +13,39 @@ const TOLERANCE = 2e-7;
 const MIN_INTERVAL = 1 / 4096;
 const MAX_BAKE_BYTES = 128 * 1024 * 1024;
 let allocatedBytes = 0;
-interface SharedSamples { values: Float32Array; references: number; hash: number }
+interface SharedSamples {
+  values: Float32Array;
+  channels: Uint8Array;
+  references: number;
+  hash: number;
+}
 const sharedSamples = new Map<number, SharedSamples[]>();
 
-function retainSamples(values: Float32Array): SharedSamples | undefined {
+function retainSamples(samples: Float32Array): SharedSamples | undefined {
+  // Identity quaternion components and unused axes need no storage.
+  const channels = Uint8Array.from(Array.from({ length: COMPONENTS }, (_, index) => index)
+    .filter(component => {
+      const defaultValue = component < 24 && component % 4 === 3 ? 1 : 0;
+      return [0, 1, 2, 3].some(sample => samples[sample * COMPONENTS + component] !== defaultValue);
+    }));
+  const values = new Float32Array(channels.length * 4);
+  for (let sample = 0; sample < 4; sample++) {
+    channels.forEach((component, index) => { values[sample * channels.length + index] = samples[sample * COMPONENTS + component]; });
+  }
   let hash = 2166136261;
+  for (const channel of channels) hash = Math.imul(hash ^ channel, 16777619) >>> 0;
   const bits = new Uint32Array(values.buffer, values.byteOffset, values.length);
   for (const value of bits) hash = Math.imul(hash ^ value, 16777619) >>> 0;
   const bucket = sharedSamples.get(hash) ?? [];
-  const existing = bucket.find(item => item.values.every((value, index) => value === values[index]));
+  const existing = bucket.find(item => item.channels.length === channels.length &&
+    item.channels.every((channel, index) => channel === channels[index]) &&
+    item.values.every((value, index) => value === values[index]));
   if (existing) { existing.references++; return existing; }
-  if (allocatedBytes + values.byteLength > MAX_BAKE_BYTES) return undefined;
-  const item = { values, references: 1, hash };
+  if (allocatedBytes + values.byteLength + channels.byteLength > MAX_BAKE_BYTES) return undefined;
+  const item = { values, channels, references: 1, hash };
   bucket.push(item);
   sharedSamples.set(hash, bucket);
-  allocatedBytes += values.byteLength;
+  allocatedBytes += values.byteLength + channels.byteLength;
   return item;
 }
 
@@ -36,7 +54,7 @@ function releaseSamples(samples: SharedSamples) {
   const bucket = sharedSamples.get(samples.hash)!;
   bucket.splice(bucket.indexOf(samples), 1);
   if (bucket.length === 0) sharedSamples.delete(samples.hash);
-  allocatedBytes -= samples.values.byteLength;
+  allocatedBytes -= samples.values.byteLength + samples.channels.byteLength;
 }
 
 export function getBakedLegAnimationBytes() { return allocatedBytes; }
@@ -53,10 +71,10 @@ function pack(pose: BakedLegPose): Float32Array {
     ...pose.legs.flatMap(leg => [leg.legRotation, leg.kneeRotation, leg.ankleRotation]
       .flatMap(rotation => rotation.asArray())),
     pose.legs[0].kneeAngle, pose.legs[1].kneeAngle, pose.hipHalfSpacing,
-  ]);
+  ], value => Math.abs(value) < 1e-10 ? 0 : value);
 }
 
-function interpolate(samples: Float32Array, progress: number): Float64Array {
+function interpolate(samples: Float32Array, progress: number, channels?: Uint8Array): Float64Array {
   const t = progress * 3;
   const weights = [
     -(t - 1) * (t - 2) * (t - 3) / 6,
@@ -65,9 +83,13 @@ function interpolate(samples: Float32Array, progress: number): Float64Array {
     t * (t - 1) * (t - 2) / 6,
   ];
   const result = new Float64Array(COMPONENTS);
-  for (let component = 0; component < COMPONENTS; component++) {
+  for (let component = 3; component < 24; component += 4) result[component] = 1;
+  const stride = channels?.length ?? COMPONENTS;
+  for (let index = 0; index < stride; index++) {
+    const component = channels ? channels[index] : index;
+    result[component] = 0;
     for (let sample = 0; sample < 4; sample++) {
-      result[component] += weights[sample] * samples[sample * COMPONENTS + component];
+      result[component] += weights[sample] * samples[sample * stride + index];
     }
   }
   for (let offset = 0; offset < 24; offset += 4) {
@@ -124,7 +146,8 @@ export class BakedLegAnimation {
     const intervals = this.intervals.get(Math.floor(beat));
     const interval = intervals?.find(item => beat >= item.start && beat < item.end);
     if (!interval) return undefined;
-    return unpack(interpolate(interval.samples.values, (beat - interval.start) / (interval.end - interval.start)),
+    return unpack(interpolate(interval.samples.values, (beat - interval.start) / (interval.end - interval.start),
+      interval.samples.channels),
       interval.limited);
   }
 
@@ -139,6 +162,7 @@ export class BakedLegAnimation {
         return pose;
       };
       const subdivide = function* (this: BakedLegAnimation, start: number, end: number): Generator<void> {
+        if (this.memoryLimited) return;
         const poses: BakedLegPose[] = [];
         for (let index = 0; index < 4; index++) {
           // Segment boundaries can change cadence or halt; never interpolate across them.
@@ -192,7 +216,7 @@ export class BakedLegAnimation {
           return;
         }
         intervals.push({ start, end, samples: retained, limited: poses[0].limited });
-        this.bytes += samples.byteLength;
+        this.bytes += retained.values.byteLength + retained.channels.byteLength;
       };
       for (let quarter = 0; quarter < 4 && !this.memoryLimited; quarter++) {
         yield* subdivide.call(this, count + quarter / 4, count + (quarter + 1) / 4);

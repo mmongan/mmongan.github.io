@@ -403,6 +403,27 @@ if (process.argv.includes('--bake-only')) {
       maxSlip = Math.max(maxSlip, slip);
       assert.ok(slip < 0.001, `Baked actual sole surface does not skate: ${slip} yards/pulse`);
     }
+    for (const direction of [-1, 1]) {
+      playback.speedMultiplier = direction;
+      for (const playing of [false, true]) {
+        playback.playing = playing;
+        for (const beat of [2, 2.125, 2.5, 2.999]) {
+          musicBeat = drillBeat = beat;
+          vm.runInContext('legAnimationBakingEnabled = false', context);
+          const exact = renderedPose();
+          vm.runInContext('legAnimationBakingEnabled = true', context);
+          const baked = renderedPose();
+          assert.ok(baked.every((value, index) => Math.abs(value - exact[index]) < 3e-6),
+            'Baked playback preserves pause, reverse, seeks and exact count boundaries');
+        }
+      }
+    }
+    playback.speedMultiplier = 1;
+    playback.playing = true;
+    const revisionTable = state.legBake;
+    context.transportRevision++;
+    renderedPose();
+    assert.equal(state.legBake, revisionTable, 'Ordinary seeks retain musical-count bake data');
     vm.runInContext('legAnimationBakingEnabled = false', context);
     table.dispose();
     assert.equal(table.byteLength, 0, 'Disposing a show releases packed pose buffers');
