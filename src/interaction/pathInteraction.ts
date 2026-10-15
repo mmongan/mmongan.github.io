@@ -46,6 +46,7 @@ import {
 } from './controllers';
 import {
   createLowPolyRobot,
+  duplicateMarcherSchedule,
   walkRobotAlongPath,
   findRobotRoot,
   registerRobotPath,
@@ -79,6 +80,7 @@ import {
   playAll,
   onMarcherStrideLimited,
 } from '../robot/robot';
+import { duplicateDrillButton, duplicateDrillStatus } from '../ui/dom';
 import { onManualPlacementBlocked, tryManualMarcherPose, tryManualMarcherPoses } from '../robot/manualPlacement';
 import type { MarcherInstrument } from '../robot/robot';
 import { getOpenMarchSectionInstrument, loadOpenMarchFromUrl, OPEN_MARCH_EXAMPLE, OPEN_MARCH_URL_PARAM } from '../robot/openMarchUrl';
@@ -2582,6 +2584,7 @@ function spawnRandomRobots(count: number) {
 // lines, segments/handles, formation connections) so a fresh drill starts on
 // an empty field instead of piling onto whatever was already there.
 function clearAllRobots() {
+  if (duplicateDrillStatus) duplicateDrillStatus.value = '';
   selectionTools?.clear();
   eraseHistory.clear();
   finishFingerPath(false);
@@ -2638,6 +2641,36 @@ function isLookingAtPositiveFieldHalf(): boolean {
   const distance = Math.abs(direction.y) > 1e-6 ? (FIELD_SURFACE_Y - origin.y) / direction.y : -1;
   const lookZ = distance > 0 ? origin.z + direction.z * distance : direction.z;
   return lookZ > 0;
+}
+
+export function duplicateDrillForPerformance(): number {
+  const sources = Array.from(robotPaths.keys()).filter(robot =>
+    !robot.isDisposed() && robot.isEnabled() && (getRobotCounts(robot)?.length ?? 0) > 1);
+  if (sources.length === 0) {
+    if (duplicateDrillStatus) duplicateDrillStatus.value = 'Load or generate a drill before duplicating.';
+    return 0;
+  }
+  let minX = Infinity;
+  let maxX = -Infinity;
+  for (const robot of sources) {
+    for (const count of getRobotCounts(robot)!) {
+      minX = Math.min(minX, count.position.x);
+      maxX = Math.max(maxX, count.position.x);
+    }
+  }
+  const offset = new Vector3(maxX - minX + 8, 0, 0);
+  for (const source of sources) {
+    const robot = duplicateMarcherSchedule(source, offset);
+    const path = getRobotCounts(robot)!.map(count => count.position.clone());
+    robotPaths.set(robot, path);
+    updateRobotPathLine(robot, path);
+  }
+  refreshCollisionMarkers(scene);
+  if (duplicateDrillStatus) {
+    duplicateDrillStatus.value = `${sources.length} marchers duplicated; ${sources.length * 2} total. ` +
+      `Copy offset ${offset.x.toFixed(1)} yards to the right. Both groups share the playback clock.`;
+  }
+  return sources.length;
 }
 
 function spawnMarchingDrill() {
@@ -2795,6 +2828,7 @@ export function initInteraction() {
     openMarchRequest++;
     spawnMarchingDrill();
   });
+  duplicateDrillButton?.addEventListener("click", duplicateDrillForPerformance);
   collisionMarkersToggle?.addEventListener("change", () => {
     setCollisionMarkersVisible(!!collisionMarkersToggle?.checked);
   });

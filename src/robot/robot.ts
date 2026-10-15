@@ -822,6 +822,26 @@ export function createLowPolyRobot(scene: Scene, gaitIndex = selectedMarchingGai
   return createMarcherModel(scene, gaitIndex);
 }
 
+export function duplicateMarcherSchedule(source: TransformNode, offset: Vector3): TransformNode {
+  const state = players.get(source);
+  const parts = marcherParts.get(source);
+  if (!state || !parts || state.counts.length === 0) {
+    throw new Error('Cannot duplicate a marcher without a registered drill schedule');
+  }
+  const robot = createLowPolyRobot(source.getScene(), parts.gaitIndex);
+  robot.parent = source.parent;
+  setMarcherInstrument(robot, parts.instrument);
+  setMarcherInstrumentRestPose(robot, parts.instrumentRestPose);
+  const counts = state.counts.map(count => ({ ...count, position: count.position.add(offset) }));
+  players.set(robot, {
+    points: state.points.map(point => point.add(offset)),
+    counts, stepSizeYards: state.stepSizeYards, fixedFacingY: state.fixedFacingY,
+  });
+  robot.setEnabled(true);
+  applyGlobalCount(robot, players.get(robot)!);
+  return robot;
+}
+
 // --- Playback control: play/pause, rewind, fast-forward, step, and seeking
 // along a robot's recorded path. All positions/facings are precalculated once
 // per path (resamplePathIntoCounts) into a fixed table of drill "counts";
