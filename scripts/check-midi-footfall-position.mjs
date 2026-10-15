@@ -46,10 +46,17 @@ const context = vm.createContext({
 });
 const warnings = [];
 const run = source => vm.runInContext(stripTypeScriptTypes(source, { mode: 'transform' })
-  .replace(/^import .*?;\r?$/gm, '').replace(/export /g, ''), context);
+  .replace(/^import[\s\S]*?from .*?;\r?$/gm, '').replace(/export /g, ''), context);
 run(gaitSource);
 run(readFileSync(new URL('../src/audio/midiBeatPulse.ts', import.meta.url), 'utf8'));
 run(readFileSync(new URL('../src/robot/marcherLegPose.ts', import.meta.url), 'utf8'));
+run(readFileSync(new URL('../src/robot/marcherStepCycleModel.ts', import.meta.url), 'utf8'));
+const cycleSource = readFileSync(new URL('../src/robot/marcherStepCycles.ts', import.meta.url), 'utf8');
+run(cycleSource.slice(0, cycleSource.indexOf('fetch(cycleUrl)')) +
+  cycleSource.slice(cycleSource.indexOf('export function sharedMarcherStepPose')));
+const cycleFile = readFileSync(new URL('../src/robot/marcherStepCycles.bin', import.meta.url));
+context.loadMarcherStepCycles(new Float32Array(cycleFile.buffer.slice(
+  cycleFile.byteOffset, cycleFile.byteOffset + cycleFile.byteLength)));
 run(readFileSync(new URL('../src/robot/bakedLegAnimation.ts', import.meta.url), 'utf8'));
 const { calfLength, shoeForwardOffset, shoeHalfHeight } = vm.runInContext(
   '({ calfLength: MARCHER_CALF_LENGTH, shoeForwardOffset: MARCHER_SHOE_FORWARD_OFFSET, shoeHalfHeight: MARCHER_SHOE_HALF_HEIGHT })', context);
@@ -70,7 +77,7 @@ run(robotSource.slice(robotSource.indexOf('export const MARCHING_GAITS ='),
   robotSource.indexOf('let selectedMarchingGait')));
 run(robotSource.slice(robotSource.indexOf('function wrapAngle(angle:'),
   robotSource.indexOf('function applyGlobalCountToAllRobots')));
-vm.runInContext('legAnimationBakingEnabled = false', context);
+vm.runInContext('legAnimationBakingEnabled = false; sharedStepCyclesEnabled = false', context);
 const pose = () => {
   context.applyGlobalCount(robot, state);
   return [parts.leftKnee.rotation.x, parts.rightKnee.rotation.x, ...robot.position.asArray()];
@@ -100,6 +107,7 @@ if (process.argv.includes('--benchmark') || process.argv.includes('--benchmark-b
     { name: 'Uncached', step: false, leg: false },
     { name: 'Step cache', step: true, leg: false },
     { name: 'Step + leg cache', step: true, leg: true },
+    { name: 'Shared step cycles', step: true, leg: true, cycles: true },
   ];
   if (process.argv.includes('--benchmark-baked')) {
     modes.push({ name: 'Baked show', step: true, leg: true, baked: true });
@@ -135,6 +143,7 @@ if (process.argv.includes('--benchmark') || process.argv.includes('--benchmark-b
         const modeIndex = (order + trial) % modes.length;
         const mode = modes[modeIndex];
         vm.runInContext(`legAnimationBakingEnabled = ${!!mode.baked}`, context);
+        vm.runInContext(`sharedStepCyclesEnabled = ${!!mode.cycles}`, context);
         const measurement = measurements[modeIndex];
         context.precalculateMarcherLegPose = mode.leg ? cachedLegSolver : context.solvePlantedMarcherLeg;
         vm.runInContext('precalculatedLegPoses.clear()', context);
@@ -189,6 +198,59 @@ const renderedPose = () => {
       .flatMap(joint => joint.rotationQuaternion.asArray()),
   ];
 };
+if (process.argv.includes('--step-cycles-only')) {
+  vm.runInContext('sharedStepCyclesEnabled = true', context);
+  const soleFrom = (leg, knee, ankle) => {
+    const calf = leg.multiply(knee);
+    const foot = calf.multiply(ankle);
+    const pitch = foot.toEulerAngles().x;
+    return new Vector3(0, 0.69, 0)
+      .add(new Vector3(0, -0.315, 0).rotateByQuaternionToRef(leg, Vector3.Zero()))
+      .add(new Vector3(0, -0.315, 0).rotateByQuaternionToRef(calf, Vector3.Zero()))
+      .add(new Vector3(0, -0.03, 0.055).rotateByQuaternionToRef(foot, Vector3.Zero()))
+      .subtract(new Vector3(0, context.marcherShoeGroundDepth(pitch), context.marcherShoeRollOffset(pitch)));
+  };
+  let maxError = 0;
+  for (const rate of [0.5, 1, 2]) {
+    cadence = rate;
+    for (const yaw of [0, 0.7, Math.PI / 2, Math.PI]) {
+      facingYaw = yaw;
+      state.counts = Array.from({ length: 80 }, (_, index) => ({
+        position: new Vector3(7 + Math.sin(yaw) * index * 0.2, 0,
+          -3 + Math.cos(yaw) * index * 0.2), rotationY: yaw,
+      }));
+      state.stepCache = undefined;
+      for (let frame = 0; frame < 180; frame++) {
+        musicBeat = drillBeat = (12 + frame / 90) / rate;
+        const exact = context.applyGlobalCount(robot, state, { drillBeat, musicBeat });
+        pose();
+        assert.ok(Vector3.Distance(robot.position, new Vector3(7 + Math.sin(yaw) * drillBeat * 0.2,
+          0, -3 + Math.cos(yaw) * drillBeat * 0.2)) < 1e-8, 'Root travel stays exact');
+        for (const [i, leg, knee, ankle] of [
+          [0, parts.leftLeg, parts.leftKnee, parts.leftAnkle],
+          [1, parts.rightLeg, parts.rightKnee, parts.rightAnkle],
+        ]) {
+          const actual = soleFrom(Quaternion.FromEulerAngles(...leg.rotation.asArray()),
+            knee.rotationQuaternion, ankle.rotationQuaternion);
+          const expected = soleFrom(exact.legs[i].legRotation, exact.legs[i].kneeRotation, exact.legs[i].ankleRotation);
+          const error = Vector3.Distance(actual, expected);
+          maxError = Math.max(maxError, error);
+          assert.ok(error < 0.000101, `Shared cycles preserve beat/parity/contact, error ${error}`);
+        }
+      }
+    }
+  }
+  const hitsBefore = context.getMarcherStepCycleStatus().hits;
+  state.counts[14].position.x += 0.1;
+  state.stepCache = undefined;
+  cadence = 1; facingYaw = 0;
+  musicBeat = drillBeat = 12.2;
+  pose();
+  assert.equal(context.getMarcherStepCycleStatus().hits, hitsBefore, 'Irregular paths retain live IK');
+  console.log(`Shared-cycle integration: ${hitsBefore} leg hits; max sole error ${maxError}; exact root motion, beat parity, cadence, translation, turns fallback.`);
+  assert.ok(hitsBefore > 2000, 'Actual marcher playback uses shared cycles substantially');
+  process.exit(0);
+}
 for (const rate of [0.5, 1, 2]) {
   cadence = rate;
   for (const yaw of [0, Math.PI / 2, Math.PI]) {

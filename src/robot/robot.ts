@@ -42,6 +42,7 @@ import { marcherFootTarget, marcherSoleInRig } from './marcherFootTargets';
 import { BakedLegAnimation, SharedLegBakePool, getBakedLegAnimationBytes, getStepCycleCacheStatus,
   type BakedLegPose } from './bakedLegAnimation';
 import { midiBeatAtPulse, midiPulseAtBeat, type MidiBeatUnit } from '../audio/midiBeatPulse';
+import { sharedMarcherStepPose } from './marcherStepCycles';
 
 export { COLLISION_MARKER_RADIUS_YARDS } from './collisionMarkers';
 
@@ -858,6 +859,7 @@ interface PlayerState {
     facings: Map<number, number>;
     directions: Map<string, number | undefined>;
     rolls: Map<string, { pitch: number; velocity: number }>;
+    cycleStride?: number | null;
   };
   // Facing held for the whole route; reapplied whenever counts are rebuilt.
   fixedFacingY?: number;
@@ -1224,14 +1226,18 @@ const playbackDisplacement = Vector3.Zero();
 const pendingLegBakes = new Set<BakedLegAnimation>();
 const sharedLegBakes = new SharedLegBakePool();
 let legBakeTimer: ReturnType<typeof setTimeout> | undefined;
-let legAnimationBakingEnabled = true;
+let legAnimationBakingEnabled = false;
+let sharedStepCyclesEnabled = true;
 let bakedPoseHits = 0;
 let bakedPoseMisses = 0;
 const bakedFallbacks = { pending: 0, accuracy: 0, memory: 0, reverseBoundary: 0 };
 let prebakingLegAnimation = false;
-let waitingForLegBake = false;
 
 export function startLegAnimationPrebake() {
+  if (!legAnimationBakingEnabled) {
+    console.warn('Leg animation baking is disabled; marching uses cached live IK.');
+    return;
+  }
   pauseAll();
   prebakingLegAnimation = true;
   applyGlobalCountToAllRobots();
@@ -1240,24 +1246,6 @@ export function startLegAnimationPrebake() {
 
 export function cancelLegAnimationPrebake() {
   if (!prebakingLegAnimation) return;
-  waitingForLegBake = true;
-  resumeAfterLegBakeBuffer();
-}
-
-function resumeAfterLegBakeBuffer() {
-  if (!waitingForLegBake) return;
-  const drillBeat = getDrillTransportState().beat;
-  const musicBeat = getMusicTransportState().beat;
-  const end = getMaxCountIndex();
-  const target = drillBeat + advanceBeatBySeconds(musicBeat, musicBeat + end - drillBeat,
-    5 * (Math.abs(globalPlayback.speedMultiplier) || 1)) - musicBeat;
-  for (const [robot, state] of players) {
-    if (heldRobots.has(robot)) continue;
-    const last = state.counts.length - 1;
-    for (let count = Math.floor(drillBeat); count < Math.min(last, target); count++) {
-      if (!state.legBake?.table.isCountPrepared(count)) return;
-    }
-  }
   playAll();
 }
 
@@ -1274,7 +1262,6 @@ function scheduleLegBake(table: BakedLegAnimation) {
       next.advance();
       if (!next.complete) pendingLegBakes.add(next);
     } while (performance.now() < deadline);
-    resumeAfterLegBakeBuffer();
     const next = pendingLegBakes.values().next().value;
     if (next) scheduleLegBake(next);
     else prebakingLegAnimation = false;
@@ -1311,8 +1298,7 @@ export function getLegAnimationBakeStatus() {
     fallbackIntervals, memoryLimited, uniqueBakes: unique.size, reusedBakes: owners - unique.size,
     reusedCycles: Array.from(unique).reduce((sum, table) => sum + table.reusedCycles, 0),
     ...getStepCycleCacheStatus(), bakedPoseHits, bakedPoseMisses,
-    bakedFallbacks: { ...bakedFallbacks }, prebaking: prebakingLegAnimation,
-    waitingForBuffer: waitingForLegBake };
+    bakedFallbacks: { ...bakedFallbacks }, prebaking: prebakingLegAnimation };
 }
 
 function applyGlobalCount(robot: TransformNode, state: PlayerState,
@@ -1443,8 +1429,9 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState,
   if (!sample && legAnimationBakingEnabled && state.legBake) {
     // Exact reverse integer boundaries use the preceding segment's gait.
     if (!(playbackDirection < 0 && Number.isInteger(drillBeat))) bakedPose = state.legBake.table.poseAt(drillBeat);
-    if (bakedPose) bakedPoseHits++;
-    else {
+    if (bakedPose) {
+      if (globalPlayback.playing) bakedPoseHits++;
+    } else if (globalPlayback.playing) {
       bakedPoseMisses++;
       const reason = playbackDirection < 0 && Number.isInteger(drillBeat)
         ? 'reverseBoundary' : state.legBake.table.fallbackReasonAt(drillBeat);
@@ -1520,6 +1507,46 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState,
     if (index + 1 >= offsets.length) return last;
     return index + (step - offsets[index]) / (offsets[index + 1] - offsets[index]);
   };
+  if (!sample && sharedStepCyclesEnabled) {
+    if (stepCache.cycleStride === undefined) {
+      stepCache.cycleStride = null;
+      const startBeat = beatForStep(stepNumber - 2);
+      const endBeat = beatForStep(stepNumber + 3);
+      const stepDuration = (endBeat - startBeat) / 5;
+      const start = Math.floor(startBeat);
+      const end = Math.ceil(endBeat);
+      if (!repeatOptions.drill && start >= 1 && end < last && stepDuration > 0 &&
+        Math.abs(beatForStep(stepNumber) - startBeat - 2 * stepDuration) < 1e-8 &&
+        Math.abs(beatForStep(stepNumber + 1) - startBeat - 3 * stepDuration) < 1e-8 &&
+        Math.abs(wrapAngle(bodyRotation - targetBodyYaw)) < 1e-8) {
+        const delta = state.counts[start + 1].position.subtract(state.counts[start].position);
+        let uniform = Math.abs(delta.y) < 1e-10;
+        for (let index = start; uniform && index <= end; index++) {
+          const selection = resolveSegmentGait(state, index, parts.gaitIndex);
+          const expected = state.counts[start].position.add(delta.scale(index - start));
+          uniform = !!selection && selection.gaitIndex === gaitIndex &&
+            selection.stepsPerCount === stepsPerCount &&
+            Math.abs(wrapAngle(selection.bodyYaw - targetBodyYaw)) < 1e-8 &&
+            Vector3.DistanceSquared(state.counts[index].position, expected) < 1e-16;
+        }
+        const lateral = delta.x * Math.cos(bodyRotation) - delta.z * Math.sin(bodyRotation);
+        if (uniform && (inPlace || Math.abs(lateral) < 1e-9)) {
+          stepCache.cycleStride = inPlace ? 0 :
+            (delta.x * Math.sin(bodyRotation) + delta.z * Math.cos(bodyRotation)) *
+            stepDuration / MARCHER_BODY_SCALE;
+        }
+      }
+    }
+    if (stepCache.cycleStride !== null) {
+      const left = sharedMarcherStepPose(stepCache.cycleStride, gaitProgress, !leftStance, gait.lift);
+      const right = sharedMarcherStepPose(stepCache.cycleStride, gaitProgress, leftStance, gait.lift);
+      if (left && right) {
+        const cyclePose: BakedLegPose = { legs: [left, right], hipHalfSpacing, limited: false };
+        applyLegPose(cyclePose);
+        return;
+      }
+    }
+  }
   const landingBeat = (step: number) => {
     const beat = beatForStep(step + 0.5);
     return repeatOptions.drill && last > 0
@@ -2129,7 +2156,6 @@ export function refreshCollisionMarkers(scene: Scene) {
 // whole band always marches together on the same synchronized count clock.
 
 export function playAll() {
-  waitingForLegBake = false;
   prebakingLegAnimation = false;
   globalPlayback.speedMultiplier = Math.abs(globalPlayback.speedMultiplier) || 1;
   globalPlayback.playing = true;
@@ -2137,7 +2163,7 @@ export function playAll() {
 }
 
 export function pauseAll() {
-  waitingForLegBake = false;
+  prebakingLegAnimation = false;
   globalPlayback.playing = false;
   notifyDrillTransport();
 }
@@ -2169,7 +2195,6 @@ export function setMarchTempo(beatsPerMinute: number): number {
 }
 
 export function rewindAll() {
-  waitingForLegBake = false;
   prebakingLegAnimation = false;
   globalPlayback.speedMultiplier = -2;
   globalPlayback.playing = true;
@@ -2177,7 +2202,6 @@ export function rewindAll() {
 }
 
 export function fastForwardAll() {
-  waitingForLegBake = false;
   prebakingLegAnimation = false;
   globalPlayback.speedMultiplier = 2;
   globalPlayback.playing = true;
@@ -2205,6 +2229,7 @@ export function seekAll(fraction: number) {
 // Seeks to an absolute count index (e.g. clicking a specific footstep handle)
 // and pauses there, so the clicked moment stays put instead of playing on.
 export function seekToCount(countIndex: number) {
+  prebakingLegAnimation = false;
   transportRevision++;
   const beat = Math.min(getMaxCountIndex(), Math.max(0, countIndex));
   setDrillBeatPosition(beat);

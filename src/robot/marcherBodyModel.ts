@@ -19,6 +19,7 @@ const METAL = new Color4(0.35, 0.38, 0.42, 1);
 const BOOT = new Color4(0.025, 0.035, 0.045, 1);
 const GLOVE = new Color4(0.9, 0.92, 0.88, 1);
 const TINTED = new Color4(1, 1, 1, 1);
+const LEG_RADIAL_SIDES = 8;
 
 const materials = new WeakMap<Scene, StandardMaterial>();
 const legMaterials = new WeakMap<Scene, StandardMaterial>();
@@ -85,7 +86,7 @@ export const getMarcherJacketTemplate = partTemplate("marcherJacketTemplate", (g
       [0.24, 1.035], [0.13, 1.075], [0, 1.085]]
     : [[0, JACKET_LEG_CLIP_HEIGHT], [0.21, JACKET_LEG_CLIP_HEIGHT], [0.205, 0.73],
       [0.215, 0.84], [0.235, 0.93], [0.26, 0.98], [0.255, 1.01], [0.225, 1.045],
-      [0.17, 1.07], [0.1, 1.082], [0, 1.085]], 16, TINTED,
+      [0.17, 1.07], [0.1, 1.082], [0, 1.085]], geometry.low ? 16 : 12, TINTED,
     ({ x, y, z }) => new Vector3(x, y, z * 0.85));
 });
 
@@ -111,21 +112,21 @@ export const getMarcherThighTemplate = partTemplate("marcherThighTemplate", (geo
   geometry.lathe(geometry.low
     ? [[0, -0.18], [0.045, -0.155], [0.065, -0.11], [0.085, 0.03], [0.085, 0.16], [0, 0.245]]
     : [[0, -0.18], [0.032, -0.175], [0.045, -0.155], [0.065, -0.11],
-      [0.085, 0.03], [0.087, 0.08], [0.085, 0.16], [0.06, 0.22], [0, 0.245]], 12, DARK);
+      [0.085, 0.03], [0.087, 0.08], [0.085, 0.16], [0.06, 0.22], [0, 0.245]], geometry.low ? 12 : LEG_RADIAL_SIDES, DARK);
 }, true);
 
 export const getMarcherCalfTemplate = partTemplate("marcherCalfTemplate", (geometry) => {
   geometry.lathe(geometry.low
     ? [[0, -0.34], [0.055, -0.315], [0.075, -0.16], [0.065, -0.045], [0.045, 0], [0, 0.025]]
     : [[0, -0.34], [0.039, -0.333], [0.055, -0.315], [0.075, -0.21],
-      [0.075, -0.16], [0.065, -0.045], [0.045, 0], [0.032, 0.018], [0, 0.025]], 12, DARK);
+      [0.075, -0.16], [0.065, -0.045], [0.045, 0], [0.032, 0.018], [0, 0.025]], geometry.low ? 12 : LEG_RADIAL_SIDES, DARK);
 }, true);
 
 export const getMarcherKneeTemplate = partTemplate("marcherKneeTemplate", (geometry) => {
   geometry.lathe(geometry.low
     ? [[0, -0.075], [0.053, -0.053], [0.075, 0], [0.053, 0.053], [0, 0.075]]
     : [[0, -0.075], [0.0375, -0.065], [0.065, -0.0375], [0.075, 0],
-      [0.065, 0.0375], [0.0375, 0.065], [0, 0.075]], 12, DARK);
+      [0.065, 0.0375], [0.0375, 0.065], [0, 0.075]], geometry.low ? 12 : LEG_RADIAL_SIDES, DARK);
 });
 
 // Toe along +Z (rotated about X), widened sideways.

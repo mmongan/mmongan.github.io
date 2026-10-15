@@ -42,6 +42,9 @@ const templates = load('marcherBodyModel', [
 ]);
 const { getMarcherTrimTemplate } = templates;
 const partNames = Object.keys(templates);
+const previousTemplates = load('marcherBodyModel', partNames,
+  source => source.replace('const LEG_RADIAL_SIDES = 8;', 'const LEG_RADIAL_SIDES = 12;')
+    .replace('geometry.low ? 16 : 12', '16'));
 const baselineShared = load('lowPolyInstrument',
   ['InstrumentGeometry', 'cachedInstrumentTemplate', 'buildLowPolyTemplate'],
   source => source.replace('profile = this.simplifyBodyProfile(profile)', 'profile = profile'));
@@ -53,6 +56,8 @@ const optimizedShared = {
 Object.assign(context, baselineShared);
 const baselineTemplates = load('marcherBodyModel', partNames,
   source => source.replaceAll('geometry.low ? 12 : 8', '12')
+    .replace('const LEG_RADIAL_SIDES = 8;', 'const LEG_RADIAL_SIDES = 12;')
+    .replace('geometry.low ? 16 : 12', '16')
     .replace('new Vector3(x * 0.75, y, z * 0.75)', 'new Vector3(x, y, z)')
     .replace('new Vector3(x * 0.8, y, z * 0.8)', 'new Vector3(x, y, z)'));
 const baselineMeshes = Object.fromEntries(['high', 'low'].map(detail => [detail,
@@ -229,12 +234,20 @@ try {
   for (const detail of ['high', 'low']) {
     let before = 0;
     let after = 0;
+    let previous = 0;
     for (const name of partNames) {
       const oldMesh = baselineMeshes[detail][name];
       const mesh = templates[name](scene, detail);
       const copies = name === 'getMarcherTrimTemplate' || name === 'getMarcherJacketTemplate' ? 1 : 2;
       before += copies * oldMesh.getTotalVertices();
       after += copies * mesh.getTotalVertices();
+      const previousMesh = previousTemplates[name](scene, detail);
+      previous += copies * previousMesh.getTotalVertices();
+      const previousBounds = previousMesh.getBoundingInfo().boundingBox;
+      const currentBounds = mesh.getBoundingInfo().boundingBox;
+      assert.ok(Vector3.Distance(previousBounds.minimum, currentBounds.minimum) < 1e-6 &&
+        Vector3.Distance(previousBounds.maximum, currentBounds.maximum) < 1e-6,
+      `${name} ${detail}: radial reduction preserves existing part bounds`);
       const oldBounds = oldMesh.getBoundingInfo().boundingBox;
       const bounds = mesh.getBoundingInfo().boundingBox;
       const radiusScale = name === 'getMarcherUpperArmTemplate' ? 0.75 :
@@ -246,6 +259,11 @@ try {
       assert.ok(mesh.getTotalVertices() <= oldMesh.getTotalVertices(), `${name}: never adds vertices`);
     }
     assert.ok(after < before, `${detail}: marcher body vertex count reduced`);
+    if (detail === 'high') assert.ok(after <= 1010, 'Full-detail body stays below the reduced vertex budget');
+    else assert.equal(after, 384, 'Reduced-detail geometry is preserved');
+    assert.equal(previous, detail === 'high' ? 1196 : 384, 'Measured previous topology matches its documented budget');
+    assert.equal(after, detail === 'high' ? 1008 : previous);
+    console.log(`Current reduction ${detail}: ${previous} -> ${after} vertices (${(100 * (1 - after / previous)).toFixed(1)}% fewer).`);
     console.log(`Marcher body ${detail}: ${before} -> ${after} vertices (${(100 * (1 - after / before)).toFixed(1)}% fewer, eyes/instrument excluded).`);
   }
   console.log('Marcher body checks passed: rounded joint ends, bounded XR geometry, cached body parts, and no buttock or pelvis geometry at both detail levels.');

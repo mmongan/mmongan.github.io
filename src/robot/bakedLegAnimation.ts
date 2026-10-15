@@ -212,12 +212,6 @@ export class BakedLegAnimation {
     return this.memoryLimited ? 'memory' : 'pending';
   }
 
-  isCountPrepared(count: number): boolean {
-    if (count >= this.lastCount || this.complete || this.memoryLimited) return true;
-    const cycle = this.cycles.get(count);
-    return cycle ? cycle.table.complete : this.finishedCounts.has(count);
-  }
-
   private *build(sample: (beat: number) => BakedLegPose | undefined, firstCount: number,
     cycleKey?: (count: number) => string | undefined): Generator<void> {
     for (let ordinal = 0; ordinal < this.lastCount; ordinal++) {

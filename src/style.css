@@ -89,32 +89,6 @@ body {
   line-height: 1.1;
 }
 
-.leg-bake-panel {
-  width: min(320px, 100%);
-  max-width: 100%;
-  pointer-events: none;
-}
-
-.leg-bake-panel progress {
-  display: block;
-  width: 100%;
-  height: 10px;
-  margin: 8px 0;
-  accent-color: var(--accent);
-}
-
-.leg-bake-panel button {
-  pointer-events: auto;
-  margin-top: 8px;
-}
-
-.leg-bake-panel span {
-  display: block;
-  white-space: pre-line;
-  font-size: 0.8rem;
-  font-variant-numeric: tabular-nums;
-}
-
 .title-panel p {
   margin: 6px 0 0;
   font-size: 0.85rem;

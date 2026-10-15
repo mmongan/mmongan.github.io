@@ -5,8 +5,7 @@ export function formatLegBakeProgress(status: ReturnType<typeof getLegAnimationB
   const { completedCounts, totalCounts, pending, sharedBytes, memoryLimited } = status;
   const percent = totalCounts > 0 ? Math.min(100, 100 * completedCounts / totalCounts) : 0;
   const displayedPercent = pending > 0 ? Math.min(99.9, Math.floor(percent * 10) / 10) : percent;
-  const label = status.waitingForBuffer ? 'Waiting for 5 seconds of prepared animation'
-    : memoryLimited > 0
+  const label = memoryLimited > 0
     ? pending > 0 ? `Baking legs - ${displayedPercent.toFixed(1)}% (memory limit)` : 'Leg bake limited by memory'
     : pending > 0 ? `${status.prebaking ? 'Prebaking show' : 'Baking legs'} - ${displayedPercent.toFixed(1)}%` : 'Leg bake ready';
   const details = `${completedCounts.toLocaleString()} / ${totalCounts.toLocaleString()} marcher-counts processed` +
@@ -46,9 +45,9 @@ export function initLegBakeProgress(): () => void {
     if (legPrebakeButton) {
       const status = getLegAnimationBakeStatus();
       legPrebakeButton.textContent = status.prebaking ? 'Cancel prebake' : 'Prebake show';
-      legPrebakeButton.disabled = status.pending === 0 || status.waitingForBuffer;
+      legPrebakeButton.disabled = status.pending === 0;
       legPrebakeButton.title = status.prebaking
-        ? 'Wait for five seconds of prepared animation, then resume playback without discarding progress.'
+        ? 'Resume marching immediately, using live animation where baked poses are not ready.'
         : 'Pause marching and prepare animation faster. Completion leaves playback paused.';
     }
   };

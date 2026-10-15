@@ -90,42 +90,41 @@ const functionSource = name => {
   assert.ok(start >= 0);
   return robotSource.slice(start, robotSource.indexOf('\n}', start) + 2);
 };
-let paused = false;
 let timer;
 let delay;
 let time = 0;
 const table = { complete: false, advance() { this.complete = true; } };
-let preparedThrough = 0;
-const checkedCounts = [];
 const scheduler = vm.createContext({
   pendingLegBakes: new Set(), legBakeTimer: undefined, prebakingLegAnimation: false,
-  waitingForLegBake: false,
-  heldRobots: new Set(),
-  players: new Map([[1, { counts: Array(21), legBake: { table: {
-    isCountPrepared(count) { checkedCounts.push(count); return count < preparedThrough; },
-  } } }]]),
-  getDrillTransportState: () => ({ beat: 2 }),
-  getMusicTransportState: () => ({ beat: 2 }),
+  legAnimationBakingEnabled: true,
+  console: { warn(message) { assert.match(message, /baking is disabled/); } },
+  repeatElapsed: null,
   getMaxCountIndex: () => 20,
-  advanceBeatBySeconds: (start, end, seconds) => Math.min(end, start + seconds * 2),
   globalPlayback: { playing: false, speedMultiplier: 1 },
   notifyDrillTransport() {},
   performance: { now() { time += 2; return time; } },
   setTimeout(callback, milliseconds) { timer = callback; delay = milliseconds; return 1; },
-  pauseAll() { paused = true; scheduler.globalPlayback.playing = false; },
   applyGlobalCountToAllRobots() { scheduler.scheduleLegBake(table); },
 });
 for (const name of ['scheduleLegBake', 'startLegAnimationPrebake', 'cancelLegAnimationPrebake',
-  'resumeAfterLegBakeBuffer', 'playAll', 'rewindAll', 'fastForwardAll']) {
+  'pauseAll', 'playAll', 'rewindAll', 'fastForwardAll']) {
   vm.runInContext(stripTypeScriptTypes(functionSource(name), { mode: 'transform' }), scheduler);
 }
+assert.match(robotSource, /let legAnimationBakingEnabled = false;/, 'App defaults to cached live IK');
+scheduler.legAnimationBakingEnabled = false;
+scheduler.globalPlayback.playing = true;
 scheduler.startLegAnimationPrebake();
-assert.equal(paused, true, 'Prebake pauses transport before preparation');
+assert.equal(scheduler.globalPlayback.playing, true, 'Disabled prebake cannot pause marching');
+assert.equal(scheduler.pendingLegBakes.size, 0, 'Disabled prebake schedules no work');
+assert.equal(timer, undefined);
+assert.equal(scheduler.prebakingLegAnimation, false);
+scheduler.legAnimationBakingEnabled = true;
+scheduler.startLegAnimationPrebake();
+assert.equal(scheduler.globalPlayback.playing, false, 'Prebake pauses transport before preparation');
 assert.equal(delay, 0, 'Accelerated preparation uses minimal timer delay');
 assert.equal(scheduler.prebakingLegAnimation, true);
 timer();
 assert.equal(scheduler.prebakingLegAnimation, false, 'Finishing the queue exits accelerated mode');
-assert.equal(paused, true, 'Completion never automatically resumes marching');
 assert.equal(scheduler.globalPlayback.playing, false);
 scheduler.cancelLegAnimationPrebake();
 assert.equal(scheduler.globalPlayback.playing, false, 'Cancelling inactive prebake leaves transport unchanged');
@@ -133,26 +132,15 @@ table.complete = false;
 scheduler.startLegAnimationPrebake();
 scheduler.cancelLegAnimationPrebake();
 assert.equal(scheduler.pendingLegBakes.has(table), true, 'Cancelling preserves unfinished baking work');
-assert.equal(scheduler.waitingForLegBake, true);
-assert.equal(scheduler.globalPlayback.playing, false, 'Cancellation waits for the buffer');
-preparedThrough = 11;
-scheduler.resumeAfterLegBakeBuffer();
-assert.equal(scheduler.globalPlayback.playing, false, 'Less than five seconds stays paused');
-preparedThrough = 12;
-scheduler.resumeAfterLegBakeBuffer();
 assert.equal(scheduler.prebakingLegAnimation, false);
-assert.equal(scheduler.globalPlayback.playing, true, 'Five seconds of preparation resumes playback');
-assert.equal(checkedCounts.at(-1), 11, 'At two counts per second, ten upcoming counts must be prepared');
-table.complete = false;
-scheduler.startLegAnimationPrebake();
-scheduler.globalPlayback.speedMultiplier = 2;
-scheduler.cancelLegAnimationPrebake();
-assert.equal(scheduler.globalPlayback.playing, false, 'Double speed requires more prepared counts');
-preparedThrough = 20;
-scheduler.resumeAfterLegBakeBuffer();
-assert.equal(scheduler.globalPlayback.playing, true, 'Near the end, all remaining counts suffice');
+assert.equal(scheduler.globalPlayback.playing, true, 'Cancellation immediately resumes marching without a buffer');
+assert.equal(table.complete, false, 'Playback resumes even with unfinished baking');
 timer();
 assert.equal(scheduler.pendingLegBakes.size, 0, 'Background baking continues after cancellation');
+table.complete = false;
+scheduler.playAll();
+assert.equal(scheduler.globalPlayback.playing, true, 'Play starts immediately with unfinished baking');
+assert.equal(scheduler.prebakingLegAnimation, false);
 for (const [name, speed] of [['playAll', 1], ['rewindAll', -2], ['fastForwardAll', 2]]) {
   table.complete = false;
   scheduler.startLegAnimationPrebake();
@@ -162,4 +150,28 @@ for (const [name, speed] of [['playAll', 1], ['rewindAll', -2], ['fastForwardAll
   assert.equal(scheduler.globalPlayback.playing, true);
   assert.equal(scheduler.globalPlayback.speedMultiplier, speed, `${name} preserves its intended speed`);
 }
+let frame;
+let renderedBeat;
+Object.assign(scheduler, {
+  sharedScene: null, sharedObserver: null, repeatElapsed: null,
+  getDrillTransportState: () => ({
+    beat: scheduler.globalPlayback.countIndex + scheduler.globalPlayback.stepAccumulatorSeconds * 2,
+  }),
+  getMusicTransportState: () => scheduler.getDrillTransportState(),
+  getSecondsBetweenBeats: (start, end) => Math.abs(end - start) / 2,
+  applyGlobalCountToAllRobots() { renderedBeat = scheduler.getDrillTransportState().beat; },
+});
+vm.runInContext(stripTypeScriptTypes(functionSource('ensureSharedObserver'), { mode: 'transform' }), scheduler);
+scheduler.ensureSharedObserver({
+  getEngine: () => ({ getDeltaTime: () => 100 }),
+  onBeforeRenderObservable: { add(callback) { frame = callback; return callback; } },
+});
+Object.assign(scheduler.globalPlayback, { playing: true, speedMultiplier: 1,
+  countIndex: 11, stepAccumulatorSeconds: 0.45 });
+table.complete = false;
+frame();
+assert.ok(Math.abs(renderedBeat - 12.1) < 1e-9, 'Playback crosses unprepared counts without rollback');
+assert.equal(scheduler.globalPlayback.playing, true, 'No automatic refill pause');
+frame();
+assert.ok(renderedBeat > 12.1, 'Playback keeps advancing while baking is unfinished');
 console.log('Leg bake progress checks passed: hidden, active, finalizing, ready, memory-limited, reset, and cleanup.');
