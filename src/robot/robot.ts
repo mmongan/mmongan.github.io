@@ -39,7 +39,8 @@ import { boundMarcherFootTarget, boundMarcherFootLift, MARCHER_CALF_LENGTH, MARC
   MARCHER_SHOE_FORWARD_OFFSET, MARCHER_SHOE_HALF_HEIGHT, marcherSwingLift, marcherGroundFootPitch,
   marcherSwingFootPitch, precalculateMarcherLegPose } from './marcherLegPose';
 import { marcherFootTarget, marcherSoleInRig } from './marcherFootTargets';
-import { BakedLegAnimation, getBakedLegAnimationBytes, type BakedLegPose } from './bakedLegAnimation';
+import { BakedLegAnimation, SharedLegBakePool, getBakedLegAnimationBytes, getStepCycleCacheStatus,
+  type BakedLegPose } from './bakedLegAnimation';
 import { midiBeatAtPulse, midiPulseAtBeat, type MidiBeatUnit } from '../audio/midiBeatPulse';
 
 export { COLLISION_MARKER_RADIUS_YARDS } from './collisionMarkers';
@@ -847,6 +848,7 @@ interface PlayerState {
     beatUnits: ReadonlyArray<MidiBeatUnit>;
     key: string;
     table: BakedLegAnimation;
+    release?: () => void;
   };
   stepCache?: {
     counts: RobotCount[];
@@ -1220,15 +1222,51 @@ function lerpAngle(from: number, to: number, t: number): number {
 const playbackDisplacement = Vector3.Zero();
 
 const pendingLegBakes = new Set<BakedLegAnimation>();
+const sharedLegBakes = new SharedLegBakePool();
 let legBakeTimer: ReturnType<typeof setTimeout> | undefined;
 let legAnimationBakingEnabled = true;
+let bakedPoseHits = 0;
+let bakedPoseMisses = 0;
+const bakedFallbacks = { pending: 0, accuracy: 0, memory: 0, reverseBoundary: 0 };
+let prebakingLegAnimation = false;
+let waitingForLegBake = false;
+
+export function startLegAnimationPrebake() {
+  pauseAll();
+  prebakingLegAnimation = true;
+  applyGlobalCountToAllRobots();
+  if (pendingLegBakes.size === 0) prebakingLegAnimation = false;
+}
+
+export function cancelLegAnimationPrebake() {
+  if (!prebakingLegAnimation) return;
+  waitingForLegBake = true;
+  resumeAfterLegBakeBuffer();
+}
+
+function resumeAfterLegBakeBuffer() {
+  if (!waitingForLegBake) return;
+  const drillBeat = getDrillTransportState().beat;
+  const musicBeat = getMusicTransportState().beat;
+  const end = getMaxCountIndex();
+  const target = drillBeat + advanceBeatBySeconds(musicBeat, musicBeat + end - drillBeat,
+    5 * (Math.abs(globalPlayback.speedMultiplier) || 1)) - musicBeat;
+  for (const [robot, state] of players) {
+    if (heldRobots.has(robot)) continue;
+    const last = state.counts.length - 1;
+    for (let count = Math.floor(drillBeat); count < Math.min(last, target); count++) {
+      if (!state.legBake?.table.isCountPrepared(count)) return;
+    }
+  }
+  playAll();
+}
 
 function scheduleLegBake(table: BakedLegAnimation) {
   pendingLegBakes.add(table);
   if (legBakeTimer !== undefined) return;
   legBakeTimer = setTimeout(() => {
     legBakeTimer = undefined;
-    const deadline = performance.now() + 4;
+    const deadline = performance.now() + (prebakingLegAnimation ? 12 : 4);
     do {
       const next = pendingLegBakes.values().next().value;
       if (!next) break;
@@ -1236,23 +1274,32 @@ function scheduleLegBake(table: BakedLegAnimation) {
       next.advance();
       if (!next.complete) pendingLegBakes.add(next);
     } while (performance.now() < deadline);
+    resumeAfterLegBakeBuffer();
     const next = pendingLegBakes.values().next().value;
     if (next) scheduleLegBake(next);
-  }, 16);
+    else prebakingLegAnimation = false;
+  }, prebakingLegAnimation ? 0 : 16);
 }
 
 function invalidateLegBake(state: PlayerState) {
   if (!state.legBake) return;
-  pendingLegBakes.delete(state.legBake.table);
-  state.legBake.table.dispose();
+  if (state.legBake.release) state.legBake.release();
+  else {
+    pendingLegBakes.delete(state.legBake.table);
+    state.legBake.table.dispose();
+  }
   state.legBake = undefined;
 }
 
 export function getLegAnimationBakeStatus() {
   let bytes = 0, completedCounts = 0, totalCounts = 0, pending = 0, fallbackIntervals = 0, memoryLimited = 0;
+  const unique = new Set<BakedLegAnimation>();
+  let owners = 0;
   players.forEach(state => {
     const table = state.legBake?.table;
     if (!table) return;
+    unique.add(table);
+    owners++;
     bytes += table.byteLength;
     completedCounts += table.completedCounts;
     totalCounts += table.lastCount;
@@ -1261,18 +1308,23 @@ export function getLegAnimationBakeStatus() {
     memoryLimited += table.memoryLimited ? 1 : 0;
   });
   return { bytes, sharedBytes: getBakedLegAnimationBytes(), completedCounts, totalCounts, pending,
-    fallbackIntervals, memoryLimited };
+    fallbackIntervals, memoryLimited, uniqueBakes: unique.size, reusedBakes: owners - unique.size,
+    reusedCycles: Array.from(unique).reduce((sum, table) => sum + table.reusedCycles, 0),
+    ...getStepCycleCacheStatus(), bakedPoseHits, bakedPoseMisses,
+    bakedFallbacks: { ...bakedFallbacks }, prebaking: prebakingLegAnimation,
+    waitingForBuffer: waitingForLegBake };
 }
 
 function applyGlobalCount(robot: TransformNode, state: PlayerState,
-  sample?: { drillBeat: number; musicBeat: number }): BakedLegPose | undefined {
-  if (heldRobots.has(robot) || state.counts.length === 0) return;
+  sample?: { drillBeat: number; musicBeat: number;
+    parts?: NonNullable<ReturnType<typeof marcherParts.get>> }): BakedLegPose | undefined {
+  if ((!sample && heldRobots.has(robot)) || state.counts.length === 0) return;
   const last = state.counts.length - 1;
   const drillBeat = sample?.drillBeat ?? getDrillTransportState().beat;
   const musicBeat = sample?.musicBeat ?? getMusicTransportState().beat;
   const index = Math.min(Math.floor(drillBeat), last);
   const count = state.counts[index];
-  const parts = marcherParts.get(robot);
+  const parts = sample?.parts ?? marcherParts.get(robot);
   if (!parts) return;
   const clockOffset = Math.round((drillBeat - musicBeat) * 1e8) / 1e8;
   const bakeKey = [parts.gaitIndex, clockOffset, repeatOptions.songLength, repeatOptions.drill].join(":");
@@ -1280,11 +1332,39 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState,
     (state.legBake.counts !== state.counts || state.legBake.beatUnits !== playbackBeatUnits ||
       state.legBake.key !== bakeKey)) invalidateLegBake(state);
   if (!sample && legAnimationBakingEnabled && last > 0 && !state.legBake) {
-    const sampleState: PlayerState = { ...state, stepCache: undefined, legBake: undefined };
-    const table = new BakedLegAnimation(last, beat =>
-      applyGlobalCount(robot, sampleState, { drillBeat: beat, musicBeat: beat - clockOffset }), drillBeat);
-    state.legBake = { counts: state.counts, beatUnits: playbackBeatUnits, key: bakeKey, table };
-    scheduleLegBake(table);
+    const origin = state.counts[0].position;
+    const counts = state.counts.map(count => ({
+      ...count, position: count.position.subtract(new Vector3(origin.x, 0, origin.z)),
+    }));
+    // Exact relative-route equality only: never merge merely similar strides or turns.
+    const signature = JSON.stringify([bakeKey, playbackBeatUnits,
+      counts.map(count => [count.position.x, count.position.y, count.position.z, count.rotationY, count.facingY])]);
+    const lease = sharedLegBakes.acquire(signature, () => {
+      const sampleState: PlayerState = { ...state, counts, gaitPhaseCache: undefined,
+        stepCache: undefined, legBake: undefined };
+      const sampleParts = { ...parts };
+      const cycleKey = (count: number) => {
+        // A constant meter and a full neighboring context keep phase, contact and cadence identical.
+        if (repeatOptions.songLength <= 0 || repeatOptions.drill || playbackBeatUnits.length > 1 ||
+          count < 16 || count + 17 > last) return undefined;
+        const unit = playbackBeatUnits[0]?.quarterNotesPerPulse ?? 1;
+        if (unit <= 0 || unit > 2 || (playbackBeatUnits[0]?.beat ?? 0) !== 0) return undefined;
+        const origin = counts[count].position;
+        const phase = midiPulseAtBeat(count - clockOffset, playbackBeatUnits);
+        const phaseKey = ((phase % 4) + 4) % 4;
+        return JSON.stringify([sampleParts.gaitIndex, unit, phaseKey,
+          counts.slice(count - 16, count + 18).map(item => [
+            item.position.x - origin.x, item.position.y, item.position.z - origin.z,
+            item.rotationY, item.facingY,
+          ])]);
+      };
+      const table = new BakedLegAnimation(last, beat =>
+        applyGlobalCount(robot, sampleState, { drillBeat: beat, musicBeat: beat - clockOffset,
+          parts: sampleParts }), drillBeat, cycleKey);
+      scheduleLegBake(table);
+      return table;
+    }, table => pendingLegBakes.delete(table));
+    state.legBake = { counts: state.counts, beatUnits: playbackBeatUnits, key: bakeKey, ...lease };
   }
   const playbackDirection = sample !== undefined || globalPlayback.speedMultiplier >= 0 ? 1 : -1;
   // Work in the forward frame of the count being crossed, so reverse playback
@@ -1363,6 +1443,13 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState,
   if (!sample && legAnimationBakingEnabled && state.legBake) {
     // Exact reverse integer boundaries use the preceding segment's gait.
     if (!(playbackDirection < 0 && Number.isInteger(drillBeat))) bakedPose = state.legBake.table.poseAt(drillBeat);
+    if (bakedPose) bakedPoseHits++;
+    else {
+      bakedPoseMisses++;
+      const reason = playbackDirection < 0 && Number.isInteger(drillBeat)
+        ? 'reverseBoundary' : state.legBake.table.fallbackReasonAt(drillBeat);
+      bakedFallbacks[reason]++;
+    }
   }
   const applyLegPose = (pose: BakedLegPose) => {
     parts.body.position.y = 0;
@@ -2042,12 +2129,15 @@ export function refreshCollisionMarkers(scene: Scene) {
 // whole band always marches together on the same synchronized count clock.
 
 export function playAll() {
+  waitingForLegBake = false;
+  prebakingLegAnimation = false;
   globalPlayback.speedMultiplier = Math.abs(globalPlayback.speedMultiplier) || 1;
   globalPlayback.playing = true;
   notifyDrillTransport();
 }
 
 export function pauseAll() {
+  waitingForLegBake = false;
   globalPlayback.playing = false;
   notifyDrillTransport();
 }
@@ -2079,12 +2169,16 @@ export function setMarchTempo(beatsPerMinute: number): number {
 }
 
 export function rewindAll() {
+  waitingForLegBake = false;
+  prebakingLegAnimation = false;
   globalPlayback.speedMultiplier = -2;
   globalPlayback.playing = true;
   notifyDrillTransport();
 }
 
 export function fastForwardAll() {
+  waitingForLegBake = false;
+  prebakingLegAnimation = false;
   globalPlayback.speedMultiplier = 2;
   globalPlayback.playing = true;
   notifyDrillTransport();

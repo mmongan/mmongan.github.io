@@ -20,6 +20,17 @@ interface SharedSamples {
   hash: number;
 }
 const sharedSamples = new Map<number, SharedSamples[]>();
+const stepCycles = new Map<string, { table: BakedLegAnimation; owners: number }>();
+
+export function getStepCycleCacheStatus() {
+  let ready = 0;
+  let references = 0;
+  stepCycles.forEach(entry => {
+    ready += entry.table.complete ? 1 : 0;
+    references += entry.owners;
+  });
+  return { uniqueCycles: stepCycles.size, readyCycles: ready, cycleReferences: references };
+}
 
 function retainSamples(samples: Float32Array): SharedSamples | undefined {
   // Identity quaternion components and unused axes need no storage.
@@ -58,6 +69,32 @@ function releaseSamples(samples: SharedSamples) {
 }
 
 export function getBakedLegAnimationBytes() { return allocatedBytes; }
+
+export class SharedLegBakePool {
+  private readonly entries = new Map<string, { table: BakedLegAnimation; owners: number }>();
+
+  acquire(key: string, create: () => BakedLegAnimation, onUnused: (table: BakedLegAnimation) => void) {
+    let entry = this.entries.get(key);
+    if (!entry) {
+      entry = { table: create(), owners: 0 };
+      this.entries.set(key, entry);
+    }
+    entry.owners++;
+    const owned = entry;
+    let released = false;
+    return {
+      table: owned.table,
+      release: () => {
+        if (released) return;
+        released = true;
+        if (--owned.owners !== 0) return;
+        this.entries.delete(key);
+        onUnused(owned.table);
+        owned.table.dispose();
+      },
+    };
+  }
+}
 
 interface PoseInterval {
   start: number;
@@ -113,20 +150,25 @@ function unpack(values: Float64Array, limited: boolean): BakedLegPose {
 // Musical-count curves are built cooperatively; unresolved or discontinuous intervals use live IK.
 export class BakedLegAnimation {
   private readonly intervals = new Map<number, PoseInterval[]>();
+  private readonly finishedCounts = new Set<number>();
   private readonly work: Generator<void>;
   private bytes = 0;
   private disposed = false;
+  private readonly cycles = new Map<number, { table: BakedLegAnimation; key: string }>();
+  reusedCycles = 0;
   complete = false;
   memoryLimited = false;
   completedCounts = 0;
   fallbackIntervals = 0;
 
   constructor(readonly lastCount: number, sample: (beat: number) => BakedLegPose | undefined,
-    firstCount = 0) {
-    this.work = this.build(sample, firstCount);
+    firstCount = 0, cycleKey?: (count: number) => string | undefined) {
+    this.work = this.build(sample, firstCount, cycleKey);
   }
 
-  get byteLength() { return this.bytes; }
+  get byteLength(): number {
+    return this.bytes + Array.from(this.cycles.values()).reduce((sum, cycle) => sum + cycle.table.byteLength, 0);
+  }
 
   advance() {
     if (this.disposed || this.complete) return;
@@ -139,10 +181,21 @@ export class BakedLegAnimation {
     this.work.return(undefined);
     this.intervals.forEach(intervals => intervals.forEach(interval => releaseSamples(interval.samples)));
     this.intervals.clear();
+    this.finishedCounts.clear();
+    this.cycles.forEach(cycle => {
+      const entry = stepCycles.get(cycle.key)!;
+      if (--entry.owners === 0) {
+        stepCycles.delete(cycle.key);
+        entry.table.dispose();
+      }
+    });
+    this.cycles.clear();
     this.bytes = 0;
   }
 
   poseAt(beat: number): BakedLegPose | undefined {
+    const cycle = this.cycles.get(Math.floor(beat));
+    if (cycle) return cycle.table.poseAt(beat - Math.floor(beat));
     const intervals = this.intervals.get(Math.floor(beat));
     const interval = intervals?.find(item => beat >= item.start && beat < item.end);
     if (!interval) return undefined;
@@ -151,9 +204,44 @@ export class BakedLegAnimation {
       interval.limited);
   }
 
-  private *build(sample: (beat: number) => BakedLegPose | undefined, firstCount: number): Generator<void> {
+  fallbackReasonAt(beat: number): 'pending' | 'accuracy' | 'memory' {
+    const count = Math.floor(beat);
+    const cycle = this.cycles.get(count);
+    if (cycle) return cycle.table.fallbackReasonAt(beat - count);
+    if (this.finishedCounts.has(count)) return 'accuracy';
+    return this.memoryLimited ? 'memory' : 'pending';
+  }
+
+  isCountPrepared(count: number): boolean {
+    if (count >= this.lastCount || this.complete || this.memoryLimited) return true;
+    const cycle = this.cycles.get(count);
+    return cycle ? cycle.table.complete : this.finishedCounts.has(count);
+  }
+
+  private *build(sample: (beat: number) => BakedLegPose | undefined, firstCount: number,
+    cycleKey?: (count: number) => string | undefined): Generator<void> {
     for (let ordinal = 0; ordinal < this.lastCount; ordinal++) {
       const count = (Math.max(0, Math.min(this.lastCount - 1, Math.floor(firstCount))) + ordinal) % this.lastCount;
+      const key = cycleKey?.(count);
+      if (key !== undefined) {
+        let entry = stepCycles.get(key);
+        if (!entry) {
+          entry = { table: new BakedLegAnimation(1, beat => sample(count + beat)), owners: 0 };
+          stepCycles.set(key, entry);
+        } else this.reusedCycles++;
+        entry.owners++;
+        this.cycles.set(count, { key, table: entry.table });
+        while (!entry.table.complete) {
+          entry.table.advance();
+          yield;
+        }
+        this.fallbackIntervals += entry.table.fallbackIntervals;
+        this.memoryLimited = entry.table.memoryLimited;
+        this.completedCounts = ordinal + 1;
+        if (!this.memoryLimited) this.finishedCounts.add(count);
+        if (this.memoryLimited) return;
+        continue;
+      }
       const intervals: PoseInterval[] = [];
       this.intervals.set(count, intervals);
       const evaluate = function* (beat: number): Generator<void, BakedLegPose | undefined> {
@@ -222,6 +310,7 @@ export class BakedLegAnimation {
         yield* subdivide.call(this, count + quarter / 4, count + (quarter + 1) / 4);
       }
       this.completedCounts = ordinal + 1;
+      if (!this.memoryLimited) this.finishedCounts.add(count);
       if (this.memoryLimited) {
         console.warn('Leg animation bake reached its shared 128 MiB budget; remaining poses use live IK.');
         return;

@@ -26,6 +26,7 @@ import { getDrillTransportState, playAll } from '../robot/robot';
 import { initMusicStand } from '../menu/musicStand';
 import { setDrillChartPadVisible } from '../menu/drillChartPad';
 import { initMarcherPOV } from '../camera/marcherPOV';
+import { initLegBakeProgress } from '../ui/legBakeProgress';
 
 // Build static content before wiring up input and the WebXR experience.
 createSky();
@@ -46,6 +47,8 @@ initInteraction();
 initMusicStand();
 initMidiPlayback();
 initMarcherPOV(getSelectedMarcher, getSelectableMarchers, selectRobot, refreshPathLineAppearance);
+const disposeLegBakeProgress = initLegBakeProgress();
+scene.onDisposeObservable.addOnce(disposeLegBakeProgress);
 
 const startupChartObserver = scene.onBeforeRenderObservable.add(() => {
   scene.onBeforeRenderObservable.remove(startupChartObserver);

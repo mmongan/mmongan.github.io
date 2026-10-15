@@ -284,6 +284,85 @@ context.resolveSegmentGait = normalGaitResolver;
 state.counts = normalCounts;
 state.stepCache = undefined;
 console.log('Short-move regression passed: continuous auto travel, forward/reverse counts, explicit mark-time preserved.');
+if (process.argv.includes('--shared-bake-only')) {
+  context.setTimeout = () => 1;
+  const makeMarcher = (offset, stride = 0.25) => {
+    const root = node();
+    const rig = Object.fromEntries(Object.entries(parts).map(([key, value]) =>
+      [key, value && typeof value === 'object' ? node() : value]));
+    rig.gaitIndex = 0;
+    context.marcherParts.set(root, rig);
+    return { root, rig, state: { counts: Array.from({ length: 5 }, (_, index) =>
+      ({ position: new Vector3(offset, 0, offset + index * stride), rotationY: 0 })) } };
+  };
+  const a = makeMarcher(0);
+  const b = makeMarcher(12);
+  const c = makeMarcher(24, 0.3);
+  musicBeat = drillBeat = 1.25;
+  vm.runInContext('legAnimationBakingEnabled = true', context);
+  for (const marcher of [a, b, c]) context.applyGlobalCount(marcher.root, marcher.state);
+  const shared = a.state.legBake.table;
+  assert.equal(shared, b.state.legBake.table, 'Translated identical routes share the producer');
+  assert.notEqual(shared, c.state.legBake.table, 'Different strides require separate preparation');
+  shared.advance();
+  context.invalidateLegBake(a.state);
+  context.heldRobots.add(a.root);
+  context.marcherParts.delete(a.root);
+  while (!shared.complete) shared.advance();
+  assert.ok(shared.poseAt(1.25), 'Deleting/holding the original marcher cannot break shared preparation');
+  const expected = context.applyGlobalCount(b.root, b.state, { drillBeat, musicBeat });
+  legSolves = contactSolves = 0;
+  context.applyGlobalCount(b.root, b.state);
+  assert.equal(legSolves, 0);
+  assert.equal(contactSolves, 0);
+  assert.ok(Quaternion.Dot(b.rig.leftKnee.rotationQuaternion, expected.legs[0].kneeRotation) > 1 - 1e-10);
+  assert.equal(b.root.position.z, 12 + drillBeat * 0.25, 'Shared leg data never changes authored root travel');
+  const d = makeMarcher(32);
+  d.state.counts[2].facingY = 0.5;
+  context.applyGlobalCount(d.root, d.state);
+  assert.notEqual(shared, d.state.legBake.table, 'Facing changes do not share the route bake');
+  const e = makeMarcher(40);
+  musicBeat -= 0.25;
+  context.applyGlobalCount(e.root, e.state);
+  assert.notEqual(shared, e.state.legBake.table, 'Different music offsets do not share the route bake');
+  for (const marcher of [b, c, d, e]) context.invalidateLegBake(marcher.state);
+  assert.equal(shared.byteLength, 0, 'Last equivalent marcher releases the producer buffers');
+  assert.equal(context.getBakedLegAnimationBytes(), 0);
+  assert.equal(vm.runInContext('pendingLegBakes.size', context), 0);
+  const long = makeMarcher(0);
+  long.state.counts = Array.from({ length: 48 }, (_, index) =>
+    ({ position: new Vector3(0, 0, index * 0.25), rotationY: 0 }));
+  musicBeat = drillBeat;
+  context.applyGlobalCount(long.root, long.state);
+  const cycleTable = long.state.legBake.table;
+  while (!cycleTable.complete) cycleTable.advance();
+  assert.ok(cycleTable.reusedCycles > 0, 'Repeated straight steps within one route reuse cycle preparation');
+  for (const beat of [20.125, 21.337, 24.75]) {
+    musicBeat = drillBeat = beat;
+    const expected = context.applyGlobalCount(long.root, long.state, { drillBeat, musicBeat });
+    legSolves = contactSolves = 0;
+    context.applyGlobalCount(long.root, long.state);
+    assert.equal(legSolves, 0);
+    assert.equal(contactSolves, 0);
+    for (const [index, leg, knee, ankle] of [
+      [0, long.rig.leftLeg, long.rig.leftKnee, long.rig.leftAnkle],
+      [1, long.rig.rightLeg, long.rig.rightKnee, long.rig.rightAnkle],
+    ]) {
+      const upper = Quaternion.FromEulerAngles(leg.rotation.x, leg.rotation.y, leg.rotation.z);
+      for (const [actual, exact] of [[upper, expected.legs[index].legRotation],
+        [knee.rotationQuaternion, expected.legs[index].kneeRotation],
+        [ankle.rotationQuaternion, expected.legs[index].ankleRotation]]) {
+        assert.ok(Math.abs(Quaternion.Dot(actual, exact)) > 1 - 1e-10,
+          'Shared cycles preserve both feet, ankles and knees at the correct musical phase');
+      }
+    }
+  }
+  console.log(`Steady route reused ${cycleTable.reusedCycles} count-sized step-cycle sections.`);
+  context.invalidateLegBake(long.state);
+  assert.equal(context.getBakedLegAnimationBytes(), 0, 'Cycle and route caches release together');
+  console.log('Shared bake integration passed: translated routes, unique inputs, root travel, donor removal, solve elimination, and cleanup.');
+  process.exit(0);
+}
 if (process.argv.includes('--step-cache-only')) process.exit(0);
 
 for (const rate of [0.5, 1, 2]) {
@@ -728,6 +807,101 @@ context.onMarcherStrideLimited.notifyObservers = message => exampleWarnings.push
 context.repeatOptions = { songLength: 10000, drill: false };
 context.playbackBeatUnits = [{ beat: 0, quarterNotesPerPulse: 1.5 }];
 playback.speedMultiplier = 1;
+if (process.argv.includes('--measure-segment-sharing')) {
+  const Bake = vm.runInContext('BakedLegAnimation', context);
+  const routes = example.tracks.map(track => ({ counts: track.map((point, index) => {
+    const next = track[Math.min(index + 1, track.length - 1)];
+    return { position: new Vector3(point.x, 0, point.z),
+      rotationY: Math.atan2(next.x - point.x, next.z - point.z) };
+  }) }));
+  const groups = new Map();
+  const signature = (route, count) => {
+    const last = route.counts.length - 1;
+    const start = Math.max(0, count - 12);
+    const end = Math.min(last, count + 13);
+    const origin = route.counts[count].position;
+    // Six quarter notes preserve foot parity for half/normal/double cadence in constant 6/8.
+    return JSON.stringify([count % 6, start - count, end - count,
+      route.counts.slice(start, end + 1).map(item => [
+        item.position.x - origin.x, item.position.y, item.position.z - origin.z,
+        item.rotationY, item.facingY,
+      ])]);
+  };
+  let total = 0;
+  for (const route of routes) {
+    for (let count = 0; count < route.counts.length - 1; count++) {
+      const key = signature(route, count);
+      const group = groups.get(key) ?? [];
+      group.push({ route, count });
+      groups.set(key, group);
+      total++;
+    }
+  }
+  let checked = 0;
+  let maxError = 0;
+  const values = pose => pose ? [
+    ...pose.legs.flatMap(leg => [leg.legRotation, leg.kneeRotation, leg.ankleRotation]
+      .flatMap(rotation => rotation.asArray())),
+    ...pose.legs.map(leg => leg.kneeAngle), pose.hipHalfSpacing, +pose.limited,
+  ] : undefined;
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    const reference = group[0];
+    for (const progress of [0.13, 0.51, 0.87]) {
+      const beat = reference.count + progress;
+      const expected = values(context.applyGlobalCount(robot, reference.route, { drillBeat: beat, musicBeat: beat }));
+      for (const member of group.slice(1)) {
+        const beat = member.count + progress;
+        const actual = values(context.applyGlobalCount(robot, member.route, { drillBeat: beat, musicBeat: beat }));
+        assert.equal(!!actual, !!expected, 'Shared contexts agree on attention versus moving');
+        if (actual) {
+          const error = Math.max(...actual.map((value, index) => Math.abs(value - expected[index])));
+          maxError = Math.max(maxError, error);
+          assert.ok(error < 3e-6, `Candidate segments preserve poses: ${error}`);
+        }
+        checked++;
+      }
+    }
+  }
+  const subset = routes.flatMap(route => Array.from({ length: 8 }, (_, index) => ({ route, count: 24 + index })));
+  const runWorkload = reuse => {
+    const cache = new Map();
+    let producers = 0, advances = 0, buffers = 0;
+    const start = performance.now();
+    for (const { route, count } of subset) {
+      const key = signature(route, count);
+      if (reuse && cache.has(key)) continue;
+      const sampleState = { ...route, stepCache: undefined };
+      const table = new Bake(route.counts.length - 1, beat =>
+        context.applyGlobalCount(robot, sampleState, { drillBeat: beat, musicBeat: beat }), count);
+      while (table.completedCounts < 1 && !table.complete) { table.advance(); advances++; }
+      producers++;
+      buffers += table.byteLength;
+      table.dispose();
+      cache.set(key, true);
+    }
+    return { ms: +(performance.now() - start).toFixed(1), producers, advances, attributedBytes: buffers };
+  };
+  // Warm up both the VM and the adaptive curve builder before timing.
+  const warmup = new Bake(1, beat => context.applyGlobalCount(robot, routes[0],
+    { drillBeat: beat, musicBeat: beat }));
+  while (!warmup.complete) warmup.advance();
+  warmup.dispose();
+  const independent = runWorkload(false);
+  const shared = runWorkload(true);
+  console.log(JSON.stringify({
+    scope: 'Example show, 40 routes, constant 6/8, auto gait, no drill loop; exact translated 12-count context',
+    totalCountSegments: total, uniqueContexts: groups.size,
+    duplicateSegments: total - groups.size,
+    duplicatePercent: +(100 * (1 - groups.size / total)).toFixed(2),
+    verifiedPoseComparisons: checked, maxPoseError: maxError,
+    benchmarkScope: 'Counts 24 through 31 on all 40 routes; 320 count segments; preparation only',
+    independent, shared,
+    measuredPreparationReductionPercent: +(100 * (1 - shared.ms / independent.ms)).toFixed(1),
+    note: 'Offline prototype measurement, not production segment sharing or per-frame/FPS improvement.',
+  }, null, 2));
+  process.exit(0);
+}
 if (process.argv.includes('--bake-show')) {
   const Bake = vm.runInContext('BakedLegAnimation', context);
   let hits = 0;

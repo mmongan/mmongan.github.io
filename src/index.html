@@ -19,6 +19,12 @@
         <button id="marcherPOVExitButton" class="xr-button" type="button" hidden>Exit POV</button>
       </div>
       <output id="midiPlaybackHint" class="status-panel" aria-live="polite" hidden></output>
+      <section id="legBakePanel" class="status-panel leg-bake-panel" aria-label="Leg animation preparation" hidden>
+        <strong id="legBakeLabel">Baking legs</strong>
+        <progress id="legBakeProgress" max="100" value="0" aria-labelledby="legBakeLabel"></progress>
+        <span id="legBakeDetails"></span>
+        <button id="legPrebakeButton" class="xr-button" type="button">Prebake show</button>
+      </section>
     </div>
 
     <div class="settings-overlay" id="settingsOverlay">
