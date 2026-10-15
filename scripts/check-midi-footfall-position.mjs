@@ -50,6 +50,7 @@ const run = source => vm.runInContext(stripTypeScriptTypes(source, { mode: 'tran
 run(gaitSource);
 run(readFileSync(new URL('../src/audio/midiBeatPulse.ts', import.meta.url), 'utf8'));
 run(readFileSync(new URL('../src/robot/marcherLegPose.ts', import.meta.url), 'utf8'));
+run(readFileSync(new URL('../src/robot/bakedLegAnimation.ts', import.meta.url), 'utf8'));
 const { calfLength, shoeForwardOffset, shoeHalfHeight } = vm.runInContext(
   '({ calfLength: MARCHER_CALF_LENGTH, shoeForwardOffset: MARCHER_SHOE_FORWARD_OFFSET, shoeHalfHeight: MARCHER_SHOE_HALF_HEIGHT })', context);
 run(readFileSync(new URL('../src/robot/marcherFootTargets.ts', import.meta.url), 'utf8'));
@@ -69,6 +70,7 @@ run(robotSource.slice(robotSource.indexOf('export const MARCHING_GAITS ='),
   robotSource.indexOf('let selectedMarchingGait')));
 run(robotSource.slice(robotSource.indexOf('function wrapAngle(angle:'),
   robotSource.indexOf('function applyGlobalCountToAllRobots')));
+vm.runInContext('legAnimationBakingEnabled = false', context);
 const pose = () => {
   context.applyGlobalCount(robot, state);
   return [parts.leftKnee.rotation.x, parts.rightKnee.rotation.x, ...robot.position.asArray()];
@@ -86,7 +88,7 @@ context.marcherGroundFootPitch = (...args) => {
   contactSolves++;
   return groundPitch(...args);
 };
-if (process.argv.includes('--benchmark')) {
+if (process.argv.includes('--benchmark') || process.argv.includes('--benchmark-baked')) {
   const marchers = Array.from({ length: 100 }, (_, index) => {
     const root = node();
     const rig = Object.fromEntries(Object.entries(parts).map(([key, value]) =>
@@ -99,6 +101,9 @@ if (process.argv.includes('--benchmark')) {
     { name: 'Step cache', step: true, leg: false },
     { name: 'Step + leg cache', step: true, leg: true },
   ];
+  if (process.argv.includes('--benchmark-baked')) {
+    modes.push({ name: 'Baked show', step: true, leg: true, baked: true });
+  }
   const cachedLegSolver = context.precalculateMarcherLegPose;
   const results = [];
   for (const varied of [false, true]) {
@@ -108,11 +113,28 @@ if (process.argv.includes('--benchmark')) {
         position: new Vector3(marcher.index * 2, 0, count * stride), rotationY: 0,
       }));
     }
+    const tables = [];
+    if (process.argv.includes('--benchmark-baked')) {
+      const Bake = vm.runInContext('BakedLegAnimation', context);
+      for (const marcher of marchers) {
+        let table = !varied ? tables[0] : undefined;
+        if (!table) {
+          const sampleState = { ...marcher.state, stepCache: undefined };
+          table = new Bake(39, beat => context.applyGlobalCount(marcher.root, sampleState,
+            { drillBeat: beat, musicBeat: beat }), 4);
+          while (table.completedCounts < 5 && !table.complete) table.advance();
+          tables.push(table);
+        }
+        marcher.state.legBake = { counts: marcher.state.counts, beatUnits: context.playbackBeatUnits,
+          key: '0:0:32:', table };
+      }
+    }
     const measurements = modes.map(() => ({ times: [], legs: 0, contacts: 0 }));
     for (let trial = 0; trial < 3; trial++) {
       for (let order = 0; order < modes.length; order++) {
         const modeIndex = (order + trial) % modes.length;
         const mode = modes[modeIndex];
+        vm.runInContext(`legAnimationBakingEnabled = ${!!mode.baked}`, context);
         const measurement = measurements[modeIndex];
         context.precalculateMarcherLegPose = mode.leg ? cachedLegSolver : context.solvePlantedMarcherLeg;
         vm.runInContext('precalculatedLegPoses.clear()', context);
@@ -150,6 +172,7 @@ if (process.argv.includes('--benchmark')) {
         contactSolvesPerFrame: +(measurement.contacts / times.length).toFixed(2),
       });
     });
+    tables.forEach(table => table.dispose());
   }
   console.log('CPU animation benchmark: 100 marchers, 120 BPM, 90 updates/second.');
   console.log('Three interleaved trials; 30 warmup + 180 measured frames per trial.');
@@ -304,6 +327,118 @@ const solePosition = (leg, knee, ankle) => {
   center.y += parts.body.position.y;
   return Vector3.TransformCoordinates(center, Matrix.RotationY(robot.rotation.y)).add(robot.position);
 };
+const contactSlipAt = (beat, leg, knee, ankle) => {
+  const worldPoint = local => {
+    const point = Vector3.TransformCoordinates(local, footMatrix(leg, knee, ankle)).scale(bodyScale);
+    return Vector3.TransformCoordinates(point, Matrix.RotationY(robot.rotation.y)).add(robot.position);
+  };
+  musicBeat = drillBeat = beat;
+  pose();
+  const vertices = [[0, -0.085], [-0.03, -0.075], [-0.03, 0.055],
+    [-0.0225, 0.095], [0, 0.105]]
+    .map(([y, z]) => new Vector3(0, y - shoeHalfHeight, z + shoeForwardOffset));
+  const contact = vertices.reduce((lowest, vertex) => worldPoint(vertex).y < worldPoint(lowest).y ? vertex : lowest);
+  assert.ok(Math.abs(worldPoint(contact).y) < 1e-6, 'Actual sole surface contacts the field');
+  const epsilon = 0.0001;
+  musicBeat = drillBeat = beat - epsilon;
+  pose();
+  const before = worldPoint(contact);
+  musicBeat = drillBeat = beat + epsilon;
+  pose();
+  const after = worldPoint(contact);
+  return Math.hypot(after.x - before.x, after.z - before.z) / (2 * epsilon);
+};
+if (process.argv.includes('--bake-only')) {
+  const Bake = vm.runInContext('BakedLegAnimation', context);
+  let maxPoseError = 0;
+  let maxSoleError = 0;
+  let hits = 0;
+  let misses = 0;
+  let maxSlip = 0;
+  for (const [rate, yaw, unit, stride] of [
+    [1, 0, 1, 0.2], [1, 0, 1, 0.625], [1, Math.PI / 2, 1, 0.2],
+    [1, Math.PI, 1, 0.2], [2, 0, 1.5, 0.625], [0.5, 0, 1, 0.2],
+  ].slice(0, process.argv.includes('--bake-smoke') ? 1 : undefined)) {
+    cadence = rate;
+    facingYaw = yaw;
+    context.playbackBeatUnits = [{ beat: 0, quarterNotesPerPulse: unit }];
+    state.counts = Array.from({ length: 12 }, (_, index) =>
+      ({ position: new Vector3(0, 0, index * stride), rotationY: 0 }));
+    state.stepCache = undefined;
+    const sampleState = { ...state, stepCache: undefined };
+    const before = renderedPose();
+    const started = performance.now();
+    const table = new Bake(6, beat =>
+      context.applyGlobalCount(robot, sampleState, { drillBeat: beat, musicBeat: beat }));
+    while (!table.complete) table.advance();
+    assert.deepEqual(renderedPose(), before, 'Baking does not change the rendered pose or transport');
+    console.log(`Baked stride=${stride} yd/count, cadence=${rate}, yaw=${yaw}, pulse=${unit}: ${table.byteLength} bytes, ` +
+      `${table.fallbackIntervals} fallback intervals, ${(performance.now() - started).toFixed(0)}ms`);
+    state.legBake = { counts: state.counts, beatUnits: context.playbackBeatUnits,
+      key: '0:0:32:', table };
+    for (let sample = 0; sample < 1000; sample++) {
+      musicBeat = drillBeat = 1 + sample * 4 / 1000;
+      vm.runInContext('legAnimationBakingEnabled = false', context);
+      const exact = renderedPose();
+      const exactSole = solePosition(parts.leftLeg, parts.leftKnee, parts.leftAnkle);
+      const available = table.poseAt(drillBeat);
+      available ? hits++ : misses++;
+      vm.runInContext('legAnimationBakingEnabled = true', context);
+      legSolves = contactSolves = 0;
+      const baked = renderedPose();
+      if (available) {
+        assert.equal(legSolves, 0, 'Baked playback does not solve IK');
+        assert.equal(contactSolves, 0, 'Baked playback does not calculate contact pitches');
+      }
+      const error = Math.max(...baked.map((value, index) => Math.abs(value - exact[index])));
+      maxPoseError = Math.max(error, maxPoseError);
+      maxSoleError = Math.max(maxSoleError,
+        Vector3.Distance(exactSole, solePosition(parts.leftLeg, parts.leftKnee, parts.leftAnkle)));
+      assert.ok(error < 3e-6, `Baked rendered pose remains equivalent: error=${error}, beat=${drillBeat}, ` +
+        `component=${baked.findIndex((value, index) => Math.abs(value - exact[index]) === error)}`);
+    }
+    for (let sample = 1; sample < 100; sample++) {
+      const beat = (2 + sample / 100) * unit / rate;
+      const slip = contactSlipAt(beat, parts.leftLeg, parts.leftKnee, parts.leftAnkle) * unit / rate;
+      maxSlip = Math.max(maxSlip, slip);
+      assert.ok(slip < 0.001, `Baked actual sole surface does not skate: ${slip} yards/pulse`);
+    }
+    vm.runInContext('legAnimationBakingEnabled = false', context);
+    table.dispose();
+    assert.equal(table.byteLength, 0, 'Disposing a show releases packed pose buffers');
+    state.legBake = undefined;
+  }
+  assert.ok(hits > 0.98 * (hits + misses), 'Ordinary marching uses baked poses for at least 98% of samples');
+  assert.ok(maxSoleError < 2e-6, 'Baked foot contact stays within two millionths of a yard of exact IK');
+  const baselineUnits = context.playbackBeatUnits;
+  const originalCounts = state.counts;
+  const changes = [
+    () => { state.counts = state.counts.slice(); },
+    () => { context.playbackBeatUnits = [...baselineUnits]; },
+    () => { parts.gaitIndex = 6; },
+    () => { musicBeat = drillBeat + 0.25; },
+    () => { context.repeatOptions.drill = true; },
+    () => { context.repeatOptions.songLength = 64; },
+  ];
+  for (const change of changes) {
+    parts.gaitIndex = 0;
+    state.counts = originalCounts;
+    context.playbackBeatUnits = baselineUnits;
+    context.repeatOptions = { songLength: 32 };
+    musicBeat = drillBeat = 4.25;
+    const table = new Bake(1, beat => context.applyGlobalCount(robot, state,
+      { drillBeat: beat, musicBeat: beat }));
+    while (!table.complete) table.advance();
+    state.legBake = { counts: state.counts, beatUnits: context.playbackBeatUnits, key: '0:0:32:', table };
+    change();
+    renderedPose();
+    assert.equal(state.legBake, undefined, 'Route, meter, gait, phase-offset, and loop edits invalidate baking');
+    assert.equal(table.byteLength, 0, 'Invalidation frees obsolete pose data');
+  }
+  console.log(`Baked playback passed: ${hits} hits, ${misses} exact fallbacks; ` +
+    `max pose error=${maxPoseError}, max sole error=${maxSoleError} yards, max contact slip=${maxSlip} yards/pulse.`);
+  process.exit(0);
+}
 const plantedPositions = new Map();
 let marchingBodyHeight;
 for (let beat = 0; beat < 8; beat += 0.125) {
@@ -425,28 +560,9 @@ for (const stride of [0.2, 0.625]) {
       const [leg, knee, ankle] = step % 2 === 0
         ? [parts.leftLeg, parts.leftKnee, parts.leftAnkle]
         : [parts.rightLeg, parts.rightKnee, parts.rightAnkle];
-      const worldPoint = local => {
-        const point = Vector3.TransformCoordinates(local, footMatrix(leg, knee, ankle)).scale(bodyScale);
-        return Vector3.TransformCoordinates(point, Matrix.RotationY(robot.rotation.y)).add(robot.position);
-      };
       for (let sample = 1; sample < 100; sample++) {
         const beat = step + sample / 100;
-        musicBeat = drillBeat = beat;
-        pose();
-        const soleVertices = [[0, -0.085], [-0.03, -0.075], [-0.03, 0.055],
-          [-0.0225, 0.095], [0, 0.105]]
-          .map(([y, z]) => new Vector3(0, y - shoeHalfHeight, z + shoeForwardOffset));
-        const contact = soleVertices.reduce((lowest, vertex) =>
-          worldPoint(vertex).y < worldPoint(lowest).y ? vertex : lowest);
-        assert.ok(Math.abs(worldPoint(contact).y) < 1e-6, 'Actual sole surface contacts the field');
-        const epsilon = 0.0001;
-        musicBeat = drillBeat = beat - epsilon;
-        pose();
-        const before = worldPoint(contact);
-        musicBeat = drillBeat = beat + epsilon;
-        pose();
-        const after = worldPoint(contact);
-        const speed = Math.hypot(after.x - before.x, after.z - before.z) / (2 * epsilon);
+        const speed = contactSlipAt(beat, leg, knee, ankle);
         maximumContactSlipSpeed = Math.max(maximumContactSlipSpeed, speed);
         assert.ok(speed < 0.001,
           `Actual contacting shoe surface does not skate: stride=${stride}, yaw=${yaw}, beat=${beat}, speed=${speed}`);
@@ -591,6 +707,45 @@ context.onMarcherStrideLimited.notifyObservers = message => exampleWarnings.push
 context.repeatOptions = { songLength: 10000, drill: false };
 context.playbackBeatUnits = [{ beat: 0, quarterNotesPerPulse: 1.5 }];
 playback.speedMultiplier = 1;
+if (process.argv.includes('--bake-show')) {
+  const Bake = vm.runInContext('BakedLegAnimation', context);
+  let hits = 0;
+  let exactFrames = 0;
+  let maxError = 0;
+  for (const trackIndex of [0, 10, 20, 30]) {
+    const track = example.tracks[trackIndex];
+    state.counts = track.map((point, index) => {
+      const next = track[Math.min(index + 1, track.length - 1)];
+      return { position: new Vector3(point.x, 0, point.z),
+        rotationY: Math.atan2(next.x - point.x, next.z - point.z) };
+    });
+    parts.gaitIndex = 0;
+    for (const firstCount of [44, 94, 526]) {
+      const sampleState = { ...state, stepCache: undefined, legBake: undefined };
+      const table = new Bake(track.length - 1, beat => context.applyGlobalCount(robot, sampleState,
+        { drillBeat: beat, musicBeat: beat }), firstCount);
+      while (table.completedCounts < 3 && !table.complete) table.advance();
+      state.legBake = { counts: state.counts, beatUnits: context.playbackBeatUnits,
+        key: '0:0:10000:false', table };
+      for (let sample = 0; sample < 300; sample++) {
+        musicBeat = drillBeat = firstCount + sample / 100;
+        vm.runInContext('legAnimationBakingEnabled = false', context);
+        const exact = renderedPose();
+        vm.runInContext('legAnimationBakingEnabled = true', context);
+        const baked = renderedPose();
+        table.poseAt(drillBeat) ? hits++ : exactFrames++;
+        const error = Math.max(...baked.map((value, index) => Math.abs(value - exact[index])));
+        maxError = Math.max(maxError, error);
+        assert.ok(error < 3e-6, `Imported show bake: track=${trackIndex}, beat=${drillBeat}, error=${error}`);
+      }
+      vm.runInContext('legAnimationBakingEnabled = false', context);
+      context.invalidateLegBake(state);
+    }
+  }
+  assert.ok(hits > 0, 'Imported routes actually use baked animation');
+  console.log(`Imported-show bake checks passed: ${hits} baked samples, ${exactFrames} exact/attention samples, max pose error=${maxError}.`);
+  process.exit(0);
+}
 for (const track of example.tracks) {
   state.counts = track.map((point, index) => {
     assert.ok(Number.isFinite(point.x + point.z), 'Example coordinates must be finite');

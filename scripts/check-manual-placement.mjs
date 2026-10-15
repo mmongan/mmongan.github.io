@@ -110,9 +110,13 @@ try {
   let applied = 0;
   const context = vm.createContext({
     players, allRobots: new Set([editA, editB]), tryManualMarcherPose,
+    pendingLegBakes: new Set(),
     applyGlobalCount: () => applied++, recalculateCollisionMarkers: () => {},
   });
   const robotSource = readFileSync(new URL('../src/robot/robot.ts', import.meta.url), 'utf8');
+  const invalidateStart = robotSource.indexOf('function invalidateLegBake(');
+  vm.runInContext(stripTypeScriptTypes(robotSource.slice(invalidateStart,
+    robotSource.indexOf('\n}', invalidateStart) + 2)), context);
   const countStart = robotSource.indexOf('export function setRobotCountPosition(');
   const countEdit = robotSource.slice(countStart, robotSource.indexOf('\n}', countStart) + 2);
   vm.runInContext(`${stripTypeScriptTypes(countEdit).replace('export ', '')}
@@ -122,8 +126,11 @@ globalThis.edit = setRobotCountPosition;`, context);
     'Count edit rejects instrument contact at that count, not the current playback positions');
   assert.ok(editB.position.equals(new Vector3(5, 0, 5)), 'Count validation restores other live poses');
   assert.equal(applied, 0, 'Rejected count edit does not update playback');
+  let disposedBake = 0;
+  players.get(editA).legBake = { table: { dispose() { disposedBake++; } } };
   context.edit(editA, 0, new Vector3(-4, 0, 0), scene);
   assert.equal(applied, 1, 'Clear explicit count edit succeeds');
+  assert.equal(disposedBake, 1, 'Successful authored edits discard obsolete baked leg poses');
   const setStart = robotSource.indexOf('export function setRobotSetPoses(');
   Object.assign(context, {
     Vector3, tryManualMarcherPoses, applyGlobalCountToAllRobots: () => applied++,

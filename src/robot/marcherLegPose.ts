@@ -95,7 +95,8 @@ function solveMarcherFootContact(
   let sign = rollDirection ?? (forwardDistance >= 0 ? -1 : 1);
   let pitch = preferredPitch;
   let ankle = ankleForPitch(pitch);
-  if (Vector3.Distance(hip, ankle) > MAX_LEG_REACH) {
+  const extended = Vector3.Distance(hip, ankle) > MAX_LEG_REACH;
+  if (extended) {
     let low = 0;
     let high = 0;
     for (let sample = 1; sample <= 100; sample++) {
@@ -123,7 +124,7 @@ function solveMarcherFootContact(
     pitch = sign * high;
     ankle = ankleForPitch(pitch);
   }
-  return { pitch, ankle };
+  return { pitch, ankle, extended };
 }
 
 export function marcherGroundFootPitch(
@@ -147,7 +148,7 @@ export function marcherSwingFootPitch(
 export function solvePlantedMarcherLeg(
   hip: Vector3, sole: Vector3, facingYaw: number, preferredPitch = 0, rollDirection?: number
 ) {
-  const { pitch, ankle } = solveMarcherFootContact(hip, sole, facingYaw, preferredPitch, rollDirection);
+  const { pitch, ankle, extended } = solveMarcherFootContact(hip, sole, facingYaw, preferredPitch, rollDirection);
   const footRotation = Quaternion.FromEulerAngles(pitch, facingYaw, 0);
   const delta = ankle.subtract(hip);
   const distance = delta.length();
@@ -155,12 +156,14 @@ export function solvePlantedMarcherLeg(
     throw new RangeError(`Marcher foot target exceeds fixed leg reach: ${distance}`);
   }
   const direction = delta.scale(1 / distance);
+  // Contact root-finding noise near full extension must not become visible knee-angle noise.
+  const ikDistance = extended ? MAX_LEG_REACH : distance;
   const thighLength = MARCHER_THIGH_LENGTH;
   const calfLength = MARCHER_CALF_LENGTH;
   const kneeAngle = Math.acos(Math.max(-1, Math.min(1,
-    (distance ** 2 - thighLength ** 2 - calfLength ** 2) / (2 * thighLength * calfLength))));
-  const along = (thighLength * thighLength + distance * distance - calfLength * calfLength) /
-    (2 * distance);
+    (ikDistance ** 2 - thighLength ** 2 - calfLength ** 2) / (2 * thighLength * calfLength))));
+  const along = (thighLength * thighLength + ikDistance * ikDistance - calfLength * calfLength) /
+    (2 * ikDistance);
   const forward = new Vector3(Math.sin(facingYaw), 0, Math.cos(facingYaw));
   const pole = forward.subtract(direction.scale(Vector3.Dot(forward, direction))).normalize();
   const knee = hip.add(direction.scale(along))

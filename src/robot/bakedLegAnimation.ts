@@ -1,5 +1,5 @@
 import { Quaternion } from '@babylonjs/core/Maths/math.vector.pure';
-import type { solvePlantedMarcherLeg } from './marcherLegPose';
+import { MARCHER_THIGH_LENGTH, type solvePlantedMarcherLeg } from './marcherLegPose';
 
 type LegPose = ReturnType<typeof solvePlantedMarcherLeg>;
 export interface BakedLegPose {
@@ -13,11 +13,38 @@ const TOLERANCE = 2e-7;
 const MIN_INTERVAL = 1 / 4096;
 const MAX_BAKE_BYTES = 128 * 1024 * 1024;
 let allocatedBytes = 0;
+interface SharedSamples { values: Float32Array; references: number; hash: number }
+const sharedSamples = new Map<number, SharedSamples[]>();
+
+function retainSamples(values: Float32Array): SharedSamples | undefined {
+  let hash = 2166136261;
+  const bits = new Uint32Array(values.buffer, values.byteOffset, values.length);
+  for (const value of bits) hash = Math.imul(hash ^ value, 16777619) >>> 0;
+  const bucket = sharedSamples.get(hash) ?? [];
+  const existing = bucket.find(item => item.values.every((value, index) => value === values[index]));
+  if (existing) { existing.references++; return existing; }
+  if (allocatedBytes + values.byteLength > MAX_BAKE_BYTES) return undefined;
+  const item = { values, references: 1, hash };
+  bucket.push(item);
+  sharedSamples.set(hash, bucket);
+  allocatedBytes += values.byteLength;
+  return item;
+}
+
+function releaseSamples(samples: SharedSamples) {
+  if (--samples.references > 0) return;
+  const bucket = sharedSamples.get(samples.hash)!;
+  bucket.splice(bucket.indexOf(samples), 1);
+  if (bucket.length === 0) sharedSamples.delete(samples.hash);
+  allocatedBytes -= samples.values.byteLength;
+}
+
+export function getBakedLegAnimationBytes() { return allocatedBytes; }
 
 interface PoseInterval {
   start: number;
   end: number;
-  samples: Float32Array;
+  samples: SharedSamples;
   limited: boolean;
 }
 
@@ -52,7 +79,7 @@ function interpolate(samples: Float32Array, progress: number): Float64Array {
 
 function unpack(values: Float64Array, limited: boolean): BakedLegPose {
   const leg = (offset: number, knee: number): LegPose => ({
-    thighLength: 0.315,
+    thighLength: MARCHER_THIGH_LENGTH,
     kneeAngle: Math.max(0, Math.min(1.35, values[knee])),
     legRotation: Quaternion.FromArray(values, offset),
     kneeRotation: Quaternion.FromArray(values, offset + 4),
@@ -72,8 +99,9 @@ export class BakedLegAnimation {
   completedCounts = 0;
   fallbackIntervals = 0;
 
-  constructor(readonly lastCount: number, sample: (beat: number) => BakedLegPose | undefined) {
-    this.work = this.build(sample);
+  constructor(readonly lastCount: number, sample: (beat: number) => BakedLegPose | undefined,
+    firstCount = 0) {
+    this.work = this.build(sample, firstCount);
   }
 
   get byteLength() { return this.bytes; }
@@ -86,9 +114,9 @@ export class BakedLegAnimation {
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
-    this.work.return();
+    this.work.return(undefined);
+    this.intervals.forEach(intervals => intervals.forEach(interval => releaseSamples(interval.samples)));
     this.intervals.clear();
-    allocatedBytes -= this.bytes;
     this.bytes = 0;
   }
 
@@ -96,12 +124,13 @@ export class BakedLegAnimation {
     const intervals = this.intervals.get(Math.floor(beat));
     const interval = intervals?.find(item => beat >= item.start && beat < item.end);
     if (!interval) return undefined;
-    return unpack(interpolate(interval.samples, (beat - interval.start) / (interval.end - interval.start)),
+    return unpack(interpolate(interval.samples.values, (beat - interval.start) / (interval.end - interval.start)),
       interval.limited);
   }
 
-  private *build(sample: (beat: number) => BakedLegPose | undefined): Generator<void> {
-    for (let count = 0; count < this.lastCount; count++) {
+  private *build(sample: (beat: number) => BakedLegPose | undefined, firstCount: number): Generator<void> {
+    for (let ordinal = 0; ordinal < this.lastCount; ordinal++) {
+      const count = (Math.max(0, Math.min(this.lastCount - 1, Math.floor(firstCount))) + ordinal) % this.lastCount;
       const intervals: PoseInterval[] = [];
       this.intervals.set(count, intervals);
       const evaluate = function* (beat: number): Generator<void, BakedLegPose | undefined> {
@@ -157,18 +186,18 @@ export class BakedLegAnimation {
           yield* subdivide.call(this, middle, end);
           return;
         }
-        if (allocatedBytes + samples.byteLength > MAX_BAKE_BYTES) {
+        const retained = retainSamples(samples);
+        if (!retained) {
           this.memoryLimited = true;
           return;
         }
-        intervals.push({ start, end, samples, limited: poses[0].limited });
+        intervals.push({ start, end, samples: retained, limited: poses[0].limited });
         this.bytes += samples.byteLength;
-        allocatedBytes += samples.byteLength;
       };
       for (let quarter = 0; quarter < 4 && !this.memoryLimited; quarter++) {
         yield* subdivide.call(this, count + quarter / 4, count + (quarter + 1) / 4);
       }
-      this.completedCounts = count + 1;
+      this.completedCounts = ordinal + 1;
       if (this.memoryLimited) {
         console.warn('Leg animation bake reached its shared 128 MiB budget; remaining poses use live IK.');
         return;

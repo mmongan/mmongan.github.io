@@ -85,6 +85,7 @@ const createSegment = (kind, controlPoints, robots) => {
 };
 Object.assign(context, {
   segments, robotPaths, pathSegmentByRobot, allRobots, players,
+  pendingLegBakes: new Set(),
   heldRobots: new Set(), sharedScene: {}, scene: {}, selectedRobot: null,
   storedPaths: [], eraseHistoryReferences: new Map(),
   segmentMoveHandleOwner: new Map(), segmentPointHandleOwner: new Map(),
@@ -104,6 +105,7 @@ Object.assign(context, {
     players.delete(target);
   },
 });
+vm.runInContext(extract(read('../src/robot/robot.ts'), 'invalidateLegBake'), context);
 vm.runInContext(extract(read('../src/robot/robot.ts'), 'suspendRobotForErase', true), context);
 vm.runInContext(extract(read('../src/interaction/pathInteraction.ts'), 'eraseMarcher'), context);
 context.eraseHistory = new EditHistory(() => {}, 2);

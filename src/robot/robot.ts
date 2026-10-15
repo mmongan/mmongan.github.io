@@ -39,6 +39,7 @@ import { boundMarcherFootTarget, boundMarcherFootLift, MARCHER_CALF_LENGTH, MARC
   MARCHER_SHOE_FORWARD_OFFSET, MARCHER_SHOE_HALF_HEIGHT, marcherSwingLift, marcherGroundFootPitch,
   marcherSwingFootPitch, precalculateMarcherLegPose } from './marcherLegPose';
 import { marcherFootTarget, marcherSoleInRig } from './marcherFootTargets';
+import { BakedLegAnimation, getBakedLegAnimationBytes, type BakedLegPose } from './bakedLegAnimation';
 import { midiBeatAtPulse, midiPulseAtBeat, type MidiBeatUnit } from '../audio/midiBeatPulse';
 
 export { COLLISION_MARKER_RADIUS_YARDS } from './collisionMarkers';
@@ -696,6 +697,7 @@ export function cycleMarchingGait(direction: -1 | 1): number {
   marcherParts.forEach((parts) => {
     parts.gaitIndex = selectedMarchingGait;
   });
+  players.forEach(invalidateLegBake);
   return selectedMarchingGait;
 }
 
@@ -801,6 +803,8 @@ function createMarcherModel(scene: Scene, gaitIndex: number): TransformNode {
     heldRobots.delete(robot);
     robotColors.delete(robot);
     marcherParts.delete(robot);
+    const state = players.get(robot);
+    if (state) invalidateLegBake(state);
     players.delete(robot);
     recalculateCollisionMarkers(scene);
   });
@@ -838,6 +842,12 @@ interface PlayerState {
   stepSizeYards: number;
   counts: RobotCount[];
   gaitPhaseCache?: Map<number, { counts: RobotCount[]; offsets: number[] }>;
+  legBake?: {
+    counts: RobotCount[];
+    beatUnits: ReadonlyArray<MidiBeatUnit>;
+    key: string;
+    table: BakedLegAnimation;
+  };
   stepCache?: {
     counts: RobotCount[];
     beatUnits: ReadonlyArray<MidiBeatUnit>;
@@ -897,18 +907,21 @@ let playbackBeatUnits: ReadonlyArray<MidiBeatUnit> = [];
 
 export function setPlaybackBeatUnits(units: ReadonlyArray<MidiBeatUnit>) {
   playbackBeatUnits = units.map(unit => ({ ...unit }));
+  players.forEach(invalidateLegBake);
   notifyDrillTransport(true);
 }
 
 export function setPlaybackRepeat(drill: boolean, song: boolean) {
   repeatElapsed ??= getDrillTransportState().beat;
   repeatOptions = { ...repeatOptions, drill, song };
+  players.forEach(invalidateLegBake);
   if (!drill && !song) repeatElapsed = null;
   notifyDrillTransport(true);
 }
 
 export function setPlaybackSongLength(songLength: number) {
   repeatOptions.songLength = songLength;
+  players.forEach(invalidateLegBake);
   repeatElapsed = repeatOptions.drill || repeatOptions.song ? getDrillTransportState().beat : null;
   notifyDrillTransport(true);
 }
@@ -1206,15 +1219,74 @@ function lerpAngle(from: number, to: number, t: number): number {
 // so a shorter route just holds at its last position) to one robot.
 const playbackDisplacement = Vector3.Zero();
 
-function applyGlobalCount(robot: TransformNode, state: PlayerState) {
+const pendingLegBakes = new Set<BakedLegAnimation>();
+let legBakeTimer: ReturnType<typeof setTimeout> | undefined;
+let legAnimationBakingEnabled = true;
+
+function scheduleLegBake(table: BakedLegAnimation) {
+  pendingLegBakes.add(table);
+  if (legBakeTimer !== undefined) return;
+  legBakeTimer = setTimeout(() => {
+    legBakeTimer = undefined;
+    const deadline = performance.now() + 4;
+    do {
+      const next = pendingLegBakes.values().next().value;
+      if (!next) break;
+      pendingLegBakes.delete(next);
+      next.advance();
+      if (!next.complete) pendingLegBakes.add(next);
+    } while (performance.now() < deadline);
+    const next = pendingLegBakes.values().next().value;
+    if (next) scheduleLegBake(next);
+  }, 16);
+}
+
+function invalidateLegBake(state: PlayerState) {
+  if (!state.legBake) return;
+  pendingLegBakes.delete(state.legBake.table);
+  state.legBake.table.dispose();
+  state.legBake = undefined;
+}
+
+export function getLegAnimationBakeStatus() {
+  let bytes = 0, completedCounts = 0, totalCounts = 0, pending = 0, fallbackIntervals = 0, memoryLimited = 0;
+  players.forEach(state => {
+    const table = state.legBake?.table;
+    if (!table) return;
+    bytes += table.byteLength;
+    completedCounts += table.completedCounts;
+    totalCounts += table.lastCount;
+    pending += table.complete ? 0 : 1;
+    fallbackIntervals += table.fallbackIntervals;
+    memoryLimited += table.memoryLimited ? 1 : 0;
+  });
+  return { bytes, sharedBytes: getBakedLegAnimationBytes(), completedCounts, totalCounts, pending,
+    fallbackIntervals, memoryLimited };
+}
+
+function applyGlobalCount(robot: TransformNode, state: PlayerState,
+  sample?: { drillBeat: number; musicBeat: number }): BakedLegPose | undefined {
   if (heldRobots.has(robot) || state.counts.length === 0) return;
   const last = state.counts.length - 1;
-  const drillBeat = getDrillTransportState().beat;
+  const drillBeat = sample?.drillBeat ?? getDrillTransportState().beat;
+  const musicBeat = sample?.musicBeat ?? getMusicTransportState().beat;
   const index = Math.min(Math.floor(drillBeat), last);
   const count = state.counts[index];
   const parts = marcherParts.get(robot);
   if (!parts) return;
-  const playbackDirection = globalPlayback.speedMultiplier >= 0 ? 1 : -1;
+  const clockOffset = Math.round((drillBeat - musicBeat) * 1e8) / 1e8;
+  const bakeKey = [parts.gaitIndex, clockOffset, repeatOptions.songLength, repeatOptions.drill].join(":");
+  if (!sample && state.legBake &&
+    (state.legBake.counts !== state.counts || state.legBake.beatUnits !== playbackBeatUnits ||
+      state.legBake.key !== bakeKey)) invalidateLegBake(state);
+  if (!sample && legAnimationBakingEnabled && last > 0 && !state.legBake) {
+    const sampleState: PlayerState = { ...state, stepCache: undefined, legBake: undefined };
+    const table = new BakedLegAnimation(last, beat =>
+      applyGlobalCount(robot, sampleState, { drillBeat: beat, musicBeat: beat - clockOffset }), drillBeat);
+    state.legBake = { counts: state.counts, beatUnits: playbackBeatUnits, key: bakeKey, table };
+    scheduleLegBake(table);
+  }
+  const playbackDirection = sample !== undefined || globalPlayback.speedMultiplier >= 0 ? 1 : -1;
   // Work in the forward frame of the count being crossed, so reverse playback
   // simply runs the same step backward.
   const segmentStart = playbackDirection < 0 && drillBeat > 0 && Number.isInteger(drillBeat)
@@ -1232,9 +1304,11 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState) {
   const bodyRotation = previous
     ? lerpAngle(previous.bodyYaw, targetBodyYaw, turnBlend)
     : targetBodyYaw;
-  orientMarcherShoes(parts.leftShoe, parts.rightShoe, 0);
-  parts.leftLeg.rotation.y = 0;
-  parts.rightLeg.rotation.y = 0;
+  if (!sample) {
+    orientMarcherShoes(parts.leftShoe, parts.rightShoe, 0);
+    parts.leftLeg.rotation.y = 0;
+    parts.rightLeg.rotation.y = 0;
+  }
   const instrumentRest = parts.instrumentRestPose;
   const from = state.counts[Math.min(last, Math.max(0, segmentStart))];
   const to = state.counts[Math.min(last, Math.max(0, segmentStart + 1))];
@@ -1243,14 +1317,19 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState) {
   const inPlace = (resolved?.inPlace ?? false) &&
     (!isAutoGaitStyle(MARCHING_GAITS[parts.gaitIndex].name) ||
       Vector3.DistanceSquared(from.position, to.position) < 1e-12);
-  robot.position.copyFrom((inPlace && !isAutoGaitStyle(MARCHING_GAITS[parts.gaitIndex].name)
+  const rootPosition = (inPlace && !isAutoGaitStyle(MARCHING_GAITS[parts.gaitIndex].name)
     ? state.counts[0]
-    : count).position);
-  robot.rotation.y = bodyRotation;
+    : count).position.clone();
+  if (!inPlace) Vector3.LerpToRef(from.position, to.position, forwardProgress, rootPosition);
+  if (!sample) {
+    robot.position.copyFrom(rootPosition);
+    robot.rotation.y = bodyRotation;
+  }
   to.position.subtractToRef(from.position, playbackDisplacement);
   const displacement = playbackDisplacement;
   const moving = !!resolved && (inPlace || displacement.lengthSquared() > 1e-12);
   if (!moving) {
+    if (sample) return;
     parts.leftLeg.rotation.x = 0;
     parts.rightLeg.rotation.x = 0;
     parts.leftLeg.rotation.z = 0;
@@ -1280,10 +1359,48 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState) {
     limitedStrideCounts.delete(robot);
     return;
   }
-  if (!inPlace) Vector3.LerpToRef(from.position, to.position, forwardProgress, robot.position);
+  let bakedPose: BakedLegPose | undefined;
+  if (!sample && legAnimationBakingEnabled && state.legBake) {
+    // Exact reverse integer boundaries use the preceding segment's gait.
+    if (!(playbackDirection < 0 && Number.isInteger(drillBeat))) bakedPose = state.legBake.table.poseAt(drillBeat);
+  }
+  const applyLegPose = (pose: BakedLegPose) => {
+    parts.body.position.y = 0;
+    parts.instrumentRoot.position.y = 0;
+    parts.legRoot.position.y = 0;
+    for (const [index, leg, knee, ankle, shoe] of [
+      [0, parts.leftLeg, parts.leftKnee, parts.leftAnkle, parts.leftShoe],
+      [1, parts.rightLeg, parts.rightKnee, parts.rightAnkle, parts.rightShoe],
+    ] as const) {
+      const solved = pose.legs[index];
+      knee.position.y = -solved.thighLength;
+      knee.rotation.x = solved.kneeAngle;
+      knee.rotationQuaternion = solved.kneeRotation;
+      ankle.rotationQuaternion = solved.ankleRotation;
+      solved.legRotation.toEulerAnglesToRef(leg.rotation);
+      leg.position.set((index === 0 ? -1 : 1) * pose.hipHalfSpacing, 0.69, 0);
+      shoe.rotation.y = 0;
+      shoe.position.set(0, -MARCHER_SHOE_HALF_HEIGHT, MARCHER_SHOE_FORWARD_OFFSET);
+    }
+    attachMarcherThigh(parts.leftThigh, parts.leftLeg, -pose.hipHalfSpacing, MARCHER_THIGH_LENGTH);
+    attachMarcherThigh(parts.rightThigh, parts.rightLeg, pose.hipHalfSpacing, MARCHER_THIGH_LENGTH);
+    applyInstrumentPose(parts, instrumentRest);
+  };
+  const reportLimited = (limited: boolean) => {
+    if (limited && limitedStrideCounts.get(robot) !== segmentStart) {
+      limitedStrideCounts.set(robot, segmentStart);
+      onMarcherStrideLimited.notifyObservers(
+        `Unmarchable move at count ${segmentStart + 1}: steps are bounded; the authored route is unchanged and may slide.`);
+    }
+  };
+  if (bakedPose) {
+    reportLimited(bakedPose.limited);
+    applyLegPose(bakedPose);
+    return;
+  }
   const stepsPerCount = resolved!.stepsPerCount;
   const phase = repeatOptions.songLength > 0
-    ? gaitPhaseAtBeat(midiPulseAtBeat(getMusicTransportState().beat, playbackBeatUnits), stepsPerCount)
+    ? gaitPhaseAtBeat(midiPulseAtBeat(musicBeat, playbackBeatUnits), stepsPerCount)
     : gaitPhaseAtBeat(
       getGaitStepPhaseOffsets(state, parts.gaitIndex)[segmentStart] + forwardProgress * stepsPerCount,
       1
@@ -1293,13 +1410,11 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState) {
   const gait = MARCHING_GAITS[gaitIndex];
   const lift = marcherSwingLift(gaitProgress, gait.lift);
   const leftStance = ((stepNumber % 2) + 2) % 2 === 0;
-  const musicBeat = getMusicTransportState().beat;
   // Keep only the current step. Quantization removes clock-subtraction noise,
   // not authored timing; seeks and edits invalidate the cache independently.
-  const clockOffset = Math.round((drillBeat - musicBeat) * 1e8) / 1e8;
   const cacheKey = [transportRevision, stepNumber, stepsPerCount, parts.gaitIndex, hipHalfSpacing,
     clockOffset, repeatOptions.songLength, repeatOptions.drill, targetBodyYaw, previous?.bodyYaw,
-    inPlace, inPlace ? robot.position.asArray().join(",") : ""].join(":");
+    inPlace, inPlace ? rootPosition.asArray().join(",") : ""].join(":");
   if (state.stepCache?.counts !== state.counts || state.stepCache.beatUnits !== playbackBeatUnits ||
     state.stepCache.key !== cacheKey) {
     state.stepCache = {
@@ -1345,7 +1460,7 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState) {
     if (cached) return cached;
     const beat = landingBeat(step);
     const index = Math.floor(beat);
-    const position = inPlace ? robot.position.clone() :
+    const position = inPlace ? rootPosition.clone() :
       Vector3.Lerp(state.counts[index].position,
         state.counts[Math.min(last, index + 1)].position, beat - index);
     const yaw = landingFacing(step);
@@ -1360,7 +1475,7 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState) {
     return position;
   };
   const footTarget = (side: number, lift: number) => {
-    const target = marcherFootTarget(stepNumber, gaitProgress, side < 0, landing).subtract(robot.position);
+    const target = marcherFootTarget(stepNumber, gaitProgress, side < 0, landing).subtract(rootPosition);
     const sole = marcherSoleInRig(target, bodyRotation, MARCHER_BODY_SCALE);
     sole.y += lift;
     const yaw = 0;
@@ -1371,7 +1486,7 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState) {
       // Landing targets sample midstance; the contact boundary is half a step earlier.
       const beat = landingBeat(step - 0.5);
       const index = Math.floor(beat);
-      const position = inPlace ? robot.position : Vector3.Lerp(state.counts[index].position,
+      const position = inPlace ? rootPosition : Vector3.Lerp(state.counts[index].position,
         state.counts[Math.min(last, index + 1)].position, beat - index);
       const target = marcherSoleInRig(landing(plantedStep, side < 0).subtract(position),
         landingFacing(step - 0.5), MARCHER_BODY_SCALE);
@@ -1417,41 +1532,18 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState) {
   };
   const leftTarget = footTarget(-1, !leftStance ? lift : 0);
   const rightTarget = footTarget(1, leftStance ? lift : 0);
-  if (leftTarget.limited || rightTarget.limited) {
-    if (limitedStrideCounts.get(robot) !== segmentStart) {
-      limitedStrideCounts.set(robot, segmentStart);
-      onMarcherStrideLimited.notifyObservers(
-        `Unmarchable move at count ${segmentStart + 1}: steps are bounded; the authored route is unchanged and may slide.`);
-    }
-  }
-  parts.body.position.y = 0;
-  parts.instrumentRoot.position.y = 0;
-  parts.legRoot.position.y = 0;
-  const placeLeg = (
-    leg: TransformNode,
-    knee: TransformNode,
-    ankle: TransformNode,
-    side: number,
-    target: typeof leftTarget
-  ) => {
+  const solveLeg = (side: number, target: typeof leftTarget) => {
     const hip = new Vector3(side * hipHalfSpacing, 0.69, 0);
     const sole = boundMarcherFootLift(hip, target.sole, target.yaw);
-    const pose = precalculateMarcherLegPose(hip, sole, target.yaw, target.pitch, target.rollDirection);
-    knee.position.y = -pose.thighLength;
-    knee.rotation.x = pose.kneeAngle;
-    knee.rotationQuaternion = pose.kneeRotation;
-    ankle.rotationQuaternion = pose.ankleRotation;
-    pose.legRotation.toEulerAnglesToRef(leg.rotation);
-    leg.position.set(side * hipHalfSpacing, 0.69, 0);
-    const shoe = side < 0 ? parts.leftShoe : parts.rightShoe;
-    shoe.rotation.y = 0;
-    shoe.position.set(0, -MARCHER_SHOE_HALF_HEIGHT, MARCHER_SHOE_FORWARD_OFFSET);
+    return precalculateMarcherLegPose(hip, sole, target.yaw, target.pitch, target.rollDirection);
   };
-  placeLeg(parts.leftLeg, parts.leftKnee, parts.leftAnkle, -1, leftTarget);
-  placeLeg(parts.rightLeg, parts.rightKnee, parts.rightAnkle, 1, rightTarget);
-  attachMarcherThigh(parts.leftThigh, parts.leftLeg, -hipHalfSpacing, -parts.leftKnee.position.y);
-  attachMarcherThigh(parts.rightThigh, parts.rightLeg, hipHalfSpacing, -parts.rightKnee.position.y);
-  applyInstrumentPose(parts, instrumentRest);
+  const pose: BakedLegPose = {
+    legs: [solveLeg(-1, leftTarget), solveLeg(1, rightTarget)],
+    hipHalfSpacing, limited: leftTarget.limited || rightTarget.limited,
+  };
+  if (sample) return pose;
+  reportLimited(pose.limited);
+  applyLegPose(pose);
 }
 
 function applyGlobalCountToAllRobots() {
@@ -1571,6 +1663,8 @@ export function registerRobotPath(
   const resolvedStepSize = stepSizeYards ?? players.get(robot)?.stepSizeYards ?? DEFAULT_STEP_SIZE_YARDS;
   const counts = resamplePathIntoCounts(points, resolvedStepSize);
   const fixedFacingY = players.get(robot)?.fixedFacingY;
+  const oldState = players.get(robot);
+  if (oldState) invalidateLegBake(oldState);
   players.set(robot, { points, stepSizeYards: resolvedStepSize, counts, fixedFacingY });
   applyFixedFacing(players.get(robot)!);
   applyGlobalCount(robot, players.get(robot)!);
@@ -1622,6 +1716,8 @@ export function registerRobotCounts(
     const facingY = facings?.[i];
     counts.push({ position: positions[i].clone(), rotationY: lastRotationY, ...(facingY === undefined ? {} : { facingY }) });
   }
+  const oldState = players.get(robot);
+  if (oldState) invalidateLegBake(oldState);
   players.set(robot, { points: positions, stepSizeYards: DEFAULT_STEP_SIZE_YARDS, counts });
   applyGlobalCount(robot, players.get(robot)!);
   recalculateCollisionMarkers(scene);
@@ -1699,6 +1795,7 @@ export function setRobotFacing(robot: TransformNode, facingY: number | null) {
   const state = players.get(robot);
   if (!state) return;
   state.stepCache = undefined;
+  invalidateLegBake(state);
   state.gaitPhaseCache?.clear();
   if (facingY === null) {
     state.fixedFacingY = undefined;
@@ -1721,6 +1818,8 @@ export function getRobotCounts(robot: TransformNode): ReadonlyArray<RobotCount> 
 }
 
 export function clearRobotPath(robot: TransformNode) {
+  const state = players.get(robot);
+  if (state) invalidateLegBake(state);
   players.delete(robot);
   heldRobots.delete(robot);
 }
@@ -1728,6 +1827,7 @@ export function clearRobotPath(robot: TransformNode) {
 export function suspendRobotForErase(robot: TransformNode) {
   const state = players.get(robot);
   const enabled = robot.isEnabled();
+  if (state) invalidateLegBake(state);
   allRobots.delete(robot);
   players.delete(robot);
   heldRobots.delete(robot);
@@ -1746,6 +1846,8 @@ export function suspendRobotForErase(robot: TransformNode) {
 
 export function setRobotHeld(robot: TransformNode, held: boolean) {
   if (held) {
+    const state = players.get(robot);
+    if (state) invalidateLegBake(state);
     heldRobots.add(robot);
   } else {
     heldRobots.delete(robot);
@@ -1828,6 +1930,7 @@ export function setRobotCountPosition(
   count.rotationY = rotationY;
   state.gaitPhaseCache?.clear();
   state.stepCache = undefined;
+  invalidateLegBake(state);
 
   applyGlobalCount(robot, state);
   recalculateCollisionMarkers(scene);
@@ -1899,6 +2002,7 @@ export function setRobotSetPoses(
     state.points = state.counts.map(count => count.position.clone());
     state.gaitPhaseCache?.clear();
     state.stepCache = undefined;
+    invalidateLegBake(state);
   }
   applyGlobalCountToAllRobots();
   recalculateCollisionMarkers(scene);
