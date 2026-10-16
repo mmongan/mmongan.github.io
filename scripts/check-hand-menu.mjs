@@ -19,7 +19,15 @@ const scene = new Scene(engine);
 const load = path => stripTypeScriptTypes(readFileSync(new URL(path, import.meta.url), 'utf8'), { mode: 'transform' })
   .replace(/^import .*?;\r?$/gm, '').replace(/export /g, '');
 const ctx = new Proxy({}, { get: (target, key) => target[key] ?? (() => {}) });
+let now = 0;
+let summons = 0;
+let draftingSummons = 0;
 const context = vm.createContext({
+  performance: { now: () => now }, summonInstrumentPanel: () => { summons++; },
+  executeDrawingToolAction: action => {
+    assert.equal(action.tool, 'drafting');
+    draftingSummons++;
+  },
   scene, MeshBuilder, TransformNode, StandardMaterial, Axis, Color3, Matrix, Quaternion, Vector3, Plane, Ray,
   WebXRHandJoint,
   document: { createElement: () => ({ getContext: () => ctx }) },
@@ -59,6 +67,11 @@ try {
         [WebXRHandJoint.INDEX_FINGER_PHALANX_PROXIMAL, new Vector3(indexX, 0, forwardZ * 0.09)],
         [WebXRHandJoint.MIDDLE_FINGER_PHALANX_PROXIMAL, new Vector3(0, 0, forwardZ * 0.1)],
         [WebXRHandJoint.PINKY_FINGER_PHALANX_PROXIMAL, new Vector3(-indexX, 0, forwardZ * 0.08)],
+        [WebXRHandJoint.RING_FINGER_PHALANX_PROXIMAL, new Vector3(-indexX / 2, 0, forwardZ * 0.09)],
+        [WebXRHandJoint.INDEX_FINGER_TIP, new Vector3(indexX, 0, forwardZ * 0.19)],
+        [WebXRHandJoint.MIDDLE_FINGER_TIP, new Vector3(0, 0, forwardZ * 0.21)],
+        [WebXRHandJoint.RING_FINGER_TIP, new Vector3(-indexX / 2, 0, forwardZ * 0.19)],
+        [WebXRHandJoint.PINKY_FINGER_TIP, new Vector3(-indexX, 0, forwardZ * 0.16)],
       ]) {
         const joint = MeshBuilder.CreateSphere(name, { diameter: 1 }, scene);
         joint.parent = parent;
@@ -73,7 +86,7 @@ try {
       for (const yaw of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
         parent.rotation.set(0.2, yaw, -0.25);
         update();
-        assert.ok(watch.isEnabled() && plate.isEnabled(), `${handedness} tracked palm opens both menus`);
+        assert.ok(watch.isEnabled() && !plate.isEnabled(), `${handedness} wears watch without the old palm plate`);
         const normal = parent.getDirection(Axis.Y).normalize();
         const forward = parent.getDirection(new Vector3(0, 0, forwardZ)).normalize();
         const wrist = joints.get(WebXRHandJoint.WRIST).getAbsolutePosition();
@@ -92,13 +105,39 @@ try {
         assert.ok(Math.abs(Vector3.Distance(left, right) - 0.022) < 1e-6,
           'Transport buttons keep their physical size');
       }
+      const summonCount = () => handedness === 'left' ? summons : draftingSummons;
+      const beforeSummon = summonCount();
+      now += 499;
+      update();
+      assert.equal(summonCount(), beforeSummon, 'Open palm waits 500 ms');
+      now += 1;
+      update();
+      assert.equal(summonCount(), beforeSummon + 1, 'Left palm opens instruments; right palm opens drafting');
+      now += 1000;
+      update();
+      assert.equal(summonCount(), beforeSummon + 1, 'Held palm summons once, without repeated repositioning');
+      const watchPosition = watch.getAbsolutePosition().clone();
+      context.beginFloatingPanelGrab('other', Matrix.Identity(), undefined, watchPosition, 0.03, true);
+      assert.notEqual(watch.parent, null, 'Tracked watch cannot be detached');
+      assert.equal(context.beginFloatingPanelGrab('other', Matrix.Identity(),
+        scene.getMeshByName('mediaWatchFace'), undefined, 0.03, true), false,
+      'Ray-picked watch cannot be detached either');
       parent.rotation.set(0, 0, Math.PI);
       update();
-      assert.equal(watch.isEnabled(), false, 'Palm down hides the watch');
+      assert.equal(watch.isEnabled(), true, 'Wearable watch follows a lowered palm');
       assert.equal(plate.isEnabled(), false, 'Palm down hides instruments');
       parent.rotation.z = Math.PI / 2;
       update();
-      assert.equal(watch.isEnabled(), false, 'Edge-on palm does not open the menu');
+      assert.equal(watch.isEnabled(), true, 'Wearable watch stays on the wrist edge-on');
+      parent.rotation.setAll(0);
+      for (const tip of [WebXRHandJoint.INDEX_FINGER_TIP, WebXRHandJoint.MIDDLE_FINGER_TIP,
+        WebXRHandJoint.RING_FINGER_TIP, WebXRHandJoint.PINKY_FINGER_TIP]) {
+        joints.get(tip).position.scaleInPlace(0.3);
+      }
+      update();
+      now += 600;
+      update();
+      assert.equal(summonCount(), beforeSummon + 1, 'Closed fingers do not summon the palette');
       parent.rotation.setAll(0);
       joints.get(WebXRHandJoint.MIDDLE_FINGER_PHALANX_PROXIMAL).position.setAll(0);
       update();

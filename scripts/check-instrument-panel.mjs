@@ -143,6 +143,7 @@ try {
   const wrist = MeshBuilder.CreateBox('test-wrist', { size: 0.01 }, scene);
   let palmUp = true;
   Object.assign(palmContext, {
+    openPalmHolds: new Map(), performance: { now: () => 0 },
     Vector3, Axis: { Y: Vector3.Up(), Z: Vector3.Forward() }, StandardMaterial,
     ensureMenuMeshes() {}, drawProgressBar() {},
     getHandMenuPose: position => ({

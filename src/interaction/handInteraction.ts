@@ -29,7 +29,9 @@ import {
   setRobotHeld,
 } from '../robot/robot';
 import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS } from '../field/constants';
-import { floorCalibrationToggle } from '../ui/dom';
+import { floorCalibrationToggle, getSelectedXRMode } from '../ui/dom';
+import { HandJoystick } from './handJoystick';
+import { isMarcherPOVActive, setMarcherPOVEnabled } from '../camera/marcherPOV';
 import {
   beginFloatingPanelGrab, endFloatingPanelGrab, getFloatingPanelNear, getFloatingPanelButtonNearPoint,
   isFloatingPanelGrabbed, pickFloatingPanel, updateFloatingPanelGrab,
@@ -144,6 +146,8 @@ export function createHandInteraction(paths: HandPathDependencies) {
   } = paths;
 
   const handPinches = new Map<string, boolean>();
+  const joystick = new HandJoystick();
+  let joystickOwnsHands = false;
   // Hands whose current pinch has grabbed or handed off a marcher; while either
   // hand is in this set, two pinches act independently instead of moving the scene.
   const marcherPinchHands = new Set<string>();
@@ -180,7 +184,9 @@ export function createHandInteraction(paths: HandPathDependencies) {
     startDistance: number;
     originalControlPoints: Vector3[];
   } | null = null;
+  const FORMATION_PULL_HOLD_MS = 500;
   let formationPull: {
+    activationTime: number | null;
     anchorHand: 'left' | 'right';
     pullHand: 'left' | 'right';
     robot: TransformNode;
@@ -512,6 +518,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
     const grab = marcherGrabs.get(from);
     if (grab?.source !== source || (target ?? findMarcherNearHand(point, from)) !== grab.robot) return false;
     formationPull = {
+      activationTime: performance.now() + FORMATION_PULL_HOLD_MS,
       anchorHand: from,
       pullHand: handedness,
       robot: grab.robot,
@@ -534,6 +541,11 @@ export function createHandInteraction(paths: HandPathDependencies) {
   function updateControllerFormationPull(handedness: string, pressed: boolean, point: Vector3) {
     const pull = formationPull;
     if (!pull || pull.originalGrab.source !== 'controller') return false;
+    if (pull.activationTime !== null && !pressed &&
+      (pull.pullHand === handedness || pull.anchorHand === handedness)) {
+      finishFormationPull(false);
+      return pull.pullHand === handedness;
+    }
     if (pull.pullHand === handedness) {
       if (!pull.shapedOffsets) {
         if (pressed) pull.endPoint.copyFrom(point);
@@ -702,6 +714,10 @@ export function createHandInteraction(paths: HandPathDependencies) {
   function finishFormationShaping() {
     const pull = formationPull;
     if (!pull || pull.shapedOffsets) return;
+    if (pull.activationTime !== null) {
+      finishFormationPull(false);
+      return;
+    }
     pull.shapedOffsets = getFormationPullControlPoints().map((point) => point.subtract(pull.robot.position));
     pull.shapedRotationY = pull.robot.rotation.y;
     marcherPinchHands.delete(pull.pullHand);
@@ -714,6 +730,14 @@ export function createHandInteraction(paths: HandPathDependencies) {
     if (!grab || grab.robot !== pull.robot || pull.robot.isDisposed()) {
       finishFormationPull(false);
       return;
+    }
+    if (pull.activationTime !== null) {
+      const remaining = pull.activationTime - performance.now();
+      if (pendingFormationGlow) pendingFormationGlow.isEnabled = Math.floor(remaining / 100) % 2 === 0;
+      if (remaining > 0) return;
+      pull.activationTime = null;
+      pull.pinchOffset = pull.robot.getAbsolutePosition().subtract(pull.endPoint);
+      if (pendingFormationGlow) pendingFormationGlow.isEnabled = true;
     }
     const points = getFormationPoints(getFormationPullControlPoints());
     const previewCount = points.length - 1;
@@ -737,11 +761,15 @@ export function createHandInteraction(paths: HandPathDependencies) {
 
   function finishFormationPull(commit: boolean) {
     const pull = formationPull;
-    const controlPoints = commit ? getFormationPullControlPoints() : [];
+    const controlPoints = commit && pull?.activationTime === null ? getFormationPullControlPoints() : [];
     formationPull = null;
     pendingFormationGlow?.dispose();
     pendingFormationGlow = null;
     if (!pull) return;
+    if (pull.activationTime !== null) {
+      marcherPinchHands.delete(pull.pullHand);
+      return;
+    }
     pull.previewRobots.forEach((robot) => robot.dispose());
     marcherPinchHands.delete(pull.pullHand);
     const grab = pull.floating ? pull.originalGrab : marcherGrabs.get(pull.anchorHand);
@@ -848,6 +876,21 @@ export function createHandInteraction(paths: HandPathDependencies) {
   }
 
   function updateTabletopHands() {
+    joystickOwnsHands = joystick.update(handTracking,
+      scene.activeCamera?.getClassName() === 'WebXRCamera' && getSelectedXRMode() === 'immersive-vr' &&
+      !floorCalibrationToggle?.checked && !formationPull && !circleResize && !fingerPath &&
+      marcherGrabs.size === 0 && !isFloatingPanelGrabbed() && !paths.isPainting?.() && !isEraseMode(),
+      performance.now(), scene.getEngine().getDeltaTime() / 1000, () => {
+        if (!isMarcherPOVActive() || !scene.activeCamera) return;
+        const position = scene.activeCamera.position.clone();
+        setMarcherPOVEnabled(false);
+        scene.activeCamera.position.copyFrom(position);
+      });
+    if (joystickOwnsHands) {
+      sceneGesture = null;
+      for (const side of ['left', 'right']) handPinches.set(side, true);
+      return;
+    }
     if (formationPull?.originalGrab.source === 'controller' && !floorCalibrationToggle?.checked) return;
     if (floorCalibrationToggle?.checked || !handTracking) {
       sceneGesture = null;
@@ -1067,7 +1110,9 @@ export function createHandInteraction(paths: HandPathDependencies) {
       }
       if (formationPull?.pullHand === handedness) {
         if (!formationPull.shapedOffsets) {
-          if (formationPull.deformation) {
+          if (formationPull.activationTime !== null) {
+            formationPull.endPoint.copyFrom(point);
+          } else if (formationPull.deformation) {
             updateFormationDeformation(formationPull, point);
           } else {
             const previewRobot = findMarcherNearHand(point);
@@ -1195,6 +1240,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
   }
 
   function updateHandPathDrawing() {
+    if (joystickOwnsHands) return;
     if (isEraseMode()) return;
     updateFingerPushes();
     if (floorCalibrationToggle?.checked || !handTracking || sceneGesture || !isPlacementMode()) {
@@ -1232,6 +1278,8 @@ export function createHandInteraction(paths: HandPathDependencies) {
   }
 
   function setHandTracking(tracking: WebXRHandTracking | null) {
+    joystick.reset();
+    joystickOwnsHands = false;
     padHands.forEach(endFloatingPanelGrab);
     padHands.clear();
     eraseContacts.clear();

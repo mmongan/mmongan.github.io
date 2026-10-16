@@ -213,6 +213,8 @@ export function removeActiveController(controller: WebXRInputSource) {
     placementDrafts.delete(handedness);
     triggerHeld.delete(handedness);
     gripHeld.delete(handedness);
+    instrumentPaletteButtonHeld.delete(handedness);
+    draftingToolsButtonHeld.delete(handedness);
     stopRotationHandleDrag(handedness);
   });
 }
@@ -318,16 +320,11 @@ function simplifyTubePath(points: Vector3[], tolerance: number): Vector3[] {
   return points.filter((_, index) => keep[index]);
 }
 
-function createTubeLine(name: string, points: Vector3[], color: Color3, existingMaterial?: StandardMaterial): Mesh {
-  const tube = MeshBuilder.CreateTube(
-    name,
-    {
-      path: simplifyTubePath(points, PATH_TUBE_SIMPLIFY_TOLERANCE_YARDS),
-      radius: PATH_TUBE_RADIUS_YARDS,
-      tessellation: PATH_TUBE_TESSELLATION,
-    },
-    scene
-  );
+function createTubeLine(name: string, _points: Vector3[], color: Color3, existingMaterial?: StandardMaterial): Mesh {
+  // Keep segment bookkeeping without rendering or picking route geometry.
+  const tube = new Mesh(name, scene);
+  tube.isVisible = false;
+  tube.isPickable = false;
   const material = existingMaterial ?? new StandardMaterial(`${name}Material`, scene);
   if (!existingMaterial) {
     material.diffuseColor = color;
@@ -400,25 +397,6 @@ function clearStepHandles() {
 
 function refreshStepHandles() {
   clearStepHandles();
-  if (!selectedRobot || pathsHiddenByFieldClick) return;
-  const counts = getRobotCounts(selectedRobot);
-  if (!counts) return;
-
-  const material = scene.getMaterialByName("stepHandleMaterial") as StandardMaterial | null
-    ?? new StandardMaterial("stepHandleMaterial", scene);
-  const color = getRobotColor(selectedRobot);
-  material.diffuseColor = color;
-  material.emissiveColor = color.scale(0.6);
-  material.specularColor = new Color3(0, 0, 0);
-
-  counts.forEach((count, index) => {
-    const handle = MeshBuilder.CreateSphere("stepHandle", { diameter: STEP_HANDLE_SIZE, segments: 8 }, scene);
-    handle.material = material;
-    handle.parent = pathRoot;
-    handle.position.copyFrom(stepHandlePosition(count.position, count.rotationY, index));
-    stepHandles.push(handle);
-    stepHandleOwner.set(handle, { robot: selectedRobot!, index });
-  });
 }
 
 showAllPathsToggle?.addEventListener("change", () => {
@@ -427,25 +405,20 @@ showAllPathsToggle?.addEventListener("change", () => {
   refreshPathLineAppearance();
 });
 
-function toggleShowAllPaths() {
-  pathsHiddenByFieldClick = false;
-  showAllPaths = !showAllPaths;
-  if (showAllPathsToggle) showAllPathsToggle.checked = showAllPaths;
-  refreshPathLineAppearance();
-}
+const instrumentPaletteButtonHeld = new Map<string, boolean>();
 
-const xButtonHeld = new Map<string, boolean>();
-
-// The left controller's X button toggles showing every path, mirroring the checkbox.
-function updateShowAllPathsToggleFromControllers() {
+function updateInstrumentPaletteFromControllers() {
   controllerRegistry.forEach((controller, handedness) => {
+    if (controller.inputSource.hand) return;
     const xButton = controller.motionController?.getComponent('x-button');
-    const isPressed = !!xButton?.pressed;
-    const wasPressed = xButtonHeld.get(handedness) ?? false;
-    xButtonHeld.set(handedness, isPressed);
+    const aButton = controller.motionController?.getComponent('a-button');
+    const isPressed = !!xButton?.pressed || !!aButton?.pressed ||
+      !!controller.inputSource.gamepad?.buttons?.[4]?.pressed;
+    const wasPressed = instrumentPaletteButtonHeld.get(handedness) ?? false;
+    instrumentPaletteButtonHeld.set(handedness, isPressed);
 
     if (isPressed && !wasPressed) {
-      toggleShowAllPaths();
+      summonInstrumentPanel();
     }
   });
 }
@@ -552,23 +525,20 @@ function setPlacementMode(enabled: boolean) {
   if (placementModeToggle) placementModeToggle.checked = placementMode;
 }
 
-function togglePlacementMode() {
-  setPlacementMode(!placementMode);
-}
+const draftingToolsButtonHeld = new Map<string, boolean>();
 
-const yButtonHeld = new Map<string, boolean>();
-
-// The left controller's Y button toggles placement mode, mirroring the checkbox.
-function updatePlacementModeToggleFromControllers() {
+function updateDraftingToolsFromControllers() {
   controllerRegistry.forEach((controller, handedness) => {
+    if (controller.inputSource.hand) return;
     const yButton = controller.motionController?.getComponent('y-button');
-    const isPressed = !!yButton?.pressed;
-    const wasPressed = yButtonHeld.get(handedness) ?? false;
-    yButtonHeld.set(handedness, isPressed);
+    const bButton = controller.motionController?.getComponent('b-button');
+    const isPressed = !!yButton?.pressed || !!bButton?.pressed ||
+      !!controller.inputSource.gamepad?.buttons?.[5]?.pressed;
+    const wasPressed = draftingToolsButtonHeld.get(handedness) ?? false;
+    draftingToolsButtonHeld.set(handedness, isPressed);
 
     if (isPressed && !wasPressed) {
-      
-      togglePlacementMode();
+      executeDrawingToolAction({ action: 'drawingTool', tool: 'drafting' });
     }
   });
 }
@@ -1041,8 +1011,10 @@ function buildCurvePoints(controlPoints: Vector3[], closed = false, fitClosedCir
   return Curve3.CreateCatmullRomSpline(controlPoints, CURVE_SAMPLES_PER_SPAN, false).getPoints();
 }
 
-function createSegmentHandle(name: string, size: number, color: Color3): Mesh {
-  const handle = MeshBuilder.CreateSphere(name, { diameter: size, segments: 8 }, scene);
+function createSegmentHandle(name: string, _size: number, color: Color3): Mesh {
+  const handle = new Mesh(name, scene);
+  handle.isVisible = false;
+  handle.isPickable = false;
   const materialName = `${name}Material-${color.toHexString()}`;
   let material = scene.getMaterialByName(materialName) as StandardMaterial | null;
   if (!material) {
@@ -1071,7 +1043,7 @@ function syncSegmentPointHandles(segment: Segment) {
 }
 
 function updateSegmentHandleVisibility(segment: Segment) {
-  const visible = !pathsHiddenByFieldClick && selectedRobot !== null && segment.robots.includes(selectedRobot);
+  const visible = false;
   segment.moveHandle.setEnabled(visible);
   segment.pointHandles.forEach((handle) => handle.setEnabled(visible));
   segment.rotationHandles.forEach((handle) => handle.setEnabled(visible));
@@ -2379,8 +2351,8 @@ export function updateRobotPathFromControllers() {
     }
   });
   if (floorCalibrationToggle?.checked) return;
-  updateShowAllPathsToggleFromControllers();
-  updatePlacementModeToggleFromControllers();
+  updateInstrumentPaletteFromControllers();
+  updateDraftingToolsFromControllers();
   updateScrubFromControllers(scene.getEngine().getDeltaTime() / 1000);
 
   // Formation connections only need to catch up every few frames, not every

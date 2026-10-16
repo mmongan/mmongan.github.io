@@ -30,6 +30,7 @@ export class FloatingPanel {
   private dragOffset = new Vector3();
   private sliderDrag: { source: string; origin: Vector3; point: Vector3 } | null = null;
   userPlaced = false;
+  get canGrab() { return true; }
 
   constructor(
     readonly root: TransformNode,
@@ -48,7 +49,7 @@ export class FloatingPanel {
   }
 
   near(point: Vector3, tolerance = 0.03) {
-    if (!this.root.isEnabled()) return false;
+    if (!this.canGrab || !this.root.isEnabled()) return false;
     const local = Vector3.TransformCoordinates(point, this.surface.computeWorldMatrix(true).clone().invert());
     return Math.abs(local.x) <= this.halfSize.x + tolerance &&
       Math.abs(local.y) <= this.halfSize.y + tolerance &&
@@ -231,7 +232,7 @@ export class DetachableFloatingPanel extends FloatingPanel {
 }
 
 export function isFloatingPanelMesh(mesh: AbstractMesh) {
-  return [...panels].some(panel => panel.root.isEnabled() && panel.meshes.has(mesh));
+  return [...panels].some(panel => panel.canGrab && panel.root.isEnabled() && panel.meshes.has(mesh));
 }
 
 export function getFloatingPanelNear(point: Vector3, tolerance = 0.03) {
@@ -256,7 +257,7 @@ export function getFloatingPanelButtonNearPoint(point: Vector3): HandMenuHit | n
 
 export function beginFloatingPanelGrab(source: string, world: Matrix, mesh?: AbstractMesh | null, point?: Vector3,
   tolerance = 0.03, moveOnly = false) {
-  const panel = mesh ? [...panels].find(panel => panel.meshes.has(mesh))
+  const panel = mesh ? [...panels].find(panel => panel.canGrab && panel.meshes.has(mesh))
     : point ? getFloatingPanelNear(point, tolerance) : undefined;
   if (panel && (moveOnly || !panel.beginSlider(source, world, mesh, point))) panel.begin(source, world);
   return !!panel;

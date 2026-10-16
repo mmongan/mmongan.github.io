@@ -232,6 +232,7 @@ const formationRobot = {
 };
 const formationGrabs = new Map([['left', { robot: formationRobot, source: 'controller' }]]);
 const formationContext = vm.createContext({
+  performance: { now: () => 0 }, FORMATION_PULL_HOLD_MS: 500,
   Vector3, marcherGrabs: formationGrabs, marcherPinchHands: new Set(),
   otherHand: hand => hand === 'left' ? 'right' : 'left',
   findMarcherNearHand: () => formationRobot,
@@ -245,6 +246,7 @@ assert.equal(formationContext.beginFormationPull('right', new Vector3(1, 0, 1), 
   'Second controller grip on a held marcher starts a formation');
 assert.equal(formationContext.beginFormationPull('right', Vector3.Zero(), 'controller'), false,
   'Holding/regrabbing never overwrites an active formation');
+vm.runInContext('formationPull.activationTime = null;', formationContext);
 const endpoint = new Vector3(4, 1, 2);
 assert.equal(formationContext.updateControllerFormationPull('right', true, endpoint), true);
 assert.ok(vm.runInContext('formationPull.endPoint', formationContext).equals(endpoint),
