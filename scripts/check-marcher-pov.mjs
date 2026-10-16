@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import { NullEngine } from '@babylonjs/core/Engines/nullEngine.js';
 import { Scene } from '@babylonjs/core/scene.js';
 import { UniversalCamera } from '@babylonjs/core/Cameras/universalCamera.js';
+import { TargetCamera } from '@babylonjs/core/Cameras/targetCamera.js';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.js';
 import { Mesh } from '@babylonjs/core/Meshes/mesh.js';
 import { Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector.js';
@@ -108,6 +109,58 @@ globalThis.Follower = MarcherPOVCamera;`, context);
   assert.equal(follower.update(robot), false, 'Disposed marcher signals exit');
   follower.stop();
   assert.equal(follower.active, false);
+
+  const interaction = read('../src/interaction/pathInteraction.ts').replace(/\r\n/g, '\n');
+  const triggerStart = interaction.indexOf('      const pickedRobot = pick?.hit ? findRobotRoot(pick.pickedMesh) : null;');
+  const triggerEnd = interaction.indexOf('\n    }\n\n    if (isPressed && wasPressed)', triggerStart);
+  assert.ok(triggerStart >= 0 && triggerEnd > triggerStart);
+  const povSource = read('../src/camera/marcherPOV.ts').replace(/\r\n/g, '\n');
+  const followerUpdate = povSource.match(/function updateFollower\(\)[\s\S]*?\n}/)[0];
+  let triggerSelection = second;
+  let pickedRobot = null;
+  let routed = false;
+  const triggerContext = vm.createContext({
+    follower, scene, TargetCamera,
+    pick: null,
+    findRobotRoot: () => pickedRobot,
+    getRobotCounts: () => routed ? [{}, {}] : null,
+    selectRobot: value => { triggerSelection = value; },
+    getSelected: () => triggerSelection,
+    isMarcherPOVActive: () => follower.active,
+    availableVR: () => true,
+    setMarcherPOVEnabled: enabled => { assert.equal(enabled, false); follower.stop(); },
+  });
+  vm.runInContext(compile(`function triggerClick() {
+${interaction.slice(triggerStart, triggerEnd)}
+}
+${followerUpdate}`), triggerContext);
+  for (const xr of [false, true]) {
+    triggerSelection = second;
+    camera.position.copyFrom(originalPosition);
+    scene.activeCamera = camera;
+    follower.start(second, camera, xr);
+    const beforeClick = camera.position.clone();
+    for (const pick of [null, { hit: false }, { hit: true, pickedMesh: {} }]) {
+      triggerContext.pick = pick;
+      pickedRobot = null;
+      triggerContext.triggerClick();
+      triggerContext.updateFollower();
+      assert.ok(triggerSelection === second, 'Empty trigger click preserves the POV marcher');
+      assert.equal(follower.active, true, 'Empty trigger click must not exit POV');
+      near(camera.position, beforeClick, 'Empty trigger click never restores the sideline camera');
+    }
+    for (routed of [false, true]) {
+      triggerContext.pick = { hit: true, pickedMesh: {} };
+      pickedRobot = second;
+      triggerContext.triggerClick();
+      assert.ok(triggerSelection === second, 'Trigger still selects standing and routed marchers');
+    }
+    follower.stop();
+    triggerContext.pick = null;
+    pickedRobot = null;
+    triggerContext.triggerClick();
+    assert.equal(triggerSelection, null, 'Empty trigger click still deselects outside POV');
+  }
 
   // Exercise the real chart renderer with a recording 2D context.
   let selected = second;

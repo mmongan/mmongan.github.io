@@ -8,7 +8,8 @@ import { Mesh } from '@babylonjs/core/Meshes/mesh.js';
 import { VertexData } from '@babylonjs/core/Meshes/mesh.vertexData.js';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
 import { Color3, Color4 } from '@babylonjs/core/Maths/math.color.js';
-import { Matrix, Vector3, Vector4 } from '@babylonjs/core/Maths/math.vector.js';
+import { Matrix, Quaternion, Vector3, Vector4 } from '@babylonjs/core/Maths/math.vector.js';
+import { Ray } from '@babylonjs/core/Culling/ray.js';
 import { MaterialPluginBase } from '@babylonjs/core/Materials/materialPluginBase.js';
 import { InstancedMesh } from '@babylonjs/core/Meshes/instancedMesh.js';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.js';
@@ -181,6 +182,52 @@ try {
       }
     }
     const jacket = templates.getMarcherJacketTemplate(scene, detail).getVerticesData('position');
+    const robotSource = readFileSync(new URL('../src/robot/robot.ts', import.meta.url), 'utf8');
+    const shoulderPosition = robotSource.match(/arm\.position\.set\(([^;]+)\);/);
+    assert.ok(shoulderPosition, 'Use the actual rig shoulder coordinates');
+    const jacketMesh = templates.getMarcherJacketTemplate(scene, detail).clone(`shoulderJacket-${detail}`);
+    jacketMesh.setEnabled(true);
+    jacketMesh.computeWorldMatrix(true);
+    const upperArm = templates.getMarcherUpperArmTemplate(scene, detail).clone(`shoulderArm-${detail}`);
+    upperArm.setEnabled(true);
+    upperArm.rotationQuaternion = Quaternion.Identity();
+    const upperVertices = upperArm.getVerticesData('position');
+    for (let index = 0; index < upperVertices.length; index += 3) {
+      if (upperVertices[index + 1] < 0) continue;
+      assert.ok(Math.abs(Vector3.FromArray(upperVertices, index).length() - 0.07125) < 1e-6,
+        `${detail}: shoulder cap is round rather than an elongated backward-pointing sleeve tip`);
+    }
+    for (const side of [-1, 1]) {
+      const shoulder = vm.runInNewContext(`new Vector3(${shoulderPosition[1]})`, { Vector3, side });
+      const origin = new Vector3(0, shoulder.y, shoulder.z);
+      const jacketHit = jacketMesh.intersects(new Ray(origin, new Vector3(side, 0, 0), 1));
+      assert.ok(jacketHit.hit && jacketHit.distance > Math.abs(shoulder.x) + 0.01,
+        `${detail}: both shoulder pivots stay inside the actual tailored jacket, not outside its surface`);
+      upperArm.position.copyFrom(shoulder);
+      for (const pitch of [-Math.PI / 2, 0, Math.PI / 2]) {
+        for (const yaw of [-Math.PI / 2, 0, Math.PI / 2]) {
+          Quaternion.FromEulerAnglesToRef(pitch, yaw, 0.6 * side, upperArm.rotationQuaternion);
+          upperArm.computeWorldMatrix(true);
+          for (let index = 0; index < upperVertices.length; index += 3) {
+            if (upperVertices[index + 1] < 0) continue;
+            const point = Vector3.TransformCoordinates(Vector3.FromArray(upperVertices, index),
+              upperArm.getWorldMatrix());
+            assert.ok(point.z >= -0.047,
+              `${detail}: rotated shoulder cap stays tucked forward of the jacket back`);
+          }
+          for (const direction of [Vector3.Up(), Vector3.Down(), Vector3.Left(), Vector3.Right(),
+            Vector3.Forward(), Vector3.Backward()]) {
+            const localRay = Ray.Transform(new Ray(shoulder, direction, 1),
+              Matrix.Invert(upperArm.getWorldMatrix()));
+            const armHit = upperArm.intersects(localRay);
+            assert.ok(armHit.hit && armHit.distance > 0.02,
+              `${detail}: rotated upper sleeve surrounds the shoulder pivot and overlaps the jacket`);
+          }
+        }
+      }
+    }
+    upperArm.dispose();
+    jacketMesh.dispose();
     const hem = [];
     for (let i = 0; i < jacket.length; i += 3) {
       assert.ok(jacket[i + 1] >= 0.69 - 1e-6, `${detail}: jacket does not cover the thighs`);
@@ -190,8 +237,19 @@ try {
     assert.ok(Math.abs(Math.min(...hem.map(p => p.y)) - 0.69) < 1e-6,
       `${detail}: hem exposes the full leg from hip to shoe`);
     assert.ok(Math.max(...hem.map(p => p.x)) > 0.17, `${detail}: hem clears both hip joints`);
-    assert.ok(Math.min(...hem.map(p => p.z)) < -0.14 &&
-      Math.max(...hem.map(p => p.z)) > 0.14, `${detail}: hem encloses the hip joint front and back`);
+    assert.ok(Math.min(...hem.map(p => p.z)) < -0.1 &&
+      Math.max(...hem.map(p => p.z)) > 0.1, `${detail}: slim hem still encloses the hip joint front and back`);
+    const waist = [];
+    for (let i = 0; i < jacket.length; i += 3) {
+      if (Math.abs(jacket[i + 1] - 0.73) < 1e-6) {
+        waist.push(new Vector3(jacket[i], jacket[i + 1], jacket[i + 2]));
+      }
+    }
+    assert.ok(waist.length > 0, `${detail}: jacket has a tailored waist`);
+    assert.ok(Math.abs(Math.max(...waist.map(p => Math.hypot(p.x, p.z / 0.65))) - 0.16) < 1e-6,
+      `${detail}: waist is narrowed from 0.205 to 0.16 without shortening the torso`);
+    assert.ok(Math.max(...jacket.filter((_, i) => i % 3 === 2).map(Math.abs)) <= 0.163,
+      `${detail}: jacket depth is reduced while shoulder width is retained`);
     const colors = templates.getMarcherJacketTemplate(scene, detail).getVerticesData('color');
     const hemHeights = [];
     for (let i = 0; i < jacket.length / 3; i++) {

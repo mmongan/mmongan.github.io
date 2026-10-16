@@ -34,7 +34,7 @@ import {
   beginFloatingPanelGrab, endFloatingPanelGrab, getFloatingPanelNear, getFloatingPanelButtonNearPoint,
   isFloatingPanelGrabbed, pickFloatingPanel, updateFloatingPanelGrab,
 } from '../menu/floatingPanel';
-import { getHandMenuHit } from '../menu/handMenu';
+import { getHandMenuHit, pickMenuControl } from '../menu/handMenu';
 import { getControllerYaw, rotateAroundY } from './controllers';
 import { tryManualMarcherPose } from '../robot/manualPlacement';
 import { createMarcherDragGhost } from '../robot/marcherGhost';
@@ -466,6 +466,28 @@ export function createHandInteraction(paths: HandPathDependencies) {
     return handedness === 'left' ? 'right' : 'left';
   }
 
+  function transferDraftGrab(handedness: string, point: Vector3,
+    source: 'hand' | 'controller', facingYaw: number | null) {
+    if (formationPull || marcherGrabs.has(handedness)) return false;
+    for (const [from, grab] of marcherGrabs) {
+      if (grab.source !== source || (!handPlacementDrafts.has(grab.robot) &&
+        ![...placementDrafts.values()].includes(grab.robot)) ||
+        findMarcherNearHand(point, from) !== grab.robot) continue;
+      grab.offset = grab.robot.getAbsolutePosition().subtract(point);
+      grab.initialRotationY = grab.robot.rotation.y;
+      grab.initialFacingYaw = facingYaw;
+      grab.rayDistance = source === 'controller' ? -1 : 0;
+      grab.controllerDepthOffset = 0;
+      grab.controllerYawOffset = 0;
+      marcherGrabs.delete(from);
+      marcherGrabs.set(handedness, grab);
+      marcherPinchHands.delete(from);
+      marcherPinchHands.add(handedness);
+      return true;
+    }
+    return false;
+  }
+
   function beginFormationPull(handedness: 'left' | 'right', point: Vector3,
     source: 'hand' | 'controller' = 'hand', target?: TransformNode) {
     if (formationPull) {
@@ -866,8 +888,10 @@ export function createHandInteraction(paths: HandPathDependencies) {
         const ray = new Ray(pointer.getAbsolutePosition(), pointer.getDirection(Axis.Z), 3);
         const pick = pickFloatingPanel(ray);
         const near = getFloatingPanelNear(point);
+        const menuPick = pickMenuControl(ray);
         const action = getFloatingPanelButtonNearPoint(point) ??
-          (!near && pick?.hit ? getHandMenuHit(pick) : null);
+          (!near && menuPick?.hit && (!pick?.hit || menuPick.distance <= pick.distance + 0.001)
+            ? getHandMenuHit(menuPick) : null);
         if (action || near || pick?.hit) {
           padHands.add(handedness);
           if (action) activateChartButton(action);
@@ -1061,6 +1085,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
         continue;
       }
       if (marcherGrab || wasPinching) continue;
+      if (transferDraftGrab(handedness, point, 'hand', facingYaw)) continue;
       if (beginFormationPull(handedness, point)) {
         continue;
       }
@@ -1263,6 +1288,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
       [...marcherGrabs.keys()].forEach((handedness) => finishMarcherGrab(handedness, true));
     },
     beginMarcherGrab,
+    transferDraftGrab,
     beginControllerFormationPull: (handedness: string, point: Vector3, target?: TransformNode) =>
       (handedness === 'left' || handedness === 'right') &&
       beginFormationPull(handedness, point, 'controller', target),

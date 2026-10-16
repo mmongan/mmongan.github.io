@@ -99,7 +99,7 @@ import { clearDrillLabels, setDrillLabels, setDrillLabelsVisible } from '../robo
 import { clearShowInfo, setShowInfo } from '../menu/showInfoPanel';
 import { cycleMusicStandStaff, setMusicStandVisible, summonMusicStand } from '../menu/musicStand';
 import { isMarcherPOVActive, setMarcherPOVEnabled } from '../camera/marcherPOV';
-import { getHandMenuHit, getHandMenuHitNearPoint, setMenuHandTracking, setFormationCommitAvailable, setFormationLibraryOpen, setFormationLibraryPage, setFormationLibraryAnchorAvailable, setEraseModeActive, setEraseHistoryAvailable, setDrillChartPadActive, setInstrumentMenuActive, isHandMenuVisible, isMenuControl } from '../menu/handMenu';
+import { getHandMenuHit, getHandMenuHitNearPoint, pickMenuControl, setMenuHandTracking, setFormationCommitAvailable, setFormationLibraryOpen, setFormationLibraryPage, setFormationLibraryAnchorAvailable, setEraseModeActive, setEraseHistoryAvailable, setDrillChartPadActive, setInstrumentMenuActive, isHandMenuVisible, isMenuControl } from '../menu/handMenu';
 import {
   flipDrillChartPage,
   summonDrillChartPad,
@@ -2461,6 +2461,8 @@ export function updateRobotPathFromControllers() {
     if (!eraseMode && !isMarcherPainting() && gripPressed && !wasGripPressed &&
       !menuInteractionHeld.get(handedness)) {
       const gripPoint = getControllerPosition(controller).getAbsolutePosition();
+      if (handInteraction.transferDraftGrab(handedness, gripPoint, "controller",
+        handInteraction.getFacingYaw(getControllerRay(controller).direction))) return;
       if (handInteraction.beginControllerFormationPull(handedness, gripPoint)) return;
       const nearRobot = handInteraction.findMarcherNearHand(gripPoint);
       if (nearRobot) {
@@ -2508,7 +2510,7 @@ export function updateRobotPathFromControllers() {
         return;
       }
 
-      const menuPick = scene.pickWithRay(getControllerRay(controller), isMenuControl);
+      const menuPick = pickMenuControl(ray);
       const panelPick = pickFloatingPanel(ray);
       const menuHit = menuPick?.hit && (!panelPick?.hit || menuPick.distance <= panelPick.distance + 0.001)
         ? getHandMenuHit(menuPick) : null;
@@ -2609,7 +2611,8 @@ export function updateRobotPathFromControllers() {
         return;
       }
 
-      selectRobot(pickedRobot);
+      // A miss must not clear the marcher that anchors the active POV camera.
+      if (pickedRobot || !isMarcherPOVActive()) selectRobot(pickedRobot);
       return;
     }
 

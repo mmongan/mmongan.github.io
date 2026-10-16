@@ -16,6 +16,7 @@ import { drawPanelButton, PANEL_FRAME_COLOR } from './panelStyle';
 export const INSTRUMENT_PANEL_CHOICES: readonly MarcherInstrument[] = [
   'trumpet', 'mellophone', 'trombone', 'euphonium', 'sousaphone', 'altoSax',
   'bariSax', 'clarinet', 'flute', 'snare', 'tenors', 'bassDrum', 'glockenspiel',
+  'cymbals',
   'guardFlag', 'guardRifle', 'guardSabre',
 ];
 
@@ -58,7 +59,7 @@ export function initInstrumentPanel() {
   const buttons = new Map<AbstractMesh, HandMenuHit>();
   const meshes = new Set<AbstractMesh>();
   const backing = MeshBuilder.CreateBox('instrumentPanelBacking',
-    { width: 0.78, height: 1.02, depth: 0.018 }, scene);
+    { width: 0.78, height: 1.34, depth: 0.018 }, scene);
   backing.parent = root;
   const backingMaterial = new StandardMaterial('instrumentPanelBackingMaterial', scene);
   backingMaterial.diffuseColor = Color3.FromHexString(PANEL_FRAME_COLOR);
@@ -107,9 +108,9 @@ export function initInstrumentPanel() {
     tile(`instrumentPanelLabel-${instrument}`, getInstrumentLabel(instrument), x, y - 0.065, 0.17, 0.03,
       { action: 'createMarcher', instrument });
   });
-  tile('instrumentPanelDone', 'Done placing', 0.17, -0.45, 0.35, 0.06,
+  tile('instrumentPanelDone', 'Done placing', 0.17, -0.61, 0.35, 0.06,
     { action: 'finishMarcherPlacement' });
-  panel = new FloatingPanel(root, meshes, root, new Vector3(0.39, 0.51, 0.04), buttons);
+  panel = new FloatingPanel(root, meshes, root, new Vector3(0.39, 0.67, 0.04), buttons);
   root.setEnabled(false);
   instrumentPanelButton?.addEventListener('click', summonInstrumentPanel);
   instrumentPanelToggle?.addEventListener('change', updatePanelVisibility);

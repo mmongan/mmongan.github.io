@@ -13,7 +13,7 @@ import { getSaxophoneTemplate } from '../robot/saxophoneModel';
 import { getBariSaxophoneTemplate } from '../robot/bariSaxophoneModel';
 import { getClarinetTemplate } from '../robot/clarinetModel';
 import { getFluteTemplate } from '../robot/fluteModel';
-import { getSnareTemplate, getTenorTemplate, getBassDrumTemplate, getGlockenspielTemplate } from '../robot/percussionModels';
+import { getSnareTemplate, getTenorTemplate, getBassDrumTemplate, getGlockenspielTemplate, getCymbalTemplate } from '../robot/percussionModels';
 import { getGuardFlagTemplate, getGuardRifleTemplate, getGuardSabreTemplate } from '../robot/colorGuardModels';
 
 const templates: Record<MarcherInstrument, ModelTemplate> = {
@@ -23,6 +23,7 @@ const templates: Record<MarcherInstrument, ModelTemplate> = {
   bariSax: getBariSaxophoneTemplate, clarinet: getClarinetTemplate,
   flute: getFluteTemplate, snare: getSnareTemplate,
   tenors: getTenorTemplate, bassDrum: getBassDrumTemplate, glockenspiel: getGlockenspielTemplate,
+  cymbals: getCymbalTemplate,
   guardFlag: getGuardFlagTemplate, guardRifle: getGuardRifleTemplate, guardSabre: getGuardSabreTemplate,
 };
 

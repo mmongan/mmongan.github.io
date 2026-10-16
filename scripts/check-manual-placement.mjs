@@ -156,6 +156,7 @@ globalThis.edit = setRobotCountPosition;`, context);
     ['fluteModel', 'getFluteTemplate'], ['percussionModels', 'getSnareTemplate'],
     ['percussionModels', 'getTenorTemplate'], ['percussionModels', 'getBassDrumTemplate'],
     ['percussionModels', 'getGlockenspielTemplate'],
+    ['percussionModels', 'getCymbalTemplate'],
   ];
   for (const [file, template] of modules) {
     const mod = await import(`../src/robot/${file}.ts`);
@@ -176,7 +177,7 @@ globalThis.edit = setRobotCountPosition;`, context);
     obstacle.dispose();
   }
   assert.ok(blocked >= 30, 'Rejected edits emit explicit feedback');
-  console.log('Manual placement checks passed: all 13 actual instrument models, bodies, thin swept contacts, atomic formation rejection, overlap escape, disabled marchers, and rotated/scaled AR/giant fields.');
+  console.log(`Manual placement checks passed: all ${modules.length} actual instrument models, bodies, thin swept contacts, atomic formation rejection, overlap escape, disabled marchers, and rotated/scaled AR/giant fields.`);
 } finally {
   scene.dispose();
   engine.dispose();

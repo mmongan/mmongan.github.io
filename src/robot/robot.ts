@@ -20,6 +20,7 @@ import { FLUTE_MOUTHPIECE_TIP, getFluteTemplate } from './fluteModel';
 import { getSousaphoneTemplate, SOUSAPHONE_MOUTHPIECE_TIP, SOUSAPHONE_VALVE_GRIP, sousaphoneLoopPoint } from './sousaphoneModel';
 import {
   BASS_DRUM_GRIPS, getBassDrumTemplate, getGlockenspielTemplate, getSnareTemplate, GLOCKENSPIEL_GRIPS, getTenorTemplate, SNARE_GRIPS, TENOR_GRIPS,
+  CYMBAL_GRIPS, getCymbalTemplate,
 } from './percussionModels';
 import { getMellophoneTemplate, MELLOPHONE_MOUTHPIECE_TIP } from './mellophoneModel';
 import { getRobotEyesTemplate } from './robotFaceModel';
@@ -350,7 +351,7 @@ const MAX_KNEE_BEND_RADIANS = 1.35;
 const UPPER_ARM_LENGTH = 0.3;
 const FOREARM_LENGTH = 0.4;
 export type MarcherInstrument = "trumpet" | "mellophone" | "altoSax" | "bariSax" | "trombone" | "euphonium" |
-  "clarinet" | "flute" | "sousaphone" | "snare" | "tenors" | "bassDrum" | "glockenspiel" |
+  "clarinet" | "flute" | "sousaphone" | "snare" | "tenors" | "bassDrum" | "glockenspiel" | "cymbals" |
   "guardFlag" | "guardRifle" | "guardSabre";
 
 // Instruments hang off an unsquashed root (uniform MARCHER_BODY_SCALE), so
@@ -497,6 +498,7 @@ const INSTRUMENTS: Record<MarcherInstrument, InstrumentSpec> = {
   tenors: wornInstrument("Tenor drums", getTenorTemplate, TENOR_GRIPS),
   bassDrum: wornInstrument("Bass drum", getBassDrumTemplate, BASS_DRUM_GRIPS),
   glockenspiel: wornInstrument("Glockenspiel", getGlockenspielTemplate, GLOCKENSPIEL_GRIPS),
+  cymbals: wornInstrument("Cymbals", getCymbalTemplate, CYMBAL_GRIPS),
   guardFlag: wornInstrument("Color guard flag", getGuardFlagTemplate, FLAG_GRIPS),
   guardRifle: wornInstrument("Color guard rifle", getGuardRifleTemplate, RIFLE_GRIPS),
   guardSabre: wornInstrument("Color guard sabre", getGuardSabreTemplate, SABRE_GRIPS),
@@ -774,7 +776,7 @@ function createMarcherModel(scene: Scene, gaitIndex: number): TransformNode {
     shoe.position.set(0, -MARCHER_SHOE_HALF_HEIGHT, MARCHER_SHOE_FORWARD_OFFSET);
 
     const arm = new TransformNode("marcherArm", scene);
-    arm.position.set(side * 0.31, 1.02, 0);
+    arm.position.set(side * 0.21, 1.0, 0.025);
     arm.rotationQuaternion = Quaternion.Identity();
     arm.parent = body;
     part(getMarcherUpperArmTemplate, "marcherUpperArm", arm, true);

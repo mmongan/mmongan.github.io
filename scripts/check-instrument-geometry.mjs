@@ -129,6 +129,36 @@ try {
   }
   context.InstrumentGeometry = InstrumentGeometry;
 
+  const cymbals = load('percussionModels', ['getCymbalTemplate', 'CYMBAL_GRIPS']);
+  for (const detail of ['high', 'low']) {
+    const mesh = cymbals.getCymbalTemplate(scene, detail);
+    verify(mesh);
+    assert.equal(cymbals.getCymbalTemplate(scene, detail), mesh, 'Cymbals reuse cached geometry');
+    const positions = mesh.getVerticesData('position');
+    const indices = mesh.getIndices();
+    const points = Array.from({ length: positions.length / 3 }, (_, index) =>
+      Vector3.FromArray(positions, index * 3));
+    for (const side of [-1, 1]) {
+      const half = points.filter(point => point.x * side > 0);
+      assert.ok(half.length > 0 && half.every(point => Math.abs(point.x) > 0.15),
+        'Cymbal pair has two separate plates with room between them');
+      assert.ok(Math.max(...half.map(point => point.y)) > 1.1 &&
+        Math.min(...half.map(point => point.y)) < 0.78, 'Each cymbal has a full-size round profile');
+    }
+    for (const grip of cymbals.CYMBAL_GRIPS) {
+      const bounds = mesh.getBoundingInfo().boundingBox;
+      for (const axis of ['x', 'y', 'z']) {
+        assert.ok(grip[axis] >= bounds.minimum[axis] && grip[axis] <= bounds.maximum[axis],
+          'Cymbal hand grip is inside its strap and plate bounds');
+      }
+    }
+    for (let index = 0; index < indices.length; index += 3) {
+      const [a, b, c] = indices.slice(index, index + 3).map(vertex => points[vertex]);
+      assert.ok(Vector3.Cross(b.subtract(a), c.subtract(a)).lengthSquared() > 1e-16,
+        'Cymbal surfaces contain no degenerate triangles');
+    }
+  }
+
   const models = [
     ['trumpetModel', ['getTrumpetTemplate']],
     ['mellophoneModel', ['getMellophoneTemplate']],

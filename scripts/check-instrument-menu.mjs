@@ -15,7 +15,7 @@ const scene = new Scene(engine);
 try {
   const names = ['Trumpet', 'Mellophone', 'Trombone', 'Euphonium', 'Sousaphone', 'Saxophone',
     'BariSaxophone', 'Clarinet', 'Flute', 'Snare', 'Tenor', 'BassDrum', 'Glockenspiel',
-    'GuardFlag', 'GuardRifle', 'GuardSabre'];
+    'GuardFlag', 'GuardRifle', 'GuardSabre', 'Cymbal'];
   const templates = {};
   names.forEach((name, i) => {
     const source = MeshBuilder.CreateBox(name, { width: 0.2 + i / 10, height: 0.5, depth: 0.3 }, scene);
@@ -52,11 +52,12 @@ globalThis.add = addInstrumentButtonModel;globalThis.instruments = Object.keys(t
     ['Color Guard', 'guardFlag'], ['Colour guard flags', 'guardFlag'], ['Flag line', 'guardFlag'],
     ['Color Guard Rifles', 'guardRifle'], ['Guard Sabres', 'guardSabre'], ['Saber line', 'guardSabre'],
     ['Trumpet', 'trumpet'], ['Bass drums', 'bassDrum'], ['Drum major', 'flute'],
+    ['Marching Cymbals', 'cymbals'], ['Cymbal line', 'cymbals'], ['Snare', 'snare'],
   ]) {
     assert.equal(context.getOpenMarchSectionInstrument(section, 'flute'), instrument,
       'Specific guard equipment takes precedence while ordinary sections and fallback are preserved');
   }
-  console.log('Instrument menu checks passed: all 16 instrument/guard choices, normalized rotated bounds, centering, button input ownership, and inherited visibility.');
+  console.log('Instrument menu checks passed: all 17 instrument/guard choices, normalized rotated bounds, centering, button input ownership, section matching, and inherited visibility.');
 } finally {
   scene.dispose();
   engine.dispose();

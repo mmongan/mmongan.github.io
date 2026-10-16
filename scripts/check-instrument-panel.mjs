@@ -85,13 +85,18 @@ try {
   assert.equal(placements, 1);
   const radios = [...read('../src/index.html').matchAll(/name="marcherInstrument" value="([^"]+)"/g)].map(match => match[1]);
   assert.deepEqual([...models].sort(), radios.sort(), 'Panel offers every supported instrument exactly once');
-  assert.equal(models.length, 16, 'All three guard equipment choices join the instrument picker');
+  assert.equal(models.length, 17, 'Cymbals and all three guard equipment choices join the instrument picker');
   const done = scene.getMeshByName('instrumentPanelDone');
   done.computeWorldMatrix(true);
   for (const instrument of models) {
     const button = scene.getMeshByName(`instrumentPanel-${instrument}`);
     const label = scene.getMeshByName(`instrumentPanelLabel-${instrument}`);
+    button.computeWorldMatrix(true);
     label.computeWorldMatrix(true);
+    const backing = scene.getMeshByName('instrumentPanelBacking');
+    backing.computeWorldMatrix(true);
+    assert.ok(label.getBoundingInfo().boundingBox.minimumWorld.y >
+      backing.getBoundingInfo().boundingBox.minimumWorld.y, 'Expanded panel contains every label');
     assert.ok(label.getBoundingInfo().boundingBox.minimumWorld.y >
       done.getBoundingInfo().boundingBox.maximumWorld.y, 'Done button never overlaps instrument/guard labels');
     assert.equal(registered.get(button).instrument, instrument);
@@ -138,9 +143,13 @@ try {
   const wrist = MeshBuilder.CreateBox('test-wrist', { size: 0.01 }, scene);
   let palmUp = true;
   Object.assign(palmContext, {
-    Vector3, Axis: { Y: Vector3.Up() }, StandardMaterial,
+    Vector3, Axis: { Y: Vector3.Up(), Z: Vector3.Forward() }, StandardMaterial,
     ensureMenuMeshes() {}, drawProgressBar() {},
-    isPalmUp: () => palmUp,
+    getHandMenuPose: position => ({
+      position: position.clone(), normal: new Vector3(0, palmUp ? 1 : -1, 0),
+      rotation: wrist.absoluteRotationQuaternion.clone(),
+    }),
+    handMenuAnchor: new TransformNode('test-menu-anchor', scene),
   });
   palmContext.progressPlane = progressPlane;
   palmContext.palmButtons = palmButtons;
@@ -172,26 +181,28 @@ try {
     const WATCH_Y = 0.035, WATCH_Z = 0.13;
   `, palmContext);
   vm.runInContext(transform(handMenu.slice(updateStart, updateEnd)), palmContext);
-  palmContext.updateHandMenu(new Map([['left', { grip: wrist }]]), 0);
-  assert.ok(palmButtons.every(([mesh]) => mesh.isEnabled() && mesh.parent === plateRoot) && plateRoot.parent === wrist,
+  const palmControllers = new Map([['left', { grip: wrist, inputSource: { handedness: 'left' } }]]);
+  palmContext.updateHandMenu(palmControllers, 0);
+  assert.ok(palmButtons.every(([mesh]) => mesh.isEnabled() && mesh.parent === plateRoot) &&
+    plateRoot.parent === palmContext.handMenuAnchor,
     'Turning the controller palm up displays every instrument over that hand');
   assert.ok(mediaButtons.every(([mesh]) => mesh.isEnabled() && mesh.parent === watchRoot) &&
-    watchRoot.parent === wrist && watchRoot.position.y === 0.035,
+    watchRoot.parent === palmContext.handMenuAnchor && watchRoot.position.y === 0.035,
     'Transport buttons follow the wrist at watch height rather than palm-menu height');
   assert.equal(progressPlane.position.z, -0.019, 'Transport progress sits on the watch');
   assert.equal(watchFace.isEnabled(), true);
   vm.runInContext('formationLibraryPage = "shapes"', palmContext);
-  palmContext.updateHandMenu(new Map([['left', { grip: wrist }]]), 0);
+  palmContext.updateHandMenu(palmControllers, 0);
   assert.ok(mediaButtons.every(([mesh]) => mesh.isEnabled()), 'Watch stays usable in the formation library');
   assert.ok(palmButtons.every(([mesh]) => !mesh.isEnabled()));
   palmUp = false;
-  palmContext.updateHandMenu(new Map([['left', { grip: wrist }]]), 0);
+  palmContext.updateHandMenu(palmControllers, 0);
   assert.ok(palmButtons.every(([mesh]) => !mesh.isEnabled()), 'Turning the palm down hides instrument buttons');
   assert.ok(mediaButtons.every(([mesh]) => !mesh.isEnabled()));
   assert.equal(watchFace.isEnabled(), false, 'Watch hides when the wrist is turned away');
   palmUp = true;
   vm.runInContext('formationLibraryPage = "closed"', palmContext);
-  palmContext.updateHandMenu(new Map([['left', { grip: wrist }]]), 0);
+  palmContext.updateHandMenu(palmControllers, 0);
   watchRoot.setParent(null);
   plateRoot.setParent(null);
   palmContext.watchPanel.userPlaced = true;
@@ -204,12 +215,12 @@ try {
     'Detached instruments and watch remain usable without a tracked palm');
   wrist.position.set(2, 3, 4);
   palmUp = true;
-  palmContext.updateHandMenu(new Map([['left', { grip: wrist }]]), 0.7);
+  palmContext.updateHandMenu(palmControllers, 0.7);
   assert.equal(plateRoot.parent, null);
   assert.equal(watchRoot.parent, null);
   assert.ok(plateRoot.position.equals(platePosition) && watchRoot.position.equals(watchPosition),
     'Detached panels do not reattach or move when the wrist returns');
-  console.log('Instrument panel and watch passed: all 16 instrument/guard choices, unobstructed labels, creation actions, visibility toggle, palm-up choices, wrist transport layout, formation-library transport, and hide/release.');
+  console.log('Instrument panel and watch passed: all 17 instrument/guard choices, unobstructed labels, creation actions, visibility toggle, palm-up choices, wrist transport layout, formation-library transport, and hide/release.');
 } finally {
   scene.dispose();
   engine.dispose();

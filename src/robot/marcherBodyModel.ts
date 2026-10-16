@@ -82,21 +82,21 @@ export const getMarcherTrimTemplate = partTemplate("marcherTrimTemplate", (geome
 
 export const getMarcherJacketTemplate = partTemplate("marcherJacketTemplate", (geometry) => {
   geometry.lathe(geometry.low
-    ? [[0, JACKET_LEG_CLIP_HEIGHT], [0.21, JACKET_LEG_CLIP_HEIGHT], [0.205, 0.73], [0.215, 0.84], [0.26, 0.98],
+    ? [[0, JACKET_LEG_CLIP_HEIGHT], [0.185, JACKET_LEG_CLIP_HEIGHT], [0.16, 0.73], [0.175, 0.84], [0.25, 0.98],
       [0.24, 1.035], [0.13, 1.075], [0, 1.085]]
-    : [[0, JACKET_LEG_CLIP_HEIGHT], [0.21, JACKET_LEG_CLIP_HEIGHT], [0.205, 0.73],
-      [0.215, 0.84], [0.235, 0.93], [0.26, 0.98], [0.255, 1.01], [0.225, 1.045],
+    : [[0, JACKET_LEG_CLIP_HEIGHT], [0.185, JACKET_LEG_CLIP_HEIGHT], [0.16, 0.73],
+      [0.175, 0.84], [0.21, 0.93], [0.25, 0.98], [0.25, 1.01], [0.225, 1.045],
       [0.17, 1.07], [0.1, 1.082], [0, 1.085]], geometry.low ? 16 : 12, TINTED,
-    ({ x, y, z }) => new Vector3(x, y, z * 0.85));
+    ({ x, y, z }) => new Vector3(x, y, z * 0.65));
 });
 
 // Rounded ends overlap at the existing joints, keeping the clay-like silhouette
 // continuous without changing the rig's joint centers or instrument grips.
 export const getMarcherUpperArmTemplate = partTemplate("marcherUpperArmTemplate", (geometry) => {
   geometry.lathe(geometry.low
-    ? [[0, -0.345], [0.0424264069, -0.3318198052], [0.06, -0.3], [0.095, 0], [0, 0.095]]
+    ? [[0, -0.345], [0.0424264069, -0.3318198052], [0.06, -0.3], [0.095, 0], [0, 0.07125]]
     : [[0, -0.345], [0.0229610059, -0.3415745790], [0.0424264069, -0.3318198052], [0.06, -0.3], [0.08, -0.23],
-      [0.085, -0.15], [0.09, -0.07], [0.095, 0], [0.067, 0.067], [0, 0.095]], geometry.low ? 12 : 8, TINTED,
+      [0.085, -0.15], [0.09, -0.07], [0.095, 0], [0.0671751442, 0.0503813582], [0, 0.07125]], geometry.low ? 12 : 8, TINTED,
     ({ x, y, z }) => new Vector3(x * 0.75, y, z * 0.75));
 }, false, { centerY: -0.3, capDirection: -1 });
 

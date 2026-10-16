@@ -339,7 +339,7 @@ export function createVideoBoard(
     pole.material = poleMaterial;
   }
 
-  createVideoBoardButtons(boardY - boardHeight / 2 - 1.2, boardZ - 0.6);
+  createVideoBoardButtons(boardY - boardHeight / 2 - 2.8, boardZ - 0.6);
 
   const boardRoot = new TransformNode("videoBoardRoot", scene);
   boardRoot.position.set(0, -0.5, boardZ);
@@ -386,11 +386,11 @@ function createVideoBoardButtons(y: number, z: number) {
     { text: ">>", action: "fastForward" },
   ];
 
-  const buttonSize = 1.4;
-  const spacing = buttonSize + 0.5;
+  const buttonSize = 3.6;
+  const spacing = buttonSize + 0.8;
   const startX = -((labels.length - 1) / 2) * spacing;
   const panelDepth = 0.3;
-  const panelPadding = 0.6;
+  const panelPadding = 0.8;
 
   const panelMaterial = new StandardMaterial("videoBoardButtonPanelMaterial", scene);
   panelMaterial.diffuseColor = new Color3(0.12, 0.13, 0.15);
@@ -412,17 +412,17 @@ function createVideoBoardButtons(y: number, z: number) {
 
   labels.forEach((label, index) => {
     const canvas = document.createElement("canvas");
-    canvas.width = 128;
-    canvas.height = 128;
+    canvas.width = 256;
+    canvas.height = 256;
     const ctx = canvas.getContext("2d")!;
-    ctx.fillStyle = "#1c2a4a";
-    roundedRect(ctx, 4, 4, 120, 120, 24);
+    ctx.fillStyle = "#101d38";
+    roundedRect(ctx, 4, 4, 248, 248, 36);
     ctx.fill();
     ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 44px 'Segoe UI', Arial";
+    ctx.font = "bold 88px 'Segoe UI', Arial";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(label.text, 64, 68);
+    ctx.fillText(label.text, 128, 136);
 
     const texture = new DynamicTexture(`videoBoardButtonTexture-${label.action}`, canvas, scene, false);
     texture.hasAlpha = true;

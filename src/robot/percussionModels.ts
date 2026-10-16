@@ -2,7 +2,7 @@ import { Color4 } from '@babylonjs/core/Maths/math.color.pure';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
 import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
 import { Scene } from '@babylonjs/core/scene.pure';
-import { buildInstrumentTemplate, cachedInstrumentTemplate, InstrumentGeometry, PEARL, SILVER } from './lowPolyInstrument';
+import { BRASS, buildInstrumentTemplate, cachedInstrumentTemplate, InstrumentGeometry, PEARL, SILVER } from './lowPolyInstrument';
 
 // Marching percussion in the same Quest-friendly style as the trumpet: one
 // hand-indexed, vertex-colored mesh per instrument, sticks or mallets
@@ -16,6 +16,26 @@ const NAVY_SHELL = new Color4(0.08, 0.13, 0.3, 1);
 const CARRIER = new Color4(0.12, 0.12, 0.13, 1);
 const WOOD = new Color4(0.78, 0.6, 0.38, 1);
 const FELT = new Color4(0.93, 0.93, 0.9, 1);
+
+export const CYMBAL_GRIPS: [Vector3, Vector3] = [
+  new Vector3(-0.205, 0.94, 0.28), new Vector3(0.205, 0.94, 0.28),
+];
+
+function createCymbalTemplate(scene: Scene): Mesh {
+  const geometry = new InstrumentGeometry("instrument");
+  for (const side of [-1, 1]) {
+    geometry.lathe([
+      [0, 0.043], [0.035, 0.043], [0.055, 0.02], [0.1, 0.008], [0.17, 0],
+      [0.17, -0.004], [0.1, 0.004], [0.055, 0.016], [0.035, 0.037], [0, 0.037],
+    ], 12, BRASS, ({ x, y, z }) => new Vector3(side * (0.16 + y), 0.94 - side * x, 0.28 + z));
+    geometry.tube([
+      new Vector3(side * 0.2, 0.915, 0.28),
+      new Vector3(side * 0.22, 0.94, 0.28),
+      new Vector3(side * 0.2, 0.965, 0.28),
+    ], 0.009, 4, CARRIER);
+  }
+  return buildInstrumentTemplate("cymbalTemplate", geometry, scene);
+}
 
 // Carrier bar from the chest out to the drum.
 function carrier(geometry: InstrumentGeometry, y: number, frontZ: number) {
@@ -122,3 +142,4 @@ export const getSnareTemplate = cachedInstrumentTemplate(createSnareTemplate);
 export const getTenorTemplate = cachedInstrumentTemplate(createTenorTemplate);
 export const getBassDrumTemplate = cachedInstrumentTemplate(createBassDrumTemplate);
 export const getGlockenspielTemplate = cachedInstrumentTemplate(createGlockenspielTemplate);
+export const getCymbalTemplate = cachedInstrumentTemplate(createCymbalTemplate);

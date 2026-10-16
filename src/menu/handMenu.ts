@@ -1,4 +1,5 @@
 import { PickingInfo } from '@babylonjs/core/Collisions/pickingInfo';
+import { Ray } from '@babylonjs/core/Culling/ray';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
 import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.pure';
 import { Texture } from '@babylonjs/core/Materials/Textures/texture.pure';
@@ -16,6 +17,7 @@ import type { MarcherInstrument } from '../robot/robot';
 import { addInstrumentButtonModel } from './instrumentButtonModel';
 import { DetachableFloatingPanel, type FloatingPanel } from './floatingPanel';
 import type { FieldDrawingTool } from '../interaction/fieldDrawingGeometry';
+import { getHandMenuPose, getTrackedHandMenuPose, type HandMenuPose } from './handMenuPose';
 
 // How closely the controller's local "up" must line up with world up to
 // count as palm-up (like checking a smartwatch). May need tuning per headset.
@@ -182,13 +184,6 @@ function createButton(label: string, x: number, action: HandMenuHit): Mesh {
   return button;
 }
 
-function isPalmUp(controller: WebXRInputSource): boolean {
-  const grip = controller.grip;
-  if (!grip) return false;
-  const localUp = grip.getDirection(Axis.Y);
-  return Vector3.Dot(localUp, Vector3.Up()) > PALM_UP_DOT_THRESHOLD;
-}
-
 const buttonActions = new Map<AbstractMesh, HandMenuHit>();
 let progressBar: ReturnType<typeof createProgressBarPlane> | null = null;
 let buttons: Mesh[] = [];
@@ -202,6 +197,7 @@ let instrumentPlateButtons: Mesh[] = [];
 let formationButtons: Mesh[] = [];
 let letterButtons: Mesh[] = [];
 let attachedTo: AbstractMesh | null = null;
+let handMenuAnchor: TransformNode | null = null;
 let lastDrawnProgress = -1;
 let trackedHands: WebXRHandTracking | null = null;
 let formationCommitAvailable = false;
@@ -281,12 +277,17 @@ export function isMenuControl(mesh: AbstractMesh): boolean {
   return buttonActions.has(mesh) || mesh === progressBar?.plane;
 }
 
+export function pickMenuControl(ray: Ray): PickingInfo | null {
+  return scene.pickWithRay(new Ray(ray.origin, ray.direction.normalizeToNew(), 250), isMenuControl);
+}
+
 export function isHandMenuVisible(): boolean {
   return attachedTo !== null && (progressBar?.plane.isEnabled() ?? false);
 }
 
 function ensureMenuMeshes() {
   if (progressBar) return;
+  handMenuAnchor = new TransformNode("handMenuAnchor", scene);
   progressBar = createProgressBarPlane();
   const spacing = BUTTON_SIZE + 0.006;
   buttons = [
@@ -386,10 +387,11 @@ function ensureMenuMeshes() {
     ["Bari", "bariSax", -spacing / 2, -0.195],
     ["Cl", "clarinet", spacing / 2, -0.195],
     ["Fl", "flute", spacing * 1.5, -0.195],
-    ["Sn", "snare", -spacing * 1.5, -0.23],
-    ["Ten", "tenors", -spacing / 2, -0.23],
-    ["BD", "bassDrum", spacing / 2, -0.23],
-    ["Glk", "glockenspiel", spacing * 1.5, -0.23],
+    ["Sn", "snare", -spacing * 2, -0.23],
+    ["Ten", "tenors", -spacing, -0.23],
+    ["BD", "bassDrum", 0, -0.23],
+    ["Glk", "glockenspiel", spacing, -0.23],
+    ["Cym", "cymbals", spacing * 2, -0.23],
     ["Flag", "guardFlag", -spacing, -0.265],
     ["Rifle", "guardRifle", 0, -0.265],
     ["Sabre", "guardSabre", spacing, -0.265],
@@ -495,29 +497,55 @@ export function updateHandMenu(
   if (!progressBar) return;
 
   let palmUpGrip: AbstractMesh | null = null;
+  let menuPose: HandMenuPose | null = null;
   for (const controller of controllers.values()) {
-    if (controller.grip && isPalmUp(controller)) {
-      palmUpGrip = controller.grip;
+    const grip = controller.grip;
+    if (!grip || controller.inputSource.hand) continue;
+    grip.computeWorldMatrix(true);
+    const pose = getHandMenuPose(grip.getAbsolutePosition(), grip.getDirection(Axis.Y), grip.getDirection(Axis.Z));
+    if (pose && pose.normal.y > PALM_UP_DOT_THRESHOLD) {
+      palmUpGrip = grip;
+      menuPose = pose;
       break;
     }
   }
   if (!palmUpGrip && trackedHands) {
     for (const handedness of ['left', 'right'] as const) {
-      const wrist = trackedHands.getHandByHandedness(handedness)?.getJointMesh(WebXRHandJoint.WRIST);
-      if (wrist && Vector3.Dot(wrist.getDirection(Axis.Y), Vector3.Up()) > PALM_UP_DOT_THRESHOLD) {
+      const hand = trackedHands.getHandByHandedness(handedness);
+      if (!hand) continue;
+      const joint = (name: WebXRHandJoint) => {
+        const mesh = hand.getJointMesh(name);
+        mesh.computeWorldMatrix(true);
+        return mesh.getAbsolutePosition();
+      };
+      const pose = getTrackedHandMenuPose(
+        joint(WebXRHandJoint.WRIST),
+        joint(WebXRHandJoint.INDEX_FINGER_PHALANX_PROXIMAL),
+        joint(WebXRHandJoint.MIDDLE_FINGER_PHALANX_PROXIMAL),
+        joint(WebXRHandJoint.PINKY_FINGER_PHALANX_PROXIMAL),
+        handedness, scene.useRightHandedSystem
+      );
+      if (pose && pose.normal.y > PALM_UP_DOT_THRESHOLD) {
+        const wrist = hand.getJointMesh(WebXRHandJoint.WRIST);
         palmUpGrip = wrist;
+        menuPose = pose;
         break;
       }
     }
   }
 
+  if (handMenuAnchor && menuPose) {
+    handMenuAnchor.position.copyFrom(menuPose.position);
+    handMenuAnchor.rotationQuaternion = menuPose.rotation;
+    handMenuAnchor.computeWorldMatrix(true);
+  }
   if (watchRoot && watchPanel && !watchPanel.userPlaced) {
-    watchRoot.parent = palmUpGrip;
+    watchRoot.parent = handMenuAnchor;
     watchRoot.position.set(0, WATCH_Y, WATCH_Z);
     watchRoot.setEnabled(palmUpGrip !== null);
   }
   if (instrumentPlateRoot && instrumentPlatePanel && !instrumentPlatePanel.userPlaced) {
-    instrumentPlateRoot.parent = palmUpGrip;
+    instrumentPlateRoot.parent = handMenuAnchor;
     instrumentPlateRoot.position.set(0, BUTTON_Y, -0.195);
     instrumentPlateRoot.setEnabled(palmUpGrip !== null && formationLibraryPage === "closed");
   }
@@ -551,22 +579,22 @@ export function updateHandMenu(
   if (attachedTo !== palmUpGrip) {
     attachedTo = palmUpGrip;
     buttons.filter(button => !watchButtons.includes(button) && !instrumentPlateButtons.includes(button))
-      .forEach(button => { button.parent = palmUpGrip; });
+      .forEach(button => { button.parent = handMenuAnchor; });
   }
-  const menuHeight = palmUpGrip.getDirection(Axis.Y).y < 0 ? -BUTTON_Y : BUTTON_Y;
-  const menuRotation = menuHeight < 0 ? -Math.PI / 2 : Math.PI / 2;
+  const menuHeight = BUTTON_Y;
+  const menuRotation = Math.PI / 2;
   buttons.forEach((button) => {
     if (watchButtons.includes(button) || instrumentPlateButtons.includes(button)) return;
     button.position.y = menuHeight;
     button.rotation.x = menuRotation;
   });
   formationButtons.forEach((button) => {
-    button.parent = palmUpGrip;
+    button.parent = handMenuAnchor;
     button.position.y = menuHeight;
     button.rotation.x = menuRotation;
   });
   letterButtons.forEach((button) => {
-    button.parent = palmUpGrip;
+    button.parent = handMenuAnchor;
     button.position.y = menuHeight;
     button.rotation.x = menuRotation;
   });

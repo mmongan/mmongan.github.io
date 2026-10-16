@@ -34,6 +34,51 @@ nearContext.marcherGrabs.set('left', { robot, source: 'controller' });
 assert.equal(nearContext.findMarcherNearHand(new Vector3(0, 0.05, 0), 'left'), robot,
   'Second controller can contact the held marcher to start formation pulling');
 
+robot.rotation = { y: 0.8 };
+robot.getAbsolutePosition = () => new Vector3(0.5, 0.8, 0.3);
+const transferStart = handSource.indexOf('  function transferDraftGrab(');
+const transferEnd = handSource.indexOf('  function beginFormationPull(', transferStart);
+assert.ok(transferStart >= 0 && transferEnd > transferStart);
+Object.assign(nearContext, {
+  handPlacementDrafts: new Set(),
+  placementDrafts: new Map(),
+  marcherPinchHands: new Set(),
+  formationPull: null,
+});
+vm.runInContext(transform(handSource.slice(transferStart, transferEnd)), nearContext);
+for (const sourceType of ['hand', 'controller']) {
+  for (let part = 0; part < meshes.length; part++) {
+    const grab = { robot, source: sourceType, offset: Vector3.Zero(),
+      originalPosition: new Vector3(1, 2, 3), originalRotationY: 0.2,
+      ghost: {}, recordMove() {}, originalRenderingGroup: 2 };
+    nearContext.marcherGrabs.clear();
+    nearContext.marcherGrabs.set('left', grab);
+    nearContext.handPlacementDrafts.add(robot);
+    nearContext.marcherPinchHands.add('left');
+    const point = new Vector3(part * 0.2, 0.05, 0);
+    assert.equal(nearContext.transferDraftGrab('right', point, sourceType, 1.2), true,
+      'New draft transfers from contact with any body/instrument part');
+    assert.equal(nearContext.marcherGrabs.has('left'), false, 'Old hand cannot move or release the draft');
+    assert.equal(nearContext.marcherGrabs.get('right'), grab, 'Transfer retains cancellation and rendering state');
+    assert.ok(point.add(grab.offset).equalsWithEpsilon(robot.getAbsolutePosition()),
+      'Reanchoring at the new contact does not jump the marcher');
+    assert.equal(grab.initialFacingYaw, 1.2);
+    assert.equal(grab.initialRotationY, robot.rotation.y);
+    assert.equal(grab.originalRotationY, 0.2, 'Cancellation still restores the original pose');
+    assert.equal(nearContext.marcherPinchHands.has('left'), false);
+    nearContext.handPlacementDrafts.clear();
+    assert.equal(nearContext.transferDraftGrab('left', point, sourceType, 0), false,
+      'Placed marchers keep the existing formation-pull behavior');
+    nearContext.handPlacementDrafts.add(robot);
+    assert.equal(nearContext.transferDraftGrab('left', new Vector3(4, 0, 0), sourceType, 0), false,
+      'The receiving hand must touch the draft');
+    nearContext.formationPull = {};
+    assert.equal(nearContext.transferDraftGrab('left', point, sourceType, 0), false,
+      'An active formation pull cannot be stolen');
+    nearContext.formationPull = null;
+  }
+}
+
 let grip = true;
 let near = robot;
 let rayHit = false;
@@ -67,6 +112,7 @@ const context = vm.createContext({
   },
   findRobotRoot: () => robot,
   handInteraction: {
+    transferDraftGrab: () => false,
     findMarcherNearHand: () => near, getFacingYaw: () => 0,
     beginControllerFormationPull: () => false,
     updateControllerFormationPull: () => false,
