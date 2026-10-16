@@ -1,0 +1,22 @@
+ASL fingerspelling hand illustrations, A-Z
+
+Author/source credited by Wikimedia Commons: wpclipart.com
+Original collection: http://www.wpclipart.com/sign_language/American_ABCs/index.html
+License: Public domain (PD-author), as recorded on each Commons file page.
+Commons states that the author released these works into the public domain worldwide.
+Downloaded 2026-10-16 (UTC). Images are unmodified.
+
+Individual source pages, download URLs, and SHA-256 checksums are recorded in sources.json.
+Source page pattern: https://commons.wikimedia.org/wiki/File:Sign_language_A.svg
+Replace A with the desired uppercase letter through Z.
+
+These reference illustrations are not recognition training data or proof of ASL accuracy.
+J and Z involve motion; see their arrows and accompanying instructions.
+
+Number references, 0-9 (added 2026-10-16 UTC):
+0.svg is the unmodified O illustration, used for the shared zero/O handshape.
+1.jpg through 9.jpg are public-domain photographs by Danielle-Claude Belanger
+(Wikimedia Commons user Dcbelanger), from File:LSQ_1.jpg through File:LSQ_9.jpg.
+The Commons descriptions identify these as LSQ/ASL number signs.
+Photographs are unmodified. Per-image source URLs and checksums are in sources.json.
+Palm orientation for number signs depends on linguistic context; these are handshape references.

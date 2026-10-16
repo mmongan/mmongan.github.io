@@ -11,11 +11,13 @@ import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector.j
 import { Color3 } from '@babylonjs/core/Maths/math.color.js';
 import { Plane } from '@babylonjs/core/Maths/math.plane.js';
 import { FreeCamera } from '@babylonjs/core/Cameras/freeCamera.js';
+import { Camera } from '@babylonjs/core/Cameras/camera.js';
+import { Ray } from '@babylonjs/core/Culling/ray.js';
 import '@babylonjs/core/Culling/ray.js';
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
 const transform = source => stripTypeScriptTypes(source, { mode: 'transform' })
-  .replace(/^import .*?;\r?$/gm, '').replace(/export /g, '');
+  .replace(/^import[\s\S]*?;\r?$/gm, '').replace(/export /g, '');
 const engine = new NullEngine();
 const scene = new Scene(engine);
 const root = new TransformNode('drawingTestFieldRoot', scene);
@@ -24,14 +26,65 @@ const messages = [];
 const conversions = [];
 const actions = new Map();
 const pointerListeners = new Map();
+const draftSpacingInput = {
+  value: '1.25', get valueAsNumber() { return Number(this.value); },
+  addEventListener() {}, removeEventListener() {},
+};
+const draftAngleInput = { value: '45', addEventListener() {}, removeEventListener() {} };
+const draftTextInput = { value: 'Test note' };
+const savedWorkspaceData = new Map();
+let storageFailure = false;
+let captureFailure = false;
+let captureTimeout = false;
+let capturedRenderList = [];
+let capturedView;
+let encodedPixels;
+let downloadedPhoto;
+let downloadedBlob;
+let revokedDownload;
+const testPng = 'data:image/png;base64,iVBORw0KGgo=';
+const gridToggle = { checked: false, dispatchEvent() {} };
+const gridInterval = { value: '5', get valueAsNumber() { return Number(this.value); } };
 const context = vm.createContext({
-  scene, MeshBuilder, TransformNode, StandardMaterial, Matrix, Quaternion, Vector3, Color3, Plane,
+  scene, MeshBuilder, TransformNode, StandardMaterial, Matrix, Quaternion, Vector3, Color3, Plane, Ray, FreeCamera, Camera,
+  CreateScreenshotUsingRenderTarget: (...args) => {
+    if (captureFailure) throw new Error('Image capture failed');
+    if (captureTimeout) { args[15](); return; }
+    const texture = {};
+    args[12](texture);
+    capturedRenderList = texture.renderList;
+    capturedView = {
+      position: args[1].position.clone(), width: args[1].orthoRight - args[1].orthoLeft,
+      up: args[1].upVector.clone(), size: args[2],
+    };
+    args[13](1, 2, new Uint8Array([255, 0, 0, 255, 0, 0, 255, 255]), args[3], 'image/png', undefined, true);
+  },
   FIELD_LENGTH_YARDS: 120, FIELD_WIDTH_YARDS: 53.333, FIELD_SURFACE_Y: -0.48,
   floorCalibrationToggle: calibration, drawingToolsButton: null, stencilTrayButton: null,
   cookieCutterTrayButton: null,
+  draftingToolsButton: null, draftingSpacing: draftSpacingInput, draftingAngle: draftAngleInput,
+  draftingText: draftTextInput,
+  draftingSaveButton: null, draftingRestoreButton: null, draftingDeleteButton: null, draftingSaveStatus: null,
+  draftingCameraButton: null, draftingPhotoRestoreButton: null, draftingPhotoDownloadButton: null, draftingPhotoPreview: null,
+  fieldGridToggle: gridToggle, fieldGridInterval: gridInterval, Event,
+  localStorage: {
+    getItem: key => { if (storageFailure) throw new Error('Storage blocked'); return savedWorkspaceData.get(key) ?? null; },
+    setItem: (key, value) => { if (storageFailure) throw new Error('Storage quota exceeded'); savedWorkspaceData.set(key, value); },
+    removeItem: key => savedWorkspaceData.delete(key),
+  },
+  atob, Blob,
+  URL: {
+    createObjectURL: blob => { downloadedBlob = blob; return 'blob:field-photo'; },
+    revokeObjectURL: url => { revokedDownload = url; },
+  },
+  setTimeout: callback => { callback(); },
   registerMenuButton: (mesh, hit) => actions.set(mesh, hit),
-  document: { createElement: () => ({ getContext: () => ({
-    beginPath() {}, moveTo() {}, lineTo() {}, stroke() {}, fillText() {},
+  document: { body: { appendChild() {} }, createElement: type => type === 'a' ? {
+    click() { downloadedPhoto = { href: this.href, filename: this.download }; }, remove() {},
+  } : ({ toDataURL: () => testPng, getContext: () => ({
+    beginPath() {}, moveTo() {}, lineTo() {}, stroke() {}, fillText() {}, fillRect() {},
+    createImageData: (width, height) => ({ data: new Uint8ClampedArray(width * height * 4) }),
+    putImageData: image => { encodedPixels = [...image.data]; },
   }) }) },
   DynamicTexture: class { update() {} dispose() {} },
   drawPanelButton() {},
@@ -42,6 +95,10 @@ const context = vm.createContext({
 });
 vm.runInContext(transform(read('../src/menu/floatingPanel.ts')), context);
 vm.runInContext(transform(read('../src/interaction/fieldDrawingGeometry.ts')), context);
+vm.runInContext(transform(read('../src/interaction/draftingGeometry.ts')), context);
+vm.runInContext(transform(read('../src/interaction/draftingHandles.ts')), context);
+vm.runInContext(transform(read('../src/interaction/draftingWorkspace.ts')), context);
+vm.runInContext(transform(read('../src/interaction/draftingCamera.ts')), context);
 vm.runInContext(transform(read('../src/interaction/memoryWire.ts')), context);
 vm.runInContext(transform(read('../src/interaction/fieldDrawingTools.ts')), context);
 const point = (x, z) => new Vector3(x, -0.455, z);
@@ -127,7 +184,13 @@ try {
   context.endFloatingPanelGrab('left');
   scene.onBeforeRenderObservable.notifyObservers(scene);
   assert.equal(guideCount(), 1, 'Held memory wire pressed flat on turf stamps a guide on release');
+  assert.equal(scene.getMeshByName('drawingGuide')?.material?.name, 'drawingGuideYarnMaterial',
+    'Committed layout guides use visible yarn rather than thin line geometry');
+  assert.ok(scene.getMeshByName('drawingGuideTackHead-0'), 'Layout guides are anchored by thumbtacks');
+  assert.ok(scene.getMeshByName('drawingGuideTackPin-0'), 'Thumbtacks include visible pins');
   act('clear');
+  assert.equal(scene.getMeshByName('drawingGuideTackHead-0'), null,
+    'Clearing guides removes their thumbtacks');
   act('pencil');
   assert.equal(scene.meshes.filter(mesh => mesh.name.startsWith('toolMark-')).length, 12,
     'Ruler and protractor have numbered graduations');
@@ -201,6 +264,29 @@ try {
   scene.onBeforeRenderObservable.notifyObservers(scene);
   assert.equal(guideCount(), 1, 'Physical pencil draws only when held and touching the field');
   act('clear');
+  act('laserPin');
+  assert.ok(messages.at(-1).includes('Aim the laser'), 'Pinning without a beam reports what is missing');
+  stroke('laser', point(0, 0), point(4, 0));
+  assert.equal(guideCount(), 0, 'Aiming the laser does not silently commit a guide');
+  const desktopBeam = scene.getMeshByName('fieldLaserBeam');
+  assert.ok(desktopBeam, 'Desktop drag leaves a live laser line ready to pin');
+  assert.equal(desktopBeam.parent, root);
+  act('laserPin');
+  assert.equal(guideCount(), 1, 'Pin laser explicitly saves the beam as a layout guide');
+  act('path');
+  assert.ok(Math.abs(conversions.at(-1)[1][0].x + 53.333 / 2) < 1e-6);
+  assert.ok(Math.abs(conversions.at(-1)[1][1].x - 53.333 / 2) < 1e-6,
+    'Laser spans the entire field, not just the desktop drag endpoints');
+  act('undo');
+  assert.equal(guideCount(), 0, 'Pinned laser lines support guide undo');
+  act('stop');
+  assert.equal(scene.getMeshByName('fieldLaserBeam'), null, 'Putting away the laser removes its live beam');
+  const diagonal = context.buildLaserGuide(point(0, 0), new Vector3(1, 0, 1));
+  assert.ok(context.isGuideOnField(diagonal), 'Diagonal beam clips to field bounds');
+  assert.equal(context.buildLaserGuide(point(50, 0), new Vector3(0, 0, 1)).length, 0,
+    'Parallel off-field laser has no projection');
+  assert.equal(context.buildLaserGuide(point(0, 0), Vector3.Up()).length, 0,
+    'Vertical laser has no horizontal projection');
   root.position.set(3, 1, -2);
   root.rotation.y = 0.7;
   root.scaling.setAll(0.05);
@@ -223,18 +309,372 @@ try {
   assert.ok(Math.abs(Vector3.Distance(square[0], square[1]) - Math.sqrt(2) * 0.12 * stencil.scaling.x / 0.05) < 1e-5,
     'Physical span transforms to the correct field-local radius');
   act('clear');
+  act('laser');
+  const laser = scene.getTransformNodeByName('fieldTool-laser');
+  laser.rotationQuaternion.copyFrom(Quaternion.FromEulerAngles(0, 0.7, 0));
+  laser.position.copyFrom(Vector3.TransformCoordinates(new Vector3(0, 2, 0), root.computeWorldMatrix(true)));
+  const laserBody = scene.getMeshByName('fieldLaserBody');
+  context.beginFloatingPanelGrab('right', Matrix.Identity(), laserBody, undefined, 0.03, true);
+  scene.onBeforeRenderObservable.notifyObservers(scene);
+  assert.ok(scene.getMeshByName('fieldLaserBeam'), 'Held laser projects without touching the field');
+  act('laserPin');
+  act('path');
+  assert.ok(context.isGuideOnField(conversions.at(-1)[1]),
+    'Laser guides stay field-local under tabletop translation, rotation, and scale');
+  assert.ok(Math.abs(conversions.at(-1)[1][0].x + 53.333 / 2) < 1e-5);
+  const beamVertexCount = scene.getMeshByName('fieldLaserBeam').getTotalVertices();
+  laser.position.z += 0.01;
+  scene.onBeforeRenderObservable.notifyObservers(scene);
+  assert.equal(scene.meshes.filter(mesh => mesh.name === 'fieldLaserBeam').length, 1);
+  assert.equal(scene.getMeshByName('fieldLaserBeam').getTotalVertices(), beamVertexCount,
+    'Moving the laser updates its existing beam geometry');
+  context.endFloatingPanelGrab('right');
+  scene.onBeforeRenderObservable.notifyObservers(scene);
+  assert.equal(scene.getMeshByName('fieldLaserBeam'), null, 'Releasing the XR laser turns off the live beam');
+  act('clear');
   calibration.checked = true;
+  act('laserPin');
+  assert.ok(messages.at(-1).includes('calibration'), 'Floor calibration blocks laser pinning');
   act('pencil');
   assert.ok(messages.at(-1).includes('calibration'));
   assert.equal(context.handleDrawingPointer('down', point(0, 0)), false);
   calibration.checked = false;
+  act('stop');
+  root.position.setAll(0); root.rotation.setAll(0); root.scaling.setAll(1);
+  root.computeWorldMatrix(true);
+  act('drafting');
+  assert.equal(scene.getTransformNodeByName('advancedDraftingTray').isEnabled(), true);
+  const draftingKinds = ['tSquare', 'setSquare', 'dividers', 'tape', 'spline', 'offset', 'annotation', 'yarn'];
+  assert.ok(draftingKinds.every(kind => scene.getTransformNodeByName(`fieldTool-${kind}`)),
+    'All eight advanced implements exist as grabbable physical tools');
+  assert.ok(actions.size > 0 && [...actions.values()].some(hit => hit.tool === 'addTack'));
+  stroke('tSquare', point(0, 0), point(4, 1));
+  act('path');
+  assert.ok(Math.abs(conversions.at(-1)[1][1].z) < 1e-8, 'T-square constrains lines to field axes');
+  act('clear');
+  for (const angle of [30, 45, 60, 90]) {
+    draftAngleInput.value = String(angle);
+    stroke('setSquare', point(0, 0), point(4, 3));
+    act('path');
+    const end = conversions.at(-1)[1][1];
+    const degrees = Math.atan2(end.z, end.x) * 180 / Math.PI;
+    assert.ok(Math.abs(degrees / angle - Math.round(degrees / angle)) < 1e-7,
+      `Set square constrains to ${angle}-degree increments`);
+    act('clear');
+  }
+  stroke('ruler', point(0, 0), point(5, 0));
+  draftSpacingInput.value = '1.25';
+  stroke('dividers', point(0, 0), point(1, 0));
+  assert.equal(scene.meshes.filter(mesh => mesh.name.startsWith('drawingGuideTackHead-')).length, 8,
+    'Divider copy adds five exactly spaced marks alongside the source guide three tacks');
+  const divisions = context.divideDraftLine([point(0, 0), point(2, 0), point(2, 3)], 1.25);
+  assert.equal(divisions.length, 5);
+  assert.ok(divisions[2].equalsWithEpsilon(point(2, 0.5)), 'Dividers follow path length through corners');
+  act('clear');
+  stroke('ruler', point(0, 0), point(4, 0));
+  stroke('offset', point(0, 0), point(1, 1));
+  act('path');
+  assert.ok(conversions.at(-1)[1].every(p => Math.abs(p.z - 1.25) < 1e-8), 'Offset uses exact configured distance');
+  act('draftSide');
+  stroke('offset', point(0, 0), point(1, 1));
+  act('path');
+  assert.ok(conversions.at(-1)[1].every(p => Math.abs(p.z) < 1e-8), 'Offset side reverses the displacement');
+  act('clear');
+  stroke('ruler', point(0, 0), point(4, 2));
+  act('draftReference');
+  stroke('tSquare', point(0, 3), point(4, 4));
+  act('path');
+  const parallel = conversions.at(-1)[1];
+  assert.ok(Math.abs((parallel[1].z - parallel[0].z) / (parallel[1].x - parallel[0].x) - 0.5) < 1e-8);
+  act('draftReference');
+  act('clear');
+  stroke('tape', point(0, 0), point(3, 4));
+  assert.ok(scene.getMeshByName('draftingGuideLabel').metadata.label.includes('5.00 yd | 8.00 steps'));
+  act('clear');
+  assert.equal(scene.getMeshByName('draftPinHead-0'), null, 'Clear removes editable handles as well as yarn');
+  stroke('annotation', point(0, 0), point(2, 0));
+  assert.equal(scene.getMeshByName('draftingGuideLabel').metadata.label, 'Test note');
+  act('clear');
+  draftTextInput.value = ' ';
+  stroke('annotation', point(0, 0), point(2, 0));
+  assert.equal(guideCount(), 0);
+  assert.ok(messages.at(-1).includes('annotation text'), 'Empty notes report an actionable error');
+  draftTextInput.value = 'Test note';
+  stroke('spline', point(-4, 0), point(4, 0));
+  act('path');
+  const oldCurve = conversions.at(-1)[1];
+  assert.equal(oldCurve.length, 65);
+  const middlePin = scene.getMeshByName('draftPinHead-1');
+  context.beginFloatingPanelGrab('right', Matrix.Identity(), middlePin, undefined, 0.03, true);
+  context.updateFloatingPanelGrab('right', Matrix.Translation(0, 0, 2));
+  context.endFloatingPanelGrab('right');
+  scene.onBeforeRenderObservable.notifyObservers(scene);
+  act('path');
+  assert.ok(conversions.at(-1)[1][32].z > oldCurve[32].z + 0.9, 'Moving a spline control changes the saved curve');
+  act('clear');
+  stroke('yarn', point(-3, 0), point(3, 0));
+  act('addTack');
+  assert.equal(scene.meshes.filter(mesh => mesh.name.startsWith('draftPinHead-')).length, 3,
+    'Add tack inserts another independently draggable yarn pin');
+  const yarnPin = scene.getMeshByName('draftPinHead-1');
+  context.beginFloatingPanelGrab('left', Matrix.Identity(), yarnPin, undefined, 0.03, true);
+  context.updateFloatingPanelGrab('left', Matrix.Translation(0, 0, 2));
+  context.endFloatingPanelGrab('left');
+  scene.onBeforeRenderObservable.notifyObservers(scene);
+  act('path');
+  assert.equal(conversions.at(-1)[1].length, 3);
+  assert.ok(Math.abs(conversions.at(-1)[1][1].z - 2) < 1e-6, 'Yarn follows dragged pins in saved guide geometry');
+  const beforeInvalidMove = conversions.at(-1)[1].map(p => p.clone());
+  context.beginFloatingPanelGrab('left', Matrix.Identity(), yarnPin, undefined, 0.03, true);
+  context.updateFloatingPanelGrab('left', Matrix.Translation(100, 0, 0));
+  context.endFloatingPanelGrab('left');
+  act('path');
+  assert.ok(conversions.at(-1)[1].every((p, i) => p.equalsWithEpsilon(beforeInvalidMove[i])),
+    'Out-of-field pin movement leaves the last valid guide intact');
+  act('undo');
+  assert.equal(scene.getMeshByName('draftPinHead-0'), null, 'Undo cleans up pin registrations and meshes');
+  root.position.set(3, 1, -2); root.rotation.y = 0.7; root.scaling.setAll(0.05);
+  root.computeWorldMatrix(true);
+  stroke('yarn', point(-3, 0), point(3, 0));
+  const tabletopPin = scene.getMeshByName('draftPinHead-0');
+  const fieldDelta = Vector3.TransformNormal(new Vector3(0, 0, 2), root.getWorldMatrix());
+  context.beginFloatingPanelGrab('right', Matrix.Identity(), tabletopPin, undefined, 0.03, true);
+  context.updateFloatingPanelGrab('right', Matrix.Translation(...fieldDelta.asArray()));
+  context.endFloatingPanelGrab('right');
+  scene.onBeforeRenderObservable.notifyObservers(scene);
+  act('path');
+  assert.ok(conversions.at(-1)[1][0].equalsWithEpsilon(point(-3, 2), 1e-5),
+    'Pin movement converts correctly under tabletop translation, rotation, and scale');
+  const labelCountBefore = scene.meshes.filter(mesh => mesh.name === 'draftingGuideLabel').length;
+  const downwardRay = new Ray(
+    tabletopPin.getAbsolutePosition().add(new Vector3(0, 1, 0)), Vector3.Down(), 3
+  );
+  assert.equal(context.beginFloatingPanelPointerDrag(downwardRay), true,
+    'Desktop pointer can pick an editable tabletop pin');
+  const pointerTarget = Vector3.TransformCoordinates(point(-2, 3), root.computeWorldMatrix(true));
+  context.updateFloatingPanelPointerDrag(new Ray(pointerTarget.add(new Vector3(0, 1, 0)), Vector3.Down(), 3));
+  context.endFloatingPanelGrab('pointer');
+  act('path');
+  assert.ok(conversions.at(-1)[1][0].equalsWithEpsilon(point(-2, 3), 1e-5),
+    'Desktop pin dragging intersects the transformed field plane');
+  assert.equal(scene.meshes.filter(mesh => mesh.name === 'draftingGuideLabel').length, labelCountBefore);
+  calibration.checked = true;
+  context.beginFloatingPanelGrab('right', Matrix.Identity(), tabletopPin, undefined, 0.03, true);
+  assert.equal(context.isFloatingPanelGrabbed('right'), false, 'Calibration blocks pin grabbing');
+  calibration.checked = false;
+  act('clear');
+  root.position.setAll(0); root.rotation.setAll(0); root.scaling.setAll(1);
+  root.computeWorldMatrix(true);
+  for (const kind of draftingKinds) {
+    act('clear');
+    if (kind === 'offset') stroke('ruler', point(-3, 0), point(3, 0));
+    act(kind);
+    const tool = scene.getTransformNodeByName(`fieldTool-${kind}`);
+    tool.rotationQuaternion.copyFrom(Quaternion.Identity());
+    tool.position.set(0, -0.48 + 0.12 * tool.scaling.y, 0);
+    const body = tool.getChildMeshes().find(mesh => mesh.isPickable);
+    context.beginFloatingPanelGrab('left', Matrix.Identity(), body, undefined, 0.03, true);
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    context.endFloatingPanelGrab('left');
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    if (kind === 'dividers') {
+      assert.ok(messages.at(-1).includes('interval long'), 'Physical dividers reject a segment shorter than spacing');
+    } else {
+      assert.ok(guideCount() >= 1, `${kind} commits from held field contact and release`);
+    }
+    act('stop');
+  }
+  act('clear');
+  draftSpacingInput.value = '0';
+  stroke('dividers', point(0, 0), point(4, 0));
+  assert.equal(guideCount(), 0);
+  assert.ok(messages.at(-1).includes('spacing'));
+  draftSpacingInput.value = '1.25';
+  act('clear');
+  act('restoreDrafting');
+  assert.ok(messages.at(-1).includes('No saved'), 'Missing saves are reported explicitly');
+  draftTextInput.value = 'Remember the opening set';
+  stroke('stickyNote', point(2, 3), point(2, 3));
+  assert.equal(scene.getMeshByName('draftingStickyNote').metadata.label, draftTextInput.value);
+  const stickyPin = scene.getMeshByName('draftPinHead-0');
+  context.beginFloatingPanelGrab('right', Matrix.Identity(), stickyPin, undefined, 0.03, true);
+  context.updateFloatingPanelGrab('right', Matrix.Translation(2, 0, 1));
+  context.endFloatingPanelGrab('right');
+  scene.onBeforeRenderObservable.notifyObservers(scene);
+  assert.ok(scene.getMeshByName('draftingStickyNote').position.x > 4,
+    'Dragging a sticky-note pin translates the note');
+  stroke('tape', point(0, 0), point(3, 4));
+  stroke('spline', point(-4, 0), point(4, 0));
+  gridToggle.checked = true; gridInterval.value = '2.5';
+  act('saveDrafting');
+  assert.ok(messages.at(-1).includes('Saved 3'), messages.at(-1));
+  const originalSave = [...savedWorkspaceData.values()][0];
+  assert.ok(originalSave);
+  act('clear');
+  gridToggle.checked = false; gridInterval.value = '5';
+  draftTextInput.value = 'Changed';
+  act('restoreDrafting');
+  assert.equal(guideCount(), 3, 'Local restore rebuilds saved guides');
+  assert.equal(scene.getMeshByName('draftingStickyNote').metadata.label, 'Remember the opening set');
+  assert.ok(scene.getMeshByName('draftingGuideLabel').metadata.label.includes('5.00 yd'));
+  assert.equal(scene.meshes.filter(mesh => mesh.name.startsWith('draftPinHead-')).length, 7,
+    'Restored sticky, tape, and spline pins remain editable');
+  assert.equal(gridToggle.checked, true); assert.equal(gridInterval.value, '2.5');
+  assert.equal(draftTextInput.value, 'Remember the opening set');
+  stroke('ruler', point(0, 0), point(2, 0));
+  act('restoreDrafting');
+  assert.equal(guideCount(), 4, 'Restoring over current work requires confirmation');
+  assert.ok(messages.at(-1).includes('confirm'));
+  act('restoreDrafting');
+  assert.equal(guideCount(), 3, 'Second restore replaces rather than appends');
+  storageFailure = true;
+  act('saveDrafting');
+  assert.ok(messages.at(-1).includes('Could not save'));
+  assert.equal([...savedWorkspaceData.values()][0], originalSave, 'Failed save preserves previous data');
+  storageFailure = false;
+  const storageKey = [...savedWorkspaceData.keys()][0];
+  savedWorkspaceData.set(storageKey, '{"version":999}');
+  act('restoreDrafting');
+  assert.ok(messages.at(-1).includes('Could not restore'));
+  assert.equal(guideCount(), 3, 'Corrupt save leaves current guides untouched');
+  savedWorkspaceData.set(storageKey, originalSave);
+  for (const mutate of [
+    data => { data.settings.spacing = 0; },
+    data => { data.guides[0].points[0].x = 999; },
+    data => { data.guides[0].options.controls = []; },
+    data => { data.guides[0].options.label = 'x'.repeat(161); },
+    data => { data.guides = Array.from({ length: 101 }, () => data.guides[0]); },
+  ]) {
+    const invalid = JSON.parse(originalSave);
+    mutate(invalid);
+    savedWorkspaceData.set(storageKey, JSON.stringify(invalid));
+    act('restoreDrafting');
+    assert.ok(messages.at(-1).includes('Could not restore'));
+    assert.equal(guideCount(), 3, 'Invalid saved state never replaces current work');
+  }
+  savedWorkspaceData.set(storageKey, originalSave);
+  act('restoreDrafting');
+  stroke('ruler', point(0, 0), point(2, 0));
+  act('restoreDrafting');
+  assert.ok(messages.at(-1).includes('confirm'), 'Drawing disarms an earlier replacement confirmation');
+  act('clear');
+  act('restoreDrafting');
+  const restoredPin = scene.getMeshByName('draftPinHead-0');
+  context.beginFloatingPanelGrab('right', Matrix.Identity(), restoredPin, undefined, 0.03, true);
+  act('saveDrafting');
+  assert.ok(messages.at(-1).includes('Release drafting'), 'Saving while a pin is held is explicitly blocked');
+  context.endFloatingPanelGrab('right');
+  act('saveDrafting');
+  assert.ok(messages.at(-1).includes('Saved 3'));
+  calibration.checked = true;
+  act('restoreDrafting');
+  assert.ok(messages.at(-1).includes('calibration'));
+  calibration.checked = false;
+  act('deleteDrafting');
+  assert.equal(savedWorkspaceData.size, 0);
+  assert.equal(guideCount(), 3, 'Deleting saved data does not delete current work');
+  const flushPhoto = async () => { await new Promise(resolve => setImmediate(resolve)); };
+  act('restorePhoto');
+  assert.ok(messages.at(-1).includes('No camera snapshot'));
+  const fieldSurface = MeshBuilder.CreateGround('field', { width: 53.333, height: 120 }, scene);
+  const excludedRoute = MeshBuilder.CreateBox('testMarcherRoute', {}, scene);
+  excludedRoute.parent = root;
+  const excludedTray = scene.getMeshByName('draftingCameraBody');
+  const physicalCamera = scene.getTransformNodeByName('fieldTool-camera');
+  context.beginFloatingPanelGrab('left', Matrix.Identity(), excludedTray, undefined, 0.03, true);
+  assert.equal(physicalCamera.parent, null, 'Camera is a grabbable physical implement');
+  assert.ok([...actions.values()].some(hit => hit.tool === 'takePhoto'), 'Physical shutter exposes capture action');
+  act('takePhoto');
+  act('clear');
+  assert.equal(guideCount(), 3, 'Edits are blocked while capture is pending');
+  await flushPhoto();
+  const photoKey = 'chartxr.draftingCamera.v1';
+  const savedPhoto = savedWorkspaceData.get(photoKey);
+  assert.ok(savedPhoto, messages.at(-1));
+  assert.ok(messages.at(-1).includes('saved together'), 'Capture works while holding the camera');
+  context.endFloatingPanelGrab('left');
+  const photo = JSON.parse(savedPhoto);
+  assert.equal(photo.image, testPng);
+  assert.deepEqual(encodedPixels, [0, 0, 255, 255, 255, 0, 0, 255], 'PNG encoding flips framebuffer rows upright');
+  assert.equal(JSON.parse(photo.workspace).guides.length, 3);
+  act('downloadPhoto');
+  assert.ok(downloadedPhoto.filename.endsWith('.png'));
+  assert.equal(downloadedPhoto.href, 'blob:field-photo');
+  assert.equal(downloadedBlob.type, 'image/png');
+  assert.equal(downloadedBlob.size, 8);
+  assert.equal(revokedDownload, 'blob:field-photo', 'Download blob URLs are cleaned up');
+  assert.ok(capturedRenderList.includes(fieldSurface));
+  assert.ok(capturedRenderList.includes(scene.getMeshByName('draftingStickyNote')));
+  assert.ok(capturedRenderList.includes(scene.getMeshByName('draftPinHead-0')));
+  assert.ok(!capturedRenderList.includes(excludedRoute), 'Capture excludes marching routes');
+  assert.ok(!capturedRenderList.includes(excludedTray), 'Capture excludes tool trays and camera');
+  assert.equal(scene.getCameraByName('draftingSnapshotCamera'), null, 'Temporary camera is disposed');
+  assert.equal(scene.activeCamera, camera, 'Capture leaves the viewer camera unchanged');
+  storageFailure = true;
+  act('takePhoto'); await flushPhoto();
+  assert.ok(messages.at(-1).includes('Could not save camera'));
+  assert.equal(savedWorkspaceData.get(photoKey), savedPhoto, 'Quota failures preserve the paired snapshot');
+  storageFailure = false; captureFailure = true;
+  act('takePhoto'); await flushPhoto();
+  assert.equal(savedWorkspaceData.get(photoKey), savedPhoto, 'Image capture failure preserves previous snapshot');
+  captureFailure = false;
+  captureTimeout = true;
+  act('takePhoto'); await flushPhoto();
+  assert.ok(messages.at(-1).includes('timed out'));
+  assert.equal(savedWorkspaceData.get(photoKey), savedPhoto, 'Capture timeout preserves previous snapshot');
+  captureTimeout = false;
+  act('takePhoto');
+  draftTextInput.value = 'Changed during screenshot';
+  await flushPhoto();
+  assert.ok(messages.at(-1).includes('changed during capture'), 'State drift cannot save a mismatched photo/workspace');
+  assert.equal(savedWorkspaceData.get(photoKey), savedPhoto);
+  act('clear');
+  act('restorePhoto');
+  assert.equal(guideCount(), 3, 'Photo restores its own paired drafting workspace');
+  stroke('ruler', point(0, 0), point(2, 0));
+  act('restorePhoto');
+  assert.equal(guideCount(), 4);
+  assert.ok(messages.at(-1).includes('Restore photo'));
+  act('restoreDrafting');
+  act('restorePhoto');
+  assert.equal(guideCount(), 4, 'Switching restore sources disarms confirmation');
+  act('restorePhoto');
+  assert.equal(guideCount(), 3);
+  for (const mutate of [
+    data => { data.version = 2; },
+    data => { data.image = 'javascript:alert(1)'; },
+    data => { data.workspace = '{"version":999}'; },
+    data => { data.capturedAt = 'invalid'; },
+  ]) {
+    const invalid = JSON.parse(savedPhoto); mutate(invalid);
+    savedWorkspaceData.set(photoKey, JSON.stringify(invalid));
+    act('restorePhoto');
+    assert.ok(messages.at(-1).includes('Could not restore camera'));
+    assert.equal(guideCount(), 3);
+  }
+  savedWorkspaceData.set(photoKey, savedPhoto);
+  root.position.set(3, 1, -2); root.rotation.y = 0.7; root.scaling.setAll(0.05);
+  root.computeWorldMatrix(true);
+  act('takePhoto'); await flushPhoto();
+  const expectedEye = Vector3.TransformCoordinates(new Vector3(0, -0.48 + 90, 0), root.getWorldMatrix());
+  assert.ok(capturedView.position.equalsWithEpsilon(expectedEye, 1e-5), 'Camera framing follows tabletop transforms');
+  assert.ok(Math.abs(capturedView.width - 124 * 0.05) < 1e-5);
+  assert.ok(capturedView.up.equalsWithEpsilon(Vector3.TransformNormal(Vector3.Right(), root.getWorldMatrix()).normalize(), 1e-5));
+  assert.equal(capturedView.size.width, 1240);
+  calibration.checked = true;
+  act('takePhoto');
+  assert.ok(messages.at(-1).includes('calibration'), 'Calibration blocks taking snapshots');
+  calibration.checked = false;
+  fieldSurface.dispose(); excludedRoute.dispose();
+  root.position.setAll(0); root.rotation.setAll(0); root.scaling.setAll(1); root.computeWorldMatrix(true);
+  act('clear');
   act('stop');
   assert.equal(context.isFieldDrawingToolActive(), false);
   assert.equal(pencil.parent.name, 'drawingToolTray', 'Put away returns physical implements to their trays');
   assert.equal(context.handleDrawingPointer('down', point(0, 0)), false);
   assert.equal(context.guideTouchesSweep([point(0, 0), point(0, 3)], point(2, 0), point(2, 3), 0.5), false,
     'Parallel, separated eraser motion does not delete a guide');
-  console.log('Drawing tools/stencils/cutters passed: all 18 implements, remembered wire bends/stamps, three trays, freehand/line/arc/circle/polygon geometry, explicit conversions, direct cutter stamps, eraser sweeps, undo/clear, bounds, physical contact/release, rotated/scaled tabletop transforms, and calibration gating.');
+  console.log('Drafting checks passed: physical tools, laser, advanced geometry, labels, sticky notes, editable pins, local save/restore/delete, paired camera snapshots, corrupt data/storage and capture failures, confirmation, cleanup, tabletop transforms, and calibration gating.');
 } finally {
   scene.dispose();
   engine.dispose();

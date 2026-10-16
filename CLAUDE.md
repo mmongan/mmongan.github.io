@@ -14,6 +14,7 @@ This is a Babylon.js, TypeScript, and Vite WebXR marching-band drill designer. I
 - `src/interaction/` owns controller, pointer, hand, path, and formation interactions.
 - `src/robot/` owns robot models, playback, drill planning, and collision previews.
 - `src/field/` owns field dimensions and stadium components.
+- `src/field/adjustableGrid.ts` owns the optional visible field grid. Its spacing and visibility are independent of editing snap settings and the teleport grid.
 - `src/environment/` owns sky and horizon-ground construction.
 - `src/menu/` owns the controller hand menu and settings overlay behavior.
 - `src/ui/dom.ts` owns shared DOM references for application controls.
@@ -32,6 +33,22 @@ Preserve the ordering in `src/scene/index.ts` unless the change explicitly requi
 
 The content-root snapshot and teleport-grid ordering is important for AR tabletop transforms. Review `src/xr/ar.ts` before changing scene parenting or scale behavior.
 
+## Drafting Tools
+
+- `src/interaction/fieldDrawingTools.ts` owns the physical tool trays, field strokes, laser preview, and guide lifecycle. Reuse its guide conversion and cleanup paths rather than adding separate formation/path creation logic.
+- `src/interaction/fieldDrawingGeometry.ts` owns field-local guide geometry, including clipping laser alignment lines to the field rectangle. Use the dimensions in `src/field/constants.ts`.
+- `src/interaction/memoryWire.ts` owns the shape-memory wire. Reuse the grab/panel infrastructure in `src/menu/floatingPanel.ts` for physical tools.
+- `src/interaction/draftingGeometry.ts` owns advanced drafting math: field-axis/angle constraints, path-length measurements and divisions, bounded-miter offsets, and sampled quadratic splines. Keep these operations in field yards; 8-to-5 step measurements use 0.625 yards per step.
+- `src/interaction/draftingHandles.ts` owns constrained, draggable field pins. Reuse floating-panel picking/grabs, but intersect desktop drags with the transformed field plane. Pin edits must update the saved guide points used for conversion as well as its meshes.
+- The advanced drafting tray contains T-square, set square, dividers, tape, spline, offset, annotation, yarn, and sticky-note implements. Settings and tray controls share spacing/angle state. Annotations and yellow sticky notes use explicit Settings text rather than native modal prompts, which would interrupt immersive input. Sticky-note pin moves translate the complete note instead of stretching it.
+- `src/interaction/draftingWorkspace.ts` owns the versioned local workspace format and validation. Serialize field coordinates explicitly rather than relying on Babylon vector JSON internals. Save only committed drafting guides and their settings; do not persist the show, live previews, or tool poses. Validate the complete snapshot before replacing current guides, keep restores explicit, and surface storage/corruption errors. Both Settings and the advanced tray reuse the same save/restore/delete actions.
+- `src/interaction/draftingCamera.ts` captures an overhead field PNG using the shared scene/engine and a disposable camera aligned to the transformed field. Keep its render list limited to field surfaces, committed guides/pins, and the visible grid. Store the image and validated drafting workspace atomically under a separate local-storage key. The physical shutter, tray, and Settings reuse the same actions; allow holding only the camera during capture, reject state drift, preserve prior snapshots on failure, and reuse explicit restore confirmation. Downloaded PNGs are images, not restorable workspaces.
+- Keep measurements/annotations, editable handles, and decorative meshes owned by the same guide lifecycle. Offsets/divider copies are independent snapshots, not live dependencies. Converting an editable guide does not attach its pins to the resulting marchers or route.
+- Committed layout guides use yarn and thumbtacks; ordinary in-progress guides are cyan. Laser previews are green and are saved only by the explicit **Pin laser line** action.
+- In XR, the laser projects while held and turns off on release. On desktop, dragging aims its line and keeps the preview available for explicit pinning. The projection extends both ways across the field, not just along the drag segment.
+- Keep previews and saved guide points in field coordinates. Preserve behavior under tabletop translation, yaw, and scale; tools must not draw or pin during floor calibration.
+- Eraser, undo, clear, and scene disposal must remove all meshes owned by a guide. Dispose preview geometry and unregister event handlers when the scene is disposed.
+
 ## Development And Validation
 
 - Install dependencies with `npm install`.
@@ -39,8 +56,11 @@ The content-root snapshot and teleport-grid ordering is important for AR tableto
 - Run strict TypeScript validation with `npx tsc --noEmit`.
 - Run the production build with `npm run build`.
 - Run `node scripts/simulate-drill-sync.mjs` when changing synchronized drill path planning or collision avoidance.
+- Run `node scripts/check-field-drawing-tools.mjs` when changing drafting tools, laser aiming/pinning, advanced drafting geometry, dimension labels, editable pins/splines, or guide cleanup. Preserve coverage of physical contact/release, desktop field-plane dragging, and rotated/scaled tabletop transforms.
+- Run `node scripts/check-adjustable-grid.mjs` when changing the visible field grid.
+- Run `node scripts/check-thumb-jog.mjs` and `node scripts/check-controller-roles.mjs` when changing media jogging or controller hand assignments.
 
-There is no test script currently defined in `package.json`; do not claim tests passed unless a test command is added and run.
+There is no `npm test` script in `package.json`. The standalone checks above can be run directly; those using Node.js TypeScript stripping require Node.js 22.13 or newer. Report only validation commands actually run.
 
 ## Change And Deployment Practices
 

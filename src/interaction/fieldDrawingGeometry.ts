@@ -1,11 +1,39 @@
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
 import { FIELD_LENGTH_YARDS, FIELD_SURFACE_Y, FIELD_WIDTH_YARDS } from '../field/constants';
+import type { DraftingTool } from './draftingGeometry';
 
 export type FieldStencil = 'circleStencil' | 'squareStencil' | 'triangleStencil' |
   'pentagonStencil' | 'hexagonStencil' | 'starStencil';
 export type FieldCutter = 'circleCutter' | 'squareCutter' | 'triangleCutter' |
   'pentagonCutter' | 'hexagonCutter' | 'starCutter';
-export type FieldDrawingTool = 'pencil' | 'eraser' | 'ruler' | 'protractor' | 'compass' | 'wire' | FieldStencil | FieldCutter;
+export type FieldDrawingTool = 'pencil' | 'eraser' | 'ruler' | 'protractor' | 'compass' | 'wire' | 'laser' | 'camera' | DraftingTool | FieldStencil | FieldCutter;
+
+export function buildLaserGuide(origin: Vector3, direction: Vector3): Vector3[] {
+  if (![origin.x, origin.z, direction.x, direction.z].every(Number.isFinite)) return [];
+  const length = Math.hypot(direction.x, direction.z);
+  if (length < 1e-6) return [];
+  const dx = direction.x / length, dz = direction.z / length;
+  let enter = -Infinity, exit = Infinity;
+  for (const [position, delta, halfSize] of [
+    [origin.x, dx, FIELD_WIDTH_YARDS / 2],
+    [origin.z, dz, FIELD_LENGTH_YARDS / 2],
+  ]) {
+    if (Math.abs(delta) < 1e-8) {
+      if (Math.abs(position) > halfSize) return [];
+      continue;
+    }
+    const first = (-halfSize - position) / delta;
+    const last = (halfSize - position) / delta;
+    enter = Math.max(enter, Math.min(first, last));
+    exit = Math.min(exit, Math.max(first, last));
+  }
+  if (exit - enter < 0.05) return [];
+  return [enter, exit].map(distance => new Vector3(
+    Math.max(-FIELD_WIDTH_YARDS / 2, Math.min(FIELD_WIDTH_YARDS / 2, origin.x + dx * distance)),
+    FIELD_SURFACE_Y + 0.025,
+    Math.max(-FIELD_LENGTH_YARDS / 2, Math.min(FIELD_LENGTH_YARDS / 2, origin.z + dz * distance))
+  ));
+}
 
 export function isFieldShapeTool(value: string): value is FieldStencil | FieldCutter {
   return /^(circle|square|triangle|pentagon|hexagon|star)(Stencil|Cutter)$/.test(value);
@@ -14,6 +42,7 @@ export function isFieldShapeTool(value: string): value is FieldStencil | FieldCu
 export function buildToolGuide(tool: FieldDrawingTool, start: Vector3, end: Vector3): Vector3[] {
   const a = new Vector3(start.x, FIELD_SURFACE_Y + 0.025, start.z);
   const b = new Vector3(end.x, a.y, end.z);
+  if (tool === 'laser') return buildLaserGuide(a, b.subtract(a));
   if (tool === 'pencil' || tool === 'ruler' || tool === 'wire') return [a, b];
   if (tool === 'eraser') return [];
   const delta = b.subtract(a);

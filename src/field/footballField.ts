@@ -4,6 +4,7 @@ import { createGoalPosts } from './goalPosts';
 import { createScoreboard } from './scoreboard';
 import { createVideoBoard } from './videoBoard';
 import { videoScreenSizeInput, videoScreenSizeValue } from '../ui/dom';
+import { createAdjustableFieldGrid } from './adjustableGrid';
 
 // Assemble the field as a single scene object, with level-specific updates for
 // the yard lines, bleachers, and goalposts.
@@ -11,7 +12,9 @@ export function createFootballField(): {
   setFieldLevel: (level: string) => void;
   updateVideoBoardProgress: (progress: number | null) => void;
 } {
-  const { updateFieldLevel } = createTurf();
+  const turf = createTurf();
+  const { updateFieldLevel } = turf;
+  createAdjustableFieldGrid(turf.field);
   const { updateStands } = createStands();
   const { updateGoalPosts } = createGoalPosts();
   createScoreboard();

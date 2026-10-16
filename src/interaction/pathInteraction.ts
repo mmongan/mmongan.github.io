@@ -624,14 +624,18 @@ function updateScrubFromControllers(deltaSeconds: number) {
   }
 
   let axisValue = 0;
+  let hasMediaThumbstick = false;
+  const mediaHand = getMediaControllerHand();
   controllerRegistry.forEach((controller) => {
-    if (controller.inputSource.handedness !== getMediaControllerHand()) return;
-    if (marcherGrabs.get(getMediaControllerHand())?.source === "controller") return;
+    if (controller.inputSource.handedness !== mediaHand) return;
     const thumbstick = controller.motionController?.getComponentOfType("thumbstick");
-    const x = thumbstick?.axes.x ?? 0;
+    if (!thumbstick) return;
+    hasMediaThumbstick = true;
+    if (marcherGrabs.get(mediaHand)?.source === "controller") return;
+    const x = thumbstick.axes.x ?? 0;
     if (Math.abs(x) > Math.abs(axisValue)) axisValue = x;
   });
-  if (controllerRegistry.has(getMediaControllerHand())) {
+  if (hasMediaThumbstick || marcherGrabs.get(mediaHand)?.source === "controller") {
     resetThumbJog(thumbJogState);
   } else {
     axisValue = isFingerspellingNamingActive() ? 0 : getHandThumbJogAxis(deltaSeconds);

@@ -74,7 +74,7 @@
             <input id="handThumbJogToggle" type="checkbox" />
             <span>Hand-tracked thumb media jogging</span>
           </label>
-          <p>With the menu open, curl the media hand's fingers and raise its thumb. Hold still briefly for neutral, then move the thumb sideways to jog. Open the hand or lower the thumb to stop.</p>
+          <p>When no media controller thumbstick is available, enable this option to jog with tracked hands. With the palm-up menu open, curl the media hand's fingers and raise its thumb. Hold still briefly for neutral, then move the thumb sideways to jog. Open the hand or lower the thumb to stop.</p>
         </div>
 
         <div class="settings-group">
@@ -135,6 +135,9 @@
           <h3>Drill form editor</h3>
           <p>Create standing forms without replacing the show. Select a form here or select one of its marchers. Moves, rotations, and scaling apply to the whole form; collision checks reject overlapping edits.</p>
           <label class="radio-option"><input id="gridSnapToggle" type="checkbox" /><span>Snap editing to field grid</span></label>
+          <label class="radio-option"><input id="fieldGridToggle" type="checkbox" /><span>Show adjustable grid on field</span></label>
+          <label class="settings-label" for="fieldGridInterval">Visible grid spacing (yards)</label>
+          <input id="fieldGridInterval" type="number" min="0.5" max="20" step="0.5" value="5" />
           <label class="settings-label" for="gridSnapInterval">Grid interval (yards)</label>
           <select id="gridSnapInterval">
             <option value="0.3125">0.3125 (half step)</option>
@@ -290,6 +293,31 @@
           </label>
           <button id="instrumentPanelButton" type="button">Open instrument panel to create marchers</button>
           <button id="drawingToolsButton" type="button">Open field drawing tools</button>
+          <button id="draftingToolsButton" type="button">Open advanced drafting tools</button>
+          <label class="settings-label" for="draftingSpacing">Divider spacing / parallel offset (yards)</label>
+          <input id="draftingSpacing" type="number" min="0.05" max="20" step="any" value="1.25" />
+          <label class="settings-label" for="draftingAngle">Set square angle</label>
+          <select id="draftingAngle">
+            <option value="30">30 degrees</option><option value="45" selected>45 degrees</option>
+            <option value="60">60 degrees</option><option value="90">90 degrees</option>
+          </select>
+          <label class="settings-label" for="draftingText">Annotation text</label>
+          <input id="draftingText" type="text" maxlength="80" value="Note" />
+          <p>Advanced drafting: T-square, set square, dividers, measuring tape, editable spline, parallel offsets, annotations, and draggable yarn pins. Drag on the field or grab a tool and touch its working edge to the turf. Spacing, angle, offset side, and parallel-reference controls are also on the advanced tray. Notes use the text above.</p>
+          <div class="radio-row">
+            <button id="draftingSaveButton" type="button">Save drafting locally</button>
+            <button id="draftingRestoreButton" type="button">Restore saved drafting</button>
+            <button id="draftingDeleteButton" type="button">Delete saved drafting</button>
+          </div>
+          <output id="draftingSaveStatus" aria-live="polite"></output>
+          <div class="radio-row">
+            <button id="draftingCameraButton" type="button">Camera: take field snapshot</button>
+            <button id="draftingPhotoRestoreButton" type="button">Restore camera snapshot</button>
+            <button id="draftingPhotoDownloadButton" type="button">Download field photo</button>
+          </div>
+          <img id="draftingPhotoPreview" alt="Saved top-down field snapshot" hidden style="max-width:100%; height:auto;" />
+          <p>The camera saves one top-down PNG and its drafting workspace together, separately from Save drafting locally. Restore camera snapshot restores drafting only, not marchers or routes. Download field photo saves an image only; it cannot restore drafting.</p>
+          <p>One saved drafting workspace per browser and site address. Save overwrites it; restore replaces current guides (press twice when guides exist). No automatic restore. Marchers, routes, tool poses, and live previews are not saved. Delete saved drafting removes only the stored copy, not current guides. Clearing browser data removes the save.</p>
           <button id="stencilTrayButton" type="button">Open stencil tray</button>
           <button id="cookieCutterTrayButton" type="button">Open cookie cutter tray</button>
           <div class="radio-row">
