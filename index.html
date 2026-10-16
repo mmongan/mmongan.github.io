@@ -8,7 +8,7 @@
       content="Babylon.js WebXR VR and AR demo for Meta Quest 3"
     />
     <title>OpenChartxr</title>
-    <script type="module" crossorigin src="/assets/index-DDf1k4-8.js"></script>
+    <script type="module" crossorigin src="/assets/index-CBZH-Mnr.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/rolldown-runtime-B0Z9INg1.js">
     <link rel="modulepreload" crossorigin href="/assets/engineStore-Bn2tApal.js">
     <link rel="modulepreload" crossorigin href="/assets/internalTexture-B3djGrls.js">
@@ -249,6 +249,9 @@
           <p>Set edits change selected marchers at the destination set and linearly rebuild their transitions to adjacent sets. Other marchers and distant counts remain unchanged. Existing midsets within those transitions are replaced. Destination collisions are rejected; inspect collision previews and stride warnings during playback. Changes are session-local, with no show export or edit undo.</p>
           <label class="settings-label" for="drillEditSet">Destination set</label>
           <select id="drillEditSet"><option value="">No drill sets loaded</option></select>
+          <label class="radio-option"><input id="fieldChartModeToggle" type="checkbox" /><span>Field chart mode: previous-set ghosts and movement arrows (pauses playback)</span></label>
+          <output id="fieldChartModeStatus" class="settings-status" aria-live="polite"></output>
+          <p>Choose a destination set above. Chart mode pauses the real band at that set, adds cyan ghosts at the previous set, and draws gold arrows from old to new positions. Holds have no arrow. Arrows show straight-line displacement, not the traveled route. The first set has no previous-set comparison. Playback, timeline jogging, or ghost-band preview turns chart mode off. Turning it off leaves the band paused; no drill positions are edited.</p>
           <button type="submit" value="copyPrevious">Copy positions from previous set</button>
           <button type="submit" value="copyNext">Copy positions from next set</button>
           <button type="submit" value="shapePrevious">Copy grouped shape to previous set</button>
