@@ -24,6 +24,8 @@ import '../menu/settings';
 import { initMidiPlayback, isMidiPlaybackReady } from '../audio/midiPlayback';
 import { getDrillTransportState, playAll } from '../robot/robot';
 import { initMusicStand } from '../menu/musicStand';
+import { initInstrumentPanel } from '../menu/instrumentPanel';
+import { initGhostBandControls } from '../menu/ghostBandControls';
 import { setDrillChartPadVisible } from '../menu/drillChartPad';
 import { initMarcherPOV } from '../camera/marcherPOV';
 
@@ -44,6 +46,8 @@ updateFieldLevel();
 
 initInteraction();
 initMusicStand();
+initInstrumentPanel();
+initGhostBandControls();
 initMidiPlayback();
 initMarcherPOV(getSelectedMarcher, getSelectableMarchers, selectRobot, refreshPathLineAppearance);
 

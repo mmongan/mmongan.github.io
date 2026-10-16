@@ -19,7 +19,7 @@ const context = vm.createContext({ scene, Matrix, Quaternion, Vector3, Plane });
 const source = readFileSync(new URL('../src/menu/floatingPanel.ts', import.meta.url), 'utf8');
 vm.runInContext(`${stripTypeScriptTypes(source, { mode: 'transform' })
   .replace(/^import .*?;\r?$/gm, '').replace(/export /g, '')}
-globalThis.api = { FloatingPanel, getFloatingPanelButtonNearPoint, beginFloatingPanelGrab, updateFloatingPanelGrab,
+globalThis.api = { FloatingPanel, DetachableFloatingPanel, getFloatingPanelButtonNearPoint, beginFloatingPanelGrab, updateFloatingPanelGrab,
 endFloatingPanelGrab, isFloatingPanelGrabbed, getFloatingPanelNear,
 pickFloatingPanel, beginFloatingPanelPointerDrag, updateFloatingPanelPointerDrag,
 nudgeFloatingPanelDistance };`, context);
@@ -38,6 +38,35 @@ function create(name, z) {
   return { root, desk, mesh, panel };
 }
 try {
+  const wrist = new TransformNode('detachmentWrist', scene);
+  wrist.position.set(1, 2, 3);
+  wrist.rotation.set(0.2, 0.7, -0.3);
+  const wearable = new TransformNode('detachmentRoot', scene);
+  wearable.parent = wrist;
+  wearable.position.set(0, 0.035, 0.13);
+  const wearableFace = MeshBuilder.CreateBox('detachmentFace', { width: 0.16, height: 0.01, depth: 0.08 }, scene);
+  wearableFace.parent = wearable;
+  const detachable = new api.DetachableFloatingPanel(wearable, new Set([wearableFace]),
+    wearable, new Vector3(0.09, 0.025, 0.045));
+  const attachedWorld = wearable.computeWorldMatrix(true).clone();
+  api.beginFloatingPanelGrab('left', Matrix.Translation(0.4, 1, 2), wearableFace, undefined, 0.03, true);
+  assert.equal(wearable.parent, null, 'Grabbing removes the panel from the wrist');
+  assert.ok(detachable.userPlaced);
+  assert.ok(wearable.computeWorldMatrix(true).asArray().every((v, i) =>
+    Math.abs(v - attachedWorld.asArray()[i]) < 1e-6), 'Detaching preserves the complete world pose');
+  api.updateFloatingPanelGrab('left', Matrix.Translation(0.6, 1.1, 2.3));
+  const floatingPosition = attachedWorld.getTranslation().add(new Vector3(0.2, 0.1, 0.3));
+  assert.ok(Vector3.Distance(wearable.position, floatingPosition) < 1e-6);
+  api.endFloatingPanelGrab('left');
+  wrist.position.set(5, 6, 7);
+  wearable.computeWorldMatrix(true);
+  assert.ok(Vector3.Distance(wearable.getAbsolutePosition(), floatingPosition) < 1e-6,
+    'Released panel floats independently of subsequent wrist motion');
+  api.beginFloatingPanelGrab('right', Matrix.Identity(), wearableFace);
+  assert.ok(detachable.grabbed('right'), 'A floating panel can be grabbed again');
+  api.endFloatingPanelGrab('right');
+  wearable.dispose();
+  wrist.dispose();
   const score = create('score', 1);
   const chart = create('chart', 2);
   const buttonRoot = new TransformNode('buttonPanelRoot', scene);

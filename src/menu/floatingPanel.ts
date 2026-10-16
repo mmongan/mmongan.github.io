@@ -222,6 +222,14 @@ export class FloatingPanel {
   }
 }
 
+export class DetachableFloatingPanel extends FloatingPanel {
+  override begin(source: string, world: Matrix) {
+    if (!this.root.isEnabled()) return;
+    this.root.setParent(null);
+    super.begin(source, world);
+  }
+}
+
 export function isFloatingPanelMesh(mesh: AbstractMesh) {
   return [...panels].some(panel => panel.root.isEnabled() && panel.meshes.has(mesh));
 }

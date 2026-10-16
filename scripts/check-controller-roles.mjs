@@ -19,7 +19,8 @@ const context = vm.createContext({
   controllerRegistry: controllers,
   marcherGrabs: new Map(),
   isHandMenuVisible: () => menuVisible,
-  scrubBy: (counts) => changes.push(counts),
+  jogGhostBandBy: (counts) => changes.push(counts),
+  isFingerspellingNamingActive: () => false,
 });
 vm.runInContext(stripTypeScriptTypes(`${roles.replace(/export /g, '')}\n${scrub}`, { mode: 'transform' }), context);
 const checkRoles = (navigation, media) => {

@@ -1,4 +1,5 @@
 import type { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
+import { getObjectName } from '../interaction/objectNames';
 import type { WebXRDefaultExperience } from '@babylonjs/core/XR/webXRDefaultExperience';
 import { WebXRState } from '@babylonjs/core/XR/webXRTypes';
 import { TargetCamera } from '@babylonjs/core/Cameras/targetCamera.pure';
@@ -79,7 +80,7 @@ function refreshMarcherList() {
     selectMarcher(marchers[0], false);
     setMarcherPOVEnabled(true);
   }
-  const signature = marchers.map(robot => robot.uniqueId).join(',');
+  const signature = JSON.stringify(marchers.map(robot => [robot.uniqueId, getObjectName(robot)]));
   if (marcherPOVSelect && signature !== listSignature) {
     listSignature = signature;
     const placeholder = document.createElement('option');
@@ -88,7 +89,7 @@ function refreshMarcherList() {
     marcherPOVSelect.replaceChildren(placeholder, ...marchers.map((robot, index) => {
       const option = document.createElement('option');
       option.value = String(robot.uniqueId);
-      option.textContent = `Marcher ${index + 1}`;
+      option.textContent = getObjectName(robot) ?? `Marcher ${index + 1}`;
       return option;
     }));
   }

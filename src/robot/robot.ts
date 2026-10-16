@@ -1,4 +1,5 @@
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
+import { GhostBandPreview } from './ghostBandPreview';
 import { VertexBuffer } from '@babylonjs/core/Buffers/buffer.pure';
 import { Color3, Color4 } from '@babylonjs/core/Maths/math.color.pure';
 import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
@@ -300,6 +301,7 @@ export function findRobotRoot(node: Node | null): TransformNode | null {
 // handles removing it from allRobots/players/collision markers) — e.g. so a
 // generator can start from a clean field instead of piling onto old runs.
 export function disposeAllRobots() {
+  setGhostBandPreviewEnabled(false);
   Array.from(allRobots).forEach((robot) => robot.dispose());
 }
 
@@ -848,7 +850,7 @@ export function duplicateMarcherSchedule(source: TransformNode, offset: Vector3)
 // playback interpolates only between neighboring count positions, so each
 // footfall still lands exactly on a precalculated drill count.
 
-interface RobotCount {
+export interface RobotCount {
   position: Vector3;
   // Travel heading at this count.
   rotationY: number;
@@ -1064,6 +1066,44 @@ function notifyDrillTransport(discontinuity = false) {
 }
 
 const players = new Map<TransformNode, PlayerState>();
+let ghostBandPreview: GhostBandPreview | null = null;
+let ghostBandAnchorBeat = 0;
+
+export function isGhostBandPreviewEnabled(): boolean {
+  return ghostBandPreview !== null;
+}
+
+export function getGhostBandAnchorBeat(): number {
+  return ghostBandAnchorBeat;
+}
+
+export function isGhostBandMesh(mesh: AbstractMesh): boolean {
+  return ghostBandPreview?.owns(mesh) ?? false;
+}
+
+export function jumpToGhostBandTime(mesh: AbstractMesh): boolean {
+  if (!isGhostBandMesh(mesh)) return false;
+  ghostBandAnchorBeat = getDrillTransportState().beat;
+  setGhostBandPreviewEnabled(false);
+  return true;
+}
+
+export function setGhostBandPreviewEnabled(enabled: boolean) {
+  if (enabled === isGhostBandPreviewEnabled()) return;
+  pauseAll();
+  if (enabled) {
+    ghostBandAnchorBeat = getDrillTransportState().beat;
+    ghostBandPreview = new GhostBandPreview(allRobots);
+  } else {
+    ghostBandPreview?.dispose();
+    ghostBandPreview = null;
+    setDrillBeatPosition(ghostBandAnchorBeat);
+    if (repeatElapsed !== null) repeatElapsed = ghostBandAnchorBeat;
+  }
+  applyGlobalCountToAllRobots();
+  notifyDrillTransport(true);
+}
+
 let sharedScene: Scene | null = null;
 let sharedObserver: Observer<Scene> | null = null;
 const collisionMarkerManager = createCollisionMarkerManager((countIndex) => seekToCount(countIndex));
@@ -1324,6 +1364,10 @@ export function getLegAnimationBakeStatus() {
 function applyGlobalCount(robot: TransformNode, state: PlayerState,
   sample?: { drillBeat: number; musicBeat: number;
     parts?: NonNullable<ReturnType<typeof marcherParts.get>> }): BakedLegPose | undefined {
+  if (!sample && ghostBandPreview) {
+    ghostBandPreview.update(robot, state.counts, getDrillTransportState().beat);
+    return;
+  }
   if ((!sample && heldRobots.has(robot)) || state.counts.length === 0) return;
   const last = state.counts.length - 1;
   const drillBeat = sample?.drillBeat ?? getDrillTransportState().beat;
@@ -1951,6 +1995,35 @@ export function getRobotCounts(robot: TransformNode): ReadonlyArray<RobotCount> 
   return players.get(robot)?.counts ?? null;
 }
 
+export function captureMarcherMovement(robot: TransformNode) {
+  const state = players.get(robot);
+  return {
+    position: robot.position.clone(),
+    rotationY: robot.rotation.y,
+    points: state?.points.map(point => point.clone()),
+    counts: state?.counts.map(count => ({ ...count, position: count.position.clone() })),
+    fixedFacingY: state?.fixedFacingY,
+  };
+}
+
+export function restoreMarcherMovement(robot: TransformNode, snapshot: ReturnType<typeof captureMarcherMovement>) {
+  if (robot.isDisposed()) throw new Error('Cannot restore movement of a disposed marcher.');
+  heldRobots.delete(robot);
+  robot.position.copyFrom(snapshot.position);
+  robot.rotation.y = snapshot.rotationY;
+  const state = players.get(robot);
+  if (state && snapshot.points && snapshot.counts) {
+    invalidateLegBake(state);
+    state.stepCache = undefined;
+    state.gaitPhaseCache?.clear();
+    state.points = snapshot.points.map(point => point.clone());
+    state.counts = snapshot.counts.map(count => ({ ...count, position: count.position.clone() }));
+    state.fixedFacingY = snapshot.fixedFacingY;
+    applyGlobalCount(robot, state);
+  }
+  if (sharedScene) recalculateCollisionMarkers(sharedScene);
+}
+
 export function clearRobotPath(robot: TransformNode) {
   const state = players.get(robot);
   if (state) invalidateLegBake(state);
@@ -2262,6 +2335,12 @@ export function seekToCount(countIndex: number) {
 // scrub) and pauses there, same as any other manual seek.
 export function scrubBy(deltaCounts: number) {
   seekToCount(globalPlayback.countIndex + deltaCounts);
+}
+
+export function jogGhostBandBy(deltaCounts: number) {
+  if (!Number.isFinite(deltaCounts) || deltaCounts === 0) return;
+  setGhostBandPreviewEnabled(true);
+  scrubBy(deltaCounts);
 }
 
 export function getGlobalCountIndex(): number {

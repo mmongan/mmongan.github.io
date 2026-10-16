@@ -5,6 +5,7 @@ import { Texture } from '@babylonjs/core/Materials/Textures/texture.pure';
 import { Axis } from '@babylonjs/core/Maths/math.axis';
 import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
+import { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
 import { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.pure';
 import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
@@ -13,6 +14,8 @@ import { WebXRHandJoint, WebXRHandTracking } from '@babylonjs/core/XR/features/W
 import { scene } from '../scene/engine';
 import type { MarcherInstrument } from '../robot/robot';
 import { addInstrumentButtonModel } from './instrumentButtonModel';
+import { DetachableFloatingPanel, type FloatingPanel } from './floatingPanel';
+import type { FieldDrawingTool } from '../interaction/fieldDrawingGeometry';
 
 // How closely the controller's local "up" must line up with world up to
 // count as palm-up (like checking a smartwatch). May need tuning per headset.
@@ -23,12 +26,16 @@ const CANVAS_WIDTH = 256;
 const CANVAS_HEIGHT = 64;
 const BUTTON_SIZE = 0.022;
 const BUTTON_Y = 0.09;
+const WATCH_Y = 0.035;
+const WATCH_Z = 0.13;
 
 export type FormationLetter =
   | "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" | "K" | "L" | "M"
   | "N" | "O" | "P" | "Q" | "R" | "S" | "T" | "U" | "V" | "W" | "X" | "Y" | "Z";
 
 export type HandMenuHit =
+  | { action: "aslNaming"; command: import('./aslNamingPanel').NamingAction }
+  | { action: "drawingTool"; tool: FieldDrawingTool | "wireReset" | "show" | "stencils" | "cutters" | "hide" | "smaller" | "larger" | "stop" | "formation" | "path" | "undo" | "clear" }
   | { action: "playPause" | "rewind" | "fastForward" | "stepBack" | "stepForward" | "fullScaleVR" | "tabletopScale" | "commitFormation" | "eraseMode" | "undoErase" | "redoErase" | "musicStandStaffToggle" }
   | { action: "formationLibrary" | "formationLibraryBack" | "formationLibraryClose" | "lettersLibrary" }
   | { action: "formationGridSnap" }
@@ -42,6 +49,8 @@ export type HandMenuHit =
   | { action: "marcherPOV" }
   | { action: "drillChartHide" | "musicStandHide" }
   | { action: "instrument"; instrument: MarcherInstrument }
+  | { action: "createMarcher"; instrument: MarcherInstrument }
+  | { action: "instrumentPanelSummon" | "instrumentPanelHide" | "finishMarcherPlacement" }
   | { action: "drillChartPage"; direction: 1 | -1 }
   | { action: "seek"; fraction: number };
 
@@ -139,7 +148,7 @@ function createButton(label: string, x: number, action: HandMenuHit): Mesh {
   ctx.font = `bold ${label.length > 3 ? 16 : 22}px 'Segoe UI', Arial`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  if (action.action !== "instrument") ctx.fillText(label, 32, 34);
+  if (action.action !== "instrument" && action.action !== "createMarcher") ctx.fillText(label, 32, 34);
 
   const texture = new DynamicTexture(`handMenuButtonTexture-${label}`, canvas, scene, false);
   texture.hasAlpha = true;
@@ -164,7 +173,9 @@ function createButton(label: string, x: number, action: HandMenuHit): Mesh {
   button.position = new Vector3(x, BUTTON_Y, 0);
 
   buttonActions.set(button, action);
-  if (action.action === "instrument") addInstrumentButtonModel(button, action.instrument, BUTTON_SIZE);
+  if (action.action === "instrument" || action.action === "createMarcher") {
+    addInstrumentButtonModel(button, action.instrument, BUTTON_SIZE);
+  }
   return button;
 }
 
@@ -178,6 +189,13 @@ function isPalmUp(controller: WebXRInputSource): boolean {
 const buttonActions = new Map<AbstractMesh, HandMenuHit>();
 let progressBar: ReturnType<typeof createProgressBarPlane> | null = null;
 let buttons: Mesh[] = [];
+let watchButtons: Mesh[] = [];
+let watchMeshes: Mesh[] = [];
+let watchRoot: TransformNode | null = null;
+let watchPanel: FloatingPanel | null = null;
+let instrumentPlateRoot: TransformNode | null = null;
+let instrumentPlatePanel: FloatingPanel | null = null;
+let instrumentPlateButtons: Mesh[] = [];
 let formationButtons: Mesh[] = [];
 let letterButtons: Mesh[] = [];
 let attachedTo: AbstractMesh | null = null;
@@ -275,6 +293,36 @@ function ensureMenuMeshes() {
     createButton("|>", spacing, { action: "stepForward" }),
     createButton(">>", spacing * 2, { action: "fastForward" }),
   ];
+  watchButtons = [...buttons];
+  watchRoot = new TransformNode("mediaWatchRoot", scene);
+  watchButtons.forEach(button => {
+    button.parent = watchRoot;
+    button.position.y = 0;
+    button.position.z = 0.014;
+  });
+  progressBar.plane.parent = watchRoot;
+  progressBar.plane.position.set(0, 0, -0.019);
+  const watchMaterial = new StandardMaterial("mediaWatchMaterial", scene);
+  watchMaterial.diffuseColor = new Color3(0.04, 0.06, 0.1);
+  watchMaterial.emissiveColor = new Color3(0.015, 0.025, 0.04);
+  watchMaterial.specularColor = Color3.Black();
+  const face = MeshBuilder.CreateBox("mediaWatchFace",
+    { width: 0.16, height: 0.008, depth: 0.085 }, scene);
+  const strap = MeshBuilder.CreateBox("mediaWatchStrap",
+    { width: 0.18, height: 0.006, depth: 0.035 }, scene);
+  watchMeshes = [strap, face];
+  watchMeshes.forEach(mesh => {
+    mesh.material = watchMaterial;
+    mesh.isPickable = true;
+    mesh.parent = watchRoot;
+    mesh.position.y = mesh === strap ? -0.014 : -0.006;
+    mesh.setEnabled(false);
+  });
+  watchPanel = new DetachableFloatingPanel(watchRoot,
+    new Set([...watchMeshes, ...watchButtons, progressBar.plane]),
+    watchRoot, new Vector3(0.09, 0.025, 0.045),
+    new Map(watchButtons.map(button => [button, buttonActions.get(button)!])));
+  watchRoot.setEnabled(false);
   const fullScaleButton = createButton("1:1", -spacing / 2, { action: "fullScaleVR" });
   fullScaleButton.position.z = 0.04;
   const tabletopButton = createButton("Table", spacing / 2, { action: "tabletopScale" });
@@ -303,6 +351,21 @@ function ensureMenuMeshes() {
   const redoButton = createButton("Redo", spacing / 2, { action: "redoErase" });
   undoButton.position.z = redoButton.position.z = -0.125;
   buttons.push(undoButton, redoButton);
+  const instrumentPanelButton = createButton("Add", spacing * 2, { action: "instrumentPanelSummon" });
+  instrumentPanelButton.position.z = -0.125;
+  buttons.push(instrumentPanelButton);
+  const drawingButton = createButton("Tools", -spacing * 2, { action: "drawingTool", tool: "show" });
+  drawingButton.position.z = -0.125;
+  buttons.push(drawingButton);
+  const stencilButton = createButton("Sten", -spacing, { action: "drawingTool", tool: "stencils" });
+  stencilButton.position.z = 0.075;
+  buttons.push(stencilButton);
+  const cutterButton = createButton("Cut", spacing, { action: "drawingTool", tool: "cutters" });
+  cutterButton.position.z = 0.075;
+  buttons.push(cutterButton);
+  const namingButton = createButton("Name", -spacing * 2, { action: "aslNaming", command: "toggle" });
+  namingButton.position.z = 0.075;
+  buttons.push(namingButton);
   // Brass row, then woodwind and percussion rows beneath it.
   const instrumentButtons = ([
     ["Tpt", "trumpet", -spacing * 2, -0.16],
@@ -319,11 +382,28 @@ function ensureMenuMeshes() {
     ["BD", "bassDrum", spacing / 2, -0.23],
     ["Glk", "glockenspiel", spacing * 1.5, -0.23],
   ] as const).map(([label, instrument, x, z]) => {
-    const button = createButton(label, x, { action: "instrument", instrument });
+    const button = createButton(label, x, { action: "createMarcher", instrument });
     button.position.z = z;
     return button;
   });
   buttons.push(...instrumentButtons);
+  instrumentPlateButtons = instrumentButtons;
+  instrumentPlateRoot = new TransformNode("instrumentPlateRoot", scene);
+  instrumentButtons.forEach(button => {
+    button.parent = instrumentPlateRoot;
+    button.position.y = 0;
+    button.position.z += 0.195;
+  });
+  const plate = MeshBuilder.CreateBox("instrumentPlate",
+    { width: 0.155, height: 0.008, depth: 0.11 }, scene);
+  plate.parent = instrumentPlateRoot;
+  plate.position.y = -0.006;
+  plate.material = watchMaterial;
+  instrumentPlatePanel = new DetachableFloatingPanel(instrumentPlateRoot,
+    new Set([plate, ...instrumentButtons]), instrumentPlateRoot,
+    new Vector3(0.0775, 0.025, 0.055),
+    new Map(instrumentButtons.map(button => [button, buttonActions.get(button)!])));
+  instrumentPlateRoot.setEnabled(false);
   const presets: Array<{
     label: string;
     preset: "line" | "arc" | "circle" | "block" | "triangle" | "square" | "pentagon" | "hexagon" | "star";
@@ -394,9 +474,7 @@ function ensureMenuMeshes() {
   letterButtons.push(lettersBack);
 }
 
-// Shows a media-player-style panel (progress bar + play/rewind/fast-forward/step
-// controls, tracking the selected robot's walk progress) hovering over
-// whichever hand is currently turned palm-up.
+// Instruments hover above the palm; transport controls sit on the wrist.
 export function updateHandMenu(
   controllers: ReadonlyMap<string, WebXRInputSource>,
   progress: number | null
@@ -421,9 +499,37 @@ export function updateHandMenu(
     }
   }
 
+  if (watchRoot && watchPanel && !watchPanel.userPlaced) {
+    watchRoot.parent = palmUpGrip;
+    watchRoot.position.set(0, WATCH_Y, WATCH_Z);
+    watchRoot.setEnabled(palmUpGrip !== null);
+  }
+  if (instrumentPlateRoot && instrumentPlatePanel && !instrumentPlatePanel.userPlaced) {
+    instrumentPlateRoot.parent = palmUpGrip;
+    instrumentPlateRoot.position.set(0, BUTTON_Y, -0.195);
+    instrumentPlateRoot.setEnabled(palmUpGrip !== null && formationLibraryPage === "closed");
+  }
+  instrumentPlateButtons.forEach(button => {
+    button.setEnabled(instrumentPlateRoot?.isEnabled() ?? false);
+    const hit = buttonActions.get(button);
+    if (hit?.action === "createMarcher" && button.material instanceof StandardMaterial) {
+      const active = hit.instrument === activeInstrument;
+      button.material.emissiveColor.set(1, active ? 0.85 : 1, active ? 0.35 : 1);
+    }
+  });
+  const watchVisible = watchRoot?.isEnabled() ?? false;
+  progressBar.plane.setEnabled(watchVisible);
+  watchButtons.forEach(button => button.setEnabled(watchVisible));
+  watchMeshes.forEach(mesh => mesh.setEnabled(watchVisible));
+  const shownProgress = progress ?? 0;
+  if (Math.abs(shownProgress - lastDrawnProgress) > 0.002) {
+    lastDrawnProgress = shownProgress;
+    drawProgressBar(progressBar.ctx, progressBar.texture, shownProgress);
+  }
+
   if (!palmUpGrip) {
-    progressBar.plane.setEnabled(false);
-    buttons.forEach((button) => button.setEnabled(false));
+    buttons.filter(button => !watchButtons.includes(button) && !instrumentPlateButtons.includes(button))
+      .forEach(button => button.setEnabled(false));
     formationButtons.forEach((button) => button.setEnabled(false));
     letterButtons.forEach((button) => button.setEnabled(false));
     attachedTo = null;
@@ -432,14 +538,13 @@ export function updateHandMenu(
 
   if (attachedTo !== palmUpGrip) {
     attachedTo = palmUpGrip;
-    progressBar.plane.parent = palmUpGrip;
-    buttons.forEach((button) => (button.parent = palmUpGrip));
+    buttons.filter(button => !watchButtons.includes(button) && !instrumentPlateButtons.includes(button))
+      .forEach(button => { button.parent = palmUpGrip; });
   }
   const menuHeight = palmUpGrip.getDirection(Axis.Y).y < 0 ? -BUTTON_Y : BUTTON_Y;
   const menuRotation = menuHeight < 0 ? -Math.PI / 2 : Math.PI / 2;
-  progressBar.plane.position.y = menuHeight;
-  progressBar.plane.rotation.x = menuRotation;
   buttons.forEach((button) => {
+    if (watchButtons.includes(button) || instrumentPlateButtons.includes(button)) return;
     button.position.y = menuHeight;
     button.rotation.x = menuRotation;
   });
@@ -453,11 +558,11 @@ export function updateHandMenu(
     button.position.y = menuHeight;
     button.rotation.x = menuRotation;
   });
-  progressBar.plane.setEnabled(true);
   buttons.forEach((button) => {
+    if (watchButtons.includes(button) || instrumentPlateButtons.includes(button)) return;
     const hit = buttonActions.get(button);
     const action = hit?.action;
-    if (hit?.action === "instrument" && button.material instanceof StandardMaterial) {
+    if ((hit?.action === "instrument" || hit?.action === "createMarcher") && button.material instanceof StandardMaterial) {
       const active = hit.instrument === activeInstrument;
       button.material.emissiveColor.set(1, active ? 0.85 : 1, active ? 0.35 : 1);
     }
@@ -470,7 +575,7 @@ export function updateHandMenu(
     if (action === "marcherPOV" && button.material instanceof StandardMaterial) {
       button.material.emissiveColor.set(marcherPOVActive ? 0.45 : 1, marcherPOVActive ? 0.8 : 1, 1);
     }
-    button.setEnabled(formationLibraryPage === "closed" &&
+    button.setEnabled((watchButtons.includes(button) || formationLibraryPage === "closed") &&
       (action !== "formationLibrary" || formationAnchorAvailable) &&
       (action !== "undoErase" || undoEraseAvailable) &&
       (action !== "redoErase" || redoEraseAvailable) &&
@@ -479,11 +584,6 @@ export function updateHandMenu(
   formationButtons.forEach((button) => button.setEnabled(formationLibraryPage === "shapes"));
   letterButtons.forEach((button) => button.setEnabled(formationLibraryPage === "letters"));
 
-  const shownProgress = progress ?? 0;
-  if (Math.abs(shownProgress - lastDrawnProgress) > 0.002) {
-    lastDrawnProgress = shownProgress;
-    drawProgressBar(progressBar.ctx, progressBar.texture, shownProgress);
-  }
 }
 
 // Resolves a pick against the hand menu (a button, or a tap along the

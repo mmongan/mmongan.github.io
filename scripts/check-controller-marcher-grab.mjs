@@ -30,6 +30,9 @@ assert.equal(nearContext.findMarcherNearHand(new Vector3(4, 0, 0)), null);
 nearContext.marcherGrabs.set('left', { robot, source: 'hand' });
 assert.equal(nearContext.findMarcherNearHand(new Vector3(0, 0.05, 0)), null, 'Do not steal a held marcher');
 assert.equal(nearContext.findMarcherNearHand(new Vector3(0, 0.05, 0), 'left'), robot, 'Hand-off remains available');
+nearContext.marcherGrabs.set('left', { robot, source: 'controller' });
+assert.equal(nearContext.findMarcherNearHand(new Vector3(0, 0.05, 0), 'left'), robot,
+  'Second controller can contact the held marcher to start formation pulling');
 
 let grip = true;
 let near = robot;
@@ -61,7 +64,11 @@ const context = vm.createContext({
     pickWithRay: () => rayHit ? { hit: true, pickedMesh: meshes[0], pickedPoint: new Vector3(0, 0, 2) } : null,
   },
   findRobotRoot: () => robot,
-  handInteraction: { findMarcherNearHand: () => near, getFacingYaw: () => 0 },
+  handInteraction: {
+    findMarcherNearHand: () => near, getFacingYaw: () => 0,
+    beginControllerFormationPull: () => false,
+    updateControllerFormationPull: () => false,
+  },
   beginMarcherGrab(...args) { begun = args; },
   moveMarcherGrab(...args) { moved = args; },
   finishMarcherGrab(hand, commit) { committed = hand === 'left' && commit; },
@@ -167,4 +174,44 @@ allowed = true;
 turnedGrab.controllerYawOffset = 0;
 commitContext.commitMarcherTwist(turnedGrab, 1);
 assert.equal(committedFacing, undefined, 'A controller grab without stick turning leaves scheduled facing unchanged');
+const formationRobot = {
+  getAbsolutePosition: () => new Vector3(1, 0, 1),
+  rotation: { y: 0 },
+};
+const formationGrabs = new Map([['left', { robot: formationRobot, source: 'controller' }]]);
+const formationContext = vm.createContext({
+  Vector3, marcherGrabs: formationGrabs, marcherPinchHands: new Set(),
+  otherHand: hand => hand === 'left' ? 'right' : 'left',
+  findMarcherNearHand: () => formationRobot,
+  highlightPendingMarcher() {},
+});
+vm.runInContext('let formationPull = null;', formationContext);
+vm.runInContext(transform(handSource.slice(handSource.indexOf('  function beginFormationPull('),
+  handSource.indexOf('  function getFormationPullControlPoints('))), formationContext);
+vm.runInContext('function finishFormationShaping() { formationPull.shapedOffsets = []; }', formationContext);
+assert.equal(formationContext.beginFormationPull('right', new Vector3(1, 0, 1), 'controller'), true,
+  'Second controller grip on a held marcher starts a formation');
+assert.equal(formationContext.beginFormationPull('right', Vector3.Zero(), 'controller'), false,
+  'Holding/regrabbing never overwrites an active formation');
+const endpoint = new Vector3(4, 1, 2);
+assert.equal(formationContext.updateControllerFormationPull('right', true, endpoint), true);
+assert.ok(vm.runInContext('formationPull.endPoint', formationContext).equals(endpoint),
+  'Pulling controller traces formation endpoint');
+formationContext.updateControllerFormationPull('right', false, endpoint);
+assert.ok(vm.runInContext('formationPull.shapedOffsets !== null', formationContext),
+  'Releasing the pull grip finishes shaping');
+formationContext.updateControllerFormationPull('left', false, Vector3.Zero());
+assert.ok(vm.runInContext('formationPull.floating', formationContext),
+  'Releasing the anchor leaves formation floating for Commit');
+assert.equal(formationGrabs.has('left'), false);
+assert.equal(formationContext.beginFormationPull('right', endpoint, 'controller', formationRobot), true,
+  'Either controller can pick up a finished floating formation');
+assert.equal(formationGrabs.get('right').robot, formationRobot);
+assert.equal(vm.runInContext('formationPull.floating', formationContext), false);
+formationContext.updateControllerFormationPull('right', false, endpoint);
+assert.equal(vm.runInContext('formationPull.floating', formationContext), true);
+vm.runInContext('formationPull = null;', formationContext);
+formationGrabs.set('left', { robot: formationRobot, source: 'controller' });
+assert.equal(formationContext.beginFormationPull('right', Vector3.Zero(), 'controller', {}), false,
+  'A different ray-picked marcher never starts formation duplication');
 console.log('Controller marcher grabs passed: all-part contact, ownership/handoff, grip edges, near/ray tracking, thumbstick depth/facing, deadzones, time/scale adjustment, raw axes, release, and collision-safe facing persistence.');

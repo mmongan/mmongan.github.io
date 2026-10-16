@@ -37,6 +37,7 @@ import {
 import { getHandMenuHit } from '../menu/handMenu';
 import { getControllerYaw, rotateAroundY } from './controllers';
 import { tryManualMarcherPose } from '../robot/manualPlacement';
+import { createMarcherDragGhost } from '../robot/marcherGhost';
 
 type TrackedHand = NonNullable<ReturnType<WebXRHandTracking['getHandByHandedness']>>;
 
@@ -73,6 +74,8 @@ export interface MarcherGrab {
   controllerDepthOffset?: number;
   controllerYawOffset?: number;
   originalRenderingGroup: number | null;
+  ghost?: TransformNode;
+  recordMove?: () => void;
 }
 
 export interface HandPathDependencies {
@@ -102,6 +105,8 @@ export interface HandPathDependencies {
   snapToStepGrid: (point: Vector3) => Vector3;
   activateHandMenuAtPoint: (point: Vector3) => boolean;
   activateChartButton: (action: NonNullable<ReturnType<typeof getHandMenuHit>>) => void;
+  notifyPlacement: (message: string) => void;
+  captureMarcherMove: (robot: TransformNode) => () => void;
 }
 
 export function createHandInteraction(paths: HandPathDependencies) {
@@ -132,6 +137,8 @@ export function createHandInteraction(paths: HandPathDependencies) {
     snapToStepGrid,
     activateHandMenuAtPoint,
     activateChartButton,
+    notifyPlacement,
+    captureMarcherMove,
   } = paths;
 
   const handPinches = new Map<string, boolean>();
@@ -200,10 +207,6 @@ export function createHandInteraction(paths: HandPathDependencies) {
     placement: boolean;
   } | null = null;
 
-  function isTabletopInteractionMode() {
-    return getARScale() < getARScaleRange().max;
-  }
-
   function getFacingYaw(direction: Vector3): number | null {
     pathRoot.computeWorldMatrix(true);
     const localDirection = Vector3.TransformNormal(
@@ -234,9 +237,13 @@ export function createHandInteraction(paths: HandPathDependencies) {
     if ([...marcherGrabs.values()].some((grab) => grab.robot === robot) || robot === fingerPath?.robot) return;
     robot.computeWorldMatrix(true);
     const originalRenderingGroup = getMarcherRenderingGroup(robot);
+    const existing = !handPlacementDrafts.has(robot) && ![...placementDrafts.values()].includes(robot);
+    const recordMove = existing ? captureMarcherMove(robot) : undefined;
     setMarcherRenderingGroup(robot, GRABBED_MARCHER_RENDERING_GROUP);
     marcherGrabs.set(handedness, {
       robot, source, rayDistance, originalRenderingGroup,
+      ghost: existing ? createMarcherDragGhost(robot, pathRoot) : undefined,
+      recordMove,
       offset: robot.getAbsolutePosition().subtract(point),
       originalPosition: robot.position.clone(),
       originalRotationY: robot.rotation.y,
@@ -256,6 +263,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
   function moveMarcherGrab(handedness: string, point: Vector3, facingYaw: number | null = null) {
     const grab = marcherGrabs.get(handedness);
     if (!grab || grab.robot.isDisposed()) {
+      grab?.ghost?.dispose();
       marcherGrabs.delete(handedness);
       return;
     }
@@ -298,9 +306,25 @@ export function createHandInteraction(paths: HandPathDependencies) {
     const grab = marcherGrabs.get(handedness);
     marcherGrabs.delete(handedness);
     if (!grab) return;
+    grab.ghost?.dispose();
     restoreMarcherRendering(grab);
     if (grab.robot.isDisposed()) return;
     const field = scene.getMeshByName('field');
+    if (commit && field) {
+      const fieldMatrix = field.computeWorldMatrix(true);
+      const worldPosition = grab.robot.computeWorldMatrix(true).getTranslation();
+      const local = Vector3.TransformCoordinates(worldPosition, Matrix.Invert(fieldMatrix));
+      const fieldUp = Vector3.TransformNormal(Vector3.Up(), fieldMatrix);
+      const pathUp = Vector3.TransformNormal(Vector3.Up(), pathRoot.computeWorldMatrix(true));
+      const height = local.y * fieldUp.length() - 0.02 * Vector3.Dot(pathUp, fieldUp.normalize());
+      const tolerance = 0.05 * Math.min(1, pathUp.length());
+      if (!field.isEnabled() || Math.abs(local.x) > FIELD_WIDTH_YARDS / 2 ||
+        Math.abs(local.z) > FIELD_LENGTH_YARDS / 2 || !Number.isFinite(height) ||
+        Math.abs(height) > tolerance) {
+        commit = false;
+        notifyPlacement('Move cancelled: release the marcher with its feet touching the turf.');
+      }
+    }
     if (!commit || !field) {
       if (handPlacementDrafts.delete(grab.robot)) {
         setRobotHeld(grab.robot, false);
@@ -364,14 +388,13 @@ export function createHandInteraction(paths: HandPathDependencies) {
     segments.filter((entry) => entry.kind === 'formation' && entry.robots.includes(grab.robot))
       .forEach(rebuildFormationConnections);
     if (grab.robot === getSelectedRobot()) refreshStepHandles();
+    grab.recordMove?.();
   }
 
   function findMarcherNearHand(point: Vector3, handoffFrom?: string): TransformNode | null {
     let nearest: TransformNode | null = null;
     let nearestDistance = 0.025;
-    const handoffRobot = handoffFrom && marcherGrabs.get(handoffFrom)?.source === 'hand'
-      ? marcherGrabs.get(handoffFrom)!.robot
-      : null;
+    const handoffRobot = handoffFrom ? marcherGrabs.get(handoffFrom)?.robot : null;
     scene.meshes.forEach((mesh) => {
       if (!mesh.isEnabled() || !mesh.isVisible || !mesh.isPickable) return;
       const robot = findRobotRoot(mesh);
@@ -441,10 +464,29 @@ export function createHandInteraction(paths: HandPathDependencies) {
     return handedness === 'left' ? 'right' : 'left';
   }
 
-  function beginFormationPull(handedness: 'left' | 'right', point: Vector3) {
+  function beginFormationPull(handedness: 'left' | 'right', point: Vector3,
+    source: 'hand' | 'controller' = 'hand', target?: TransformNode) {
+    if (formationPull) {
+      const pull = formationPull;
+      const picked = target ?? findMarcherNearHand(point);
+      if (source !== 'controller' || pull.originalGrab.source !== source || !pull.floating || !picked ||
+        (picked !== pull.robot && !pull.previewRobots.includes(picked))) return false;
+      const grab = pull.originalGrab;
+      grab.offset = pull.robot.getAbsolutePosition().subtract(point);
+      grab.initialRotationY = pull.robot.rotation.y;
+      grab.initialFacingYaw = null;
+      grab.rayDistance = -1;
+      grab.controllerDepthOffset = 0;
+      grab.controllerYawOffset = 0;
+      pull.anchorHand = handedness;
+      pull.pullHand = otherHand(handedness);
+      pull.floating = false;
+      marcherGrabs.set(handedness, grab);
+      return true;
+    }
     const from = otherHand(handedness);
     const grab = marcherGrabs.get(from);
-    if (grab?.source !== 'hand' || findMarcherNearHand(point, from) !== grab.robot) return false;
+    if (grab?.source !== source || (target ?? findMarcherNearHand(point, from)) !== grab.robot) return false;
     formationPull = {
       anchorHand: from,
       pullHand: handedness,
@@ -463,6 +505,26 @@ export function createHandInteraction(paths: HandPathDependencies) {
     marcherPinchHands.add(handedness);
     highlightPendingMarcher(grab.robot);
     return true;
+  }
+
+  function updateControllerFormationPull(handedness: string, pressed: boolean, point: Vector3) {
+    const pull = formationPull;
+    if (!pull || pull.originalGrab.source !== 'controller') return false;
+    if (pull.pullHand === handedness) {
+      if (!pull.shapedOffsets) {
+        if (pressed) pull.endPoint.copyFrom(point);
+        else finishFormationShaping();
+      }
+      return true;
+    }
+    if (pull.anchorHand === handedness && !pull.floating && !pressed) {
+      if (!pull.shapedOffsets) finishFormationShaping();
+      marcherGrabs.delete(handedness);
+      marcherPinchHands.delete(handedness);
+      pull.floating = true;
+      return true;
+    }
+    return false;
   }
 
   function getFormationPullControlPoints() {
@@ -689,6 +751,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
     }
 
     marcherGrabs.delete(pull.anchorHand);
+    grab.ghost?.dispose();
     restoreMarcherRendering(grab);
     handPlacementDrafts.delete(pull.robot);
     createHandFormation(pull.robot, fieldPoints);
@@ -761,6 +824,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
   }
 
   function updateTabletopHands() {
+    if (formationPull?.originalGrab.source === 'controller' && !floorCalibrationToggle?.checked) return;
     if (floorCalibrationToggle?.checked || !handTracking) {
       sceneGesture = null;
       padHands.forEach((handedness) => endFloatingPanelGrab(handedness));
@@ -1168,11 +1232,6 @@ export function createHandInteraction(paths: HandPathDependencies) {
       placementDrafts.forEach((robot) => robot.dispose());
       placementDrafts.clear();
     }
-    if (!isTabletopInteractionMode()) {
-      [...marcherGrabs.entries()].forEach(([handedness, grab]) => {
-        if (grab.source === 'controller') finishMarcherGrab(handedness, false);
-      });
-    }
   });
 
   return {
@@ -1188,6 +1247,19 @@ export function createHandInteraction(paths: HandPathDependencies) {
       [...marcherGrabs.keys()].forEach((handedness) => finishMarcherGrab(handedness, true));
     },
     beginMarcherGrab,
+    beginControllerFormationPull: (handedness: string, point: Vector3, target?: TransformNode) =>
+      (handedness === 'left' || handedness === 'right') &&
+      beginFormationPull(handedness, point, 'controller', target),
+    updateControllerFormationPull,
+    updateControllerFormationPreview: () => {
+      if (formationPull?.originalGrab.source === 'controller') updateFormationPullPreview();
+    },
+    cancelControllerFormation: (handedness: string) => {
+      if (formationPull?.originalGrab.source === 'controller' && !formationPull.floating &&
+        (formationPull.anchorHand === handedness || formationPull.pullHand === handedness)) {
+        finishFormationPull(false);
+      }
+    },
     findMarcherNearHand,
     commitFormation: () => {
       if (formationPull?.shapedOffsets) finishFormationPull(true);

@@ -276,14 +276,22 @@
             <span>Erase marchers (click, trigger, pinch, or touch a marcher)</span>
           </label>
           <div class="radio-row">
-            <button id="undoEraseButton" disabled>Undo erase</button>
-            <button id="redoEraseButton" disabled>Redo erase</button>
+            <button id="undoEraseButton" disabled>Undo edit</button>
+            <button id="redoEraseButton" disabled>Redo edit</button>
           </div>
           <label class="radio-option">
             <input type="checkbox" id="drillChartPadToggle" />
             <span>Drill chart pad (floating, grabbable; one page per 8-count set)</span>
           </label>
           <label class="settings-label">Instrument (selected marcher and new marchers)</label>
+          <label class="radio-option">
+            <input type="checkbox" id="instrumentPanelToggle" />
+            <span>Show instrument panel</span>
+          </label>
+          <button id="instrumentPanelButton" type="button">Open instrument panel to create marchers</button>
+          <button id="drawingToolsButton" type="button">Open field drawing tools</button>
+          <button id="stencilTrayButton" type="button">Open stencil tray</button>
+          <button id="cookieCutterTrayButton" type="button">Open cookie cutter tray</button>
           <div class="radio-row">
             <label class="radio-option">
               <input type="radio" name="marcherInstrument" value="trumpet" checked />
@@ -352,6 +360,35 @@
           </form>
           <button id="openMarchExampleButton" type="button" class="xr-button secondary">Load example OpenMarch show</button>
           <output id="openMarchStatus" class="settings-status" for="openMarchUrl"></output>
+          <label class="radio-option"><input id="ghostBandToggle" type="checkbox" /><span>Ghost-band timeline comparison</span></label>
+          <details>
+            <summary>ASL fingerspelled names (personal calibration)</summary>
+            <p>Experimental, not a built-in ASL translator. Teach at least two letters using your own ASL signs, then explicitly accept recognized letters. Record the entire motion for J/Z. Templates stay in memory until reload. Naming suspends hand grabbing/drawing and hand-thumb jogging.</p>
+            <label class="radio-option"><input id="aslNamingEnabled" type="checkbox" /><span>Enable fingerspelling input</span></label>
+            <label for="aslNamingHand">Signing hand</label>
+            <select id="aslNamingHand"><option value="right">Right</option><option value="left">Left</option></select>
+            <label for="aslNamingTarget">Name target</label>
+            <select id="aslNamingTarget"><option value="marcher">Selected marcher</option><option value="wire">Remembered wire shape</option></select>
+            <label for="aslTrainingLetter">Letter or digit to teach (A-Z, 0-9)</label>
+            <select id="aslTrainingLetter" aria-describedby="aslLetterReference"></select>
+            <img id="aslLetterImage" alt="ASL letter A handshape" width="240" height="200" style="display:block;max-width:100%;object-fit:contain;background:white;border-radius:8px" />
+            <p>Hand images: WPClipart and Danielle-Claude Belanger, public domain, via <a href="https://commons.wikimedia.org/wiki/File:Sign_language_A.svg" target="_blank" rel="noopener noreferrer">Wikimedia Commons</a>. <a href="./asl/ATTRIBUTION.txt" target="_blank" rel="noopener noreferrer">Image credits</a>.</p>
+            <output id="aslLetterReference" class="settings-status"></output>
+            <output id="aslTrainedLetters" class="settings-status" aria-live="polite"></output>
+            <p>A-Z and 0-9 are reference signs, not recognition templates. J and Z require motion. For isolated numbers 1-5, the palm generally faces the signer; number orientation varies with context. Zero/O and nine/F share handshapes and may be ambiguous to this recognizer. Use your chosen signing hand and learn orientation and movement from an ASL instructor.</p>
+            <button id="aslRecordLetter" type="button">Record sign (1.2 seconds)</button>
+            <output id="aslNamingStatus" class="settings-status" aria-live="polite"></output>
+            <button id="aslAcceptLetter" type="button" disabled>Accept recognized letter</button>
+            <label for="aslNameText">Name (editable fallback)</label>
+            <input id="aslNameText" maxlength="40" autocomplete="off" />
+            <button id="aslNameBackspace" type="button">Backspace</button>
+            <button id="aslNameSpace" type="button">Space</button>
+            <button id="aslApplyName" type="button">Apply name</button>
+          </details>
+          <label class="settings-label" for="ghostBandTimeline">Ghost-band timeline</label>
+          <input id="ghostBandTimeline" type="range" min="0" max="1" step="0.1" value="0" disabled />
+          <output id="ghostBandStatus" class="settings-status" aria-live="polite"></output>
+          <p>Freeze the real band at the current count and move a cyan ghost band along the timeline. Thumbstick jogging automatically enters this mode. The slider, watch, score, and controller timeline controls move the ghosts. Trigger a ghost (or click it on desktop) to jump the real band to the preview count, paused. Turning this mode off instead returns to the frozen count, paused. Ghosts preview positions and facings using the captured body pose; they do not edit the drill.</p>
           <label class="settings-label" for="midiFile">Drill music (.mid / .midi)</label>
           <input id="midiFile" type="file" accept=".mid,.midi,audio/midi,audio/x-midi" />
           <label class="settings-label" for="midiUrl">MIDI URL</label>

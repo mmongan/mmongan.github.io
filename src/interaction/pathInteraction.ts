@@ -36,6 +36,11 @@ import {
 } from '../ui/dom';
 import { getMediaControllerHand, swapControllerRolesToggle, handThumbJogToggle } from '../ui/dom';
 import { resetThumbJog, updateThumbJog } from './thumbJogGesture';
+import { hideInstrumentPanel, summonInstrumentPanel } from '../menu/instrumentPanel';
+import {
+  executeDrawingToolAction, handleDrawingPointer, initFieldDrawingTools,
+  isDrawingPointerActive, isFieldDrawingToolActive,
+} from './fieldDrawingTools';
 import type { ThumbJogState } from './thumbJogGesture';
 import {
   activeControllers as controllerRegistry,
@@ -56,13 +61,17 @@ import {
   stepAll,
   seekAll,
   seekToCount,
-  scrubBy,
+  jogGhostBandBy,
+  isGhostBandMesh,
+  jumpToGhostBandTime,
   getRobotColor,
   setCollisionMarkerParent,
   setCollisionMarkersVisible,
   seekToCollisionMarker,
   getGlobalProgress,
   getRobotCounts,
+  captureMarcherMovement,
+  restoreMarcherMovement,
   setRobotCountPosition,
   setRobotHeld,
   placeRobot,
@@ -105,6 +114,7 @@ import {
 import type { FormationLetter } from '../menu/handMenu';
 import { createHandInteraction } from './handInteraction';
 import { EditHistory } from './editHistory';
+import { executeASLNamingAction, initASLNaming, isFingerspellingNamingActive, setNamingHandTracking } from '../menu/aslNaming';
 import {
   isScoreboardGaitPick,
   isScoreboardHornPosePick,
@@ -193,6 +203,7 @@ export function removeActiveController(controller: WebXRInputSource) {
   unregisterActiveController(controller, (handedness) => {
     endFloatingPanelGrab(handedness);
     padGrabButtons.delete(handedness);
+    handInteraction.cancelControllerFormation(handedness);
     finishMarcherGrab(handedness, false);
     placementDrafts.get(handedness)?.dispose();
     placementDrafts.delete(handedness);
@@ -623,7 +634,7 @@ function updateScrubFromControllers(deltaSeconds: number) {
   if (controllerRegistry.has(getMediaControllerHand())) {
     resetThumbJog(thumbJogState);
   } else {
-    axisValue = getHandThumbJogAxis(deltaSeconds);
+    axisValue = isFingerspellingNamingActive() ? 0 : getHandThumbJogAxis(deltaSeconds);
   }
 
   if (Math.abs(axisValue) <= SCRUB_DEADZONE) {
@@ -636,7 +647,7 @@ function updateScrubFromControllers(deltaSeconds: number) {
   scrubRemainder += scrubDirection * activeDeflection * SCRUB_COUNTS_PER_SECOND * deltaSeconds;
   const wholeCounts = Math.trunc(scrubRemainder);
   if (wholeCounts !== 0) {
-    scrubBy(wholeCounts);
+    jogGhostBandBy(wholeCounts);
     scrubRemainder -= wholeCounts;
   }
 }
@@ -856,7 +867,7 @@ function sampleVerticalFormationCircle(
 }
 
 function getFormationPoints(controlPoints: Vector3[], fitClosedCircle = true,
-  spacing = Number(formationSpacingInput?.value ?? FORMATION_SPACING_YARDS)) {
+  spacing = Number(formationSpacingInput?.value ?? FORMATION_SPACING_YARDS), linear = false) {
   if (!Number.isFinite(spacing) || spacing < 0.625 || spacing > 10) {
     publishFormationEdit("Spacing must be between 0.625 and 10 yards.");
     return [];
@@ -873,7 +884,7 @@ function getFormationPoints(controlPoints: Vector3[], fitClosedCircle = true,
     return sampleFormationCircle(circle, count, false);
   }
   if (closed) return resampleLineEvenly(controlPoints, spacing, true);
-  const curvePoints = buildCurvePoints(controlPoints);
+  const curvePoints = linear ? controlPoints : buildCurvePoints(controlPoints);
   return curvePoints.length >= 2
     ? resampleLineEvenly(curvePoints, spacing, closed)
     : curvePoints;
@@ -898,6 +909,7 @@ interface Segment {
   copyHandle: Mesh | null;
   anchorRobot?: TransformNode;
   fitClosedCircle: boolean;
+  linear?: boolean;
   spacing?: number;
   erasedFormationIndices?: Set<number>;
   robots: TransformNode[]; // formation: every robot in the rank; path: the one marching robot
@@ -1180,7 +1192,7 @@ function stopRotationHandleDrag(handedness: string) {
 // Redraws a segment's curve line and repositions its move/point handles to
 // match its current control points (call after moving or reshaping it).
 function refreshSegmentVisuals(segment: Segment) {
-  const curvePoints = buildCurvePoints(
+  const curvePoints = segment.linear ? segment.controlPoints : buildCurvePoints(
     segment.controlPoints,
     segment.kind === "formation" && isClosedFormation(segment.controlPoints),
     segment.fitClosedCircle
@@ -1278,7 +1290,7 @@ function rebuildSegmentContent(segment: Segment) {
     const previousRobots = segment.robots;
     const candidates: TransformNode[] = [];
     const poses: Array<{ robot: TransformNode; position: Vector3; rotationY: number }> = [];
-    const formationPoints = getFormationPoints(segment.controlPoints, segment.fitClosedCircle, segment.spacing);
+    const formationPoints = getFormationPoints(segment.controlPoints, segment.fitClosedCircle, segment.spacing, segment.linear);
 
     formationPoints.forEach((point, index) => {      
       if (segment.erasedFormationIndices?.has(index)) return;
@@ -1317,7 +1329,7 @@ function rebuildSegmentContent(segment: Segment) {
     rebuildFormationConnections(segment);
     refreshFormationEditor();
   } else {
-    const curvePoints = buildCurvePoints(segment.controlPoints);
+    const curvePoints = segment.linear ? segment.controlPoints : buildCurvePoints(segment.controlPoints);
     const robot = segment.robots[0];
     if (robot && curvePoints.length >= 2) {
       robotPaths.set(robot, curvePoints);
@@ -1336,7 +1348,8 @@ function createSegment(
   controlPoints: Vector3[],
   robots: TransformNode[],
   anchorRobot?: TransformNode,
-  fitClosedCircle = true
+  fitClosedCircle = true,
+  linear = false
 ): Segment {
   const line = createTubeLine("segmentLine", controlPoints, SEGMENT_COLORS[kind]);
 
@@ -1362,7 +1375,7 @@ function createSegment(
 
   const segment: Segment = {
     kind, controlPoints, line, moveHandle, pointHandles, rotationHandles, copyHandle,
-    anchorRobot, fitClosedCircle, robots,
+    anchorRobot, fitClosedCircle, linear, robots,
     spacing: kind === "formation" ? Number(formationSpacingInput?.value ?? FORMATION_SPACING_YARDS) : undefined,
   };
   pointHandles.forEach((handle, index) => segmentPointHandleOwner.set(handle, { segment, index }));
@@ -1906,10 +1919,11 @@ function copyFormationToPathSegment(formation: Segment) {
   const existing = pathSegmentByRobot.get(robot);
   if (existing) {
     existing.controlPoints = clonedPoints;
+    existing.linear = formation.linear;
     rebuildSegmentContent(existing);
     refreshSegmentVisuals(existing);
   } else {
-    createSegment("path", clonedPoints, [robot]);
+    createSegment("path", clonedPoints, [robot], undefined, formation.fitClosedCircle, formation.linear);
   }
   selectRobot(robot);
 }
@@ -1972,6 +1986,9 @@ const menuInteractionHeld = new Map<string, boolean>();
 
 function executeMenuAction(hit: NonNullable<ReturnType<typeof getHandMenuHit>>) {
   switch (hit.action) {
+    case "drawingTool":
+      executeDrawingToolAction(hit);
+      break;
     case "eraseMode":
       setEraseMode(!eraseMode);
       break;
@@ -1990,6 +2007,9 @@ function executeMenuAction(hit: NonNullable<ReturnType<typeof getHandMenuHit>>) 
     case "musicStandSummon":
       summonMusicStand();
       break;
+    case "aslNaming":
+      executeASLNamingAction(hit.command);
+      break;
     case "drillChartHide":
       setDrillChartPadVisible(false);
       break;
@@ -2001,6 +2021,22 @@ function executeMenuAction(hit: NonNullable<ReturnType<typeof getHandMenuHit>>) 
       break;
     case "instrument":
       chooseInstrument(hit.instrument);
+      break;
+    case "instrumentPanelSummon":
+      summonInstrumentPanel();
+      break;
+    case "instrumentPanelHide":
+      hideInstrumentPanel();
+      break;
+    case "createMarcher":
+      selectRobot(null);
+      chooseInstrument(hit.instrument);
+      setPlacementMode(true);
+      showPlacementNotice("Instrument selected: place new marchers on the field. Choose Done placing to finish.");
+      break;
+    case "finishMarcherPlacement":
+      setPlacementMode(false);
+      hideInstrumentPanel();
       break;
     case "commitFormation":
       handInteraction.commitFormation();
@@ -2069,6 +2105,46 @@ function executeMenuAction(hit: NonNullable<ReturnType<typeof getHandMenuHit>>) 
       break;
   }
 }
+function captureMarcherMove(robot: TransformNode) {
+  const capture = () => ({
+    movement: captureMarcherMovement(robot),
+    path: robotPaths.get(robot)?.map(point => point.clone()),
+    controls: pathSegmentByRobot.get(robot)?.controlPoints.map(point => point.clone()),
+  });
+  const before = capture();
+  return () => {
+    const after = capture();
+    if (before.movement.position.equalsWithEpsilon(after.movement.position) &&
+      Math.abs(before.movement.rotationY - after.movement.rotationY) < 1e-6 &&
+      before.movement.fixedFacingY === after.movement.fixedFacingY) return;
+    const apply = (snapshot: ReturnType<typeof capture>) => {
+      handInteraction.prepareForErase();
+      restoreMarcherMovement(robot, snapshot.movement);
+      const previousPath = robotPaths.get(robot);
+      if (snapshot.path) {
+        const path = snapshot.path.map(point => point.clone());
+        robotPaths.set(robot, path);
+        const index = previousPath ? storedPaths.indexOf(previousPath) : -1;
+        if (index >= 0) {
+          storedPaths[index] = path;
+          saveStoredPaths(storedPaths);
+        }
+        if (robotPathLines.has(robot)) updateRobotPathLine(robot, path);
+      }
+      const segment = pathSegmentByRobot.get(robot);
+      if (segment && snapshot.controls) {
+        segment.controlPoints = snapshot.controls.map(point => point.clone());
+        refreshSegmentVisuals(segment);
+      }
+      segments.filter(entry => entry.kind === "formation" && entry.robots.includes(robot))
+        .forEach(rebuildFormationConnections);
+      if (selectedRobot === robot) refreshStepHandles();
+      refreshCollisionMarkers(scene);
+    };
+    eraseHistory.record({ undo: () => apply(before), redo: () => apply(after) });
+  };
+}
+
 const handInteraction = createHandInteraction({
   pathRoot,
   robotPaths,
@@ -2111,10 +2187,13 @@ const handInteraction = createHandInteraction({
     return true;
   },
   activateChartButton: executeMenuAction,
+  notifyPlacement: showPlacementNotice,
+  captureMarcherMove,
 });
 const { marcherGrabs } = handInteraction;
 
 export function setHandTracking(tracking: WebXRHandTracking | null) {
+  setNamingHandTracking(tracking);
   mediaHandTracking = tracking;
   resetThumbJog(thumbJogState);
   scrubRemainder = 0;
@@ -2146,6 +2225,7 @@ function finishMarcherGrab(handedness: string, commit: boolean) {
 }
 
 export function updateTabletopHands() {
+  if (isFingerspellingNamingActive()) return;
   handInteraction.updateTabletopHands();
   setFormationCommitAvailable(handInteraction.hasPendingFormation());
   setFormationLibraryAnchorAvailable(
@@ -2158,6 +2238,7 @@ function finishFingerPath(commit: boolean) {
 }
 
 export function updateHandPathDrawing() {
+  if (isFingerspellingNamingActive()) return;
   handInteraction.updateHandPathDrawing();
 }
 
@@ -2176,7 +2257,11 @@ function getControllerRay(controller: WebXRInputSource): Ray {
 // point converted into the path root's local space (so it tracks the field
 // if it's later moved/scaled/rotated), or null if the pointer isn't aiming at it.
 function getFieldPointFromController(controller: WebXRInputSource): Vector3 | null {
-  const pick = scene.pickWithRay(getControllerRay(controller), (mesh) => mesh.name === "field");
+  return getFieldPointFromRay(getControllerRay(controller));
+}
+
+function getFieldPointFromRay(ray: Ray): Vector3 | null {
+  const pick = scene.pickWithRay(ray, (mesh) => mesh.name === "field");
   if (!pick?.hit || !pick.pickedPoint) {
     return null;
   }
@@ -2242,6 +2327,8 @@ export function updateRobotPathFromControllers() {
         return;
       }
     }
+    if (handInteraction.updateControllerFormationPull(handedness, gripPressed,
+      getControllerPosition(controller).getAbsolutePosition())) return;
     if (marcherGrab?.source === "controller") {
       if (!gripPressed) finishMarcherGrab(handedness, true);
       else {
@@ -2258,6 +2345,7 @@ export function updateRobotPathFromControllers() {
         marcherGrab.controllerYawOffset = (marcherGrab.controllerYawOffset ?? 0) +
           deflection(turnAxis) * Math.PI / 2 * deltaSeconds;
         const facingYaw = handInteraction.getFacingYaw(ray.direction);
+        if (marcherGrab.initialFacingYaw === null) marcherGrab.initialFacingYaw = facingYaw;
         if (marcherGrab.rayDistance < 0) {
           marcherGrab.controllerDepthOffset = Math.min(100, Math.max(0,
             (marcherGrab.controllerDepthOffset ?? 0) + depthChange));
@@ -2279,6 +2367,7 @@ export function updateRobotPathFromControllers() {
     if (!eraseMode && gripPressed && !wasGripPressed &&
       !menuInteractionHeld.get(handedness)) {
       const gripPoint = getControllerPosition(controller).getAbsolutePosition();
+      if (handInteraction.beginControllerFormationPull(handedness, gripPoint)) return;
       const nearRobot = handInteraction.findMarcherNearHand(gripPoint);
       if (nearRobot) {
         beginMarcherGrab(handedness, nearRobot, gripPoint, "controller", -1,
@@ -2289,6 +2378,7 @@ export function updateRobotPathFromControllers() {
       const pick = scene.pickWithRay(ray, (mesh) => findRobotRoot(mesh) !== null);
       const robot = pick?.hit ? findRobotRoot(pick.pickedMesh) : null;
       if (robot && pick?.pickedPoint) {
+        if (handInteraction.beginControllerFormationPull(handedness, gripPoint, robot)) return;
         beginMarcherGrab(
           handedness,
           robot,
@@ -2339,6 +2429,12 @@ export function updateRobotPathFromControllers() {
         beginFloatingPanelGrab(handedness, getControllerPosition(controller).computeWorldMatrix(true), panelPick.pickedMesh,
           panelPick.pickedPoint ?? undefined);
         padGrabButtons.set(handedness, "trigger");
+        return;
+      }
+      const ghostPick = scene.pickWithRay(ray, isGhostBandMesh);
+      if (!floorCalibrationToggle?.checked && ghostPick?.hit && ghostPick.pickedMesh &&
+        jumpToGhostBandTime(ghostPick.pickedMesh)) {
+        menuInteractionHeld.set(handedness, true);
         return;
       }
       if (eraseMode) {
@@ -2548,6 +2644,7 @@ export function updateRobotPathFromControllers() {
       }
     }
   });
+  handInteraction.updateControllerFormationPreview();
 }
 
 // Read-only access for other modules (e.g. the palm-up hand menu) that need
@@ -2795,6 +2892,48 @@ async function openMarchFromUrl(url: string, autoPlay = true): Promise<boolean> 
 }
 
 export function initInteraction() {
+  initFieldDrawingTools({
+    root: pathRoot,
+    notify: showPlacementNotice,
+    prepare: () => {
+      setPlacementMode(false);
+      setEraseMode(false);
+      selectionTools?.disable();
+    },
+    createFormation: points => {
+      const anchor = createStandingMarcher(points[0]);
+      if (!anchor.isEnabled()) {
+        anchor.dispose();
+        showPlacementNotice("Formation origin is occupied. Draw a guide in an empty area.");
+        return false;
+      }
+      const previous = new Set(segments);
+      createSegment("formation", points, [], anchor, false, true);
+      const created = segments.find(segment => !previous.has(segment));
+      if (!created || created.robots.length === 0) {
+        if (created) removeEditorForm(created);
+        if (!anchor.isDisposed()) anchor.dispose();
+        selectRobot(null);
+        showPlacementNotice("Formation does not fit without collisions. Increase spacing or draw elsewhere.");
+        return false;
+      }
+      refreshCollisionMarkers(scene);
+      selectRobot(created.robots[0], true);
+      return true;
+    },
+    createPath: points => {
+      const robot = createStandingMarcher(points[0]);
+      if (!robot.isEnabled()) {
+        robot.dispose();
+        showPlacementNotice("Path origin is occupied. Draw a guide in an empty area.");
+        return false;
+      }
+      createSegment("path", points, [robot], undefined, false, true);
+      selectRobot(robot, true);
+      refreshCollisionMarkers(scene);
+      return true;
+    },
+  });
   selectionTools = createSelectionEditor({
     root: pathRoot,
     getMarchers: () => scene.transformNodes.filter(node => node.name === "pathRobot" && node.parent === pathRoot),
@@ -2813,6 +2952,12 @@ export function initInteraction() {
     snap: snapToStepGrid,
     snapAngle,
     constrain: constrainFormationMovement,
+  });
+  initASLNaming(() => selectedRobot, () => {
+    handInteraction.prepareForErase();
+    selectionTools?.disable();
+    setEraseMode(false);
+    executeDrawingToolAction({ action: 'drawingTool', tool: 'stop' });
   });
   setEraseMode(!!eraseModeToggle?.checked);
   undoEraseButton?.addEventListener("click", () => executeMenuAction({ action: "undoErase" }));
@@ -2896,6 +3041,15 @@ export function initInteraction() {
       eventState.skipNextObservers = true;
       return;
     }
+    const drawingType = pointerInfo.type === PointerEventTypes.POINTERDOWN ? "down" :
+      pointerInfo.type === PointerEventTypes.POINTERMOVE ? "move" :
+      pointerInfo.type === PointerEventTypes.POINTERUP ? "up" : null;
+    if (drawingType && (!("button" in pointerInfo.event) || pointerInfo.event.button <= 0) &&
+      (isDrawingPointerActive() || !pickFloatingPanel(getPointerRay())?.hit) &&
+      handleDrawingPointer(drawingType, getFieldPointFromRay(getPointerRay()))) {
+      eventState.skipNextObservers = true;
+      return;
+    }
     if (pointerInfo.type === PointerEventTypes.POINTERWHEEL && pointerInfo.event instanceof WheelEvent &&
       nudgeFloatingPanelDistance(getPointerRay(), pointerInfo.event.deltaY)) {
       pointerInfo.event.preventDefault();
@@ -2959,11 +3113,24 @@ export function initInteraction() {
       return;
     }
     if (pickFloatingPanel(getPointerRay())?.hit) return;
+    const ghostPick = scene.pickWithRay(getPointerRay(), isGhostBandMesh);
+    if (!floorCalibrationToggle?.checked && ghostPick?.hit && ghostPick.pickedMesh &&
+      jumpToGhostBandTime(ghostPick.pickedMesh)) return;
+    if (isFieldDrawingToolActive()) return;
     if (eraseMode) {
       if (floorCalibrationToggle?.checked) return;
       const pick = scene.pick(scene.pointerX, scene.pointerY, (mesh) => findRobotRoot(mesh) !== null);
       const robot = pick?.hit ? findRobotRoot(pick.pickedMesh) : null;
       if (robot) eraseMarcher(robot);
+      return;
+    }
+    if (placementMode && !floorCalibrationToggle?.checked) {
+      const point = getFieldPointFromRay(getPointerRay());
+      if (point) {
+        const robot = createStandingMarcher(point);
+        if (robot.isEnabled()) selectRobot(robot);
+        else robot.dispose();
+      }
       return;
     }
     const pickedMesh = pointerInfo.pickInfo?.pickedMesh;
