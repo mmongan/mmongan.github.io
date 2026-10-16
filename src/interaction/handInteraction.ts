@@ -70,6 +70,8 @@ export interface MarcherGrab {
   initialRotationY: number;
   initialFacingYaw: number | null;
   rayDistance: number;
+  controllerDepthOffset?: number;
+  controllerYawOffset?: number;
   originalRenderingGroup: number | null;
 }
 
@@ -273,6 +275,13 @@ export function createHandInteraction(paths: HandPathDependencies) {
   // for its route, so auto gait turns the move into a slide or back-march.
   // Twisting back to face the path restores facing the direction of travel.
   function commitMarcherTwist(grab: MarcherGrab, yaw: number) {
+    if (grab.source === 'controller') {
+      if (Math.abs(grab.controllerYawOffset ?? 0) > 0.000001 &&
+        tryManualMarcherPose(grab.robot, grab.robot.position, yaw)) {
+        setRobotFacing(grab.robot, yaw);
+      }
+      return;
+    }
     if (grab.source !== 'hand') return;
     const counts = getRobotCounts(grab.robot);
     if (!counts || counts.length < 2) return;
@@ -791,7 +800,8 @@ export function createHandInteraction(paths: HandPathDependencies) {
         const ray = new Ray(pointer.getAbsolutePosition(), pointer.getDirection(Axis.Z), 3);
         const pick = pickFloatingPanel(ray);
         const near = getFloatingPanelNear(point);
-        const action = getFloatingPanelButtonNearPoint(point) ?? (pick?.hit ? getHandMenuHit(pick) : null);
+        const action = getFloatingPanelButtonNearPoint(point) ??
+          (!near && pick?.hit ? getHandMenuHit(pick) : null);
         if (action || near || pick?.hit) {
           padHands.add(handedness);
           if (action) activateChartButton(action);
@@ -1178,6 +1188,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
       [...marcherGrabs.keys()].forEach((handedness) => finishMarcherGrab(handedness, true));
     },
     beginMarcherGrab,
+    findMarcherNearHand,
     commitFormation: () => {
       if (formationPull?.shapedOffsets) finishFormationPull(true);
     },

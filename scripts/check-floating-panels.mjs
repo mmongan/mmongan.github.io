@@ -218,6 +218,16 @@ globalThis.Slider = PanelTransparencySlider;`, sliderContext);
   assert.ok(sliderRoot.position.equals(panelPose), 'Slider gesture never moves panel');
   api.endFloatingPanelGrab('left');
   assert.equal(sliderPanel.grabbed(), false);
+  const beforeGrip = sliderRoot.position.clone();
+  const beforeGripOpacity = opacity;
+  assert.ok(api.beginFloatingPanelGrab('left', Matrix.Identity(), slider.mesh, sliderPoint, 0.03, true),
+    'Controller grip always grabs the panel, even over the transparency control');
+  api.updateFloatingPanelGrab('left', Matrix.Translation(0.1, 0.2, 0));
+  assert.ok(Vector3.Distance(sliderRoot.position, beforeGrip.add(new Vector3(0.1, 0.2, 0))) < 1e-6,
+    'Grip moves the complete panel');
+  assert.equal(opacity, beforeGripOpacity, 'Grip does not change transparency');
+  api.endFloatingPanelGrab('left');
+  sliderRoot.position.copyFrom(beforeGrip);
   slider.setTransparency(35);
   const sliderRay = new Ray(new Vector3(0.4, 0, 0), Vector3.Forward(), 3);
   assert.ok(api.beginFloatingPanelPointerDrag(sliderRay), 'Mouse can start slider drag');

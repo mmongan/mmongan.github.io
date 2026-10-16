@@ -246,10 +246,11 @@ export function getFloatingPanelButtonNearPoint(point: Vector3): HandMenuHit | n
   return null;
 }
 
-export function beginFloatingPanelGrab(source: string, world: Matrix, mesh?: AbstractMesh | null, point?: Vector3, tolerance = 0.03) {
+export function beginFloatingPanelGrab(source: string, world: Matrix, mesh?: AbstractMesh | null, point?: Vector3,
+  tolerance = 0.03, moveOnly = false) {
   const panel = mesh ? [...panels].find(panel => panel.meshes.has(mesh))
     : point ? getFloatingPanelNear(point, tolerance) : undefined;
-  if (panel && !panel.beginSlider(source, world, mesh, point)) panel.begin(source, world);
+  if (panel && (moveOnly || !panel.beginSlider(source, world, mesh, point))) panel.begin(source, world);
   return !!panel;
 }
 

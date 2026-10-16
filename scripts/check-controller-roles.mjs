@@ -17,6 +17,7 @@ const context = vm.createContext({
   floorCalibrationToggle: null,
   resetThumbJog: (state) => { state.neutral = null; state.settlingSeconds = 0; },
   controllerRegistry: controllers,
+  marcherGrabs: new Map(),
   isHandMenuVisible: () => menuVisible,
   scrubBy: (counts) => changes.push(counts),
 });
@@ -36,6 +37,10 @@ controllers.set('right', controller('right', 1));
 checkRoles('left', 'right');
 jog(0.0625);
 assert.equal(changes.pop(), 1);
+context.marcherGrabs.set('right', { source: 'controller' });
+jog(1);
+assert.equal(changes.length, 0, 'A held marcher consumes its controller stick instead of jogging playback');
+context.marcherGrabs.clear();
 toggle.checked = true;
 toggle.change();
 checkRoles('right', 'left');

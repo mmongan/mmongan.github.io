@@ -615,6 +615,7 @@ function updateScrubFromControllers(deltaSeconds: number) {
   let axisValue = 0;
   controllerRegistry.forEach((controller) => {
     if (controller.inputSource.handedness !== getMediaControllerHand()) return;
+    if (marcherGrabs.get(getMediaControllerHand())?.source === "controller") return;
     const thumbstick = controller.motionController?.getComponentOfType("thumbstick");
     const x = thumbstick?.axes.x ?? 0;
     if (Math.abs(x) > Math.abs(axisValue)) axisValue = x;
@@ -2125,10 +2126,6 @@ export function isHandMarcherInteraction(handedness: string, point: Vector3) {
   return handInteraction.isHandMarcherInteraction(handedness, point);
 }
 
-function isTabletopInteractionMode() {
-  return getARScale() < getARScaleRange().max;
-}
-
 function beginMarcherGrab(
   handedness: string,
   robot: TransformNode,
@@ -2240,7 +2237,7 @@ export function updateRobotPathFromControllers() {
       const pick = nearPad ? null : pickFloatingPanel(getControllerRay(controller));
       if (nearPad || pick?.hit) {
         beginFloatingPanelGrab(handedness, gripNode.computeWorldMatrix(true),
-          nearPad ? null : pick?.pickedMesh, nearPad ? gripNode.getAbsolutePosition() : pick?.pickedPoint ?? undefined, 0.06);
+          nearPad ? null : pick?.pickedMesh, nearPad ? gripNode.getAbsolutePosition() : pick?.pickedPoint ?? undefined, 0.06, true);
         padGrabButtons.set(handedness, "grip");
         return;
       }
@@ -2249,17 +2246,45 @@ export function updateRobotPathFromControllers() {
       if (!gripPressed) finishMarcherGrab(handedness, true);
       else {
         const ray = getControllerRay(controller);
+        const stick = controller.motionController?.getComponentOfType("thumbstick");
+        const axes = controller.inputSource.gamepad?.axes;
+        const axis = stick?.axes.y ?? (axes && axes.length >= 4 ? axes[3] : axes?.[1]) ?? 0;
+        const turnAxis = stick?.axes.x ?? (axes && axes.length >= 4 ? axes[2] : axes?.[0]) ?? 0;
+        const deflection = (value: number) => Math.abs(value) > SCRUB_DEADZONE
+          ? Math.sign(value) * (Math.min(1, Math.abs(value)) - SCRUB_DEADZONE) / (1 - SCRUB_DEADZONE)
+          : 0;
+        const deltaSeconds = Math.min(0.1, scene.getEngine().getDeltaTime() / 1000);
+        const depthChange = -deflection(axis) * 2 * getARScale() * deltaSeconds;
+        marcherGrab.controllerYawOffset = (marcherGrab.controllerYawOffset ?? 0) +
+          deflection(turnAxis) * Math.PI / 2 * deltaSeconds;
+        const facingYaw = handInteraction.getFacingYaw(ray.direction);
+        if (marcherGrab.rayDistance < 0) {
+          marcherGrab.controllerDepthOffset = Math.min(100, Math.max(0,
+            (marcherGrab.controllerDepthOffset ?? 0) + depthChange));
+        } else {
+          marcherGrab.rayDistance = Math.min(100, Math.max(0.1, marcherGrab.rayDistance + depthChange));
+        }
         moveMarcherGrab(
           handedness,
-          ray.origin.add(ray.direction.scale(marcherGrab.rayDistance)),
-          handInteraction.getFacingYaw(ray.direction),
+          marcherGrab.rayDistance < 0
+            ? getControllerPosition(controller).getAbsolutePosition()
+              .add(ray.direction.scale(marcherGrab.controllerDepthOffset ?? 0))
+            : ray.origin.add(ray.direction.scale(marcherGrab.rayDistance)),
+          facingYaw === null ? null : facingYaw + marcherGrab.controllerYawOffset,
         );
       }
       return;
     }
 
-    if (!eraseMode && gripPressed && !wasGripPressed && isTabletopInteractionMode() &&
+    if (!eraseMode && gripPressed && !wasGripPressed &&
       !menuInteractionHeld.get(handedness)) {
+      const gripPoint = getControllerPosition(controller).getAbsolutePosition();
+      const nearRobot = handInteraction.findMarcherNearHand(gripPoint);
+      if (nearRobot) {
+        beginMarcherGrab(handedness, nearRobot, gripPoint, "controller", -1,
+          handInteraction.getFacingYaw(getControllerRay(controller).direction));
+        return;
+      }
       const ray = getControllerRay(controller);
       const pick = scene.pickWithRay(ray, (mesh) => findRobotRoot(mesh) !== null);
       const robot = pick?.hit ? findRobotRoot(pick.pickedMesh) : null;
@@ -2300,7 +2325,9 @@ export function updateRobotPathFromControllers() {
       }
 
       const menuPick = scene.pickWithRay(getControllerRay(controller), isMenuControl);
-      const menuHit = menuPick?.hit ? getHandMenuHit(menuPick) : null;
+      const panelPick = pickFloatingPanel(ray);
+      const menuHit = menuPick?.hit && (!panelPick?.hit || menuPick.distance <= panelPick.distance + 0.001)
+        ? getHandMenuHit(menuPick) : null;
       if (menuHit) {
         menuInteractionHeld.set(handedness, true);
         executeMenuAction(menuHit);
@@ -2308,7 +2335,6 @@ export function updateRobotPathFromControllers() {
       }
       menuInteractionHeld.set(handedness, false);
 
-      const panelPick = pickFloatingPanel(getControllerRay(controller));
       if (panelPick?.hit && panelPick.pickedMesh) {
         beginFloatingPanelGrab(handedness, getControllerPosition(controller).computeWorldMatrix(true), panelPick.pickedMesh,
           panelPick.pickedPoint ?? undefined);
@@ -2879,7 +2905,9 @@ export function initInteraction() {
     if (pointerInfo.type === PointerEventTypes.POINTERDOWN && "button" in pointerInfo.event &&
       pointerInfo.event.button === 0) {
       const menuPick = scene.pick(scene.pointerX, scene.pointerY, isMenuControl);
-      if (!menuPick?.hit && beginFloatingPanelPointerDrag(getPointerRay())) {
+      const panelPick = pickFloatingPanel(getPointerRay());
+      const buttonInFront = menuPick?.hit && (!panelPick?.hit || menuPick.distance <= panelPick.distance + 0.001);
+      if (!buttonInFront && beginFloatingPanelPointerDrag(getPointerRay())) {
         canvas.style.cursor = "grabbing";
         eventState.skipNextObservers = true;
         return;
