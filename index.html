@@ -8,7 +8,7 @@
       content="Babylon.js WebXR VR and AR demo for Meta Quest 3"
     />
     <title>OpenChartxr</title>
-    <script type="module" crossorigin src="/assets/index-BvsgqiWE.js"></script>
+    <script type="module" crossorigin src="/assets/index-BG1MRBYt.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/rolldown-runtime-B0Z9INg1.js">
     <link rel="modulepreload" crossorigin href="/assets/engineStore-Bn2tApal.js">
     <link rel="modulepreload" crossorigin href="/assets/internalTexture-B3djGrls.js">
@@ -54,7 +54,7 @@
     <link rel="modulepreload" crossorigin href="/assets/flowGraphExecutionBlockWithOutSignal-Dkj7gfkW.js">
     <link rel="modulepreload" crossorigin href="/assets/flowGraphAsyncExecutionBlock-BG68nGzX.js">
     <link rel="modulepreload" crossorigin href="/assets/flowGraphRichTypes.pure-D2WqOeRI.js">
-    <link rel="stylesheet" crossorigin href="/assets/index-B43R0Min.css">
+    <link rel="stylesheet" crossorigin href="/assets/index-DuNQmxXb.css">
   </head>
   <body>
     <canvas id="renderCanvas"></canvas>
@@ -179,7 +179,7 @@
 
         <form id="formationEditor" class="settings-group">
           <h3>Drill form editor</h3>
-          <p>Create standing forms without replacing the show. Select a form here or select one of its marchers. Moves, rotations, and scaling apply to the whole form; collision checks reject overlapping edits.</p>
+          <p>Create standing forms without replacing the show. Select a form here or select one of its marchers. Moves, rotations, and scaling apply to the whole form; collision checks reject overlapping edits. To move a selected form together, draw a destination guide and choose Route selected form in the drawing tray; every marcher receives the same count schedule with automatic route avoidance.</p>
           <label class="radio-option"><input id="gridSnapToggle" type="checkbox" /><span>Snap editing to field grid</span></label>
           <label class="radio-option"><input id="fieldGridToggle" type="checkbox" /><span>Show adjustable grid on field</span></label>
           <label class="settings-label" for="fieldGridInterval">Visible grid spacing (yards)</label>
@@ -319,6 +319,17 @@
             <input type="checkbox" id="collisionMarkersToggle" checked />
             <span>Show collision markers</span>
           </label>
+          <div class="spacing-checker">
+            <label class="settings-label" for="drillSpacingThreshold">Live drill spacing check</label>
+            <p>Check nearest-neighbor distances at the current playback position. Run again after seeking or editing.</p>
+            <label for="drillSpacingThreshold">Flag spacing below (yards)</label>
+            <div class="spacing-checker-controls">
+              <input id="drillSpacingThreshold" type="number" min="0.1" max="20" step="0.05" value="1.25" required />
+              <button id="drillSpacingCheck" type="button">Check spacing</button>
+            </div>
+            <output id="drillSpacingSummary" class="settings-status" aria-live="polite">No spacing check run yet.</output>
+            <div id="drillSpacingResults" class="spacing-results" aria-live="polite"></div>
+          </div>
           <label class="radio-option">
             <input type="checkbox" id="placementModeToggle" />
             <span>Placement mode (trigger places a standing robot)</span>
@@ -343,6 +354,26 @@
           <button id="instrumentPanelButton" type="button">Open instrument panel to create marchers</button>
           <button id="drawingToolsButton" type="button">Open field drawing tools</button>
           <button id="draftingToolsButton" type="button">Open advanced drafting tools</button>
+          <label class="settings-label" for="fieldProjectorFile">Image projector: local tracing image</label>
+          <input id="fieldProjectorFile" type="file" accept="image/png,image/jpeg,image/webp" />
+          <button id="fieldProjectorButton" type="button">Open grabbable image projector</button>
+          <label class="radio-option"><input id="fieldProjectorToggle" type="checkbox" /><span>Project tracing image onto field</span></label>
+          <label class="settings-label" for="fieldProjectorX">Projection center X (yards across field)</label>
+          <input id="fieldProjectorX" type="number" min="-26.6665" max="26.6665" step="any" value="0" />
+          <label class="settings-label" for="fieldProjectorZ">Projection center Z (yards along field)</label>
+          <input id="fieldProjectorZ" type="number" min="-60" max="60" step="any" value="0" />
+          <label class="settings-label" for="fieldProjectorWidth">Projection width (yards; aspect ratio preserved)</label>
+          <input id="fieldProjectorWidth" type="number" min="0.5" max="120" step="any" value="40" />
+          <label class="settings-label" for="fieldProjectorRotation">Projection rotation (degrees)</label>
+          <input id="fieldProjectorRotation" type="number" min="-180" max="180" step="any" value="0" />
+          <label class="settings-label" for="fieldProjectorOpacity">Projection opacity (5-100%)</label>
+          <input id="fieldProjectorOpacity" type="range" min="0.05" max="1" step="0.05" value="0.5" />
+          <div class="radio-row">
+            <button id="fieldProjectorFitButton" type="button">Fit image to field</button>
+            <button id="fieldProjectorClearButton" type="button">Remove tracing image</button>
+          </div>
+          <output id="fieldProjectorStatus" aria-live="polite">Choose a local image to project and trace.</output>
+          <p>Upload a PNG, JPEG, or WebP (up to 16 MB) before entering XR. Images stay in this browser session and are resized to the device texture limit (at most 4096 pixels per side). The image is clipped to the field, keeps its aspect ratio, and does not intercept drawing. At zero rotation the image top points toward +Z. Trace it with pencil, ruler, yarn, spline, or other drawing tools, then Create formation/path as usual. The grabbable Project control on the palm menu provides alignment, scale, rotation, fade, and on/off buttons. Moving the projector body only repositions its controls; use those buttons to align the image. Put away hides the device but keeps the projection. Calibration temporarily hides the image. Reload/Remove clears only the image; no image or projection settings are saved in drafting workspaces/camera photos, and no automatic image-to-route conversion occurs.</p>
           <label class="settings-label" for="draftingSpacing">Divider spacing / parallel offset (yards)</label>
           <input id="draftingSpacing" type="number" min="0.05" max="20" step="any" value="1.25" />
           <label class="settings-label" for="draftingAngle">Set square angle</label>
@@ -422,7 +453,18 @@
               <input type="radio" name="marcherInstrument" value="glockenspiel" />
               <span>Glockenspiel</span>
             </label>
+            <label class="radio-option"><input type="radio" name="marcherInstrument" value="guardFlag" /><span>Color guard flag</span></label>
+            <label class="radio-option"><input type="radio" name="marcherInstrument" value="guardRifle" /><span>Color guard rifle (parade prop)</span></label>
+            <label class="radio-option"><input type="radio" name="marcherInstrument" value="guardSabre" /><span>Color guard sabre (parade prop)</span></label>
           </div>
+          <p>Color guard performers use the same placement, formation, route, chart, and footprint tools as marchers. Guard equipment is held in a fixed presentation pose; spins, tosses, cloth simulation, and separate choreography are not included.</p>
+          <button id="marcherPaletteButton" type="button">Open uniform paint palette</button>
+          <label class="radio-option"><input id="marcherPaintToggle" type="checkbox" /><span>Paint individual marcher uniforms</span></label>
+          <label class="settings-label" for="marcherPaintColor">Uniform paint color</label>
+          <input id="marcherPaintColor" type="color" value="#1e88e5" />
+          <button id="marcherPaintSelectedButton" type="button">Paint selected marcher</button>
+          <output id="marcherPaintStatus" class="settings-status" aria-live="polite"></output>
+          <p>Open the grabbable palette here or with Paint on the palm menu. Choose a swatch (or custom color above), then click, trigger, or pinch a marcher to recolor only their uniform. Paint selected applies to the current selection. Done paint or the checkbox exits paint mode. Painting replaces movement/selection gestures while active; placement, erase, drawing, and selection editing turn it off. Uniforms, matching route colors, and top-down markers update; instruments/guard equipment are unchanged. Colors are session-only, with no paint undo or show export.</p>
           <label class="settings-label" for="marcherCount">Marchers to add</label>
           <div class="radio-row">
             <input id="marcherCount" type="range" min="1" max="100" step="1" value="8" />
@@ -438,6 +480,9 @@
           <button id="openMarchExampleButton" type="button" class="xr-button secondary">Load example OpenMarch show</button>
           <output id="openMarchStatus" class="settings-status" for="openMarchUrl"></output>
           <label class="radio-option"><input id="ghostBandToggle" type="checkbox" /><span>Ghost-band timeline comparison</span></label>
+          <label class="radio-option"><input id="marcherFootprintsToggle" type="checkbox" /><span>Show selected marcher's full-route footprints</span></label>
+          <output id="marcherFootprintsStatus" class="settings-status" aria-live="polite"></output>
+          <p>Select a marcher on the field. Cyan left and gold right prints show sole contact anchors sampled from the same leg solver as playback at each stance entry along the full route. Gait cadence, MIDI beat units, facing, and bounded stride placement are included. Initial planted feet are included; repeated mark-time contacts overlap. Prints are projected onto the turf, not a recording of heel/toe pressure or a playback trail. Selection, gait, timing, or route changes update them. The overlay does not edit the drill or move playback and is hidden during floor calibration.</p>
           <details>
             <summary>ASL fingerspelled names (personal calibration)</summary>
             <p>Experimental, not a built-in ASL translator. Teach at least two letters using your own ASL signs, then explicitly accept recognized letters. Record the entire motion for J/Z. Templates stay in memory until reload. Naming suspends hand grabbing/drawing and hand-thumb jogging.</p>
