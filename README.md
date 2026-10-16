@@ -165,11 +165,26 @@ Implementation: [selection editor](src/interaction/selectionEditor.ts), [shape g
 
 ### Field chart mode
 
-In **Settings -> Selection, shapes, and sets**, choose a **Destination set** and enable **Field chart mode**. This does not require enabling authored-set editing. The real band pauses at the selected set, cyan ghosts mark the previous set's positions and facings, and gold arrows point from old to new positions. Holds retain their ghost without a zero-length arrow. Arrows show straight-line displacement, not the route traveled between sets.
+1. Load an OpenMarch show or generate a drill.
+2. Open **Settings -> Selection, shapes, and sets**.
+3. Choose a **Destination set** after the opening set and enable **Field chart mode**.
+4. Close Settings to inspect the field. Choose another destination set to compare a different transition.
+
+Neither **Enable multi-marcher editing** nor **Edit authored drill sets** is required just to view the chart.
+
+| Chart element | Meaning |
+| --- | --- |
+| Cyan translucent marchers | Previous set's positions and scheduled facings, using a captured body pose. |
+| Real marchers | Selected destination set; playback is paused at that count. |
+| Gold arrows | Direction from each old position to its new position. Holds retain their ghost without an arrow. |
+
+Arrows show straight-line displacement, not the route traveled between sets or a collision-free path. Ghosts and arrows are non-pickable, so they do not intercept marcher selection.
 
 Changing the destination set updates the comparison and pauses at the new destination. Editing either endpoint refreshes the chart. The first set has no previous-set comparison; choose a later set to see ghosts and arrows. Marchers without counts in both sets are skipped with a status message. The overlay follows the field in desktop, VR, and rotated/scaled tabletop AR; it does not change the viewing camera to overhead.
 
 Entering chart mode exits marcher POV and ghost-band timeline preview. Resuming playback, seeking away, entering timeline ghost preview, or starting floor calibration turns chart mode off. Turning the toggle off removes the overlay but leaves the real band paused at its current count. Chart mode does not edit schedules, add undo entries, or save itself into drafting camera snapshots. Focused check: `node scripts/check-field-chart-mode.mjs`.
+
+This field overlay is separate from the **Chart** pad (a floating chart page) and **Ghost-band timeline comparison** (a movable timeline preview). It is session-only and off after reload. Implementation: [field chart mode](src/robot/fieldChartMode.ts).
 
 ## Features
 

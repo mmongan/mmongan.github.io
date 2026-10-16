@@ -53,6 +53,9 @@ The content-root snapshot and teleport-grid ordering is important for AR tableto
 
 - `src/robot/fieldChartMode.ts` owns the previous-set field overlay. It consumes the selection editor's page list and destination selector, pauses the existing transport, and uses non-pickable marcher ghosts plus a single field-local arrow mesh. Keep it distinct from ghost-band timeline preview and the chart pad. Refresh after endpoint edits, omit arrows for holds, and clear it on playback/timeline changes, calibration, or show replacement without modifying schedules.
 - Register chart controls after the selection editor's context handlers. Ignore transport notifications while the destination selector changes until the chart has synchronized, so switching sets preserves multi-marcher edit mode.
+- Viewing chart mode must not require enabling multi-marcher editing or authored-set editing. Entering pauses/seeks to the destination, exits marcher POV and timeline ghost preview, and leaves the viewing camera otherwise unchanged. Turning it off must not resume playback or rewind; startup autoplay must respect the toggle.
+- Use previous-set scheduled positions/facings for cyan ghosts and gold straight-displacement arrows ending at destination positions. Skip marchers lacking either count with an explicit status, show a no-previous-set message for the opening set, and do not present arrows as collision-free routes. Reuse captured ghost geometry rather than adding another marching animation system.
+- Parent the overlay to the existing field/path root for tabletop transforms. Keep it non-pickable and out of drafting workspace/photo persistence. Reuse unchanged visuals across frames, rebuild after endpoint or marcher membership changes, and dispose ghosts, arrow geometry/material, event listeners, and observers with the scene.
 
 ## Development And Validation
 
@@ -63,7 +66,7 @@ The content-root snapshot and teleport-grid ordering is important for AR tableto
 - Run `node scripts/simulate-drill-sync.mjs` when changing synchronized drill path planning or collision avoidance.
 - Run `node scripts/check-field-drawing-tools.mjs` when changing drafting tools, laser aiming/pinning, advanced drafting geometry, dimension labels, editable pins/splines, or guide cleanup. Preserve coverage of physical contact/release, desktop field-plane dragging, and rotated/scaled tabletop transforms.
 - Run `node scripts/check-adjustable-grid.mjs` when changing the visible field grid.
-- Run `node scripts/check-field-chart-mode.mjs` when changing chart-mode visuals or transport integration.
+- Run `node scripts/check-field-chart-mode.mjs` and `node scripts/check-ghost-band-preview.mjs` when changing chart-mode visuals or transport integration. Preserve coverage of pause/seek, holds and small displacements, short schedules, set switching during editing, endpoint edits, tabletop transforms, mode exits, show replacement, and cleanup.
 - Run `node scripts/check-thumb-jog.mjs` and `node scripts/check-controller-roles.mjs` when changing media jogging or controller hand assignments.
 
 There is no `npm test` script in `package.json`. The standalone checks above can be run directly; those using Node.js TypeScript stripping require Node.js 22.13 or newer. Report only validation commands actually run.
