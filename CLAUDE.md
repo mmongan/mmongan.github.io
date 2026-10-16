@@ -49,6 +49,11 @@ The content-root snapshot and teleport-grid ordering is important for AR tableto
 - Keep previews and saved guide points in field coordinates. Preserve behavior under tabletop translation, yaw, and scale; tools must not draw or pin during floor calibration.
 - Eraser, undo, clear, and scene disposal must remove all meshes owned by a guide. Dispose preview geometry and unregister event handlers when the scene is disposed.
 
+## Field Chart Mode
+
+- `src/robot/fieldChartMode.ts` owns the previous-set field overlay. It consumes the selection editor's page list and destination selector, pauses the existing transport, and uses non-pickable marcher ghosts plus a single field-local arrow mesh. Keep it distinct from ghost-band timeline preview and the chart pad. Refresh after endpoint edits, omit arrows for holds, and clear it on playback/timeline changes, calibration, or show replacement without modifying schedules.
+- Register chart controls after the selection editor's context handlers. Ignore transport notifications while the destination selector changes until the chart has synchronized, so switching sets preserves multi-marcher edit mode.
+
 ## Development And Validation
 
 - Install dependencies with `npm install`.
@@ -58,6 +63,7 @@ The content-root snapshot and teleport-grid ordering is important for AR tableto
 - Run `node scripts/simulate-drill-sync.mjs` when changing synchronized drill path planning or collision avoidance.
 - Run `node scripts/check-field-drawing-tools.mjs` when changing drafting tools, laser aiming/pinning, advanced drafting geometry, dimension labels, editable pins/splines, or guide cleanup. Preserve coverage of physical contact/release, desktop field-plane dragging, and rotated/scaled tabletop transforms.
 - Run `node scripts/check-adjustable-grid.mjs` when changing the visible field grid.
+- Run `node scripts/check-field-chart-mode.mjs` when changing chart-mode visuals or transport integration.
 - Run `node scripts/check-thumb-jog.mjs` and `node scripts/check-controller-roles.mjs` when changing media jogging or controller hand assignments.
 
 There is no `npm test` script in `package.json`. The standalone checks above can be run directly; those using Node.js TypeScript stripping require Node.js 22.13 or newer. Report only validation commands actually run.

@@ -17,6 +17,7 @@ import {
 import { tryManualMarcherPoses } from '../robot/manualPlacement';
 import { setMarcherPOVEnabled } from '../camera/marcherPOV';
 import { FIELD_SURFACE_Y } from '../field/constants';
+import { createFieldChartMode } from '../robot/fieldChartMode';
 import {
   alignFormationPoints, snapDrillPoint, transformFormationPoint,
   type DrillPoint, type FormationTransform,
@@ -553,6 +554,7 @@ export function createSelectionEditor(deps: EditorDependencies) {
     }
   }
   scene.onBeforeRenderObservable.add(drawVisuals);
+  const fieldChart = createFieldChartMode(deps);
   return {
     enabled,
     disable() {
@@ -568,6 +570,7 @@ export function createSelectionEditor(deps: EditorDependencies) {
         option.value = String(index); option.textContent = `${set.name} (count ${set.count})`; return option;
       }));
       if (sets.length) drillEditSet.value = "0";
+      fieldChart.setPages(sets);
       selected = []; groups = []; draft = null;
       drillSelectionMode.checked = false; invalidate();
     },
@@ -575,6 +578,7 @@ export function createSelectionEditor(deps: EditorDependencies) {
       cancelDrag(); selected = []; groups = []; draft = null; invalidate();
       drillSelectionMode.checked = false;
       sets = []; drillEditSet.replaceChildren();
+      fieldChart.clear();
       status("Scene replaced; selection and shape groups cleared.");
     },
   };

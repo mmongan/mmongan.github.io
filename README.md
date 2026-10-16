@@ -163,6 +163,14 @@ Edits and shape groups are session-local and reset when the show is replaced or 
 
 Implementation: [selection editor](src/interaction/selectionEditor.ts), [shape geometry](src/interaction/drillShapes.ts), and [focused selection-geometry/set transaction checks](scripts/check-drill-shapes.mjs).
 
+### Field chart mode
+
+In **Settings -> Selection, shapes, and sets**, choose a **Destination set** and enable **Field chart mode**. This does not require enabling authored-set editing. The real band pauses at the selected set, cyan ghosts mark the previous set's positions and facings, and gold arrows point from old to new positions. Holds retain their ghost without a zero-length arrow. Arrows show straight-line displacement, not the route traveled between sets.
+
+Changing the destination set updates the comparison and pauses at the new destination. Editing either endpoint refreshes the chart. The first set has no previous-set comparison; choose a later set to see ghosts and arrows. Marchers without counts in both sets are skipped with a status message. The overlay follows the field in desktop, VR, and rotated/scaled tabletop AR; it does not change the viewing camera to overhead.
+
+Entering chart mode exits marcher POV and ghost-band timeline preview. Resuming playback, seeking away, entering timeline ghost preview, or starting floor calibration turns chart mode off. Turning the toggle off removes the overlay but leaves the real band paused at its current count. Chart mode does not edit schedules, add undo entries, or save itself into drafting camera snapshots. Focused check: `node scripts/check-field-chart-mode.mjs`.
+
 ## Features
 
 - Settings -> **Drill form editor** exposes line, arc, circle, block, polygon, and star tools for standing formations. Choose an empty origin and target spacing to add forms without replacing an imported show. Select a form in the list or select one of its marchers, then translate, rotate, scale, or adjust spacing for the whole form. Spacing changes scale the form while preserving its marcher count, identities, and instruments; original curve sampling may round intervals to fit endpoints.
