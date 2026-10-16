@@ -28,6 +28,7 @@ const bodyScale = 1.8 / 0.9144 / 1.372;
 const context = vm.createContext({
   Matrix, Quaternion, Vector3, Math, Number, Map, Set,
   heldRobots: new Set(), marcherParts: new Map([[robot, parts]]), globalPlayback: playback,
+  players: new Map([[robot, state]]), ghostBandPreview: null,
   limitedStrideCounts: new WeakMap(), onMarcherStrideLimited: { notifyObservers(message) { warnings.push(message); } },
   playbackTempoMap: [{ beat: 0, bpm: 120 }],
   repeatOptions: { songLength: 32 },
@@ -61,6 +62,7 @@ run(readFileSync(new URL('../src/robot/bakedLegAnimation.ts', import.meta.url), 
 const { calfLength, shoeForwardOffset, shoeHalfHeight } = vm.runInContext(
   '({ calfLength: MARCHER_CALF_LENGTH, shoeForwardOffset: MARCHER_SHOE_FORWARD_OFFSET, shoeHalfHeight: MARCHER_SHOE_HALF_HEIGHT })', context);
 run(readFileSync(new URL('../src/robot/marcherFootTargets.ts', import.meta.url), 'utf8'));
+run(readFileSync(new URL('../src/robot/marcherFootContacts.ts', import.meta.url), 'utf8'));
 const fieldLift = progress => context.marcherSwingLift(progress, 0.16) * bodyScale;
 assert.equal(fieldLift(0), 0, 'Swing starts on the field');
 assert.ok(fieldLift(1) < 1e-12, 'Swing lands exactly on the beat');
@@ -860,6 +862,59 @@ assert.ok(warnings.some(message => message.includes('Unmarchable')), 'Impossible
 run(readFileSync(new URL('../src/robot/openMarchFormat.ts', import.meta.url), 'utf8'));
 run(robotSource.slice(robotSource.indexOf('const GAIT_INDEX_BY_NAME ='),
   robotSource.indexOf('// The gait a marcher uses leaving')));
+const gaitIndex = name => vm.runInContext('MARCHING_GAITS', context).findIndex(gait => gait.name === name);
+const transformSnapshot = () => JSON.stringify([robot, parts]);
+let verifiedContacts = 0;
+for (const songLength of [0, 32]) {
+  context.repeatOptions = { songLength, drill: false };
+  for (const offset of [0, 0.12345678, -2.37]) {
+    for (const unit of [1, 1.5, 1.3]) {
+      context.playbackBeatUnits = [{ beat: 0, quarterNotesPerPulse: unit },
+        { beat: 7.3, quarterNotesPerPulse: 0.7 }];
+      for (const [stride, yaw, style] of [
+        [0.08, 0, 'Field March'], [0.2, Math.PI / 2, 'Field March'],
+        [0.625, Math.PI, 'Field March'], [2, 0, 'Field March'], [0, 0, 'Mark Time'],
+      ]) {
+        state.counts = Array.from({ length: 14 }, (_, index) => ({
+          position: new Vector3(index > 6 ? (index - 6) * stride : 0, 0, Math.min(index, 6) * stride),
+          rotationY: index > 6 ? Math.PI / 2 : 0, facingY: yaw,
+        }));
+        state.stepCache = undefined; state.gaitPhaseCache = undefined; state.legBake = undefined;
+        parts.gaitIndex = gaitIndex(style);
+        musicBeat = 3; drillBeat = musicBeat + offset;
+        playback.speedMultiplier = 1;
+        const before = transformSnapshot(), route = JSON.stringify(state.counts), transport = [drillBeat, musicBeat];
+        const source = context.getRobotFootprintSource(robot);
+        const contacts = source.build();
+        assert.ok(contacts.length > 0, 'Animated routes produce solver contacts');
+        assert.equal(transformSnapshot(), before, 'Sampling never changes rendered marcher transforms');
+        assert.equal(JSON.stringify(state.counts), route, 'Sampling never edits route data');
+        assert.equal(state.stepCache, undefined, 'Sampling has isolated step caches');
+        assert.equal(state.gaitPhaseCache, undefined, 'Sampling has isolated gait caches');
+        assert.deepEqual([drillBeat, musicBeat], transport, 'Sampling never seeks either transport');
+        assert.equal(context.getRobotFootprintSource(robot).key, source.key, 'Unchanged source key is stable');
+        for (const contact of contacts) {
+          drillBeat = contact.beat; musicBeat = drillBeat - offset;
+          pose();
+          const expected = contact.left
+            ? solePosition(parts.leftLeg, parts.leftKnee, parts.leftAnkle)
+            : solePosition(parts.rightLeg, parts.rightKnee, parts.rightAnkle);
+          assert.ok(Vector3.Distance(expected, contact.position) < 1e-6,
+            `Solver footprint matches rendered sole: song=${songLength} offset=${offset} unit=${unit} beat=${contact.beat}`);
+          assert.ok(Math.abs(Math.sin(contact.yaw - robot.rotation.y)) < 1e-6,
+            'Footprint yaw matches rendered shoe yaw');
+          assert.ok(contact.beat >= 0 && contact.beat < state.counts.length - 1);
+          verifiedContacts++;
+        }
+        musicBeat = 3; drillBeat = musicBeat + offset;
+        const key = context.getRobotFootprintSource(robot).key;
+        state.counts[0].position.x += .01;
+        assert.notEqual(context.getRobotFootprintSource(robot).key, key, 'Route edits invalidate source');
+      }
+    }
+  }
+}
+console.log(`Exact footprint sampling checks passed: ${verifiedContacts} contacts agree with rendered sole transforms within 1e-6 yards; no transport, route, pose, or cache mutation.`);
 const SQL = await initSqlJs();
 const example = context.readOpenMarchDatabase(SQL,
   readFileSync(new URL('../src/assets/openmarch/example-show.dots', import.meta.url)), 53.333);

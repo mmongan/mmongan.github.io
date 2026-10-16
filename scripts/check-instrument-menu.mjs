@@ -14,7 +14,8 @@ const engine = new NullEngine();
 const scene = new Scene(engine);
 try {
   const names = ['Trumpet', 'Mellophone', 'Trombone', 'Euphonium', 'Sousaphone', 'Saxophone',
-    'BariSaxophone', 'Clarinet', 'Flute', 'Snare', 'Tenor', 'BassDrum', 'Glockenspiel'];
+    'BariSaxophone', 'Clarinet', 'Flute', 'Snare', 'Tenor', 'BassDrum', 'Glockenspiel',
+    'GuardFlag', 'GuardRifle', 'GuardSabre'];
   const templates = {};
   names.forEach((name, i) => {
     const source = MeshBuilder.CreateBox(name, { width: 0.2 + i / 10, height: 0.5, depth: 0.3 }, scene);
@@ -44,7 +45,18 @@ globalThis.add = addInstrumentButtonModel;globalThis.instruments = Object.keys(t
     assert.equal(model.isEnabled(), true);
     button.dispose();
   }
-  console.log('Instrument menu checks passed: all 13 instruments, normalized rotated bounds, centering, button input ownership, and inherited visibility.');
+  const importer = readFileSync(new URL('../src/robot/openMarchUrl.ts', import.meta.url), 'utf8');
+  vm.runInContext(stripTypeScriptTypes(importer.slice(importer.indexOf('const SECTION_INSTRUMENTS')), { mode: 'transform' })
+    .replace(/export /g, ''), context);
+  for (const [section, instrument] of [
+    ['Color Guard', 'guardFlag'], ['Colour guard flags', 'guardFlag'], ['Flag line', 'guardFlag'],
+    ['Color Guard Rifles', 'guardRifle'], ['Guard Sabres', 'guardSabre'], ['Saber line', 'guardSabre'],
+    ['Trumpet', 'trumpet'], ['Bass drums', 'bassDrum'], ['Drum major', 'flute'],
+  ]) {
+    assert.equal(context.getOpenMarchSectionInstrument(section, 'flute'), instrument,
+      'Specific guard equipment takes precedence while ordinary sections and fallback are preserved');
+  }
+  console.log('Instrument menu checks passed: all 16 instrument/guard choices, normalized rotated bounds, centering, button input ownership, and inherited visibility.');
 } finally {
   scene.dispose();
   engine.dispose();

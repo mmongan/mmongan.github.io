@@ -28,6 +28,8 @@ import { initInstrumentPanel } from '../menu/instrumentPanel';
 import { initGhostBandControls } from '../menu/ghostBandControls';
 import { setDrillChartPadVisible } from '../menu/drillChartPad';
 import { initMarcherPOV } from '../camera/marcherPOV';
+import { initMarcherFootprints } from '../robot/marcherFootprints';
+import { initDrillSpacingChecker } from '../menu/drillSpacingChecker';
 
 // Build static content before wiring up input and the WebXR experience.
 createSky();
@@ -45,11 +47,13 @@ fieldLevelInputs.forEach((input) => {
 updateFieldLevel();
 
 initInteraction();
+initDrillSpacingChecker(getSelectableMarchers, selectRobot);
 initMusicStand();
 initInstrumentPanel();
 initGhostBandControls();
 initMidiPlayback();
 initMarcherPOV(getSelectedMarcher, getSelectableMarchers, selectRobot, refreshPathLineAppearance);
+initMarcherFootprints(getSelectedMarcher);
 
 const startupChartObserver = scene.onBeforeRenderObservable.add(() => {
   scene.onBeforeRenderObservable.remove(startupChartObserver);

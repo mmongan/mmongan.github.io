@@ -87,6 +87,7 @@ import {
   setMarcherInstrument,
   setMarchTempo,
   playAll,
+  registerRobotCounts,
   onMarcherStrideLimited,
 } from '../robot/robot';
 import { duplicateDrillButton, duplicateDrillStatus } from '../ui/dom';
@@ -113,6 +114,8 @@ import {
 } from '../menu/floatingPanel';
 import type { FormationLetter } from '../menu/handMenu';
 import { createHandInteraction } from './handInteraction';
+import { executeMarcherPaintAction, initMarcherPaint, isMarcherPainting, stopMarcherPainting, tryPaintMarcher } from './marcherPaint';
+import { executeFieldProjectorAction, initFieldImageProjector } from './fieldImageProjector';
 import { EditHistory } from './editHistory';
 import { executeASLNamingAction, initASLNaming, isFingerspellingNamingActive, setNamingHandTracking } from '../menu/aslNaming';
 import {
@@ -126,7 +129,8 @@ import {
 } from '../field/scoreboard';
 import { canvas, collisionMarkersToggle, floorCalibrationToggle, fullScaleVRButton, tabletopScaleButton, showAllPathsToggle, placementModeToggle, eraseModeToggle, drillChartPadToggle, marcherInstrumentRadios, undoEraseButton, redoEraseButton, addRandomRobotsButton, marcherCountInput, marcherCountValue, generateDrillButton, openMarchForm, openMarchUrlInput, openMarchButton, openMarchExampleButton, openMarchStatus, drillLabelsToggle } from '../ui/dom';
 import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS, FIELD_SURFACE_Y } from '../field/constants';
-import { FORMATION_SPACING_YARDS, generateMarchingDrillPaths, getDrillSectionInstrument, MARCH_STEP_YARDS } from '../robot/drill';
+import { buildSynchronizedPaths, FORMATION_SPACING_YARDS, generateMarchingDrillPaths, getDrillSectionInstrument, MARCH_STEP_YARDS } from '../robot/drill';
+import { isGuideOnField } from './fieldDrawingGeometry';
 
 // Track the live XR controllers and the state of a grab/manipulation gesture.
 // Hand-distance sensitivity for scaling: fine control near the small end of
@@ -456,6 +460,7 @@ const placementDrafts = new Map<string, TransformNode>();
 function setEraseMode(enabled: boolean) {
   if (enabled === eraseMode) return;
   if (enabled) {
+    stopMarcherPainting();
     selectionTools?.disable();
     setPlacementMode(false);
     handInteraction.prepareForErase();
@@ -532,6 +537,7 @@ placementModeToggle?.addEventListener("change", () => {
 
 function setPlacementMode(enabled: boolean) {
   if (enabled) {
+    stopMarcherPainting();
     selectionTools?.disable();
     setEraseMode(false);
   }
@@ -1667,6 +1673,81 @@ function getEditableEditorFormation(): Segment | undefined {
   return segment;
 }
 
+function sampleDestinationGuide(controlPoints: readonly Vector3[], count: number): Vector3[] {
+  const points = controlPoints.map(point => new Vector3(point.x, FIELD_SURFACE_Y, point.z));
+  const closed = points.length > 2 && Vector3.DistanceSquared(points[0], points[points.length - 1]) < 1e-6;
+  if (closed) points.pop();
+
+  const segmentCount = closed ? points.length : points.length - 1;
+  const lengths = Array.from({ length: segmentCount }, (_, index) =>
+    Vector3.Distance(points[index], points[(index + 1) % points.length]));
+  const totalLength = lengths.reduce((sum, length) => sum + length, 0);
+  if (points.length < 2 || !Number.isFinite(totalLength) || totalLength < 0.05) return [];
+
+  return Array.from({ length: count }, (_, index) => {
+    const distance = closed
+      ? totalLength * index / count
+      : count === 1 ? totalLength / 2 : totalLength * index / (count - 1);
+    let remaining = distance;
+    let segment = 0;
+    while (segment < lengths.length - 1 && remaining > lengths[segment]) {
+      remaining -= lengths[segment];
+      segment++;
+    }
+    const start = points[segment];
+    const end = points[(segment + 1) % points.length];
+    const length = lengths[segment];
+    return Vector3.Lerp(start, end, length > 0 ? Math.min(1, remaining / length) : 0);
+  });
+}
+
+function createSynchronizedRoutesFromGuide(controlPoints: Vector3[]): boolean {
+  const segment = getEditableEditorFormation();
+  if (!segment) return false;
+  if (!isGuideOnField(controlPoints)) {
+    publishFormationEdit("Destination guide must be finite and stay inside the field.");
+    return false;
+  }
+  const targets = sampleDestinationGuide(controlPoints, segment.robots.length);
+  if (targets.length !== segment.robots.length) {
+    publishFormationEdit("Destination guide must have a visible length and at least two distinct points.");
+    return false;
+  }
+
+  const moving = new Set(segment.robots);
+  const stationary = [...robotPaths.keys()]
+    .filter(robot => !moving.has(robot) && !robot.isDisposed() && robot.isEnabled())
+    .map(robot => getRobotCounts(robot)?.[0]?.position.clone() ?? robot.position.clone());
+  const minSpacing = COLLISION_MARKER_RADIUS_YARDS * 2;
+  for (let first = 0; first < targets.length; first++) {
+    for (let second = first + 1; second < targets.length; second++) {
+      if (Vector3.Distance(targets[first], targets[second]) < minSpacing) {
+        publishFormationEdit("Destination guide is too small for this form; space its marcher positions farther apart.");
+        return false;
+      }
+    }
+    if (stationary.some(position => Vector3.Distance(targets[first], position) < minSpacing)) {
+      publishFormationEdit("Destination guide overlaps another marcher. Choose a clear field area.");
+      return false;
+    }
+  }
+
+  const starts = segment.robots.map(robot => robot.position.clone());
+  const routes = buildSynchronizedPaths(starts, targets, stationary);
+  segment.robots.forEach((robot, index) => {
+    const route = routes[index];
+    robotPaths.set(robot, route);
+    updateRobotPathLine(robot, route);
+    registerRobotCounts(robot, route, scene, undefined, true);
+  });
+  refreshCollisionMarkers(scene);
+  seekToCount(0);
+  playAll();
+  selectRobot(segment.robots[0], true);
+  publishFormationEdit(`Created ${routes.length} synchronized routes with ${routes[0].length - 1} shared counts; playback started.`);
+  return true;
+}
+
 function refreshEditedFormation(segment: Segment) {
   acceptedFormationControls.set(segment, segment.controlPoints.map(point => point.clone()));
   rebuildFormationConnections(segment);
@@ -1990,6 +2071,13 @@ const menuInteractionHeld = new Map<string, boolean>();
 
 function executeMenuAction(hit: NonNullable<ReturnType<typeof getHandMenuHit>>) {
   switch (hit.action) {
+    case "fieldProjector":
+      executeFieldProjectorAction(hit.command);
+      break;
+    case "marcherPaint":
+    case "marcherPaintColor":
+      executeMarcherPaintAction(hit);
+      break;
     case "drawingTool":
       executeDrawingToolAction(hit);
       break;
@@ -2161,6 +2249,8 @@ const handInteraction = createHandInteraction({
   pathPointMinDistance: PATH_POINT_MIN_DISTANCE,
   isPlacementMode: () => placementMode,
   isEraseMode: () => eraseMode,
+  isPainting: isMarcherPainting,
+  paintMarcher: tryPaintMarcher,
   eraseMarcher,
   getSelectedRobot: () => selectedRobot,
   selectRobot,
@@ -2368,7 +2458,7 @@ export function updateRobotPathFromControllers() {
       return;
     }
 
-    if (!eraseMode && gripPressed && !wasGripPressed &&
+    if (!eraseMode && !isMarcherPainting() && gripPressed && !wasGripPressed &&
       !menuInteractionHeld.get(handedness)) {
       const gripPoint = getControllerPosition(controller).getAbsolutePosition();
       if (handInteraction.beginControllerFormationPull(handedness, gripPoint)) return;
@@ -2433,6 +2523,12 @@ export function updateRobotPathFromControllers() {
         beginFloatingPanelGrab(handedness, getControllerPosition(controller).computeWorldMatrix(true), panelPick.pickedMesh,
           panelPick.pickedPoint ?? undefined);
         padGrabButtons.set(handedness, "trigger");
+        return;
+      }
+      if (isMarcherPainting()) {
+        const pick = scene.pickWithRay(ray, mesh => findRobotRoot(mesh) !== null);
+        tryPaintMarcher(pick?.hit ? findRobotRoot(pick.pickedMesh) : null);
+        menuInteractionHeld.set(handedness, true);
         return;
       }
       const ghostPick = scene.pickWithRay(ray, isGhostBandMesh);
@@ -2613,6 +2709,13 @@ export function updateRobotPathFromControllers() {
       }
 
       if (reshapingStepHandle) {
+        const robot = reshapingStepHandle.robot;
+        const counts = getRobotCounts(robot);
+        if (counts) {
+          const path = counts.map(count => count.position.clone());
+          robotPaths.set(robot, path);
+          updateRobotPathLine(robot, path);
+        }
         reshapingStepHandle = null;
         return;
       }
@@ -2896,10 +2999,30 @@ async function openMarchFromUrl(url: string, autoPlay = true): Promise<boolean> 
 }
 
 export function initInteraction() {
+  initFieldImageProjector(pathRoot, showPlacementNotice);
+  initMarcherPaint({
+    getSelected: () => selectedRobot,
+    prepare: () => {
+      setPlacementMode(false);
+      setEraseMode(false);
+      selectionTools?.disable();
+      executeDrawingToolAction({ action: 'drawingTool', tool: 'stop' });
+      handInteraction.prepareForErase();
+      movingSegment = null; reshapingSegment = null; rotatingSegment = null;
+      rotationHandleDrags.clear(); twoHandPathManipulation = null;
+      reshapingStepHandle = null; scrubbingRobot = null;
+    },
+    changed: robot => {
+      refreshPathLineAppearance();
+      if (selectedRobot === robot) refreshStepHandles();
+    },
+    notify: showPlacementNotice,
+  });
   initFieldDrawingTools({
     root: pathRoot,
     notify: showPlacementNotice,
     prepare: () => {
+      stopMarcherPainting();
       setPlacementMode(false);
       setEraseMode(false);
       selectionTools?.disable();
@@ -2937,6 +3060,7 @@ export function initInteraction() {
       refreshCollisionMarkers(scene);
       return true;
     },
+    createSynchronizedRoutes: createSynchronizedRoutesFromGuide,
   });
   selectionTools = createSelectionEditor({
     root: pathRoot,
@@ -2945,6 +3069,7 @@ export function initInteraction() {
     detachStandingMembers: detachStandingSelection,
     changed: refreshSelectionEdits,
     prepare: () => {
+      stopMarcherPainting();
       setEraseMode(false);
       if (placementModeToggle?.checked) {
         placementModeToggle.checked = false;
@@ -2958,6 +3083,7 @@ export function initInteraction() {
     constrain: constrainFormationMovement,
   });
   initASLNaming(() => selectedRobot, () => {
+    stopMarcherPainting();
     handInteraction.prepareForErase();
     selectionTools?.disable();
     setEraseMode(false);
@@ -3072,6 +3198,7 @@ export function initInteraction() {
       }
     }
     if (pointerInfo.type === PointerEventTypes.POINTERDOWN) {
+      if (isMarcherPainting()) eventState.skipNextObservers = true;
       const tempoPick = scene.pick(scene.pointerX, scene.pointerY, isScoreboardTempoScreen);
       tempoPointerDragging = !!tempoPick?.hit && updateScoreboardTempoFromPick(tempoPick);
       if (tempoPointerDragging) return;
@@ -3091,13 +3218,13 @@ export function initInteraction() {
         scene.pointerY,
         (mesh) => isMenuControl(mesh) || isScoreboardTempoScreen(mesh) || isFloatingPanelMesh(mesh)
       );
-      canvas.style.cursor = eraseMode ? "crosshair" : pick?.hit && (
+      canvas.style.cursor = eraseMode || isMarcherPainting() ? "crosshair" : pick?.hit && (
         getHandMenuHit(pick) || isScoreboardTempoPick(pick) || isScoreboardGaitPick(pick) ||
         isScoreboardHornPosePick(pick)
       ) ? "pointer" : pick?.pickedMesh && isFloatingPanelMesh(pick.pickedMesh) ? "grab" : "";
       return;
     }
-    if (pointerInfo.type === PointerEventTypes.POINTERDOUBLETAP) {
+    if (pointerInfo.type === PointerEventTypes.POINTERDOUBLETAP && !isMarcherPainting()) {
       const pick = pointerInfo.pickInfo;
       if (pick?.pickedMesh?.name.startsWith("musicStandButton-")) {
         const hit = getHandMenuHit(pick);
@@ -3105,7 +3232,8 @@ export function initInteraction() {
       }
       return;
     }
-    if (pointerInfo.type !== PointerEventTypes.POINTERTAP) return;
+    if (pointerInfo.type !== PointerEventTypes.POINTERTAP &&
+      pointerInfo.type !== PointerEventTypes.POINTERDOUBLETAP) return;
     const tempoPick = scene.pick(scene.pointerX, scene.pointerY, isScoreboardTempoScreen);
     if (tempoPick?.hit && updateScoreboardTempoFromPick(tempoPick)) return;
     if (tempoPick?.hit && updateScoreboardGaitFromPick(tempoPick)) return;
@@ -3117,6 +3245,11 @@ export function initInteraction() {
       return;
     }
     if (pickFloatingPanel(getPointerRay())?.hit) return;
+    if (isMarcherPainting()) {
+      const pick = scene.pick(scene.pointerX, scene.pointerY, mesh => findRobotRoot(mesh) !== null);
+      tryPaintMarcher(pick?.hit ? findRobotRoot(pick.pickedMesh) : null);
+      return;
+    }
     const ghostPick = scene.pickWithRay(getPointerRay(), isGhostBandMesh);
     if (!floorCalibrationToggle?.checked && ghostPick?.hit && ghostPick.pickedMesh &&
       jumpToGhostBandTime(ghostPick.pickedMesh)) return;

@@ -473,3 +473,52 @@ body {
   background: #282018;
   pointer-events: none;
 }
+
+.spacing-checker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.spacing-checker p {
+  margin: 0;
+  font-size: 0.8rem;
+  color: rgba(237, 244, 255, 0.76);
+}
+
+.spacing-checker-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.spacing-checker-controls input {
+  width: 7rem;
+}
+
+.spacing-results {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.spacing-result-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 0.8rem;
+}
+
+.spacing-result-row.crowded {
+  color: #ffd19a;
+  background: rgba(255, 140, 0, 0.14);
+}

@@ -16,6 +16,7 @@ import { drawPanelButton, PANEL_FRAME_COLOR } from './panelStyle';
 export const INSTRUMENT_PANEL_CHOICES: readonly MarcherInstrument[] = [
   'trumpet', 'mellophone', 'trombone', 'euphonium', 'sousaphone', 'altoSax',
   'bariSax', 'clarinet', 'flute', 'snare', 'tenors', 'bassDrum', 'glockenspiel',
+  'guardFlag', 'guardRifle', 'guardSabre',
 ];
 
 let root: TransformNode | null = null;
@@ -57,7 +58,7 @@ export function initInstrumentPanel() {
   const buttons = new Map<AbstractMesh, HandMenuHit>();
   const meshes = new Set<AbstractMesh>();
   const backing = MeshBuilder.CreateBox('instrumentPanelBacking',
-    { width: 0.78, height: 0.9, depth: 0.018 }, scene);
+    { width: 0.78, height: 1.02, depth: 0.018 }, scene);
   backing.parent = root;
   const backingMaterial = new StandardMaterial('instrumentPanelBackingMaterial', scene);
   backingMaterial.diffuseColor = Color3.FromHexString(PANEL_FRAME_COLOR);
@@ -96,7 +97,7 @@ export function initInstrumentPanel() {
 
   tile('instrumentPanelTitle', 'Create marchers', -0.03, 0.39, 0.64, 0.06);
   tile('instrumentPanelClose', 'X', 0.335, 0.39, 0.055, 0.055, { action: 'instrumentPanelHide' });
-  tile('instrumentPanelHelp', 'Pick an instrument, then place on the field', 0, 0.32, 0.73, 0.045);
+  tile('instrumentPanelHelp', 'Pick an instrument or guard prop, then place', 0, 0.32, 0.73, 0.045);
   INSTRUMENT_PANEL_CHOICES.forEach((instrument, index) => {
     const x = (index % 4 - 1.5) * 0.185;
     const y = 0.205 - Math.floor(index / 4) * 0.16;
@@ -106,9 +107,9 @@ export function initInstrumentPanel() {
     tile(`instrumentPanelLabel-${instrument}`, getInstrumentLabel(instrument), x, y - 0.065, 0.17, 0.03,
       { action: 'createMarcher', instrument });
   });
-  tile('instrumentPanelDone', 'Done placing', 0.17, -0.34, 0.35, 0.06,
+  tile('instrumentPanelDone', 'Done placing', 0.17, -0.45, 0.35, 0.06,
     { action: 'finishMarcherPlacement' });
-  panel = new FloatingPanel(root, meshes, root, new Vector3(0.39, 0.45, 0.04), buttons);
+  panel = new FloatingPanel(root, meshes, root, new Vector3(0.39, 0.51, 0.04), buttons);
   root.setEnabled(false);
   instrumentPanelButton?.addEventListener('click', summonInstrumentPanel);
   instrumentPanelToggle?.addEventListener('change', updatePanelVisibility);

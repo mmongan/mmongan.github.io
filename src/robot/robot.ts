@@ -40,10 +40,14 @@ import { boundMarcherFootTarget, boundMarcherFootLift, MARCHER_CALF_LENGTH, MARC
   MARCHER_SHOE_FORWARD_OFFSET, MARCHER_SHOE_HALF_HEIGHT, marcherSwingLift, marcherGroundFootPitch,
   marcherSwingFootPitch, precalculateMarcherLegPose } from './marcherLegPose';
 import { marcherFootTarget, marcherSoleInRig } from './marcherFootTargets';
+import { marcherSoleFromLegPose } from './marcherLegPose';
+import { gaitContactBeats, type MarcherFootContact } from './marcherFootContacts';
 import { BakedLegAnimation, SharedLegBakePool, getBakedLegAnimationBytes, getStepCycleCacheStatus,
   type BakedLegPose } from './bakedLegAnimation';
 import { midiBeatAtPulse, midiPulseAtBeat, type MidiBeatUnit } from '../audio/midiBeatPulse';
 import { sharedMarcherStepPose } from './marcherStepCycles';
+import { getGuardFlagTemplate, getGuardRifleTemplate, getGuardSabreTemplate,
+  FLAG_GRIPS, RIFLE_GRIPS, SABRE_GRIPS } from './colorGuardModels';
 
 export { COLLISION_MARKER_RADIUS_YARDS } from './collisionMarkers';
 
@@ -320,6 +324,21 @@ export function getRobotColor(robot: TransformNode): Color3 {
   return robotColors.get(robot) ?? Color3.White();
 }
 
+export function setRobotColor(robot: TransformNode, color: Color3) {
+  if (robot.isDisposed() || !robotColors.has(robot)) throw new Error('Choose an existing marcher to paint.');
+  if (![color.r, color.g, color.b].every(value => Number.isFinite(value) && value >= 0 && value <= 1)) {
+    throw new RangeError('Uniform color components must be between zero and one.');
+  }
+  robotColors.set(robot, color.clone());
+  for (const mesh of robot.getChildMeshes()) {
+    if (mesh instanceof InstancedMesh &&
+      (modelPartInfo.get(mesh)?.tinted || mesh.name === 'robotTopDownMarker')) {
+      mesh.instancedBuffers.color = Color4.FromColor3(color);
+    }
+  }
+  tintedPartMaterials.get(robot)?.diffuseColor.copyFrom(color);
+}
+
 // Robots are tiny relative to the whole field, so the top-down monitor draws
 // an oversized marker disc for each one instead of relying on its true size.
 // The marker sits on a dedicated layer bit so only a camera that opts into
@@ -331,7 +350,8 @@ const MAX_KNEE_BEND_RADIANS = 1.35;
 const UPPER_ARM_LENGTH = 0.3;
 const FOREARM_LENGTH = 0.4;
 export type MarcherInstrument = "trumpet" | "mellophone" | "altoSax" | "bariSax" | "trombone" | "euphonium" |
-  "clarinet" | "flute" | "sousaphone" | "snare" | "tenors" | "bassDrum" | "glockenspiel";
+  "clarinet" | "flute" | "sousaphone" | "snare" | "tenors" | "bassDrum" | "glockenspiel" |
+  "guardFlag" | "guardRifle" | "guardSabre";
 
 // Instruments hang off an unsquashed root (uniform MARCHER_BODY_SCALE), so
 // they keep true proportions at any rotation. Instrument-root coordinates are
@@ -477,6 +497,9 @@ const INSTRUMENTS: Record<MarcherInstrument, InstrumentSpec> = {
   tenors: wornInstrument("Tenor drums", getTenorTemplate, TENOR_GRIPS),
   bassDrum: wornInstrument("Bass drum", getBassDrumTemplate, BASS_DRUM_GRIPS),
   glockenspiel: wornInstrument("Glockenspiel", getGlockenspielTemplate, GLOCKENSPIEL_GRIPS),
+  guardFlag: wornInstrument("Color guard flag", getGuardFlagTemplate, FLAG_GRIPS),
+  guardRifle: wornInstrument("Color guard rifle", getGuardRifleTemplate, RIFLE_GRIPS),
+  guardSabre: wornInstrument("Color guard sabre", getGuardSabreTemplate, SABRE_GRIPS),
 };
 export const MARCHER_INSTRUMENTS = Object.keys(INSTRUMENTS) as MarcherInstrument[];
 const marcherParts = new Map<TransformNode, {
@@ -1363,6 +1386,7 @@ export function getLegAnimationBakeStatus() {
 
 function applyGlobalCount(robot: TransformNode, state: PlayerState,
   sample?: { drillBeat: number; musicBeat: number;
+    contact?: (pose: BakedLegPose, position: Vector3, yaw: number, left: boolean, progress: number) => void;
     parts?: NonNullable<ReturnType<typeof marcherParts.get>> }): BakedLegPose | undefined {
   if (!sample && ghostBandPreview) {
     ghostBandPreview.update(robot, state.counts, getDrillTransportState().beat);
@@ -1719,9 +1743,57 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState,
     legs: [solveLeg(-1, leftTarget), solveLeg(1, rightTarget)],
     hipHalfSpacing, limited: leftTarget.limited || rightTarget.limited,
   };
-  if (sample) return pose;
+  if (sample) {
+    sample.contact?.(pose, rootPosition, bodyRotation, leftStance, gaitProgress);
+    return pose;
+  }
   reportLimited(pose.limited);
   applyLegPose(pose);
+}
+
+export function getRobotFootprintSource(robot: TransformNode) {
+  const state = players.get(robot), parts = marcherParts.get(robot);
+  if (!state || !parts || !state.counts.length) return null;
+  const clockOffset = Math.round((getDrillTransportState().beat - getMusicTransportState().beat) * 1e8) / 1e8;
+  const key = JSON.stringify([parts.gaitIndex, clockOffset, repeatOptions.songLength, repeatOptions.drill,
+    playbackBeatUnits, state.counts.map(count => [
+      count.position.x, count.position.y, count.position.z, count.rotationY, count.facingY,
+    ])]);
+  return {
+    key,
+    build(): MarcherFootContact[] {
+      const sampleState: PlayerState = { ...state, stepCache: undefined, gaitPhaseCache: undefined, legBake: undefined };
+      const last = state.counts.length - 1;
+      const offsets = getGaitStepPhaseOffsets(sampleState, parts.gaitIndex);
+      const cadence = (segment: number) => resolveSegmentGait(sampleState, segment, parts.gaitIndex)?.stepsPerCount ?? 1;
+      const beats = gaitContactBeats(last,
+        (segment, beat) => repeatOptions.songLength > 0
+          ? midiPulseAtBeat(beat - clockOffset, playbackBeatUnits) * cadence(segment)
+          : offsets[segment] + (beat - segment) * cadence(segment),
+        (segment, step) => repeatOptions.songLength > 0
+          ? midiBeatAtPulse(step / cadence(segment), playbackBeatUnits) + clockOffset
+          : segment + (step - offsets[segment]) / cadence(segment));
+      const contacts: MarcherFootContact[] = [];
+      for (const beat of beats) {
+        applyGlobalCount(robot, sampleState, {
+          drillBeat: beat, musicBeat: beat - clockOffset,
+          contact(pose, position, yaw, left, progress) {
+            for (const side of beat === 0 && progress < 1e-8 ? [-1, 1] : [left ? -1 : 1]) {
+              const leg = pose.legs[side < 0 ? 0 : 1];
+              const sole = marcherSoleFromLegPose(new Vector3(side * pose.hipHalfSpacing, 0.69, 0), leg);
+              const rotation = Quaternion.FromEulerAngles(0, yaw, 0);
+              contacts.push({
+                beat, left: side < 0, yaw: yaw + sole.yaw,
+                position: position.add(sole.position.scale(MARCHER_BODY_SCALE)
+                  .rotateByQuaternionToRef(rotation, Vector3.Zero())),
+              });
+            }
+          },
+        });
+      }
+      return contacts;
+    },
+  };
 }
 
 function applyGlobalCountToAllRobots() {
@@ -1879,7 +1951,8 @@ export function registerRobotCounts(
   robot: TransformNode,
   positions: Vector3[],
   scene: Scene,
-  facings?: ReadonlyArray<number | undefined>
+  facings?: ReadonlyArray<number | undefined>,
+  skipCollisionRefresh = false
 ) {
   if (positions.length < 1) return;
   ensureSharedObserver(scene);
@@ -1898,7 +1971,7 @@ export function registerRobotCounts(
   if (oldState) invalidateLegBake(oldState);
   players.set(robot, { points: positions, stepSizeYards: DEFAULT_STEP_SIZE_YARDS, counts });
   applyGlobalCount(robot, players.get(robot)!);
-  recalculateCollisionMarkers(scene);
+  if (!skipCollisionRefresh) recalculateCollisionMarkers(scene);
 }
 
 // Same as walkRobotAlongPath but for a precomputed per-count position

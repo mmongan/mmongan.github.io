@@ -186,8 +186,36 @@ try {
     }
   }
   assert.ok(optimizedVertices < denseVertices * .8, 'Full-detail instrument library saves at least 20% of vertices');
+  const guard = load('colorGuardModels', ['getGuardFlagTemplate', 'getGuardRifleTemplate', 'getGuardSabreTemplate',
+    'FLAG_GRIPS', 'RIFLE_GRIPS', 'SABRE_GRIPS']);
+  for (const [name, grips] of [['getGuardFlagTemplate', guard.FLAG_GRIPS],
+    ['getGuardRifleTemplate', guard.RIFLE_GRIPS], ['getGuardSabreTemplate', guard.SABRE_GRIPS]]) {
+    for (const detail of ['high', 'low']) {
+      const mesh = guard[name](scene, detail);
+      verify(mesh);
+      assert.equal(guard[name](scene, detail), mesh, 'Guard templates are cached');
+      const copy = mesh.clone('guardGeometryClone');
+      assert.equal(copy.geometry, mesh.geometry, 'Guard clones share geometry');
+      copy.dispose();
+      const bounds = mesh.getBoundingInfo().boundingBox;
+      for (const grip of grips) {
+        for (const axis of ['x', 'y', 'z']) {
+          assert.ok(grip[axis] >= bounds.minimum[axis] - .01 && grip[axis] <= bounds.maximum[axis] + .01,
+            `${name}: grips lie within equipment bounds`);
+        }
+      }
+      const positions = mesh.getVerticesData('position'), indices = mesh.getIndices();
+      for (let index = 0; index < indices.length; index += 3) {
+        const a = Vector3.FromArray(positions, indices[index] * 3);
+        const b = Vector3.FromArray(positions, indices[index + 1] * 3);
+        const c = Vector3.FromArray(positions, indices[index + 2] * 3);
+        assert.ok(Vector3.Cross(b.subtract(a), c.subtract(a)).lengthSquared() > 1e-16,
+          `${name} ${detail}: equipment triangles have area`);
+      }
+    }
+  }
   console.log(`Full-detail library: ${denseVertices} -> ${optimizedVertices} vertices (${(100 * (1 - optimizedVertices / denseVertices)).toFixed(1)}% fewer).`);
-  console.log('Instrument geometry checks passed: tessellation, caps, drum shells, bell transitions, bounds, both detail levels, and shared templates.');
+  console.log('Instrument/guard geometry checks passed: tessellation, nondegenerate guard triangles, grips, bounds, both detail levels, and shared templates.');
 } finally {
   scene.dispose();
   engine.dispose();

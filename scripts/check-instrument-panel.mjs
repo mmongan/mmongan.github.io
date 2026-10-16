@@ -85,9 +85,15 @@ try {
   assert.equal(placements, 1);
   const radios = [...read('../src/index.html').matchAll(/name="marcherInstrument" value="([^"]+)"/g)].map(match => match[1]);
   assert.deepEqual([...models].sort(), radios.sort(), 'Panel offers every supported instrument exactly once');
+  assert.equal(models.length, 16, 'All three guard equipment choices join the instrument picker');
+  const done = scene.getMeshByName('instrumentPanelDone');
+  done.computeWorldMatrix(true);
   for (const instrument of models) {
     const button = scene.getMeshByName(`instrumentPanel-${instrument}`);
     const label = scene.getMeshByName(`instrumentPanelLabel-${instrument}`);
+    label.computeWorldMatrix(true);
+    assert.ok(label.getBoundingInfo().boundingBox.minimumWorld.y >
+      done.getBoundingInfo().boundingBox.maximumWorld.y, 'Done button never overlaps instrument/guard labels');
     assert.equal(registered.get(button).instrument, instrument);
     assert.equal(registered.get(label).instrument, instrument);
     selected = {};
@@ -203,7 +209,7 @@ try {
   assert.equal(watchRoot.parent, null);
   assert.ok(plateRoot.position.equals(platePosition) && watchRoot.position.equals(watchPosition),
     'Detached panels do not reattach or move when the wrist returns');
-  console.log('Instrument panel and watch passed: all 13 instruments, creation actions, visibility toggle, palm-up instruments, wrist transport layout, formation-library transport, and hide/release.');
+  console.log('Instrument panel and watch passed: all 16 instrument/guard choices, unobstructed labels, creation actions, visibility toggle, palm-up choices, wrist transport layout, formation-library transport, and hide/release.');
 } finally {
   scene.dispose();
   engine.dispose();

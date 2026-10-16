@@ -90,6 +90,8 @@ export interface HandPathDependencies {
   pathPointMinDistance: number;
   isPlacementMode: () => boolean;
   isEraseMode: () => boolean;
+  isPainting?: () => boolean;
+  paintMarcher?: (robot: TransformNode | null) => boolean;
   eraseMarcher: (robot: TransformNode) => void;
   getSelectedRobot: () => TransformNode | null;
   selectRobot: (robot: TransformNode | null) => void;
@@ -881,6 +883,19 @@ export function createHandInteraction(paths: HandPathDependencies) {
     }
     const left = pinchedPoints.get('left');
     const right = pinchedPoints.get('right');
+    if (paths.isPainting?.()) {
+      sceneGesture = null;
+      for (const handedness of ['left', 'right'] as const) {
+        if (padHands.has(handedness)) continue;
+        const point = pinchedPoints.get(handedness);
+        const wasPinching = handPinches.get(handedness) ?? false;
+        handPinches.set(handedness, !!point);
+        if (!point || wasPinching || activateHandMenuAtPoint(point)) continue;
+        if (!paths.isPainting?.()) break;
+        paths.paintMarcher?.(findMarcherNearHand(point));
+      }
+      return;
+    }
     if (isEraseMode()) {
       sceneGesture = null;
       for (const handedness of ['left', 'right'] as const) {
@@ -1115,6 +1130,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
   }
 
   function updateFingerPushes() {
+    if (paths.isPainting?.()) return;
     for (const handedness of ['left', 'right'] as const) {
       const hand = handTracking?.getHandByHandedness(handedness);
       const blocked = !hand || floorCalibrationToggle?.checked || sceneGesture ||

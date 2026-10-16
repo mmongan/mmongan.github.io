@@ -61,8 +61,11 @@ export async function loadOpenMarchFromUrl(input: string): Promise<OpenMarchImpo
 }
 
 // OpenMarch sections are free text, so the closest OpenChartxr instrument is
-// matched by keyword; unknown sections (guard, drum major) keep `fallback`.
+// matched by keyword; unknown sections (such as drum major) keep `fallback`.
 const SECTION_INSTRUMENTS: ReadonlyArray<readonly [RegExp, MarcherInstrument]> = [
+  [/sabre|saber/, "guardSabre"],
+  [/rifle/, "guardRifle"],
+  [/colou?r\s*guard|guard|flag/, "guardFlag"],
   [/bari(tone)?\s*sax/, "bariSax"],
   [/sax/, "altoSax"],
   [/flute|piccolo/, "flute"],

@@ -120,6 +120,10 @@ Implementation: [OpenMarch database conversion](src/robot/openMarchFormat.ts), [
 
 Every group edit checks body and instrument collisions before applying changes. Rejected edits leave the entire form unchanged. Imported or attached marching routes are not edited by these standing-form controls. Use the separate selection and set editor below for arbitrary selections and explicit authored-set changes. Successful form edits clear erase undo/redo history.
 
+### Create synchronized routes from a destination guide
+
+Select a standing form in **Drill form editor**, close Settings, and draw or stamp a destination guide with the field drawing tools. Choose **Route selected form** in the drawing tray. Marchers are paired with evenly spaced points along the guide in formation order, and a shared count-by-count route planner adjusts paths to avoid collisions while preserving common timing. Playback seeks to count zero and starts after the routes are created. The guide remains editable; individual route counts can be adjusted with the selected marcher's step handles. Route planning replaces the selected form's standing state for playback and does not modify other forms or imported drill sets.
+
 ## Select marchers, build shapes, and edit sets
 
 Open **Settings -> Selection, shapes, and sets** and enable **multi-marcher editing**. Playback pauses and marcher POV exits. Close Settings to use the desktop field gestures:
@@ -185,6 +189,39 @@ Changing the destination set updates the comparison and pauses at the new destin
 Entering chart mode exits marcher POV and ghost-band timeline preview. Resuming playback, seeking away, entering timeline ghost preview, or starting floor calibration turns chart mode off. Turning the toggle off removes the overlay but leaves the real band paused at its current count. Chart mode does not edit schedules, add undo entries, or save itself into drafting camera snapshots. Focused check: `node scripts/check-field-chart-mode.mjs`.
 
 This field overlay is separate from the **Chart** pad (a floating chart page) and **Ghost-band timeline comparison** (a movable timeline preview). It is session-only and off after reload. Implementation: [field chart mode](src/robot/fieldChartMode.ts).
+
+### Selected-marcher footprints
+
+Enable **Show selected marcher's full-route footprints** in Settings, then select a marcher on the field. Cyan left and gold right prints show the gait's actual sole contact anchors at stance entry, sampled through the same leg solver as playback, including bounded stride placement and heel/toe roll compensation. Half-/double-time cadence, MIDI beat units and the current music/drill clock offset, scheduled facing, sideways/backward travel, and forced mark-time gaits determine placement. Initial planted feet are included; repeated mark-time contacts overlap. Prints are projected onto the turf and use a stylized shoe outline; they are not a heel/toe pressure map or recorded playback trail. A halted schedule with no animated interval has no gait contacts to display.
+
+Changing selection, gait, timing, repeat settings, or the route refreshes the overlay; deselection, disabled/deleted marchers, or a marcher without a scheduled route clears it with a status message. The preview samples one pass through the route using current timing/repeat settings, not every possible repetition. Sampling uses isolated gait caches and does not seek or move the real marcher. Footprints are non-pickable, follow tabletop field transforms, and temporarily hide during floor calibration. The toggle defaults off, is session-only, and does not alter playback, drill data, or drafting snapshots. Implementation: [marcher footprints](src/robot/marcherFootprints.ts) and [contact timing](src/robot/marcherFootContacts.ts). Focused checks: `node scripts/check-marcher-footprints.mjs` and `node scripts/check-midi-footfall-position.mjs`.
+
+### Color guard
+
+Choose **Color guard flag**, **Color guard rifle**, or **Color guard sabre** in Settings, the grabbable **Create marchers** panel, or the palm instrument picker. Place performers and give them routes, formations, facings, chart comparisons, and footprints using the same tools as other marchers. Changing equipment for a selected performer preserves their identity and route.
+
+The flag is a static purple/gold silk on a silver pole; the rifle is a solid white parade prop; the sabre is a silver presentation prop. Equipment stays in a fixed hand-held presentation pose during locomotion and carry/play changes. Spins, tosses, cloth physics, and separate guard choreography are not implemented. OpenMarch section names containing `sabre`/`saber`, `rifle`, or `color guard`/`colour guard`/`guard`/`flag` select the corresponding equipment, with specific prop names taking precedence over generic guard names. Existing generated demo sections remain instrumental. Implementation: [guard models](src/robot/colorGuardModels.ts).
+
+### Uniform paint palette
+
+Open **Uniform paint palette** in Settings or **Paint** on the palm menu. The grabbable, kidney-shaped wooden board has real thickness, beveled edges, a through thumb hole, and procedural wood grain. Ten raised, irregular oil-paint blobs have sculpted ridges and glossy lighting, alongside **Paint selected** and **Done paint** controls.
+
+- Choose a swatch, then click a marcher on desktop, trigger a marcher with an XR controller ray, or pinch a nearby marcher with tracked hands. Only that individual's uniform is recolored; their instrument or guard equipment stays unchanged.
+- Settings also provides a custom color picker, **Paint individual marcher uniforms** toggle, and **Paint selected marcher** button.
+- The marcher's matching route and top-down marker colors update too. Colors survive normal playback and held-marcher rendering changes; other marchers keep their colors.
+- Painting takes precedence over selection, route scrubbing, marcher movement, and field-click hiding. **Done paint**, disabling the checkbox, or entering placement, erase, drafting, multi-selection editing, naming, or floor calibration exits paint mode. You can grab/move the palette without painting.
+- Paint colors are session-only: there is no paint undo, show export, or inclusion in drafting workspace/camera saves. Reloading or replacing the show creates new default-colored marchers.
+
+Implementation: [marcher paint](src/interaction/marcherPaint.ts). Focused check: `node scripts/check-marcher-paint.mjs`.
+
+### Image projector for tracing
+
+1. In Settings, use **Image projector: local tracing image** to upload a PNG, JPEG, or WebP (up to 16 MB). Nothing is uploaded to a server. Load the image before entering immersive XR.
+2. The image is fitted onto the field, preserving aspect ratio. Adjust **Projection center X/Z**, **width**, **rotation**, and **opacity**, or press **Fit image to field**. Zero rotation puts the image's top toward field +Z; transparent image regions remain transparent. Oversized images are downscaled to the device's texture limit, at most 4096 pixels per side, without changing the source file.
+3. Pick up a pencil/ruler, yarn, spline, or another existing drawing implement and trace the projected outline. The image is non-pickable and clipped to the field, so it does not intercept field strokes or editable pins. Use **Create formation** or **Create path** on the guide as usual; there is no automatic image-to-route conversion.
+4. **Open grabbable image projector** or **Project** on the palm menu summons a physical projector with move, width, turn, fade, fit, and on/off buttons, usable with mouse, controller rays, or hand pinches. Moving/grabbing the device only repositions its controls; its buttons align the image in field coordinates. **Put away** hides the device without turning off the projection.
+
+The projection follows tabletop translation, rotation, and scale. Floor calibration temporarily hides it and blocks alignment. **Remove tracing image** releases the image, including any pending upload, without deleting traced guides or converted performers/routes. Reloading clears the projection. Images and alignment settings are session-only and are excluded from local drafting workspaces and camera photos; save traced guides using the existing drafting controls. Failed/canceled replacements preserve the previous image. Implementation: [projector](src/interaction/fieldImageProjector.ts) and [clipped image geometry](src/interaction/fieldImageProjectionGeometry.ts). Focused check: `node scripts/check-field-image-projector.mjs`.
 
 ## Features
 

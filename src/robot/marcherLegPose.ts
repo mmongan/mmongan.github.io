@@ -5,6 +5,24 @@ export const MARCHER_CALF_LENGTH = 0.315;
 export const MARCHER_SHOE_FORWARD_OFFSET = 0.055;
 export const MARCHER_SHOE_HALF_HEIGHT = 0.03;
 export const MARCHER_MAX_FOOT_REACH = 0.22;
+
+export function marcherSoleFromLegPose(hip: Vector3, pose: ReturnType<typeof solvePlantedMarcherLeg>) {
+  const calf = pose.legRotation.multiply(pose.kneeRotation);
+  const foot = calf.multiply(pose.ankleRotation);
+  const sole = hip
+    .add(new Vector3(0, -pose.thighLength, 0).rotateByQuaternionToRef(pose.legRotation, Vector3.Zero()))
+    .add(new Vector3(0, -MARCHER_CALF_LENGTH, 0).rotateByQuaternionToRef(calf, Vector3.Zero()))
+    .add(new Vector3(0, -MARCHER_SHOE_HALF_HEIGHT, MARCHER_SHOE_FORWARD_OFFSET)
+      .rotateByQuaternionToRef(foot, Vector3.Zero()));
+  const pitch = foot.toEulerAngles().x;
+  const forward = new Vector3(0, 0, 1).rotateByQuaternionToRef(foot, Vector3.Zero());
+  const yaw = Math.atan2(forward.x, forward.z);
+  const roll = marcherShoeRollOffset(pitch);
+  return {
+    position: sole.subtract(new Vector3(roll * Math.sin(yaw), marcherShoeGroundDepth(pitch), roll * Math.cos(yaw))),
+    yaw,
+  };
+}
 const MAX_KNEE_FLEXION = 1.35;
 const MAX_LEG_REACH = MARCHER_THIGH_LENGTH + MARCHER_CALF_LENGTH;
 const MIN_LEG_REACH = Math.sqrt(MARCHER_THIGH_LENGTH ** 2 + MARCHER_CALF_LENGTH ** 2 +

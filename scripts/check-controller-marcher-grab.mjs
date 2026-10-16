@@ -44,6 +44,7 @@ let stickY = 0;
 let stickX = 0;
 let deltaTime = 100;
 let scale = 1;
+let painting = false;
 const gripPoint = new Vector3(0.2, 0.8, 0.4);
 const direction = Vector3.Forward();
 const controller = { inputSource: {}, grip: {
@@ -54,6 +55,7 @@ const context = vm.createContext({
   gripHeld: new Map(), triggerHeld: new Map(), marcherGrabs: new Map(),
   padGrabButtons: new Map(), menuInteractionHeld: new Map(),
   eraseMode: false,
+  isMarcherPainting: () => painting,
   SCRUB_DEADZONE: 0.2, getARScale: () => scale,
   isGripPressed: () => grip, getTriggerPressed: () => false,
   isFloatingPanelGrabbed: () => false, getFloatingPanelNear: () => null,
@@ -85,6 +87,10 @@ assert.equal(begun[4], -1);
 begun = undefined;
 context.update();
 assert.equal(begun, undefined, 'Holding grip never repeatedly begins grabs');
+grip = false; context.update();
+painting = true; grip = true; context.update();
+assert.equal(begun, undefined, 'Painting cannot begin a marcher grab or formation pull');
+painting = false;
 context.marcherGrabs.set('left', { source: 'controller', rayDistance: -1 });
 context.update();
 assert.ok(moved[1].equals(gripPoint), 'Near-held marcher follows the physical controller');

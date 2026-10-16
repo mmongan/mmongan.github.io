@@ -31,6 +31,7 @@ interface DrawingDependencies {
   prepare(): void;
   createFormation(points: Vector3[]): boolean;
   createPath(points: Vector3[]): boolean;
+  createSynchronizedRoutes(points: Vector3[]): boolean;
 }
 interface GuideOptions {
   editable?: 'yarn' | 'spline';
@@ -181,9 +182,10 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
   button('Put away', 0.235, -0.005, 0.22, 'stop');
   button('Create formation', -0.18, -0.085, 0.34, 'formation');
   button('Create path', 0.18, -0.085, 0.34, 'path');
-  button('Undo guide', -0.235, -0.165, 0.22, 'undo');
-  button('Clear guides', 0, -0.165, 0.22, 'clear');
-  button('Hide tray', 0.235, -0.165, 0.22, 'hide');
+  button('Route selected form', 0, -0.125, 0.46, 'synchronizedRoutes');
+  button('Undo guide', -0.235, -0.245, 0.22, 'undo');
+  button('Clear guides', 0, -0.245, 0.22, 'clear');
+  button('Hide tray', 0.235, -0.245, 0.22, 'hide');
   const tray = new FloatingPanel(trayRoot, meshes, trayRoot, new Vector3(0.71, 0.4, 0.01), buttons);
   trayRoot.setEnabled(false);
   buildTray(stencilRoot, stencilMeshes, 'stencilTrayBacking');
@@ -196,9 +198,10 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
   button('Put away', 0.235, -0.005, 0.22, 'stop', stencilRoot);
   button('Create formation', -0.18, -0.085, 0.34, 'formation', stencilRoot);
   button('Create path', 0.18, -0.085, 0.34, 'path', stencilRoot);
-  button('Undo guide', -0.235, -0.165, 0.22, 'undo', stencilRoot);
-  button('Clear guides', 0, -0.165, 0.22, 'clear', stencilRoot);
-  button('Hide trays', 0.235, -0.165, 0.22, 'hide', stencilRoot);
+  button('Route selected form', 0, -0.125, 0.46, 'synchronizedRoutes', stencilRoot);
+  button('Undo guide', -0.235, -0.245, 0.22, 'undo', stencilRoot);
+  button('Clear guides', 0, -0.245, 0.22, 'clear', stencilRoot);
+  button('Hide trays', 0.235, -0.245, 0.22, 'hide', stencilRoot);
   const stencilTray = new FloatingPanel(stencilRoot, stencilMeshes, stencilRoot,
     new Vector3(0.48, 0.4, 0.01), stencilButtons);
   stencilRoot.setEnabled(false);
@@ -240,7 +243,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
   const draftCommands = [
     ['Spacing -', 'draftSpacingLess'], ['Spacing +', 'draftSpacingMore'], ['Angle', 'draftAngle'],
     ['Offset side', 'draftSide'], ['Parallel ref', 'draftReference'], ['Add tack', 'addTack'],
-    ['Formation', 'formation'], ['Path', 'path'], ['Undo guide', 'undo'],
+    ['Formation', 'formation'], ['Path', 'path'], ['Route selected form', 'synchronizedRoutes'], ['Undo guide', 'undo'],
     ['Clear guides', 'clear'], ['Put away', 'stop'], ['Hide trays', 'hide'],
   ] as const;
   draftCommands.forEach(([label, command], index) =>
@@ -821,7 +824,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     } else commit(points);
   }
   function action(value: FieldDrawingTool | 'show' | 'stencils' | 'cutters' | 'hide' | 'smaller' | 'larger' | 'stop' |
-    'formation' | 'path' | 'undo' | 'clear' | 'wireReset' | 'laserPin' | 'drafting' |
+    'formation' | 'path' | 'synchronizedRoutes' | 'undo' | 'clear' | 'wireReset' | 'laserPin' | 'drafting' |
     'draftSpacingLess' | 'draftSpacingMore' | 'draftAngle' | 'draftSide' | 'draftReference' | 'addTack' |
     'saveDrafting' | 'restoreDrafting' | 'deleteDrafting' | 'takePhoto' | 'restorePhoto' | 'downloadPhoto') {
     if (takingPhoto) { workspaceMessage('Wait for the field snapshot to finish.'); return; }
@@ -876,6 +879,14 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
       return;
     }
     if (floorCalibrationToggle?.checked) { deps.notify('Finish floor calibration before using drawing tools.'); return; }
+    if (value === 'synchronizedRoutes') {
+      const guide = guides[guides.length - 1];
+      if (!guide) { deps.notify('Draw a destination guide on the field first.'); return; }
+      if (deps.createSynchronizedRoutes(guide.points.map(point => point.clone()))) {
+        deps.notify('Synchronized routes created from the destination guide.');
+      }
+      return;
+    }
     if (value === 'draftSpacingLess' || value === 'draftSpacingMore') {
       const spacing = getDraftSpacing();
       if (spacing !== null && draftingSpacing) {

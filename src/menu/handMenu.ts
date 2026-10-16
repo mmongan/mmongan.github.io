@@ -34,8 +34,11 @@ export type FormationLetter =
   | "N" | "O" | "P" | "Q" | "R" | "S" | "T" | "U" | "V" | "W" | "X" | "Y" | "Z";
 
 export type HandMenuHit =
+  | { action: "fieldProjector"; command: import('../interaction/fieldImageProjector').FieldProjectorCommand }
+  | { action: "marcherPaint"; command: "show" | "done" | "paintSelected" }
+  | { action: "marcherPaintColor"; color: string }
   | { action: "aslNaming"; command: import('./aslNamingPanel').NamingAction }
-  | { action: "drawingTool"; tool: FieldDrawingTool | "camera" | "takePhoto" | "restorePhoto" | "downloadPhoto" | "saveDrafting" | "restoreDrafting" | "deleteDrafting" | "drafting" | "draftSpacingLess" | "draftSpacingMore" | "draftAngle" | "draftSide" | "draftReference" | "addTack" | "laserPin" | "wireReset" | "show" | "stencils" | "cutters" | "hide" | "smaller" | "larger" | "stop" | "formation" | "path" | "undo" | "clear" }
+  | { action: "drawingTool"; tool: FieldDrawingTool | "camera" | "takePhoto" | "restorePhoto" | "downloadPhoto" | "saveDrafting" | "restoreDrafting" | "deleteDrafting" | "drafting" | "draftSpacingLess" | "draftSpacingMore" | "draftAngle" | "draftSide" | "draftReference" | "addTack" | "laserPin" | "wireReset" | "show" | "stencils" | "cutters" | "hide" | "smaller" | "larger" | "stop" | "formation" | "path" | "synchronizedRoutes" | "undo" | "clear" }
   | { action: "playPause" | "rewind" | "fastForward" | "stepBack" | "stepForward" | "fullScaleVR" | "tabletopScale" | "commitFormation" | "eraseMode" | "undoErase" | "redoErase" | "musicStandStaffToggle" }
   | { action: "formationLibrary" | "formationLibraryBack" | "formationLibraryClose" | "lettersLibrary" }
   | { action: "formationGridSnap" }
@@ -366,6 +369,12 @@ function ensureMenuMeshes() {
   const namingButton = createButton("Name", -spacing * 2, { action: "aslNaming", command: "toggle" });
   namingButton.position.z = 0.075;
   buttons.push(namingButton);
+  const paintButton = createButton("Paint", spacing * 2, { action: "marcherPaint", command: "show" });
+  paintButton.position.z = 0.075;
+  buttons.push(paintButton);
+  const projectorButton = createButton("Project", 0, { action: "fieldProjector", command: "show" });
+  projectorButton.position.z = 0.11;
+  buttons.push(projectorButton);
   // Brass row, then woodwind and percussion rows beneath it.
   const instrumentButtons = ([
     ["Tpt", "trumpet", -spacing * 2, -0.16],
@@ -381,6 +390,9 @@ function ensureMenuMeshes() {
     ["Ten", "tenors", -spacing / 2, -0.23],
     ["BD", "bassDrum", spacing / 2, -0.23],
     ["Glk", "glockenspiel", spacing * 1.5, -0.23],
+    ["Flag", "guardFlag", -spacing, -0.265],
+    ["Rifle", "guardRifle", 0, -0.265],
+    ["Sabre", "guardSabre", spacing, -0.265],
   ] as const).map(([label, instrument, x, z]) => {
     const button = createButton(label, x, { action: "createMarcher", instrument });
     button.position.z = z;
@@ -395,13 +407,13 @@ function ensureMenuMeshes() {
     button.position.z += 0.195;
   });
   const plate = MeshBuilder.CreateBox("instrumentPlate",
-    { width: 0.155, height: 0.008, depth: 0.11 }, scene);
+    { width: 0.155, height: 0.008, depth: 0.145 }, scene);
   plate.parent = instrumentPlateRoot;
-  plate.position.y = -0.006;
+  plate.position.set(0, -0.006, -0.0175);
   plate.material = watchMaterial;
   instrumentPlatePanel = new DetachableFloatingPanel(instrumentPlateRoot,
     new Set([plate, ...instrumentButtons]), instrumentPlateRoot,
-    new Vector3(0.0775, 0.025, 0.055),
+    new Vector3(0.0775, 0.025, 0.09),
     new Map(instrumentButtons.map(button => [button, buttonActions.get(button)!])));
   instrumentPlateRoot.setEnabled(false);
   const presets: Array<{

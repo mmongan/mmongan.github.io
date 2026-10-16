@@ -83,7 +83,16 @@ function assignTargets(startPoints: Vector3[], targetPoints: Vector3[]): Vector3
 
 // All routes share one count budget, so avoidance is resolved at matching
 // indices rather than by changing individual robots' departure times.
-function buildSynchronizedPaths(startPoints: Vector3[], targetPoints: Vector3[]): Vector3[][] {
+export function buildSynchronizedPaths(
+  startPoints: readonly Vector3[],
+  targetPoints: readonly Vector3[],
+  additionalObstacles: readonly Vector3[] = []
+): Vector3[][] {
+  if (startPoints.length === 0 || startPoints.length !== targetPoints.length ||
+    [...startPoints, ...targetPoints, ...additionalObstacles].some(point =>
+      ![point.x, point.y, point.z].every(Number.isFinite))) {
+    throw new RangeError("Synchronized routes require matching, finite start and target positions.");
+  }
   const count = startPoints.length;
   const maxDistance = startPoints.reduce(
     (max, start, index) => Math.max(max, Vector3.Distance(start, targetPoints[index])),
@@ -98,7 +107,7 @@ function buildSynchronizedPaths(startPoints: Vector3[], targetPoints: Vector3[])
     return points;
   });
 
-  const staticObstacles = [...startPoints, ...targetPoints];
+  const staticObstacles = [...startPoints, ...targetPoints, ...additionalObstacles];
   const minX = Math.min(...startPoints.map((point) => point.x), ...targetPoints.map((point) => point.x)) -
     DRILL_PATH_OBSTACLE_MARGIN_YARDS;
   const maxX = Math.max(...startPoints.map((point) => point.x), ...targetPoints.map((point) => point.x)) +
