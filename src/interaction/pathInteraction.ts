@@ -43,6 +43,10 @@ import {
   clearDrawingGuides, getSelectedDrawingGuidePoints, exportDrawingWorkspace, importDrawingWorkspace,
 } from './fieldDrawingTools';
 import {
+  captureChartPageGuides, canSwapChartPageGuides, forgetOtherChartPageGuides, initChartPageGuides,
+  insertChartPageGuides, restoreChartPageGuides, showChartPageGuides,
+} from './chartPageGuides';
+import {
   CHART_PAGE_DRAFT_KEY, parseChartPageDraft, roundVector, serializeChartPageDraft, type ChartPageDraft,
 } from '../robot/chartPageDraft';
 import type { ThumbJogState } from './thumbJogGesture';
@@ -130,6 +134,7 @@ import { isMarcherPOVActive, setMarcherPOVEnabled } from '../camera/marcherPOV';
 import { getHandMenuHit, getHandMenuHitNearPoint, pickMenuControl, setMenuHandTracking, setFormationCommitAvailable, setFormationLibraryOpen, setFormationLibraryPage, setFormationLibraryAnchorAvailable, setEraseModeActive, setEraseHistoryAvailable, setDrillChartPadActive, setInstrumentMenuActive, isHandMenuVisible, isMenuControl, toggleControllerHandMenu } from '../menu/handMenu';
 import {
   flipDrillChartPage,
+  getDrillChartPageIndex,
   getDrillChartTransitionSpan,
   insertBlankDrillChartPage,
   redrawDrillChartPad,
@@ -495,18 +500,25 @@ onDrillChartPadVisibilityChange((visible) => {
 });
 drillChartPadToggle?.addEventListener("change", () => setDrillChartPadVisible(!!drillChartPadToggle?.checked));
 
-// Inserts a blank chart page (keyframe) after the page shown: the field's
-// drafted guides are cleared and every marcher waits as a ghost to be placed.
+// Inserts a blank chart page (keyframe) after the page shown. The new page
+// starts with no drafted guides (the shown page keeps its own) and every
+// marcher waits as a ghost to be placed.
 function addBlankChartPage() {
   if (floorCalibrationToggle?.checked) return;
+  const afterPage = getDrillChartPageIndex();
+  if (!canSwapChartPageGuides() || !showChartPageGuides(afterPage)) {
+    showPlacementNotice("Finish drawing and release drafting pins before adding a chart page.");
+    return;
+  }
   selectRobot(null);
   const count = insertBlankDrillChartPage();
-  const cleared = clearDrawingGuides();
   if (count === null) {
+    const cleared = clearDrawingGuides();
     showPlacementNotice(cleared ? "Drafted guides cleared. Add marchers to build chart pages." :
       "Add marchers before inserting a chart page.");
     return;
   }
+  insertChartPageGuides(afterPage);
   const waiting = getBlankChartPageState()?.waiting ?? 0;
   showPlacementNotice(`Blank page at count ${count}: draw guides, then grab or place the ${waiting} ghost marchers.`);
 }
@@ -526,6 +538,7 @@ function saveChartPageDraft() {
     return;
   }
   const page = captureBlankChartPage();
+  const pageGuides = captureChartPageGuides();
   const indexByRobot = new Map(schedules.map((schedule, index) => [schedule.robot, index]));
   const transition = getChartTransition();
   const draft: ChartPageDraft = {
@@ -553,6 +566,8 @@ function saveChartPageDraft() {
       };
     }),
     drafting: exportDrawingWorkspace(),
+    draftingPage: pageGuides.shown,
+    pageDrafting: pageGuides.pages,
   };
   try {
     localStorage.setItem(CHART_PAGE_DRAFT_KEY, serializeChartPageDraft(draft));
@@ -618,7 +633,9 @@ function resumeChartPageDraft() {
   if (pages[pages.length - 1] !== last) pages.push(last);
   selectionTools?.setPages(pages.map((count, index) => ({ name: `Set ${index + 1}`, count })));
   clearDrawingGuides();
-  const drafting = draft.drafting ? importDrawingWorkspace(draft.drafting) : true;
+  const imported = draft.drafting ? importDrawingWorkspace(draft.drafting) : true;
+  const otherPages = restoreChartPageGuides(draft.draftingPage ?? getDrillChartPageIndex(), draft.pageDrafting ?? []);
+  const drafting = imported !== true ? imported : otherPages;
   if (draft.page) {
     resumeBlankChartPage({ ...draft.page, waiting: draft.page.waiting.map((index) => robots[index]) }, scene);
   } else {
@@ -3230,6 +3247,7 @@ export function duplicateDrillForPerformance(): number {
 
 function spawnMarchingDrill() {
   clearAllRobots();
+  forgetOtherChartPageGuides();
   const paths = generateMarchingDrillPaths(isLookingAtPositiveFieldHalf());
   const pickerInstrument = getSelectedInstrument();
   paths.forEach((path, index) => {
@@ -3253,6 +3271,7 @@ function spawnMarchingDrill() {
 // instrument for its section and playing from the opening set.
 function spawnOpenMarchDrill(drill: OpenMarchImportedDrill, showName: string, autoPlay = true): number {
   clearAllRobots();
+  forgetOtherChartPageGuides();
   const pickerInstrument = getSelectedInstrument();
   const instruments: MarcherInstrument[] = [];
   const labels: { robot: TransformNode; label: string }[] = [];
@@ -3387,6 +3406,7 @@ export function initInteraction() {
     },
     createSynchronizedRoutes: createSynchronizedRoutesFromGuide,
   });
+  initChartPageGuides(getDrillChartPageIndex);
   selectionTools = createSelectionEditor({
     root: pathRoot,
     getMarchers: () => scene.transformNodes.filter(node => node.name === "pathRobot" && node.parent === pathRoot),

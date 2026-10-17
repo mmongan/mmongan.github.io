@@ -95,6 +95,11 @@ function getCurrentPage(setCounts: number[]): number {
   return page;
 }
 
+// Index of the chart page being shown (a blank page while placing its ghosts).
+export function getDrillChartPageIndex(): number {
+  return getCurrentPage(getDrillChartSetCounts());
+}
+
 export function flipDrillChartPage(direction: 1 | -1) {
   const setCounts = getDrillChartSetCounts();
   const page = getCurrentPage(setCounts);

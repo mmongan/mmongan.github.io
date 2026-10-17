@@ -79,7 +79,9 @@ assert.match(resume, /importDrawingWorkspace\(draft\.drafting\)/);
 // Next-page preview: amber ghosts at counts[page.next] joined to each marcher by lines.
 assert.match(robot, /function showNextPageGhost\([\s\S]*?if \(page\.next <= page\.count \|\| page\.nextGhosts\.has\(robot\)\) return;[\s\S]*?createMarcherDragGhost\(robot, parent, NEXT_PAGE_GHOST_COLOR\)/);
 assert.match(robot, /ghost\.position\.copyFrom\(target\.position\.subtract\(robot\.position\)\)/);
-assert.match(robot, /function updateNextPageLines\([\s\S]*?counts\[page\.next\][\s\S]*?robot\.getAbsolutePosition\(\)/);
+assert.match(robot, /function updateNextPageLines\([\s\S]*?getNextPageCount\(robot, page\)[\s\S]*?robot\.getAbsolutePosition\(\)/);
+assert.match(robot, /function getNextPageCount\([\s\S]*?counts\.length - 1 <= page\.count\) return undefined;[\s\S]*?counts\[Math\.min\(page\.next, counts\.length - 1\)\]/,
+  'Routes ending before the next page show their held final spot');
 assert.match(robot, /nextPageLinesObserver = scene\.onBeforeRenderObservable\.add/);
 assert.match(robot, /export function endBlankChartPage\(\) \{[\s\S]*?clearNextPagePreview\(page\);/);
 

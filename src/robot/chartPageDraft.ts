@@ -45,6 +45,10 @@ export interface ChartPageDraft {
   marchers: SavedMarcher[];
   // Drafting workspace JSON (same format as Save drafting), if available.
   drafting: string | null;
+  // Chart page index whose guides `drafting` holds; older drafts omit it.
+  draftingPage?: number;
+  // Every other chart page's drafted guides (drafting workspace JSON per page).
+  pageDrafting?: { page: number; drafting: string }[];
 }
 
 const round = (value: number) => Math.round(value * 10000) / 10000;
@@ -147,11 +151,27 @@ export function parseChartPageDraft(json: string): ChartPageDraft {
   if (typeof transition.shape !== 'string' || typeof transition.pace !== 'string') fail('transition needs a path and pace');
   const styleIndex = transition.styleIndex === null ? null : count(transition.styleIndex, 'transition style');
   if (data.drafting !== null && typeof data.drafting !== 'string') fail('drafting must be text or null');
+  const draftingPage = data.draftingPage === undefined ? undefined : count(data.draftingPage, 'drafting page');
+  let pageDrafting: { page: number; drafting: string }[] | undefined;
+  if (data.pageDrafting !== undefined) {
+    if (!Array.isArray(data.pageDrafting)) fail('page drafting must be a list');
+    pageDrafting = data.pageDrafting.map((value, index) => {
+      if (!value || typeof value !== 'object') fail(`page drafting ${index} is not an object`);
+      const entry = value as Record<string, unknown>;
+      if (typeof entry.drafting !== 'string') fail(`page drafting ${index} must hold drafting text`);
+      return { page: count(entry.page, `page drafting ${index} page`), drafting: entry.drafting };
+    });
+    if (new Set(pageDrafting.map((entry) => entry.page)).size !== pageDrafting.length) {
+      fail('page drafting must list each page once');
+    }
+  }
   const tempoBpm = finite(data.tempoBpm, 'tempo');
   if (tempoBpm <= 0) fail('tempo must be positive');
   return {
     version: 1, savedAt: data.savedAt, beat: Math.max(0, finite(data.beat, 'count')), tempoBpm,
     transition: { shape: transition.shape, pace: transition.pace, styleIndex },
     page, marchers, drafting: data.drafting as string | null,
+    ...(draftingPage === undefined ? {} : { draftingPage }),
+    ...(pageDrafting === undefined ? {} : { pageDrafting }),
   };
 }

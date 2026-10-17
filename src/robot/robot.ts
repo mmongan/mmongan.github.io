@@ -2623,11 +2623,19 @@ function showBlankPageGhost(robot: TransformNode) {
   });
 }
 
+// A marcher's pose on the page after the blank one. A route that ends before
+// it holds its final spot (as playback does); one ending on the blank page has none.
+function getNextPageCount(robot: TransformNode, page: BlankChartPage): RobotCount | undefined {
+  const counts = players.get(robot)?.counts;
+  if (!counts || counts.length - 1 <= page.count) return undefined;
+  return counts[Math.min(page.next, counts.length - 1)];
+}
+
 // Shows where `robot` stands on the chart page after the blank one: a ghost
 // in another colour, connected to the marcher by a line (see updateNextPageLines).
 function showNextPageGhost(page: BlankChartPage, robot: TransformNode, parent: TransformNode) {
   if (page.next <= page.count || page.nextGhosts.has(robot)) return;
-  const target = players.get(robot)?.counts[page.next];
+  const target = getNextPageCount(robot, page);
   if (!target) return;
   const ghost = createMarcherDragGhost(robot, parent, NEXT_PAGE_GHOST_COLOR);
   ghost.name = 'nextChartPageGhost';
@@ -2654,7 +2662,7 @@ function updateNextPageLines(scene: Scene) {
   const lines: Vector3[][] = [];
   let parent: TransformNode | null = null;
   page?.nextGhosts.forEach((ghost, robot) => {
-    const target = players.get(robot)?.counts[page.next]?.position;
+    const target = getNextPageCount(robot, page)?.position;
     if (!target || robot.isDisposed() || !(ghost.parent instanceof TransformNode)) return;
     parent ??= ghost.parent;
     parent.computeWorldMatrix(true).invertToRef(nextLineInverse);

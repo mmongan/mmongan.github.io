@@ -22,7 +22,7 @@ import { createMemoryWire } from './memoryWire';
 import { constrainedDraftLine, divideDraftLine, measureDraftLine, offsetDraftLine, sampleDraftSpline } from './draftingGeometry';
 import { createDraftingHandles } from './draftingHandles';
 import { DRAFTING_WORKSPACE_KEY, parseDraftingWorkspace, serializeDraftingWorkspace,
-  type DraftingWorkspace } from './draftingWorkspace';
+  type DraftingWorkspace, type WorkspaceGuide } from './draftingWorkspace';
 import { captureDraftingPhoto, DRAFTING_CAMERA_KEY, parseDraftingPhoto, type DraftingPhoto } from './draftingCamera';
 
 interface DrawingDependencies {
@@ -95,6 +95,14 @@ export function exportDrawingWorkspace(): string | null {
 /** Replaces guides/settings from exportDrawingWorkspace JSON; throws if the JSON is invalid. */
 export function importDrawingWorkspace(json: string): true | string {
   return drawing?.importWorkspace(json) ?? 'Drafting tools are not ready.';
+}
+/** Shows `next` as the field's guides and returns the ones removed, or null while guides are being edited. */
+export function swapDrawingGuides(next: readonly WorkspaceGuide[]): WorkspaceGuide[] | null {
+  return drawing ? drawing.swapGuides(next) : null;
+}
+/** Whether a guide is being drawn or has a held pin, so the field's guides cannot be swapped. */
+export function areDrawingGuidesBusy() {
+  return drawing?.guidesBusy() ?? true;
 }
 
 export function closestPointOnGuide(points: readonly Vector3[], point: Vector3) {
@@ -1380,10 +1388,30 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     laserMaterial.dispose();
     drawing = null;
   });
+  function guidesBusy() {
+    return pointerStroke !== null || takingPhoto || tools.some(tool => tool.stroke !== null) ||
+      guides.some(guide => guide.handles?.grabbed());
+  }
   return { action, pointer, pointerActive: () => pointerStroke !== null, active: () => selected !== null,
     selectNear, snapToSelected,
     clearGuides: () => { const count = guides.length; guides.splice(0).forEach(disposeGuide); return count; },
     selectedPoints: () => selectedGuide?.points ?? null,
     exportWorkspace: () => serializeDraftingWorkspace(collectWorkspace()),
-    importWorkspace: (json: string) => applyWorkspace(parseDraftingWorkspace(json)) };
+    importWorkspace: (json: string) => applyWorkspace(parseDraftingWorkspace(json)),
+    // Replaces the guides on the field (keeping settings) and returns the removed ones,
+    // or null while a guide is being drawn or its pins are held.
+    guidesBusy,
+    swapGuides: (next: readonly WorkspaceGuide[]): WorkspaceGuide[] | null => {
+      if (guidesBusy()) return null;
+      const removed = guides.splice(0);
+      removed.forEach(disposeGuide);
+      for (const saved of next) {
+        const guide: Guide = { points: saved.points, options: saved.options,
+          meshes: createGuideMeshes(saved.points, saved.options) };
+        guides.push(guide);
+        attachGuideHandles(guide);
+      }
+      updateDraftStatus();
+      return removed.map(guide => ({ points: guide.points, options: guide.options }));
+    } };
 }
