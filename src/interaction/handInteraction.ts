@@ -16,6 +16,7 @@ import {
   getARRotation,
   getARSurfaceHeight,
   setARSurfaceHeight,
+  getScaleAwareSurfaceHeight,
 } from '../xr/ar';
 import { scene } from '../scene/engine';
 import { selectDrawingGuideNear, snapToSelectedDrawingGuide } from './fieldDrawingTools';
@@ -1104,7 +1105,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
         setARPosition(midpoint.subtract(rotateAroundY(sceneGesture.localAnchor.scale(scale), rotation)));
         // Keep the field surface at its height so zooming in can't bury or lift it out of view.
         const surfaceHeight = sceneGesture.startSurfaceY + midpoint.y - sceneGesture.startMidpointY;
-        setARSurfaceHeight(surfaceHeight);
+        setARSurfaceHeight(getScaleAwareSurfaceHeight(surfaceHeight, scale));
       }
       return;
     }

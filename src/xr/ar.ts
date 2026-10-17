@@ -159,6 +159,18 @@ export function setARSurfaceHeight(height: number) {
   arPivot.position.y = height - FIELD_SURFACE_Y * getARScale();
 }
 
+// While scaling, a small (tabletop) field keeps the requested surface height,
+// but as it approaches full size it settles onto the floor so life-size
+// marchers stand on the ground instead of at eye level.
+const FLOOR_BLEND_START_SCALE = 0.1;
+export function getScaleAwareSurfaceHeight(height: number, scale: number) {
+  if (scale <= FLOOR_BLEND_START_SCALE) return height;
+  const t = Math.min(1, Math.log(scale / FLOOR_BLEND_START_SCALE) /
+    Math.log(AR_SCALE_MAX / FLOOR_BLEND_START_SCALE));
+  const eased = t * t * (3 - 2 * t);
+  return height + (fieldHeights.floor - height) * eased;
+}
+
 export function setFieldHeightMode(mode: "floor" | "table") {
   fieldHeightMode = mode;
   setARHeight(fieldHeights[mode] - FIELD_SURFACE_Y * getARScale());

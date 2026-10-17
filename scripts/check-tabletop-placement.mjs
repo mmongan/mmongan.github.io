@@ -132,9 +132,26 @@ try {
       assert.equal(context.getARPosition().z, -3);
     }
   }
+  context.setFieldHeightSetting('floor', 0);
+  for (const scale of [0.002, 1 / 120, 1 / 60, 0.1]) {
+    assert.equal(context.getScaleAwareSurfaceHeight(1.2, scale), 1.2, 'Tabletop scales keep the gesture height');
+  }
+  assert.ok(Math.abs(context.getScaleAwareSurfaceHeight(1.6, 1)) < 1e-9,
+    'Full-size scaling puts the ground on the floor, not at eye level');
+  let previous = Infinity;
+  for (let scale = 0.1; scale <= 1.0001; scale *= 1.1) {
+    const blended = context.getScaleAwareSurfaceHeight(1.6, scale);
+    assert.ok(blended <= previous + 1e-9 && blended >= -1e-9, 'Floor blend descends smoothly while scaling up');
+    previous = blended;
+  }
+  context.setFieldHeightSetting('floor', 0.05);
+  assert.ok(Math.abs(context.getScaleAwareSurfaceHeight(1.6, 1) - 0.05) < 1e-9,
+    'Full-size scaling honours a calibrated floor height');
+  context.setFieldHeightSetting('floor', 0);
   for (const file of ['controllers.ts', 'handInteraction.ts']) {
     const interaction = readFileSync(new URL(`../src/interaction/${file}`, import.meta.url), 'utf8');
-    assert.match(interaction, /setARSurfaceHeight\(surfaceHeight\)/, 'Both resize inputs preserve gesture height');
+    assert.match(interaction, /setARSurfaceHeight\(getScaleAwareSurfaceHeight\(surfaceHeight, scale\)\)/,
+      'Both resize inputs preserve gesture height at tabletop scale and settle to the floor at full size');
     assert.doesNotMatch(interaction, /setARSurfaceHeightForScaleGesture/, 'No threshold height resets remain');
   }
   console.log('Tabletop placement passed: viewer-relative entry, AR re-entry, both coordinate systems, vertical gaze, button-only height reset, resize threshold crossings, preserved custom height, and vertical movement.');

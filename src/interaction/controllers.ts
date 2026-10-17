@@ -10,6 +10,7 @@ import {
   getARRotation,
   getARSurfaceHeight,
   setARSurfaceHeight,
+  getScaleAwareSurfaceHeight,
 } from '../xr/ar';
 import { scene } from '../scene/engine';
 import { floorCalibrationToggle } from '../ui/dom';
@@ -141,6 +142,6 @@ export function updateARResizeFromControllers(grabActive: boolean) {
   setARScale(scale);
   setARPosition(midpoint.subtract(anchorWorldOffset));
   const surfaceHeight = pinchState.startSurfaceY + midpoint.y - pinchState.startMidpointY;
-  setARSurfaceHeight(surfaceHeight);
+  setARSurfaceHeight(getScaleAwareSurfaceHeight(surfaceHeight, scale));
   setARRotation(yaw);
 }
