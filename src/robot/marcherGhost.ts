@@ -5,13 +5,14 @@ import { InstancedMesh } from '@babylonjs/core/Meshes/instancedMesh.pure';
 import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
 
-export function createMarcherDragGhost(robot: TransformNode, fieldRoot: TransformNode): TransformNode {
+export function createMarcherDragGhost(robot: TransformNode, fieldRoot: TransformNode,
+  color = new Color3(0.35, 0.8, 1)): TransformNode {
   const scene = robot.getScene();
   const ghost = new TransformNode('marcherDragGhost', scene);
   ghost.parent = fieldRoot;
   const material = new StandardMaterial('marcherDragGhostMaterial', scene);
-  material.diffuseColor = new Color3(0.35, 0.8, 1);
-  material.emissiveColor = new Color3(0.1, 0.25, 0.3);
+  material.diffuseColor = color.clone();
+  material.emissiveColor = color.scale(0.3);
   material.alpha = 0.28;
   material.disableDepthWrite = true;
   const inverseField = Matrix.Invert(fieldRoot.computeWorldMatrix(true));

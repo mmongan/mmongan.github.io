@@ -2559,9 +2559,16 @@ interface BlankChartPage {
   claimed: Set<TransformNode>;
   // Ghosts whose marchers were picked up stay at the previous-page spot.
   leftBehind: Map<TransformNode, TransformNode>;
+  // Each marcher's spot on the following chart page, in another colour.
+  nextGhosts: Map<TransformNode, TransformNode>;
 }
 let blankChartPage: BlankChartPage | null = null;
 let blankChartPageTransportObserver: Observer<DrillTransportState> | null = null;
+let nextPageLines: ReturnType<typeof MeshBuilder.CreateLineSystem> | null = null;
+let nextPageLinesObserver: Observer<Scene> | null = null;
+const NEXT_PAGE_GHOST_COLOR = new Color3(1, 0.62, 0.18);
+const NEXT_PAGE_GHOST_ALPHA = 0.22;
+const NEXT_PAGE_LINE_COLOR = new Color4(1, 0.62, 0.18, 0.85);
 
 export interface BlankChartPageState { count: number; previous: number; waiting: number; }
 export const onBlankChartPageChangedObservable = new Observable<BlankChartPageState | null>();
@@ -2603,6 +2610,7 @@ function showBlankPageGhost(robot: TransformNode) {
   if (!page || robot.isDisposed() || !(parent instanceof TransformNode)) return;
   robot.setEnabled(true);
   robot.computeWorldMatrix(true);
+  showNextPageGhost(page, robot, parent);
   const ghost = createMarcherDragGhost(robot, parent);
   ghost.name = 'blankChartPageGhost';
   robot.setEnabled(false);
@@ -2613,6 +2621,73 @@ function showBlankPageGhost(robot: TransformNode) {
     if (page.pending.get(robot) === ghost) page.pending.delete(robot);
     if (page.leftBehind.get(robot) === ghost) page.leftBehind.delete(robot);
   });
+}
+
+// Shows where `robot` stands on the chart page after the blank one: a ghost
+// in another colour, connected to the marcher by a line (see updateNextPageLines).
+function showNextPageGhost(page: BlankChartPage, robot: TransformNode, parent: TransformNode) {
+  if (page.next <= page.count || page.nextGhosts.has(robot)) return;
+  const target = players.get(robot)?.counts[page.next];
+  if (!target) return;
+  const ghost = createMarcherDragGhost(robot, parent, NEXT_PAGE_GHOST_COLOR);
+  ghost.name = 'nextChartPageGhost';
+  ghost.getChildMeshes().forEach((mesh) => {
+    if (mesh.material) mesh.material.alpha = NEXT_PAGE_GHOST_ALPHA;
+  });
+  // The parts copy the marcher's current pose; turn and move them about its feet.
+  ghost.setPivotPoint(robot.position.clone());
+  ghost.rotation.y = (target.facingY ?? target.rotationY) - robot.rotation.y;
+  ghost.position.copyFrom(target.position.subtract(robot.position));
+  page.nextGhosts.set(robot, ghost);
+  ghost.onDisposeObservable.addOnce(() => {
+    if (page.nextGhosts.get(robot) === ghost) page.nextGhosts.delete(robot);
+  });
+}
+
+const nextLineInverse = new Matrix();
+const nextLineStart = new Vector3();
+const NEXT_PAGE_LINE_LIFT = 0.05;
+
+// Redraws the line from each marcher (waiting, held or placed) to its next-page ghost.
+function updateNextPageLines(scene: Scene) {
+  const page = blankChartPage;
+  const lines: Vector3[][] = [];
+  let parent: TransformNode | null = null;
+  page?.nextGhosts.forEach((ghost, robot) => {
+    const target = players.get(robot)?.counts[page.next]?.position;
+    if (!target || robot.isDisposed() || !(ghost.parent instanceof TransformNode)) return;
+    parent ??= ghost.parent;
+    parent.computeWorldMatrix(true).invertToRef(nextLineInverse);
+    Vector3.TransformCoordinatesToRef(robot.getAbsolutePosition(), nextLineInverse, nextLineStart);
+    lines.push([
+      new Vector3(nextLineStart.x, nextLineStart.y + NEXT_PAGE_LINE_LIFT, nextLineStart.z),
+      new Vector3(target.x, target.y + NEXT_PAGE_LINE_LIFT, target.z),
+    ]);
+  });
+  const colors = lines.map(() => [NEXT_PAGE_LINE_COLOR, NEXT_PAGE_LINE_COLOR]);
+  const reusable = nextPageLines && !nextPageLines.isDisposed() &&
+    nextPageLines.getTotalVertices() === lines.length * 2 && nextPageLines.parent === parent;
+  if (lines.length === 0) {
+    nextPageLines?.dispose();
+    nextPageLines = null;
+  } else if (reusable) {
+    MeshBuilder.CreateLineSystem('nextChartPageLines', { lines, colors, instance: nextPageLines! }, scene);
+  } else {
+    nextPageLines?.dispose();
+    nextPageLines = MeshBuilder.CreateLineSystem('nextChartPageLines', { lines, colors, updatable: true }, scene);
+    nextPageLines.parent = parent;
+    nextPageLines.isPickable = false;
+    nextPageLines.alpha = NEXT_PAGE_LINE_COLOR.a;
+  }
+}
+
+function clearNextPagePreview(page: BlankChartPage) {
+  [...page.nextGhosts.values()].forEach((ghost) => ghost.dispose());
+  page.nextGhosts.clear();
+  nextPageLinesObserver?.remove();
+  nextPageLinesObserver = null;
+  nextPageLines?.dispose();
+  nextPageLines = null;
 }
 
 function placeRobotOnBlankChartPage(robot: TransformNode, position: Vector3, scene: Scene) {
@@ -2670,10 +2745,17 @@ export function insertBlankChartPage(afterCount: number, countsPerPage: number, 
 function openBlankChartPage(
   count: number, previous: number, next: number, waiting: ReadonlySet<TransformNode> | null, scene: Scene
 ) {
-  blankChartPage = { count, previous, next, pending: new Map(), claimed: new Set(), leftBehind: new Map() };
+  blankChartPage = {
+    count, previous, next, pending: new Map(), claimed: new Set(), leftBehind: new Map(), nextGhosts: new Map(),
+  };
+  const page = blankChartPage;
   players.forEach((_state, robot) => {
-    if (robot.isEnabled() && !heldRobots.has(robot) && (!waiting || waiting.has(robot))) showBlankPageGhost(robot);
+    if (!robot.isEnabled() || heldRobots.has(robot)) return;
+    if (!waiting || waiting.has(robot)) showBlankPageGhost(robot);
+    else if (robot.parent instanceof TransformNode) showNextPageGhost(page, robot, robot.parent);
   });
+  nextPageLinesObserver = scene.onBeforeRenderObservable.add(() => updateNextPageLines(scene));
+  updateNextPageLines(scene);
   blankChartPageTransportObserver ??= onDrillTransportChangedObservable.add((transport) => {
     // Leaving the move into the new page (seek or playback) finishes it; unplaced marchers keep holding.
     if (blankChartPage && (transport.playing ||
@@ -2958,6 +3040,7 @@ export function endBlankChartPage() {
     if (!robot.isDisposed()) robot.setEnabled(true);
   });
   [...page.leftBehind.values()].forEach((ghost) => ghost.dispose());
+  clearNextPagePreview(page);
   page.pending.clear();
   page.claimed.clear();
   page.leftBehind.clear();
