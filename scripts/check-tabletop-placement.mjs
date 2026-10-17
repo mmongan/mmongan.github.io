@@ -101,7 +101,43 @@ try {
     'Re-entering AR places table at the new viewer position');
   assert.match(xrSource, /else if \(state === WebXRState\.IN_XR\) \{\s*placeTabletopInFrontOfCamera/,
     'AR entry repositions after the first tracked headset frame, not only before tracking');
-  console.log('Tabletop placement passed: table button, AR re-entry, translated/rotated tracking origins, both coordinate systems, pitch/vertical gaze, height, scale, and stationary placement.');
+  for (const ar of [false, true]) {
+    context.exitARTabletopMode();
+    if (ar) context.enterARTabletopMode();
+    context.setFieldHeightSetting('table', 0.83);
+    context.setARScale(1);
+    context.setFieldHeightMode('floor');
+    context.setARScale(1 / 120);
+    context.setARSurfaceHeight(0.1);
+    assert.equal(context.getFieldHeightMode(), 'floor', 'Shrinking never changes height mode');
+    assert.ok(Math.abs(context.getARSurfaceHeight() - 0.1) < 1e-6,
+      'Even the first floor-to-table shrink preserves height');
+    click();
+    assert.equal(context.getFieldHeightMode(), 'table', 'Tabletop button explicitly enters table height mode');
+    assert.ok(Math.abs(context.getARSurfaceHeight() - 0.83) < 1e-6,
+      'Tabletop button still resets to configured height');
+    context.setARPosition(new Vector3(8, 1.17, -3));
+    context.setARSurfaceHeight(1.17);
+    let height = 1.17;
+    for (const [nextScale, verticalMotion] of [
+      [1 / 60, 0], [1 / 120, 0], [1 / 240, 0],
+      [1 / 60, 0.12], [1 / 120, -0.04], [1 / 240, 0],
+    ]) {
+      height += verticalMotion;
+      context.setARScale(nextScale);
+      context.setARSurfaceHeight(height);
+      assert.ok(Math.abs(context.getARSurfaceHeight() - height) < 1e-6,
+        'Existing table preserves surface height across repeated threshold crossings and vertical movement');
+      assert.equal(context.getARPosition().x, 8, 'Resizing does not recenter the table horizontally');
+      assert.equal(context.getARPosition().z, -3);
+    }
+  }
+  for (const file of ['controllers.ts', 'handInteraction.ts']) {
+    const interaction = readFileSync(new URL(`../src/interaction/${file}`, import.meta.url), 'utf8');
+    assert.match(interaction, /setARSurfaceHeight\(surfaceHeight\)/, 'Both resize inputs preserve gesture height');
+    assert.doesNotMatch(interaction, /setARSurfaceHeightForScaleGesture/, 'No threshold height resets remain');
+  }
+  console.log('Tabletop placement passed: viewer-relative entry, AR re-entry, both coordinate systems, vertical gaze, button-only height reset, resize threshold crossings, preserved custom height, and vertical movement.');
 } finally {
   scene.dispose();
   engine.dispose();

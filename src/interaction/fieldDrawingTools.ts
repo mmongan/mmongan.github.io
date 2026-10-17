@@ -72,9 +72,43 @@ export function handleDrawingPointer(type: 'down' | 'move' | 'up', point: Vector
 }
 export function isDrawingPointerActive() { return drawing?.pointerActive() ?? false; }
 export function isFieldDrawingToolActive() { return drawing?.active() ?? false; }
+/** Toggles selection of the guide nearest a root-local point. `vertical` also requires the point near the yarn height. */
+export function selectDrawingGuideNear(point: Vector3, radius: number, vertical = false) {
+  return drawing?.selectNear(point, radius, vertical) ?? false;
+}
+/** Nearest root-local point on the selected guide (keeping the input height), or null with no selection. */
+export function snapToSelectedDrawingGuide(point: Vector3): Vector3 | null {
+  return drawing?.snapToSelected(point) ?? null;
+}
+/** Removes every drafted guide (e.g. for a new blank chart page); returns how many were removed. */
+export function clearDrawingGuides() {
+  return drawing?.clearGuides() ?? 0;
+}
+/** Root-local points of the selected guide, or null with no selection. */
+export function getSelectedDrawingGuidePoints(): readonly Vector3[] | null {
+  return drawing?.selectedPoints() ?? null;
+}
+
+export function closestPointOnGuide(points: readonly Vector3[], point: Vector3) {
+  let best: Vector3 | null = null;
+  let bestDistance = Infinity;
+  for (let index = 1; index < points.length; index++) {
+    const a = points[index - 1], b = points[index];
+    const dx = b.x - a.x, dz = b.z - a.z;
+    const lengthSq = dx * dx + dz * dz;
+    const t = lengthSq > 1e-12
+      ? Math.max(0, Math.min(1, ((point.x - a.x) * dx + (point.z - a.z) * dz) / lengthSq)) : 0;
+    const x = a.x + dx * t, z = a.z + dz * t;
+    const distance = Math.hypot(point.x - x, point.z - z);
+    if (distance < bestDistance) { bestDistance = distance; best = new Vector3(x, point.y, z); }
+  }
+  return best ? { point: best, distance: bestDistance } : null;
+}
 
 function createFieldDrawingTools(deps: DrawingDependencies) {
   const guides: Guide[] = [];
+  let selectedGuide: Guide | null = null;
+  const activeGuide = () => selectedGuide ?? guides[guides.length - 1];
   const tools: Tool[] = [];
   let selected: FieldDrawingTool | null = null;
   let pointerStroke: Vector3[] | null = null;
@@ -129,6 +163,10 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
   const tackHeadMaterial = new StandardMaterial('drawingGuideTackHeadMaterial', scene);
   tackHeadMaterial.diffuseColor = new Color3(0.92, 0.12, 0.14);
   tackHeadMaterial.specularColor = new Color3(0.45, 0.35, 0.35);
+  const selectedYarnMaterial = new StandardMaterial('drawingGuideSelectedYarnMaterial', scene);
+  selectedYarnMaterial.diffuseColor = new Color3(1, 0.82, 0.1);
+  selectedYarnMaterial.emissiveColor = new Color3(0.75, 0.55, 0.05);
+  selectedYarnMaterial.specularColor = Color3.Black();
   const tackPinMaterial = new StandardMaterial('drawingGuideTackPinMaterial', scene);
   tackPinMaterial.diffuseColor = new Color3(0.68, 0.72, 0.78);
   tackPinMaterial.specularColor = new Color3(0.75, 0.75, 0.75);
@@ -421,7 +459,40 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     if (points.length >= 2) preview = guideMesh(points, 'drawingGuidePreview');
     previewPoints = points.map(point => point.clone());
   }
+  function highlightGuide(guide: Guide) {
+    const yarn = guide.meshes.find(mesh => mesh.name === 'drawingGuide');
+    if (yarn) yarn.material = guide === selectedGuide ? selectedYarnMaterial : yarnMaterial;
+  }
+  function setSelectedGuide(guide: Guide | null) {
+    const previous = selectedGuide;
+    selectedGuide = guide;
+    if (previous) highlightGuide(previous);
+    if (guide) highlightGuide(guide);
+  }
+  function selectNear(point: Vector3, radius: number, vertical: boolean) {
+    if (floorCalibrationToggle?.checked || takingPhoto) return false;
+    let nearest: Guide | null = null;
+    let nearestDistance = radius;
+    for (const guide of guides) {
+      if (guide.options.sticky) continue;
+      const hit = closestPointOnGuide(guide.points, point);
+      if (!hit) continue;
+      const distance = vertical
+        ? Math.hypot(hit.distance, point.y - (FIELD_SURFACE_Y + yarnRadius + 0.002)) : hit.distance;
+      if (distance <= nearestDistance) { nearest = guide; nearestDistance = distance; }
+    }
+    if (!nearest) return false;
+    const deselect = nearest === selectedGuide;
+    setSelectedGuide(deselect ? null : nearest);
+    deps.notify(deselect ? 'Guide deselected. Released marchers place freely.'
+      : 'Guide selected. Released marchers snap onto it; drafting actions use it.');
+    return true;
+  }
+  function snapToSelected(point: Vector3) {
+    return selectedGuide ? closestPointOnGuide(selectedGuide.points, point)?.point ?? null : null;
+  }
   function disposeGuide(guide: Guide) {
+    if (guide === selectedGuide) selectedGuide = null;
     guide.handles?.dispose();
     guide.meshes.forEach(mesh => mesh.dispose());
   }
@@ -442,6 +513,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
         guide.points = points;
         guide.meshes.forEach(mesh => mesh.dispose());
         guide.meshes = createGuideMeshes(points, guide.options);
+        highlightGuide(guide);
         return true;
       },
     });
@@ -464,7 +536,8 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     const guide: Guide = { points: committedPoints, meshes: createGuideMeshes(committedPoints, options), options };
     guides.push(guide);
     attachGuideHandles(guide);
-    deps.notify(`Guide ready (${guides.length}). Create formation or Create path uses the newest guide.`);
+    deps.notify(`Guide ready (${guides.length}). Create formation or Create path uses the ${selectedGuide
+      ? 'selected' : 'newest'} guide; tap or pinch a guide to select it.`);
   }
   function erase(from: Vector3, to: Vector3, radius: number) {
     for (let index = guides.length - 1; index >= 0; index--) {
@@ -495,7 +568,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
   }
   function makeStroke(kind: FieldDrawingTool, start: Vector3, end: Vector3) {
     if (kind === 'tSquare' || kind === 'setSquare') {
-      const reference = guides[guides.length - 1]?.points;
+      const reference = activeGuide()?.points;
       if (kind === 'tSquare' && parallelReference) {
         if (!reference) return [];
         const direction = reference[reference.length - 1].subtract(reference[0]);
@@ -519,7 +592,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
       return [start.clone(), end.clone()];
     }
     if (kind === 'offset') {
-      const source = guides[guides.length - 1]?.points;
+      const source = activeGuide()?.points;
       const spacing = getDraftSpacing();
       return source && spacing !== null ? offsetDraftLine(source, spacing * offsetSide) : [];
     }
@@ -786,7 +859,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     if (kind === 'dividers') {
       const spacing = getDraftSpacing();
       if (spacing === null) return;
-      const source = guides[guides.length - 1]?.points ?? points;
+      const source = activeGuide()?.points ?? points;
       const divisions = divideDraftLine(source, spacing);
       if (divisions.length < 2) {
         deps.notify('Dividers need a guide at least one interval long, with no more than 512 divisions.');
@@ -880,7 +953,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     }
     if (floorCalibrationToggle?.checked) { deps.notify('Finish floor calibration before using drawing tools.'); return; }
     if (value === 'synchronizedRoutes') {
-      const guide = guides[guides.length - 1];
+      const guide = activeGuide();
       if (!guide) { deps.notify('Draw a destination guide on the field first.'); return; }
       if (deps.createSynchronizedRoutes(guide.points.map(point => point.clone()))) {
         deps.notify('Synchronized routes created from the destination guide.');
@@ -917,7 +990,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
       return;
     }
     if (value === 'addTack') {
-      const guide = guides[guides.length - 1];
+      const guide = activeGuide();
       const controls = guide?.options.controls;
       if (!guide || guide.options.editable !== 'yarn' || guide.options.sticky || !controls) {
         deps.notify('Create a yarn line or tape measurement before adding a tack.');
@@ -960,7 +1033,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
       return;
     }
     if (value === 'formation' || value === 'path') {
-      const guide = guides[guides.length - 1];
+      const guide = activeGuide();
       if (!guide) { deps.notify('Draw a guide on the field first.'); return; }
       const points = guide.points.map(p => p.clone());
       if (value === 'formation' ? deps.createFormation(points) : deps.createPath(points)) {
@@ -1290,9 +1363,12 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     draftingRoot.dispose();
     metal.dispose(); felt.dispose(); wood.dispose(); graphite.dispose(); plastic.dispose();
     pencilMaterial.dispose(); eraserMaterial.dispose();
-    yarnMaterial.dispose(); tackHeadMaterial.dispose(); tackPinMaterial.dispose();
+    yarnMaterial.dispose(); selectedYarnMaterial.dispose(); tackHeadMaterial.dispose(); tackPinMaterial.dispose();
     laserMaterial.dispose();
     drawing = null;
   });
-  return { action, pointer, pointerActive: () => pointerStroke !== null, active: () => selected !== null };
+  return { action, pointer, pointerActive: () => pointerStroke !== null, active: () => selected !== null,
+    selectNear, snapToSelected,
+    clearGuides: () => { const count = guides.length; guides.splice(0).forEach(disposeGuide); return count; },
+    selectedPoints: () => selectedGuide?.points ?? null };
 }

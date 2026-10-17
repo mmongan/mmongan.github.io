@@ -109,6 +109,7 @@ export const eraseModeToggle = document.getElementById("eraseModeToggle") as HTM
 export const undoEraseButton = document.getElementById("undoEraseButton") as HTMLButtonElement | null;
 export const redoEraseButton = document.getElementById("redoEraseButton") as HTMLButtonElement | null;
 export const drillChartPadToggle = document.getElementById("drillChartPadToggle") as HTMLInputElement | null;
+export const insertChartPageButton = document.getElementById("insertChartPageButton") as HTMLButtonElement | null;
 export const marcherInstrumentRadios = Array.from(
   document.querySelectorAll<HTMLInputElement>('input[name="marcherInstrument"]')
 );

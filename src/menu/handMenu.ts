@@ -51,11 +51,13 @@ export type HandMenuHit =
   | { action: "drillChartPad" }
   | { action: "musicStandSummon" }
   | { action: "marcherPOV" }
-  | { action: "drillChartHide" | "musicStandHide" }
+  | { action: "drillChartHide" | "musicStandHide" | "drillChartInsertPage" }
   | { action: "instrument"; instrument: MarcherInstrument }
   | { action: "createMarcher"; instrument: MarcherInstrument }
   | { action: "instrumentPanelSummon" | "instrumentPanelHide" | "finishMarcherPlacement" }
   | { action: "drillChartPage"; direction: 1 | -1 }
+  | { action: "drillChartTransition"; kind: "shape" | "pace" | "style" }
+  | { action: "drillChartApplyTransition" }
   | { action: "seek"; fraction: number };
 
 function roundedRect(

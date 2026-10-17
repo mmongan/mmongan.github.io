@@ -68,6 +68,8 @@ const context = vm.createContext({
   getFloatingPanelButtonNearPoint: () => null,
   updateFormationPullPreview() {},
   MARCHER_TWIST_COMMIT_RADIANS: 20 * Math.PI / 180,
+  TURF_PRECISION_SCALE: 0.35,
+  selectDrawingGuideNear: () => false,
   getRobotCounts: () => [{ rotationY: 0 }, { rotationY: 0 }],
   getGlobalCountIndex: () => 0,
   setRobotFacing: (robot, yaw) => { savedFacing = yaw; },
@@ -177,7 +179,7 @@ try {
           assert.equal(context.formationPull, null, 'Tracked-hand handoff never starts formation pulling');
           hands.get(to).point.x += 0.2;
           context.update();
-          near(robot.position, position.add(new Vector3(0.2, 0, 0)),
+          near(robot.position, position.add(new Vector3(0.2 * 0.35, 0, 0)),
             `Receiver moves marcher from new contact offset (${from}, ${draft}, ${releaseTogether}; pinches ${JSON.stringify([...pinches])})`);
           hands.get(from).closed = false;
           context.update();
@@ -207,12 +209,37 @@ try {
   const createdAt = draft.position.clone();
   hands.get('left').point.x += 0.3;
   context.update();
-  near(draft.position, createdAt.add(new Vector3(0.3, 0, 0)), 'Held ground-level draft moves without a height jump');
+  near(draft.position, createdAt.add(new Vector3(0.3 * 0.35, 0, 0)),
+    'Feet on the turf scale hand motion for precise placement without a height jump');
+  const precise = draft.position.clone();
+  hands.get('left').point.y += 0.5;
+  context.update();
+  near(draft.position, precise.add(new Vector3(0, 0.5, 0)), 'Lifting off the turf does not snap to the hand');
+  hands.get('left').point.x += 0.4;
+  context.update();
+  near(draft.position, precise.add(new Vector3(0.4, 0.5, 0)), 'Above the turf the marcher follows the hand 1:1');
+  hands.get('left').point.y -= 0.5;
+  context.update();
+  hands.get('left').point.z += 0.2;
+  context.update();
+  near(draft.position, precise.add(new Vector3(0.4, 0, 0.2 * 0.35)), 'Touching down again re-enters precision mode');
+  root.scaling.setAll(1 / 120);
+  scene.incrementRenderId();
+  const tablePoint = draft.getAbsolutePosition().clone();
+  const tableStart = draft.position.clone();
+  grabs.get('left').offset = Vector3.Zero();
+  grabs.get('left').turfAnchor = undefined;
+  hands.get('left').point.copyFrom(tablePoint);
+  context.update();
+  hands.get('left').point.x += 0.01;
+  context.update();
+  near(draft.position, tableStart.add(new Vector3(1.2 * 0.35, 0, 0)), 'Tabletop turf contact also uses precision scaling');
+  root.scaling.setAll(1);
   context.commitMarcherTwist({
     robot: draft, source: 'hand', initialRotationY: 0.8, originalRotationY: 0,
   }, 0.8);
   assert.equal(savedFacing, 0.8, 'Deliberate facing changes made before handoff still persist on drop');
-  console.log('Hand marcher checks passed: left/right draft and placed handoffs via model/wrist/palm/fingertip, panel priority, 4.5 cm contact margin, same-frame release, no jumps/duplicates, receiver ownership, ground-level creation, tabletop transforms, and stadium bounds.');
+  console.log('Hand marcher checks passed: left/right draft and placed handoffs via model/wrist/palm/fingertip, panel priority, 4.5 cm contact margin, same-frame release, no jumps/duplicates, receiver ownership, ground-level creation, turf precision placement, tabletop transforms, and stadium bounds.');
 } finally {
   scene.dispose();
   engine.dispose();

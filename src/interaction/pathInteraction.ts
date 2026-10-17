@@ -39,7 +39,8 @@ import { resetThumbJog, updateThumbJog } from './thumbJogGesture';
 import { hideInstrumentPanel, summonInstrumentPanel } from '../menu/instrumentPanel';
 import {
   executeDrawingToolAction, handleDrawingPointer, initFieldDrawingTools,
-  isDrawingPointerActive, isFieldDrawingToolActive,
+  isDrawingPointerActive, isFieldDrawingToolActive, selectDrawingGuideNear, snapToSelectedDrawingGuide,
+  clearDrawingGuides, getSelectedDrawingGuidePoints,
 } from './fieldDrawingTools';
 import type { ThumbJogState } from './thumbJogGesture';
 import {
@@ -75,6 +76,15 @@ import {
   setRobotCountPosition,
   setRobotHeld,
   placeRobot,
+  getBlankChartPageState,
+  placeNearestBlankPageMarcher,
+  directAdjacentBlankPageMarchers,
+  hasRecentBlankPagePlacement,
+  cycleChartTransition,
+  getChartTransition,
+  getChartTransitionLabels,
+  getRoutedRobots,
+  setRobotTransition,
   clearRobotPath,
   refreshCollisionMarkers,
   COLLISION_MARKER_RADIUS_YARDS,
@@ -91,6 +101,9 @@ import {
   onMarcherStrideLimited,
 } from '../robot/robot';
 import { duplicateDrillButton, duplicateDrillStatus } from '../ui/dom';
+import { MAX_MARCHING_STRIDE_YARDS } from '../robot/gaitSelection';
+import { getTrackedHandMenuPose } from '../menu/handMenuPose';
+import { createPalmSweepState, updatePalmSweep, type PalmSweepState } from './palmSweepGesture';
 import { onManualPlacementBlocked, tryManualMarcherPose, tryManualMarcherPoses } from '../robot/manualPlacement';
 import type { MarcherInstrument } from '../robot/robot';
 import { getOpenMarchSectionInstrument, loadOpenMarchFromUrl, OPEN_MARCH_EXAMPLE, OPEN_MARCH_URL_PARAM } from '../robot/openMarchUrl';
@@ -102,6 +115,9 @@ import { isMarcherPOVActive, setMarcherPOVEnabled } from '../camera/marcherPOV';
 import { getHandMenuHit, getHandMenuHitNearPoint, pickMenuControl, setMenuHandTracking, setFormationCommitAvailable, setFormationLibraryOpen, setFormationLibraryPage, setFormationLibraryAnchorAvailable, setEraseModeActive, setEraseHistoryAvailable, setDrillChartPadActive, setInstrumentMenuActive, isHandMenuVisible, isMenuControl } from '../menu/handMenu';
 import {
   flipDrillChartPage,
+  getDrillChartTransitionSpan,
+  insertBlankDrillChartPage,
+  redrawDrillChartPad,
   summonDrillChartPad,
   onDrillChartPadVisibilityChange,
   setDrillChartPadVisible,
@@ -126,7 +142,7 @@ import {
   updateScoreboardHornPoseFromPick,
   updateScoreboardTempoFromPick,
 } from '../field/scoreboard';
-import { canvas, collisionMarkersToggle, floorCalibrationToggle, fullScaleVRButton, tabletopScaleButton, showAllPathsToggle, placementModeToggle, eraseModeToggle, drillChartPadToggle, marcherInstrumentRadios, undoEraseButton, redoEraseButton, addRandomRobotsButton, marcherCountInput, marcherCountValue, generateDrillButton, openMarchForm, openMarchUrlInput, openMarchButton, openMarchExampleButton, openMarchStatus, drillLabelsToggle } from '../ui/dom';
+import { canvas, collisionMarkersToggle, floorCalibrationToggle, fullScaleVRButton, tabletopScaleButton, showAllPathsToggle, placementModeToggle, eraseModeToggle, drillChartPadToggle, insertChartPageButton, marcherInstrumentRadios, undoEraseButton, redoEraseButton, addRandomRobotsButton, marcherCountInput, marcherCountValue, generateDrillButton, openMarchForm, openMarchUrlInput, openMarchButton, openMarchExampleButton, openMarchStatus, drillLabelsToggle } from '../ui/dom';
 import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS, FIELD_SURFACE_Y } from '../field/constants';
 import { buildSynchronizedPaths, FORMATION_SPACING_YARDS, generateMarchingDrillPaths, getDrillSectionInstrument, MARCH_STEP_YARDS } from '../robot/drill';
 import { isGuideOnField } from './fieldDrawingGeometry';
@@ -458,6 +474,59 @@ onDrillChartPadVisibilityChange((visible) => {
 });
 drillChartPadToggle?.addEventListener("change", () => setDrillChartPadVisible(!!drillChartPadToggle?.checked));
 
+// Inserts a blank chart page (keyframe) after the page shown: the field's
+// drafted guides are cleared and every marcher waits as a ghost to be placed.
+function addBlankChartPage() {
+  if (floorCalibrationToggle?.checked) return;
+  selectRobot(null);
+  const count = insertBlankDrillChartPage();
+  const cleared = clearDrawingGuides();
+  if (count === null) {
+    showPlacementNotice(cleared ? "Drafted guides cleared. Add marchers to build chart pages." :
+      "Add marchers before inserting a chart page.");
+    return;
+  }
+  const waiting = getBlankChartPageState()?.waiting ?? 0;
+  showPlacementNotice(`Blank page at count ${count}: draw guides, then grab or place the ${waiting} ghost marchers.`);
+}
+insertChartPageButton?.addEventListener("click", addBlankChartPage);
+
+// Applies the transition library choice to the move from the previous chart
+// page into the one shown: the selected marcher, or every marcher.
+function applyChartTransition() {
+  const span = getDrillChartTransitionSpan();
+  if (!span) {
+    showPlacementNotice("Turn to a later chart page to set the transition into it.");
+    return;
+  }
+  const robots = selectedRobot ? [selectedRobot] : getRoutedRobots();
+  const before = robots.map(robot => ({ robot, movement: captureMarcherMovement(robot) }));
+  const result = setRobotTransition(robots, span.from, span.to, getChartTransition(), scene);
+  if (result.marchers === 0) {
+    showPlacementNotice("No routed marchers reach this chart page yet.");
+    return;
+  }
+  const after = robots.map(robot => ({ robot, movement: captureMarcherMovement(robot) }));
+  const restore = (snapshots: typeof before) => snapshots.forEach(({ robot, movement }) => {
+    if (!robot.isDisposed()) restoreMarcherMovement(robot, movement);
+  });
+  eraseHistory.record({ undo: () => restore(before), redo: () => restore(after) });
+  redrawDrillChartPad();
+  const labels = getChartTransitionLabels();
+  const tooLong = result.maxStepYards > MAX_MARCHING_STRIDE_YARDS * 2;
+  showPlacementNotice(`Set ${span.page} → ${span.page + 1}: ${labels.shape} · ${labels.style} · ${labels.pace} ` +
+    `for ${result.marchers} marcher${result.marchers === 1 ? "" : "s"}` +
+    (tooLong ? ". Some steps are too long to march; try Even pace or a straighter path." : "."));
+}
+
+// In placement mode a blank page's waiting ghosts are placed before new marchers are created.
+function placeWaitingChartMarcher(point: Vector3) {
+  const placed = placeNearestBlankPageMarcher(point, scene);
+  if (placed === null) return false;
+  if (!placed) showPlacementNotice("That spot is blocked; the ghost marcher is still waiting.");
+  return true;
+}
+
 // Picks the instrument for new marchers and swaps the selected marcher's.
 function chooseInstrument(instrument: MarcherInstrument) {
   setSelectedInstrument(instrument);
@@ -526,6 +595,68 @@ function setPlacementMode(enabled: boolean) {
 
 const draftingToolsButtonHeld = new Map<string, boolean>();
 
+// Right after placing a marcher on a blank chart page, a thumbstick click or
+// an open palm-down sweep of a free tracked hand sends its previous-page
+// neighbors to evenly spaced spots beside it along the selected guide.
+function directAdjacentChartMarchers() {
+  const guide = getSelectedDrawingGuidePoints();
+  if (!guide) {
+    showPlacementNotice("Select a drafted guide first; adjacent marchers line up along it.");
+    return;
+  }
+  const result = directAdjacentBlankPageMarchers(guide, scene);
+  if (!result) {
+    showPlacementNotice("Place a ghost marcher on the blank page first, then sweep or click the thumbstick.");
+  } else if (result.placed + result.blocked === 0) {
+    showPlacementNotice("No waiting marchers stood next to that marcher on the previous page.");
+  } else {
+    showPlacementNotice(`Directed ${result.placed} adjacent marcher${result.placed === 1 ? "" : "s"} along the guide` +
+      (result.blocked ? `; ${result.blocked} blocked and still waiting.` : "."));
+  }
+}
+
+const adjacentThumbstickHeld = new Map<string, boolean>();
+const palmSweepStates = new Map<string, PalmSweepState>();
+
+function updateAdjacentMarcherGestures() {
+  controllerRegistry.forEach((controller, handedness) => {
+    if (controller.inputSource.hand) return;
+    const pressed = !!controller.motionController?.getComponentOfType("thumbstick")?.pressed ||
+      !!controller.inputSource.gamepad?.buttons?.[3]?.pressed;
+    const wasPressed = adjacentThumbstickHeld.get(handedness) ?? false;
+    adjacentThumbstickHeld.set(handedness, pressed);
+    if (pressed && !wasPressed && !marcherGrabs.has(handedness) && getBlankChartPageState()) {
+      directAdjacentChartMarchers();
+    }
+  });
+  const time = performance.now() / 1000;
+  for (const handedness of ["left", "right"] as const) {
+    const hand = mediaHandTracking?.getHandByHandedness(handedness);
+    const state = palmSweepStates.get(handedness) ?? createPalmSweepState();
+    palmSweepStates.set(handedness, state);
+    if (!hand || marcherGrabs.has(handedness) || !hasRecentBlankPagePlacement()) {
+      updatePalmSweep(state, time, false, 0, 0, 0);
+      continue;
+    }
+    const joint = (name: WebXRHandJoint) => hand.getJointMesh(name).getAbsolutePosition();
+    const wrist = joint(WebXRHandJoint.WRIST);
+    const middleBase = joint(WebXRHandJoint.MIDDLE_FINGER_PHALANX_PROXIMAL);
+    const pose = getTrackedHandMenuPose(wrist, joint(WebXRHandJoint.INDEX_FINGER_PHALANX_PROXIMAL), middleBase,
+      joint(WebXRHandJoint.PINKY_FINGER_PHALANX_PROXIMAL), handedness, scene.useRightHandedSystem);
+    const palmLength = Vector3.Distance(wrist, middleBase);
+    const open = palmLength > 1e-4 && [WebXRHandJoint.INDEX_FINGER_TIP, WebXRHandJoint.MIDDLE_FINGER_TIP,
+      WebXRHandJoint.RING_FINGER_TIP, WebXRHandJoint.PINKY_FINGER_TIP]
+      .every(tip => Vector3.Distance(wrist, joint(tip)) > palmLength * PALM_SWEEP_OPEN_RATIO);
+    const palmDownOpen = !!pose && pose.normal.y < -PALM_SWEEP_DOWN_DOT && open;
+    if (updatePalmSweep(state, time, palmDownOpen, middleBase.x, middleBase.y, middleBase.z)) {
+      directAdjacentChartMarchers();
+    }
+  }
+}
+const PALM_SWEEP_DOWN_DOT = 0.6;
+// Fingertips this many palm lengths from the wrist count as extended.
+const PALM_SWEEP_OPEN_RATIO = 1.6;
+
 function updateDraftingToolsFromControllers() {
   controllerRegistry.forEach((controller, handedness) => {
     if (controller.inputSource.hand) return;
@@ -546,6 +677,8 @@ function updateDraftingToolsFromControllers() {
 // timeline continuously — a small deadzone avoids drift from stick noise,
 // and the scrub rate is proportional to how far the stick is pushed.
 const SCRUB_DEADZONE = 0.2;
+const GRAB_DEPTH_BASE_SPEED = 6;
+const GRAB_DEPTH_TELESCOPE_RATE = 2.5;
 const SCRUB_COUNTS_PER_SECOND = 16;
 let scrubRemainder = 0;
 let mediaHandTracking: WebXRHandTracking | null = null;
@@ -2079,6 +2212,19 @@ function executeMenuAction(hit: NonNullable<ReturnType<typeof getHandMenuHit>>) 
     case "drillChartPage":
       flipDrillChartPage(hit.direction);
       break;
+    case "drillChartInsertPage":
+      addBlankChartPage();
+      break;
+    case "drillChartTransition": {
+      const label = cycleChartTransition(hit.kind);
+      redrawDrillChartPad();
+      const kind = hit.kind === "shape" ? "Path" : hit.kind === "pace" ? "Pace" : "Style";
+      showPlacementNotice(`Transition ${kind}: ${label}. Place ghosts or press Apply to use it.`);
+      break;
+    }
+    case "drillChartApplyTransition":
+      applyChartTransition();
+      break;
     case "instrument":
       chooseInstrument(hit.instrument);
       break;
@@ -2334,6 +2480,24 @@ function getFieldPointFromRay(ray: Ray): Vector3 | null {
   return snapToStepGrid(localPoint);
 }
 
+// Path-root-local turf point under a ray without step-grid rounding, for guide picking.
+function getRawFieldPointFromRay(ray: Ray): Vector3 | null {
+  const pick = scene.pickWithRay(ray, (mesh) => mesh.name === "field");
+  if (!pick?.hit || !pick.pickedPoint) return null;
+  return Vector3.TransformCoordinates(pick.pickedPoint, Matrix.Invert(pathRoot.computeWorldMatrix(true)));
+}
+
+// About 4 cm of real-world reach, never less than 0.75 yards on a full-size field.
+function getGuidePickRadius() {
+  return Math.max(0.75, 0.04 / getARScale());
+}
+
+function selectDrawingGuideFromRay(ray: Ray) {
+  if (floorCalibrationToggle?.checked) return false;
+  const point = getRawFieldPointFromRay(ray);
+  return !!point && selectDrawingGuideNear(point, getGuidePickRadius());
+}
+
 // Controller triggers select/edit existing content or place standing marchers
 // when placement mode is enabled. They never draw or extend marching paths.
 export function updateRobotPathFromControllers() {
@@ -2346,6 +2510,7 @@ export function updateRobotPathFromControllers() {
   if (floorCalibrationToggle?.checked) return;
   updateInstrumentPaletteFromControllers();
   updateDraftingToolsFromControllers();
+  updateAdjacentMarcherGestures();
   updateScrubFromControllers(scene.getEngine().getDeltaTime() / 1000);
 
   // Formation connections only need to catch up every few frames, not every
@@ -2400,7 +2565,12 @@ export function updateRobotPathFromControllers() {
           ? Math.sign(value) * (Math.min(1, Math.abs(value)) - SCRUB_DEADZONE) / (1 - SCRUB_DEADZONE)
           : 0;
         const deltaSeconds = Math.min(0.1, scene.getEngine().getDeltaTime() / 1000);
-        const depthChange = -deflection(axis) * 2 * getARScale() * deltaSeconds;
+        const currentDepth = marcherGrab.rayDistance < 0
+          ? marcherGrab.controllerDepthOffset ?? 0
+          : marcherGrab.rayDistance;
+        // Telescopic: a scene-scaled base speed plus a rate proportional to current reach.
+        const depthChange = -deflection(axis) *
+          (GRAB_DEPTH_BASE_SPEED * getARScale() + currentDepth * GRAB_DEPTH_TELESCOPE_RATE) * deltaSeconds;
         marcherGrab.controllerYawOffset = (marcherGrab.controllerYawOffset ?? 0) +
           deflection(turnAxis) * Math.PI / 2 * deltaSeconds;
         const facingYaw = handInteraction.getFacingYaw(ray.direction);
@@ -2566,6 +2736,7 @@ export function updateRobotPathFromControllers() {
       }
 
       const pickedRobot = pick?.hit ? findRobotRoot(pick.pickedMesh) : null;
+      if (!pickedRobot && selectDrawingGuideFromRay(getControllerRay(controller))) return;
 
       // A marcher with a route can scrub the shared timeline; a standing
       // marcher is selected without creating a route.
@@ -2701,8 +2872,14 @@ export function updateRobotPathFromControllers() {
       }
 
       if (placementMode) {
-        const point = getFieldPointFromController(controller);
+        const fieldPoint = getFieldPointFromController(controller);
+        const point = fieldPoint && (snapToSelectedDrawingGuide(fieldPoint) ?? fieldPoint);
         const draft = placementDrafts.get(handedness);
+        if (point && placeWaitingChartMarcher(point)) {
+          draft?.dispose();
+          placementDrafts.delete(handedness);
+          return;
+        }
         if (point) {
           const robot = draft ?? createStandingMarcher(point);
           if (tryManualMarcherPose(robot, point, robot.rotation.y, robot.isEnabled())) {
@@ -3223,7 +3400,9 @@ export function initInteraction() {
       return;
     }
     if (placementMode && !floorCalibrationToggle?.checked) {
-      const point = getFieldPointFromRay(getPointerRay());
+      const fieldPoint = getFieldPointFromRay(getPointerRay());
+      const point = fieldPoint && (snapToSelectedDrawingGuide(fieldPoint) ?? fieldPoint);
+      if (point && placeWaitingChartMarcher(point)) return;
       if (point) {
         const robot = createStandingMarcher(point);
         if (robot.isEnabled()) selectRobot(robot);
@@ -3250,6 +3429,7 @@ export function initInteraction() {
       if (!isMarcherPOVActive()) setMarcherPOVEnabled(true);
       return;
     }
+    if (selectDrawingGuideFromRay(getPointerRay())) return;
     let fieldNode: import('@babylonjs/core/node').Node | null = pickedMesh;
     while (fieldNode) {
       if (/^(field|fieldLines|hashMarks|leftEndZone|rightEndZone)$/.test(fieldNode.name) ||

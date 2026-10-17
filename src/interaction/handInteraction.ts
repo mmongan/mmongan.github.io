@@ -15,9 +15,10 @@ import {
   getARScaleRange,
   getARRotation,
   getARSurfaceHeight,
-  setARSurfaceHeightForScaleGesture,
+  setARSurfaceHeight,
 } from '../xr/ar';
 import { scene } from '../scene/engine';
+import { selectDrawingGuideNear, snapToSelectedDrawingGuide } from './fieldDrawingTools';
 import {
   findRobotRoot,
   getGlobalCountIndex,
@@ -50,6 +51,9 @@ function getHandGrabMatrix(hand: TrackedHand) {
 // Clear the hand/controller depth before drawing held marchers, below XR notices.
 const GRABBED_MARCHER_RENDERING_GROUP = 2;
 const MARCHER_TWIST_COMMIT_RADIANS = (20 * Math.PI) / 180;
+// While a held marcher's feet touch the turf, hand/controller motion is scaled
+// down so the final spot can be fine-tuned without jitter.
+const TURF_PRECISION_SCALE = 0.35;
 
 export interface HandSegment {
   kind: 'formation' | 'path';
@@ -78,6 +82,7 @@ export interface MarcherGrab {
   originalRenderingGroup: number | null;
   ghost?: TransformNode;
   recordMove?: () => void;
+  turfAnchor?: { position: Vector3; target: Vector3 };
 }
 
 export interface HandPathDependencies {
@@ -268,6 +273,20 @@ export function createHandInteraction(paths: HandPathDependencies) {
     grab.originalRenderingGroup = null;
   }
 
+  // Same contact test used to accept a release: feet within tolerance of the turf, inside the field.
+  function isTouchingTurf(worldPosition: Vector3): boolean {
+    const field = scene.getMeshByName('field');
+    if (!field || !field.isEnabled()) return false;
+    const fieldMatrix = field.computeWorldMatrix(true);
+    const local = Vector3.TransformCoordinates(worldPosition, Matrix.Invert(fieldMatrix));
+    const fieldUp = Vector3.TransformNormal(Vector3.Up(), fieldMatrix);
+    const pathUp = Vector3.TransformNormal(Vector3.Up(), pathRoot.computeWorldMatrix(true));
+    const height = local.y * fieldUp.length() - 0.02 * Vector3.Dot(pathUp, fieldUp.normalize());
+    const tolerance = 0.05 * Math.min(1, pathUp.length());
+    return Math.abs(local.x) <= FIELD_WIDTH_YARDS / 2 && Math.abs(local.z) <= FIELD_LENGTH_YARDS / 2 &&
+      Number.isFinite(height) && Math.abs(height) <= tolerance;
+  }
+
   function moveMarcherGrab(handedness: string, point: Vector3, facingYaw: number | null = null) {
     const grab = marcherGrabs.get(handedness);
     if (!grab || grab.robot.isDisposed()) {
@@ -275,10 +294,28 @@ export function createHandInteraction(paths: HandPathDependencies) {
       marcherGrabs.delete(handedness);
       return;
     }
-    pathRoot.computeWorldMatrix(true);
-    const position = Vector3.TransformCoordinates(
-      point.add(grab.offset), Matrix.Invert(pathRoot.getWorldMatrix())
-    );
+    const pathMatrix = pathRoot.computeWorldMatrix(true);
+    const target = Vector3.TransformCoordinates(point.add(grab.offset), Matrix.Invert(pathMatrix));
+    let position = target;
+    if (isTouchingTurf(Vector3.TransformCoordinates(target, pathMatrix))) {
+      if (!grab.turfAnchor) {
+        // Unanchored, the marcher sits at the previous target, so this frame's motion is scaled too.
+        grab.turfAnchor = { position: grab.robot.position.clone(), target: grab.robot.position.clone() };
+      }
+      const anchor = grab.turfAnchor;
+      position = new Vector3(
+        anchor.position.x + (target.x - anchor.target.x) * TURF_PRECISION_SCALE,
+        target.y,
+        anchor.position.z + (target.z - anchor.target.z) * TURF_PRECISION_SCALE,
+      );
+    } else if (grab.turfAnchor) {
+      // Lifting off keeps the marcher where precision moved it instead of snapping to the hand.
+      grab.turfAnchor = undefined;
+      const current = grab.robot.position;
+      const rebased = new Vector3(current.x, target.y, current.z);
+      grab.offset.addInPlace(Vector3.TransformNormal(rebased.subtract(target), pathMatrix));
+      position = rebased;
+    }
     let yaw = grab.robot.rotation.y;
     if (facingYaw !== null && grab.initialFacingYaw !== null) {
       const yawDelta = facingYaw - grab.initialFacingYaw;
@@ -319,16 +356,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
     if (grab.robot.isDisposed()) return;
     const field = scene.getMeshByName('field');
     if (commit && field) {
-      const fieldMatrix = field.computeWorldMatrix(true);
-      const worldPosition = grab.robot.computeWorldMatrix(true).getTranslation();
-      const local = Vector3.TransformCoordinates(worldPosition, Matrix.Invert(fieldMatrix));
-      const fieldUp = Vector3.TransformNormal(Vector3.Up(), fieldMatrix);
-      const pathUp = Vector3.TransformNormal(Vector3.Up(), pathRoot.computeWorldMatrix(true));
-      const height = local.y * fieldUp.length() - 0.02 * Vector3.Dot(pathUp, fieldUp.normalize());
-      const tolerance = 0.05 * Math.min(1, pathUp.length());
-      if (!field.isEnabled() || Math.abs(local.x) > FIELD_WIDTH_YARDS / 2 ||
-        Math.abs(local.z) > FIELD_LENGTH_YARDS / 2 || !Number.isFinite(height) ||
-        Math.abs(height) > tolerance) {
+      if (!isTouchingTurf(grab.robot.computeWorldMatrix(true).getTranslation())) {
         commit = false;
         notifyPlacement('Move cancelled: release the marcher with its feet touching the turf.');
       }
@@ -357,7 +385,14 @@ export function createHandInteraction(paths: HandPathDependencies) {
       Matrix.Invert(pathRoot.getWorldMatrix())
     );
     position.y += 0.02;
-    if (!tryManualMarcherPose(grab.robot, position, grab.robot.rotation.y, grab.robot.isEnabled())) {
+    const snapped = snapToSelectedDrawingGuide(position);
+    let placed = false;
+    if (snapped) {
+      placed = tryManualMarcherPose(grab.robot, snapped, grab.robot.rotation.y, grab.robot.isEnabled());
+      if (placed) position.copyFrom(snapped);
+      else notifyPlacement('Guide snap blocked by a collision; placed where released.');
+    }
+    if (!placed && !tryManualMarcherPose(grab.robot, position, grab.robot.rotation.y, grab.robot.isEnabled())) {
       if (handPlacementDrafts.delete(grab.robot)) {
         setRobotHeld(grab.robot, false);
         grab.robot.dispose();
@@ -1062,7 +1097,6 @@ export function createHandInteraction(paths: HandPathDependencies) {
           localAnchor: rotateAroundY(offset, -startRotation).scale(1 / startScale),
         };
       } else {
-        const previousScale = getARScale();
         const scale = setARScale(sceneGesture.startScale * distance / sceneGesture.startDistance);
         const yawDelta = yaw - sceneGesture.startYaw;
         const rotation = sceneGesture.startRotation + Math.atan2(Math.sin(yawDelta), Math.cos(yawDelta));
@@ -1070,7 +1104,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
         setARPosition(midpoint.subtract(rotateAroundY(sceneGesture.localAnchor.scale(scale), rotation)));
         // Keep the field surface at its height so zooming in can't bury or lift it out of view.
         const surfaceHeight = sceneGesture.startSurfaceY + midpoint.y - sceneGesture.startMidpointY;
-        sceneGesture.startSurfaceY += setARSurfaceHeightForScaleGesture(previousScale, surfaceHeight) - surfaceHeight;
+        setARSurfaceHeight(surfaceHeight);
       }
       return;
     }
@@ -1167,6 +1201,12 @@ export function createHandInteraction(paths: HandPathDependencies) {
         beginMarcherGrab(handedness, robot, point, 'hand', 0, facingYaw);
         marcherPinchHands.add(handedness);
       } else {
+        pathRoot.computeWorldMatrix(true);
+        const pathMatrix = pathRoot.getWorldMatrix();
+        const pathScale = Vector3.TransformNormal(Vector3.Right(), pathMatrix).length();
+        // Pinching the yarn of a drawn guide selects it instead of creating a marcher.
+        if (pathScale > 0 && selectDrawingGuideNear(
+          Vector3.TransformCoordinates(point, Matrix.Invert(pathMatrix)), 0.03 / pathScale, true)) continue;
         const position = getSidelineDraftPosition(point);
         if (!position) continue;
         const draft = createStandingMarcher(position);

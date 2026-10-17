@@ -107,7 +107,7 @@ const context = vm.createContext({
   padGrabButtons: new Map(), menuInteractionHeld: new Map(),
   eraseMode: false,
   isMarcherPainting: () => painting,
-  SCRUB_DEADZONE: 0.2, getARScale: () => scale,
+  SCRUB_DEADZONE: 0.2, GRAB_DEPTH_BASE_SPEED: 6, GRAB_DEPTH_TELESCOPE_RATE: 2.5, getARScale: () => scale,
   isGripPressed: () => grip, getTriggerPressed: () => false,
   isFloatingPanelGrabbed: () => false, getFloatingPanelNear: () => null,
   pickFloatingPanel: () => null, getControllerPosition: value => value.grip,
@@ -148,7 +148,7 @@ context.update();
 assert.ok(moved[1].equals(gripPoint), 'Near-held marcher follows the physical controller');
 stickY = -1;
 context.update();
-assert.ok(moved[1].equalsWithEpsilon(gripPoint.add(new Vector3(0, 0, 0.2))), 'Forward stick extends near grab');
+assert.ok(moved[1].equalsWithEpsilon(gripPoint.add(new Vector3(0, 0, 0.6))), 'Forward stick extends near grab at the faster base speed');
 stickY = 1;
 context.update();
 assert.ok(moved[1].equalsWithEpsilon(gripPoint), 'Backward stick retracts near grab');
@@ -170,17 +170,17 @@ context.update();
 assert.ok(moved[1].equals(new Vector3(0, 0, 2)), 'Remote grip follows the aim ray at fixed depth');
 stickY = -1;
 context.update();
-assert.ok(moved[1].equalsWithEpsilon(new Vector3(0, 0, 2.2)), 'Forward stick pushes ray grab farther');
+assert.ok(moved[1].equalsWithEpsilon(new Vector3(0, 0, 3.1)), 'Forward stick telescopes ray grab farther with reach');
 stickY = 0.1;
 context.update();
-assert.ok(moved[1].equalsWithEpsilon(new Vector3(0, 0, 2.2)), 'Deadzone prevents drift');
+assert.ok(moved[1].equalsWithEpsilon(new Vector3(0, 0, 3.1)), 'Deadzone prevents drift');
 stickY = 1;
 deltaTime = 50;
 context.update();
-assert.ok(moved[1].equalsWithEpsilon(new Vector3(0, 0, 2.1)), 'Depth speed is frame-time based');
+assert.ok(moved[1].equalsWithEpsilon(new Vector3(0, 0, 2.4125)), 'Depth speed is frame-time based');
 scale = 0.1;
 context.update();
-assert.ok(moved[1].equalsWithEpsilon(new Vector3(0, 0, 2.09)), 'Tabletop depth speed follows scene scale');
+assert.ok(moved[1].equalsWithEpsilon(new Vector3(0, 0, 2.0809375)), 'Tabletop base depth speed follows scene scale');
 scale = 1;
 deltaTime = 100;
 context.marcherGrabs.get('left').rayDistance = 0.15;
@@ -189,10 +189,10 @@ assert.equal(context.marcherGrabs.get('left').rayDistance, 0.1, 'Ray grab cannot
 controller.motionController = null;
 controller.inputSource.gamepad = { axes: [0, 0, 0, -1] };
 context.update();
-assert.ok(Math.abs(context.marcherGrabs.get('left').rayDistance - 0.3) < 1e-9, 'Raw XR thumbstick axes remain supported');
+assert.ok(Math.abs(context.marcherGrabs.get('left').rayDistance - 0.725) < 1e-9, 'Raw XR thumbstick axes remain supported');
 controller.inputSource.gamepad.axes = [];
 context.update();
-assert.ok(Math.abs(context.marcherGrabs.get('left').rayDistance - 0.3) < 1e-9, 'Missing axes preserve depth');
+assert.ok(Math.abs(context.marcherGrabs.get('left').rayDistance - 0.725) < 1e-9, 'Missing axes preserve depth');
 controller.motionController = { getComponentOfType: () => ({ axes: { x: stickX, y: stickY } }) };
 stickY = 0;
 stickX = 1;
@@ -210,7 +210,7 @@ controller.motionController = null;
 controller.inputSource.gamepad.axes = [-1, -1];
 context.update();
 assert.ok(Math.abs(moved[2]) < 1e-9, 'Raw two-axis sticks support turning and depth together');
-assert.ok(moved[1].z > 0.3, 'Diagonal input also changes depth');
+assert.ok(moved[1].z > 0.725, 'Diagonal input also changes depth');
 
 let committedFacing;
 let allowed = true;

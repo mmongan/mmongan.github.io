@@ -10,10 +10,15 @@ import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
 import { scene } from '../scene/engine';
 import {
+  getBlankChartPageState,
+  endBlankChartPage,
+  getChartTransition,
+  getChartTransitionLabels,
   getDrillLastCountIndex,
   getGlobalCountIndex,
   getRobotPositionsAtCount,
   getRobotPositionAtCount,
+  insertBlankChartPage,
   seekToCount,
 } from '../robot/robot';
 import { END_ZONE_DEPTH_YARDS, FIELD_LENGTH_YARDS, FIELD_WIDTH_YARDS, HASH_OFFSETS_YARDS } from '../field/constants';
@@ -78,6 +83,11 @@ export function getDrillChartSetCounts(): number[] {
 // flips pages on its own and flipping a page seeks the playhead.
 function getCurrentPage(setCounts: number[]): number {
   const count = getGlobalCountIndex();
+  const blank = getBlankChartPageState();
+  if (blank && count >= blank.previous && count <= blank.count) {
+    const blankPage = setCounts.indexOf(blank.count);
+    if (blankPage >= 0) return blankPage;
+  }
   let page = 0;
   for (let index = 0; index < setCounts.length; index++) {
     if (setCounts[index] <= count) page = index;
@@ -89,8 +99,29 @@ export function flipDrillChartPage(direction: 1 | -1) {
   const setCounts = getDrillChartSetCounts();
   const page = getCurrentPage(setCounts);
   const target = Math.min(setCounts.length - 1, Math.max(0, page + direction));
+  // Flipping pages finishes a blank page even if the target is its start count.
+  if (getBlankChartPageState()) endBlankChartPage();
   seekToCount(setCounts[target]);
   framesUntilRedraw = 0;
+}
+
+// Inserts a blank page (keyframe) right after the page being shown and turns to it.
+export function insertBlankDrillChartPage(): number | null {
+  const setCounts = getDrillChartSetCounts();
+  const count = insertBlankChartPage(setCounts[getCurrentPage(setCounts)], DRILL_CHART_COUNTS_PER_SET, scene);
+  framesUntilRedraw = 0;
+  return count;
+}
+
+// Counts of the move into the page being shown: previous page → this page.
+export function getDrillChartTransitionSpan(): { from: number; to: number; page: number } | null {
+  const setCounts = getDrillChartSetCounts();
+  const page = getCurrentPage(setCounts);
+  return page > 0 ? { from: setCounts[page - 1], to: setCounts[page], page } : null;
+}
+
+export function redrawDrillChartPad() {
+  refreshPage(true);
 }
 
 function createButtonTexture(label: string) {
@@ -161,12 +192,25 @@ function createPad(): Pad {
   page.material = pageMaterial;
   page.position.z = -0.0005;
 
-  const buttonDefinitions: { label: string; name: string; x: number; hit: HandMenuHit }[] = [
-    { label: "◀ Prev", name: "-1", x: -1, hit: { action: "drillChartPage", direction: -1 } },
-    { label: "X", name: "hide", x: 0, hit: { action: "drillChartHide" } },
-    { label: "Next ▶", name: "1", x: 1, hit: { action: "drillChartPage", direction: 1 } },
+  const bottomY = -PAD_HEIGHT / 2 + BUTTON_HEIGHT / 2 + 0.01;
+  const edgeX = PAD_WIDTH / 2 - BUTTON_WIDTH / 2 - 0.012;
+  const transitionY = bottomY + BUTTON_HEIGHT + 0.004;
+  const transitionX = (slot: number) => (slot - 1.5) * (BUTTON_WIDTH + 0.012);
+  const buttonDefinitions: { label: string; name: string; x: number; y: number; hit: HandMenuHit }[] = [
+    { label: "◀ Prev", name: "-1", x: -edgeX, y: bottomY, hit: { action: "drillChartPage", direction: -1 } },
+    { label: "X", name: "hide", x: 0, y: bottomY, hit: { action: "drillChartHide" } },
+    { label: "+ Page", name: "insert", x: 0, y: bottomY, hit: { action: "drillChartInsertPage" } },
+    { label: "Next ▶", name: "1", x: edgeX, y: bottomY, hit: { action: "drillChartPage", direction: 1 } },
+    { label: "Path ▸", name: "path", x: transitionX(0), y: transitionY,
+      hit: { action: "drillChartTransition", kind: "shape" } },
+    { label: "Style ▸", name: "style", x: transitionX(1), y: transitionY,
+      hit: { action: "drillChartTransition", kind: "style" } },
+    { label: "Pace ▸", name: "pace", x: transitionX(2), y: transitionY,
+      hit: { action: "drillChartTransition", kind: "pace" } },
+    { label: "Apply", name: "applyTransition", x: transitionX(3), y: transitionY,
+      hit: { action: "drillChartApplyTransition" } },
   ];
-  for (const { label, name, x, hit } of buttonDefinitions) {
+  for (const { label, name, x, y, hit } of buttonDefinitions) {
     const buttonMaterial = new StandardMaterial(`drillChartButtonMaterial-${name}`, scene);
     const buttonTexture = createButtonTexture(label);
     buttonMaterial.diffuseTexture = buttonTexture;
@@ -178,7 +222,7 @@ function createPad(): Pad {
       width: isClose ? BUTTON_HEIGHT : BUTTON_WIDTH, height: BUTTON_HEIGHT,
     }, scene);
     button.material = buttonMaterial;
-    button.position.set(x * (PAD_WIDTH / 2 - BUTTON_WIDTH / 2 - 0.012), -PAD_HEIGHT / 2 + BUTTON_HEIGHT / 2 + 0.01, -0.002);
+    button.position.set(x, y, -0.002);
     if (isClose) button.position.set(PAD_WIDTH / 2 - BUTTON_HEIGHT / 2, PAD_HEIGHT / 2 + 0.01, -0.008);
     registerMenuButton(button, hit);
     buttons.set(button, hit);
@@ -293,6 +337,8 @@ function drawPage(target: Pad, setCounts: number[], page: number) {
     ctx.strokeStyle = "rgba(63, 124, 247, 0.55)";
     ctx.lineWidth = 2;
     ctx.setLineDash([6, 5]);
+    const route = Array.from({ length: count - previousCount + 1 },
+      (_, offset) => getRobotPositionsAtCount(previousCount + offset));
     previous.forEach((from, index) => {
       if (povRobot) return;
       const a = fieldPoint(from);
@@ -300,20 +346,24 @@ function drawPage(target: Pad, setCounts: number[], page: number) {
       if (Math.hypot(a.x - b.x, a.y - b.y) < 2) return;
       ctx.beginPath();
       ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
+      for (const positions of route.slice(1)) {
+        const point = positions[index] ? fieldPoint(positions[index]) : b;
+        ctx.lineTo(point.x, point.y);
+      }
       ctx.stroke();
     });
     ctx.setLineDash([]);
     if (povRobot) {
-      const from = getRobotPositionAtCount(povRobot, previousCount);
-      const to = getRobotPositionAtCount(povRobot, count);
-      if (from && to) {
-        const a = fieldPoint(from);
-        const b = fieldPoint(to);
+      const points = Array.from({ length: count - previousCount + 1 },
+        (_, offset) => getRobotPositionAtCount(povRobot, previousCount + offset));
+      if (points.every(point => point)) {
         ctx.setLineDash([6, 5]);
         ctx.beginPath();
-        ctx.moveTo(a.x, a.y);
-        ctx.lineTo(b.x, b.y);
+        points.forEach((point, index) => {
+          const p = fieldPoint(point!);
+          if (index === 0) ctx.moveTo(p.x, p.y);
+          else ctx.lineTo(p.x, p.y);
+        });
         ctx.stroke();
         ctx.setLineDash([]);
       }
@@ -356,24 +406,19 @@ function drawPage(target: Pad, setCounts: number[], page: number) {
     ctx.stroke();
   }
   ctx.textAlign = "center";
-  ctx.font = "20px 'Segoe UI', Arial";
+  ctx.font = "18px 'Segoe UI', Arial";
   ctx.fillStyle = "#24324a";
+  const transition = getChartTransitionLabels();
   ctx.fillText(
-    `${current.length} marcher${current.length === 1 ? "" : "s"}  ·  playhead count ${getGlobalCountIndex()}`,
-    CANVAS_WIDTH / 2, FIELD_BOTTOM + 44
+    `${current.length} marcher${current.length === 1 ? "" : "s"}  ·  count ${getGlobalCountIndex()}  ·  ` +
+      `Transition: ${transition.shape} · ${transition.style} · ${transition.pace}`,
+    CANVAS_WIDTH / 2, FIELD_BOTTOM + 26
   );
+  ctx.textAlign = "right";
   ctx.font = "16px 'Segoe UI', Arial";
   ctx.fillStyle = "#7a8596";
   ctx.fillText(povRobot ? `${getMarcherPOVLabel()}  ·  orange dot: live position  ·  orange ring: this set`
-    : page > 0 ? "● this set   ○ previous set   - - path" : "● opening set", CANVAS_WIDTH / 2, FIELD_BOTTOM + 72);
-  ctx.strokeStyle = "#c9d3e2";
-  ctx.lineWidth = 1;
-  for (let y = FIELD_BOTTOM + 96; y < CANVAS_HEIGHT - 70; y += 26) {
-    ctx.beginPath();
-    ctx.moveTo(FIELD_LEFT, y);
-    ctx.lineTo(FIELD_RIGHT, y);
-    ctx.stroke();
-  }
+    : page > 0 ? "● this set   ○ previous set   - - path" : "● opening set", FIELD_RIGHT, 96);
   target.texture.update(true);
 }
 
@@ -381,14 +426,16 @@ function getPageSignature(setCounts: number[], page: number) {
   const count = setCounts[page];
   const previous = page > 0 ? setCounts[page - 1] : count;
   let hash = 0;
-  for (const positionCount of [count, previous]) {
+  for (let positionCount = previous; positionCount <= count; positionCount++) {
     for (const position of getRobotPositionsAtCount(positionCount)) {
       hash = (hash * 31 + Math.round(position.x * 10) * 7 + Math.round(position.z * 10)) | 0;
     }
   }
+  const transition = getChartTransition();
+  const transitionSignature = `${transition.shape}:${transition.pace}:${transition.styleIndex}`;
   const povRobot = getMarcherPOVRobot();
   const povSignature = povRobot ? `${povRobot.uniqueId}:${povRobot.position.x.toFixed(3)}:${povRobot.position.z.toFixed(3)}` : '';
-  return `${setCounts.length}:${page}:${count}:${hash}:${getGlobalCountIndex()}:${getSelectedFieldLevel()}:${povSignature}`;
+  return `${setCounts.length}:${page}:${count}:${hash}:${getGlobalCountIndex()}:${getSelectedFieldLevel()}:${povSignature}:${transitionSignature}`;
 }
 
 function refreshPage(force = false) {

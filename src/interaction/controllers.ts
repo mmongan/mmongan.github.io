@@ -9,7 +9,7 @@ import {
   getARScaleRange,
   getARRotation,
   getARSurfaceHeight,
-  setARSurfaceHeightForScaleGesture,
+  setARSurfaceHeight,
 } from '../xr/ar';
 import { scene } from '../scene/engine';
 import { floorCalibrationToggle } from '../ui/dom';
@@ -136,12 +136,11 @@ export function updateARResizeFromControllers(grabActive: boolean) {
   // height (following vertical hand motion 1:1) so zooming to full size
   // doesn't push the field far above or below the viewer.
   const scale = getScaleFromControllerDistance(distance);
-  const previousScale = getARScale();
   const yaw = pinchState.startRotation + (currentYaw - pinchState.startYaw);
   const anchorWorldOffset = rotateAroundY(pinchState.localAnchor.scale(scale), yaw);
   setARScale(scale);
   setARPosition(midpoint.subtract(anchorWorldOffset));
   const surfaceHeight = pinchState.startSurfaceY + midpoint.y - pinchState.startMidpointY;
-  pinchState.startSurfaceY += setARSurfaceHeightForScaleGesture(previousScale, surfaceHeight) - surfaceHeight;
+  setARSurfaceHeight(surfaceHeight);
   setARRotation(yaw);
 }

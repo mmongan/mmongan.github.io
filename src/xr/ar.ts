@@ -159,15 +159,6 @@ export function setARSurfaceHeight(height: number) {
   arPivot.position.y = height - FIELD_SURFACE_Y * getARScale();
 }
 
-export function setARSurfaceHeightForScaleGesture(previousScale: number, height: number) {
-  if (previousScale > AR_SCALE_DEFAULT && getARScale() <= AR_SCALE_DEFAULT) {
-    setFieldHeightMode("table");
-  } else {
-    setARSurfaceHeight(height);
-  }
-  return getARSurfaceHeight();
-}
-
 export function setFieldHeightMode(mode: "floor" | "table") {
   fieldHeightMode = mode;
   setARHeight(fieldHeights[mode] - FIELD_SURFACE_Y * getARScale());

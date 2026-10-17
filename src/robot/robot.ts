@@ -15,6 +15,7 @@ import { createCollisionMarkerManager, COLLISION_MARKER_RADIUS_YARDS } from './c
 import { buildGaitStepPhaseOffsets, DOUBLE_TIME_ABOVE_YARDS, gaitPhaseAtBeat, isAutoGaitStyle, selectAutoGait } from './gaitSelection';
 import { resolveRepeatPlayback } from './playbackRepeat';
 import { registerManualPlacementMarcher, tryManualMarcherPose, tryManualMarcherPoses } from './manualPlacement';
+import { createMarcherDragGhost } from './marcherGhost';
 import { CLARINET_MOUTHPIECE_TIP, getClarinetTemplate } from './clarinetModel';
 import { FLUTE_MOUTHPIECE_TIP, getFluteTemplate } from './fluteModel';
 import { getSousaphoneTemplate, SOUSAPHONE_MOUTHPIECE_TIP, SOUSAPHONE_VALVE_GRIP, sousaphoneLoopPoint } from './sousaphoneModel';
@@ -53,6 +54,8 @@ import { getGuardFlagTemplate, getGuardRifleTemplate, getGuardSabreTemplate,
 export { COLLISION_MARKER_RADIUS_YARDS } from './collisionMarkers';
 
 const allRobots = new Set<TransformNode>();
+// Ghost root -> the hidden marcher it represents on an inserted blank chart page.
+const blankPageGhostOwners = new Map<Node, TransformNode>();
 const heldRobots = new Set<TransformNode>();
 export const onMarcherStrideLimited = new Observable<string>();
 const limitedStrideCounts = new WeakMap<TransformNode, number>();
@@ -297,6 +300,9 @@ export function findRobotRoot(node: Node | null): TransformNode | null {
     if (current instanceof TransformNode && allRobots.has(current)) {
       return current;
     }
+    // A blank chart page's ghost stands in for its hidden marcher until placed.
+    const owner = blankPageGhostOwners.get(current);
+    if (owner) return owner;
     current = current.parent;
   }
   return null;
@@ -306,6 +312,7 @@ export function findRobotRoot(node: Node | null): TransformNode | null {
 // handles removing it from allRobots/players/collision markers) — e.g. so a
 // generator can start from a clean field instead of piling onto old runs.
 export function disposeAllRobots() {
+  endBlankChartPage();
   setGhostBandPreviewEnabled(false);
   Array.from(allRobots).forEach((robot) => robot.dispose());
 }
@@ -882,6 +889,9 @@ export interface RobotCount {
   // Explicit body facing (e.g. facing the box while sliding); absent means
   // the marcher faces where it travels.
   facingY?: number;
+  // Marching style (MARCHING_GAITS index) for the move from this count to the
+  // next, chosen from the transition library; absent uses the marcher's style.
+  styleIndex?: number;
 }
 
 // Each robot keeps only its own route/table; the playback transport itself
@@ -1221,10 +1231,14 @@ function resolveSegmentGait(
   styleIndex: number
 ): ResolvedCountGait | null {
   const last = state.counts.length - 1;
+  const transitionStyle = segmentStart >= 0 && segmentStart < last
+    ? state.counts[segmentStart].styleIndex : undefined;
+  const overridden = transitionStyle !== undefined && MARCHING_GAITS[transitionStyle] !== undefined;
+  if (overridden) styleIndex = transitionStyle;
   const style = MARCHING_GAITS[styleIndex];
   if (!isAutoGaitStyle(style.name)) {
     const from = state.counts[Math.min(last, Math.max(0, segmentStart))];
-    const origin = style.inPlace ? state.counts[0] : from;
+    const origin = style.inPlace && !overridden ? state.counts[0] : from;
     return {
       gaitIndex: styleIndex,
       stepsPerCount: 1,
@@ -1414,7 +1428,8 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState,
     }));
     // Exact relative-route equality only: never merge merely similar strides or turns.
     const signature = JSON.stringify([bakeKey, playbackBeatUnits,
-      counts.map(count => [count.position.x, count.position.y, count.position.z, count.rotationY, count.facingY])]);
+      counts.map(count => [count.position.x, count.position.y, count.position.z, count.rotationY, count.facingY,
+        count.styleIndex])]);
     const lease = sharedLegBakes.acquire(signature, () => {
       const sampleState: PlayerState = { ...state, counts, gaitPhaseCache: undefined,
         stepCache: undefined, legBake: undefined };
@@ -1686,6 +1701,15 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState,
     const hip = new Vector3(side * hipHalfSpacing, 0.69, 0);
     const swinging = side < 0 ? !leftStance : leftStance;
     let pitch = 0;
+    // Unmarchable (stride-limited) moves can put a probed contact beyond reach; treat that as flat.
+    const groundPitch = (...args: Parameters<typeof marcherGroundFootPitch>) => {
+      try {
+        return marcherGroundFootPitch(...args);
+      } catch (error) {
+        if (error instanceof RangeError) return 0;
+        throw error;
+      }
+    };
     const contactTarget = (step: number, plantedStep: number) => {
       // Landing targets sample midstance; the contact boundary is half a step earlier.
       const beat = landingBeat(step - 0.5);
@@ -1704,7 +1728,7 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState,
       for (const step of [plantedStep, plantedStep + 1]) {
         const sole = contactTarget(step, plantedStep);
         if (sole.z > MARCHER_SHOE_FORWARD_OFFSET &&
-          marcherGroundFootPitch(hip, sole, yaw) > 0) {
+          groundPitch(hip, sole, yaw) > 0) {
           stepCache.directions.set(key, 1);
           return 1;
         }
@@ -1721,10 +1745,10 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState,
       const key = `${side}:${plantedStep}:${boundary}`;
       let roll = stepCache.rolls.get(key);
       if (!roll) {
-        const contactPitch = marcherGroundFootPitch(hip, contactTarget(boundary, plantedStep), yaw, rollDirection);
+        const contactPitch = groundPitch(hip, contactTarget(boundary, plantedStep), yaw, rollDirection);
         const epsilon = 0.001;
         const nearby = gaitProgress < 0.5 ? boundary - epsilon : boundary + epsilon;
-        const nearbyPitch = marcherGroundFootPitch(hip, contactTarget(nearby, plantedStep), yaw, rollDirection);
+        const nearbyPitch = groundPitch(hip, contactTarget(nearby, plantedStep), yaw, rollDirection);
         const velocity = gaitProgress < 0.5
           ? (contactPitch - nearbyPitch) / epsilon : (nearbyPitch - contactPitch) / epsilon;
         roll = { pitch: contactPitch, velocity };
@@ -1759,7 +1783,7 @@ export function getRobotFootprintSource(robot: TransformNode) {
   const clockOffset = Math.round((getDrillTransportState().beat - getMusicTransportState().beat) * 1e8) / 1e8;
   const key = JSON.stringify([parts.gaitIndex, clockOffset, repeatOptions.songLength, repeatOptions.drill,
     playbackBeatUnits, state.counts.map(count => [
-      count.position.x, count.position.y, count.position.z, count.rotationY, count.facingY,
+      count.position.x, count.position.y, count.position.z, count.rotationY, count.facingY, count.styleIndex,
     ])]);
   return {
     key,
@@ -2127,7 +2151,17 @@ export function suspendRobotForErase(robot: TransformNode) {
 }
 
 export function setRobotHeld(robot: TransformNode, held: boolean) {
+  const page = blankChartPage;
   if (held) {
+    const ghost = page?.pending.get(robot);
+    if (page && ghost) {
+      // Picking up a ghost brings its marcher onto the new page.
+      page.pending.delete(robot);
+      ghost.dispose();
+      page.claimed.add(robot);
+      robot.setEnabled(true);
+      notifyBlankChartPage();
+    }
     const state = players.get(robot);
     if (state) invalidateLegBake(state);
     heldRobots.add(robot);
@@ -2135,10 +2169,18 @@ export function setRobotHeld(robot: TransformNode, held: boolean) {
     heldRobots.delete(robot);
     const state = players.get(robot);
     if (state) applyGlobalCount(robot, state);
+    if (page?.claimed.delete(robot)) {
+      // Released without being placed: it returns to the waiting ghosts.
+      showBlankPageGhost(robot);
+      notifyBlankChartPage();
+    }
   }
 }
 
 export function placeRobot(robot: TransformNode, position: Vector3, scene: Scene) {
+  if (blankChartPage && players.get(robot)?.counts[blankChartPage.count]) {
+    return placeRobotOnBlankChartPage(robot, position, scene);
+  }
   const previous = robot.position.clone();
   const previousYaw = robot.rotation.y;
   const wasHeld = heldRobots.has(robot);
@@ -2291,6 +2333,528 @@ export function setRobotSetPoses(
   return true;
 }
 
+// Transition library: how marchers travel from one chart page (keyframe) to
+// the next. Path shape bends the route, pace times it, and style picks the
+// marching style for those counts.
+export const TRANSITION_PATH_SHAPES = [
+  { id: "straight", label: "Straight" },
+  { id: "curveLeft", label: "Curve Left" },
+  { id: "curveRight", label: "Curve Right" },
+  { id: "sCurve", label: "S-Curve" },
+  { id: "lengthFirst", label: "L: Up Field First" },
+  { id: "acrossFirst", label: "L: Across First" },
+] as const;
+export type TransitionPathShape = typeof TRANSITION_PATH_SHAPES[number]["id"];
+
+export const TRANSITION_PACES = [
+  { id: "even", label: "Even" },
+  { id: "moveHold", label: "Move, Then Hold" },
+  { id: "holdMove", label: "Hold, Then Move" },
+  { id: "ease", label: "Ease In/Out" },
+] as const;
+export type TransitionPace = typeof TRANSITION_PACES[number]["id"];
+
+// null keeps each marcher's own (global) style. In-place gaits are excluded
+// because a transition must travel.
+export const TRANSITION_STYLE_INDICES: readonly (number | null)[] = [null,
+  ...["Field March", "High Step", "Parade", "Knee-Ankle March", "Slide", "Crab Walk",
+    "Backward March", "Backward High Step"].map(name => GAIT_INDEX_BY_NAME.get(name)!)];
+
+export function getTransitionStyleLabel(styleIndex: number | null): string {
+  return styleIndex === null ? "Marcher Style" : MARCHING_GAITS[styleIndex].name;
+}
+
+export interface ChartTransition {
+  shape: TransitionPathShape;
+  pace: TransitionPace;
+  styleIndex: number | null;
+}
+
+export interface ChartTransitionResult {
+  marchers: number;
+  maxStepYards: number;
+}
+
+// The transition picked in the library; ghosts placed on a blank page travel
+// from their previous-page spot along it.
+let activeChartTransition: ChartTransition = { shape: "straight", pace: "even", styleIndex: null };
+export const onChartTransitionChangedObservable = new Observable<ChartTransition>();
+
+export function getChartTransition(): ChartTransition {
+  return { ...activeChartTransition };
+}
+
+export function setChartTransition(transition: Partial<ChartTransition>) {
+  activeChartTransition = { ...activeChartTransition, ...transition };
+  onChartTransitionChangedObservable.notifyObservers(getChartTransition());
+}
+
+// Steps one library list (path, pace or style) forward and returns the new label.
+export function cycleChartTransition(kind: "shape" | "pace" | "style", direction: 1 | -1 = 1): string {
+  const step = <T>(list: readonly T[], current: T) =>
+    list[(list.indexOf(current) + direction + list.length) % list.length];
+  if (kind === "shape") {
+    const shape = step(TRANSITION_PATH_SHAPES.map(entry => entry.id), activeChartTransition.shape);
+    setChartTransition({ shape });
+    return TRANSITION_PATH_SHAPES.find(entry => entry.id === shape)!.label;
+  }
+  if (kind === "pace") {
+    const pace = step(TRANSITION_PACES.map(entry => entry.id), activeChartTransition.pace);
+    setChartTransition({ pace });
+    return TRANSITION_PACES.find(entry => entry.id === pace)!.label;
+  }
+  const styleIndex = step(TRANSITION_STYLE_INDICES, activeChartTransition.styleIndex);
+  setChartTransition({ styleIndex });
+  return getTransitionStyleLabel(styleIndex);
+}
+
+export function getChartTransitionLabels(transition = activeChartTransition) {
+  return {
+    shape: TRANSITION_PATH_SHAPES.find(entry => entry.id === transition.shape)!.label,
+    pace: TRANSITION_PACES.find(entry => entry.id === transition.pace)!.label,
+    style: getTransitionStyleLabel(transition.styleIndex),
+  };
+}
+
+const CURVE_BULGE = 0.35;
+const S_CURVE_BULGE = 0.3;
+const CURVE_SAMPLES = 48;
+
+export function transitionPaceProgress(pace: TransitionPace, t: number): number {
+  const clamped = Math.min(1, Math.max(0, t));
+  switch (pace) {
+    case "moveHold": return Math.min(1, clamped * 2);
+    case "holdMove": return Math.max(0, clamped * 2 - 1);
+    case "ease": return clamped * clamped * (3 - 2 * clamped);
+    default: return clamped;
+  }
+}
+
+// Ground-plane polyline for a shape from `from` to `to` (z runs up the field).
+export function transitionPathPolyline(shape: TransitionPathShape, from: Vector3, to: Vector3): Vector3[] {
+  const dx = to.x - from.x;
+  const dz = to.z - from.z;
+  const left = new Vector3(-dz, 0, dx);
+  const bezier = (controls: Vector3[]) => Array.from({ length: CURVE_SAMPLES + 1 }, (_, i) => {
+    let points = controls;
+    const t = i / CURVE_SAMPLES;
+    while (points.length > 1) {
+      points = points.slice(1).map((point, index) => Vector3.Lerp(points[index], point, t));
+    }
+    return points[0];
+  });
+  const at = (fraction: number) => Vector3.Lerp(from, to, fraction);
+  switch (shape) {
+    case "curveLeft":
+    case "curveRight": {
+      const side = shape === "curveLeft" ? CURVE_BULGE : -CURVE_BULGE;
+      return bezier([from, at(0.5).add(left.scale(side * 2)), to]);
+    }
+    case "sCurve":
+      return bezier([from, at(1 / 3).add(left.scale(S_CURVE_BULGE * 1.5)),
+        at(2 / 3).subtract(left.scale(S_CURVE_BULGE * 1.5)), to]);
+    case "lengthFirst":
+      return [from, new Vector3(from.x, (from.y + to.y) / 2, to.z), to];
+    case "acrossFirst":
+      return [from, new Vector3(to.x, (from.y + to.y) / 2, from.z), to];
+    default:
+      return [from, to];
+  }
+}
+
+function polylineSample(points: readonly Vector3[], fraction: number) {
+  const lengths = points.slice(1).map((point, index) => Vector3.Distance(points[index], point));
+  const total = lengths.reduce((sum, length) => sum + length, 0);
+  let remaining = Math.min(1, Math.max(0, fraction)) * total;
+  for (let index = 0; index < lengths.length; index++) {
+    const length = lengths[index];
+    if (length > 1e-9 && (remaining <= length || index === lengths.length - 1)) {
+      const a = points[index], b = points[index + 1];
+      return {
+        position: Vector3.Lerp(a, b, Math.min(1, remaining / length)),
+        heading: Math.atan2(b.x - a.x, b.z - a.z),
+      };
+    }
+    remaining -= length;
+  }
+  return { position: points[points.length - 1].clone(), heading: null };
+}
+
+// Rewrites counts fromCount..toCount of each marcher with the chosen path
+// shape, pace and marching style. Positions at both pages stay fixed.
+export function setRobotTransition(
+  robots: Iterable<TransformNode>, fromCount: number, toCount: number, transition: ChartTransition, scene: Scene
+): ChartTransitionResult {
+  if (!Number.isInteger(fromCount) || !Number.isInteger(toCount) || fromCount < 0 || toCount <= fromCount) {
+    throw new RangeError("A transition needs an earlier page and a later page.");
+  }
+  if (transition.styleIndex !== null && !TRANSITION_STYLE_INDICES.includes(transition.styleIndex)) {
+    throw new RangeError("Transition style must come from the transition library.");
+  }
+  let marchers = 0;
+  let maxStepYards = 0;
+  for (const robot of robots) {
+    const state = players.get(robot);
+    if (!state || state.counts.length <= toCount || blankChartPage?.pending.has(robot)) continue;
+    const counts = state.counts;
+    const from = counts[fromCount].position.clone();
+    const to = counts[toCount].position.clone();
+    const polyline = transitionPathPolyline(transition.shape, from, to);
+    const span = toCount - fromCount;
+    let heading = counts[fromCount].rotationY;
+    const firstMove = polylineSample(polyline, 0).heading;
+    if (firstMove !== null) heading = firstMove;
+    for (let count = fromCount; count <= toCount; count++) {
+      const progress = transitionPaceProgress(transition.pace, (count - fromCount) / span);
+      const sample = polylineSample(polyline, progress);
+      const entry = counts[count];
+      if (count > fromCount && count < toCount) entry.position.copyFrom(sample.position);
+      entry.position.y = from.y + (to.y - from.y) * progress;
+      if (count === fromCount || count === toCount) entry.position.copyFrom(count === fromCount ? from : to);
+      if (count < toCount) entry.styleIndex = transition.styleIndex ?? undefined;
+    }
+    for (let count = fromCount; count <= toCount; count++) {
+      const here = counts[count].position;
+      const next = counts[Math.min(toCount, count + 1)].position;
+      const previous = counts[Math.max(fromCount, count - 1)].position;
+      if (count < toCount && Vector3.DistanceSquared(here, next) > 1e-8) {
+        heading = Math.atan2(next.x - here.x, next.z - here.z);
+        maxStepYards = Math.max(maxStepYards, Math.hypot(next.x - here.x, next.z - here.z));
+      } else if (count > fromCount && Vector3.DistanceSquared(previous, here) > 1e-8) {
+        heading = Math.atan2(here.x - previous.x, here.z - previous.z);
+      }
+      if (count > fromCount) counts[count].rotationY = heading;
+    }
+    state.points = counts.map(count => count.position.clone());
+    state.gaitPhaseCache?.clear();
+    state.stepCache = undefined;
+    invalidateLegBake(state);
+    marchers++;
+  }
+  if (marchers > 0) {
+    applyGlobalCountToAllRobots();
+    recalculateCollisionMarkers(scene);
+  }
+  return { marchers, maxStepYards };
+}
+
+// A chart page is a keyframe (set). Inserting a blank one after a set adds a
+// new keyframe one page later; every marcher holds the earlier set's spot
+// there and is hidden behind a translucent ghost until it is placed.
+interface BlankChartPage {
+  count: number;
+  previous: number;
+  next: number;
+  pending: Map<TransformNode, TransformNode>;
+  claimed: Set<TransformNode>;
+}
+let blankChartPage: BlankChartPage | null = null;
+let blankChartPageTransportObserver: Observer<DrillTransportState> | null = null;
+
+export interface BlankChartPageState { count: number; previous: number; waiting: number; }
+export const onBlankChartPageChangedObservable = new Observable<BlankChartPageState | null>();
+
+export function getBlankChartPageState(): BlankChartPageState | null {
+  return blankChartPage && {
+    count: blankChartPage.count,
+    previous: blankChartPage.previous,
+    waiting: blankChartPage.pending.size + blankChartPage.claimed.size,
+  };
+}
+
+// While placing ghosts, media stepping/jogging stays within the move from the
+// previous page to the blank page so the transition can be scrubbed both ways.
+function clampToBlankChartPageSpan(countIndex: number): number {
+  const page = blankChartPage;
+  return page ? Math.min(page.count, Math.max(page.previous, countIndex)) : countIndex;
+}
+
+function notifyBlankChartPage() {
+  onBlankChartPageChangedObservable.notifyObservers(getBlankChartPageState());
+}
+
+function showBlankPageGhost(robot: TransformNode) {
+  const page = blankChartPage;
+  const parent = robot.parent;
+  if (!page || robot.isDisposed() || !(parent instanceof TransformNode)) return;
+  robot.setEnabled(true);
+  robot.computeWorldMatrix(true);
+  const ghost = createMarcherDragGhost(robot, parent);
+  ghost.name = 'blankChartPageGhost';
+  ghost.getChildMeshes().forEach((mesh) => { mesh.isPickable = true; });
+  robot.setEnabled(false);
+  blankPageGhostOwners.set(ghost, robot);
+  page.pending.set(robot, ghost);
+  ghost.onDisposeObservable.addOnce(() => {
+    blankPageGhostOwners.delete(ghost);
+    if (page.pending.get(robot) === ghost) page.pending.delete(robot);
+  });
+}
+
+function placeRobotOnBlankChartPage(robot: TransformNode, position: Vector3, scene: Scene) {
+  const page = blankChartPage!;
+  const wasHeld = heldRobots.delete(robot);
+  let placed = false;
+  try {
+    placed = setRobotSetPoses(page.count, [{ robot, position }], page.previous, page.next, scene);
+  } catch {
+    placed = false;
+  }
+  if (!placed) {
+    if (wasHeld) heldRobots.add(robot);
+    return null;
+  }
+  if (page.previous < page.count) {
+    setRobotTransition([robot], page.previous, page.count, activeChartTransition, scene);
+  }
+  page.claimed.delete(robot);
+  robot.setEnabled(true);
+  if (!directingAdjacentMarchers) lastBlankPagePlacement = { robot, page, time: performance.now() };
+  notifyBlankChartPage();
+  // The new keyframe was rewritten in place, so attached route visuals don't shift.
+  return Vector3.Zero();
+}
+
+// Inserts a blank page after the set at `afterCount` and seeks to it.
+// Returns the new page's count, or null when there are no routed marchers.
+export function insertBlankChartPage(afterCount: number, countsPerPage: number, scene: Scene): number | null {
+  if (players.size === 0 || !Number.isInteger(countsPerPage) || countsPerPage < 1) return null;
+  endBlankChartPage();
+  setGhostBandPreviewEnabled(false);
+  const at = Math.min(getMaxCountIndex(), Math.max(0, Math.round(afterCount)));
+  const count = at + countsPerPage;
+  const copy = (source: RobotCount): RobotCount =>
+    ({ ...source, position: source.position.clone(), styleIndex: undefined });
+  players.forEach((state) => {
+    const counts = state.counts;
+    if (counts.length === 0) return;
+    while (counts.length - 1 < at) counts.push(copy(counts[counts.length - 1]));
+    const hold = counts[at];
+    counts.splice(at + 1, 0, ...Array.from({ length: countsPerPage }, () => copy(hold)));
+    state.points = counts.map((entry) => entry.position.clone());
+    state.gaitPhaseCache?.clear();
+    state.stepCache = undefined;
+    invalidateLegBake(state);
+  });
+  seekToCount(count);
+  blankChartPage = {
+    count, previous: at, next: Math.min(count + countsPerPage, getMaxCountIndex()),
+    pending: new Map(), claimed: new Set(),
+  };
+  players.forEach((_state, robot) => {
+    if (robot.isEnabled() && !heldRobots.has(robot)) showBlankPageGhost(robot);
+  });
+  blankChartPageTransportObserver ??= onDrillTransportChangedObservable.add((transport) => {
+    // Leaving the move into the new page (seek or playback) finishes it; unplaced marchers keep holding.
+    if (blankChartPage && (transport.playing ||
+      transport.beat < blankChartPage.previous - 1e-6 || transport.beat > blankChartPage.count + 1e-6)) {
+      endBlankChartPage();
+    }
+  });
+  recalculateCollisionMarkers(scene);
+  notifyBlankChartPage();
+  return count;
+}
+
+// Places the waiting marcher whose ghost is nearest `position` onto the blank page.
+// Returns null when no marcher is waiting, else whether placement succeeded.
+export function placeNearestBlankPageMarcher(position: Vector3, scene: Scene): boolean | null {
+  const page = blankChartPage;
+  if (!page || page.pending.size === 0) return null;
+  let nearest: TransformNode | null = null;
+  let nearestDistance = Infinity;
+  page.pending.forEach((_ghost, robot) => {
+    const spot = players.get(robot)?.counts[page.count]?.position ?? robot.position;
+    const distance = (spot.x - position.x) ** 2 + (spot.z - position.z) ** 2;
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearest = robot;
+    }
+  });
+  const robot = nearest as TransformNode | null;
+  if (!robot) return null;
+  setRobotHeld(robot, true);
+  if (placeRobot(robot, position, scene)) return true;
+  setRobotHeld(robot, false);
+  return false;
+}
+
+// The marcher most recently placed on the blank page anchors the "direct
+// adjacent marchers" gesture for a short while afterwards.
+const ADJACENT_GESTURE_WINDOW_MS = 10000;
+// Previous-page neighbors closer than this are chained into one group.
+const ADJACENT_LINK_YARDS = 4.1;
+const ADJACENT_MAX_MARCHERS = 32;
+const STEP_YARDS = 0.625;
+let lastBlankPagePlacement: { robot: TransformNode; page: BlankChartPage; time: number } | null = null;
+let directingAdjacentMarchers = false;
+
+function recentBlankPageAnchor() {
+  const last = lastBlankPagePlacement;
+  const page = blankChartPage;
+  if (!last || !page || last.page !== page || last.robot.isDisposed() || page.pending.has(last.robot) ||
+    performance.now() - last.time > ADJACENT_GESTURE_WINDOW_MS) return null;
+  return { robot: last.robot, page };
+}
+
+export function hasRecentBlankPagePlacement() {
+  return recentBlankPageAnchor() !== null;
+}
+
+export interface AdjacentPlacementPlan {
+  robot: TransformNode;
+  position: Vector3;
+}
+
+// Chains the waiting marchers adjacent to the anchor on the previous page,
+// orders them along that line, and spaces them along `guide` at whole-step
+// intervals on either side of the anchor's new spot.
+export function planAdjacentGuidePlacements(
+  anchorPrevious: Vector3, anchorTarget: Vector3, candidates: ReadonlyArray<{ robot: TransformNode; previous: Vector3 }>,
+  guide: readonly Vector3[]
+): AdjacentPlacementPlan[] {
+  if (guide.length < 2) return [];
+  const group: { robot: TransformNode | null; previous: Vector3 }[] = [{ robot: null, previous: anchorPrevious }];
+  const remaining = [...candidates];
+  for (let index = 0; index < group.length && group.length <= ADJACENT_MAX_MARCHERS; index++) {
+    const from = group[index].previous;
+    for (let other = remaining.length - 1; other >= 0; other--) {
+      const point = remaining[other].previous;
+      if (Math.hypot(point.x - from.x, point.z - from.z) <= ADJACENT_LINK_YARDS) {
+        group.push(remaining[other]);
+        remaining.splice(other, 1);
+      }
+    }
+  }
+  const members = group.slice(1, ADJACENT_MAX_MARCHERS + 1) as { robot: TransformNode; previous: Vector3 }[];
+  if (members.length === 0) return [];
+
+  // Principal axis of the previous-page group gives its left-to-right order.
+  const all = [anchorPrevious, ...members.map(member => member.previous)];
+  const meanX = all.reduce((sum, point) => sum + point.x, 0) / all.length;
+  const meanZ = all.reduce((sum, point) => sum + point.z, 0) / all.length;
+  let xx = 0, xz = 0, zz = 0;
+  all.forEach(point => {
+    const x = point.x - meanX, z = point.z - meanZ;
+    xx += x * x; xz += x * z; zz += z * z;
+  });
+  const angle = 0.5 * Math.atan2(2 * xz, xx - zz);
+  let axisX = Math.cos(angle), axisZ = Math.sin(angle);
+
+  const neighborDistances = all.map((point, index) => Math.min(...all.filter((_, other) => other !== index)
+    .map(other => Math.hypot(other.x - point.x, other.z - point.z))));
+  neighborDistances.sort((a, b) => a - b);
+  const median = neighborDistances[Math.floor(neighborDistances.length / 2)];
+  const spacing = Math.max(2 * STEP_YARDS, Math.round(median / STEP_YARDS) * STEP_YARDS);
+
+  const lengths = guide.slice(1).map((point, index) => Math.hypot(point.x - guide[index].x, point.z - guide[index].z));
+  const total = lengths.reduce((sum, length) => sum + length, 0);
+  if (total < 1e-6) return [];
+  let anchorArc = 0, bestDistance = Infinity, tangentX = 0, tangentZ = 1, walked = 0;
+  lengths.forEach((length, index) => {
+    const a = guide[index], b = guide[index + 1];
+    const t = length > 1e-9 ? Math.max(0, Math.min(1,
+      ((anchorTarget.x - a.x) * (b.x - a.x) + (anchorTarget.z - a.z) * (b.z - a.z)) / (length * length))) : 0;
+    const distance = Math.hypot(a.x + (b.x - a.x) * t - anchorTarget.x, a.z + (b.z - a.z) * t - anchorTarget.z);
+    if (distance < bestDistance && length > 1e-9) {
+      bestDistance = distance;
+      anchorArc = walked + t * length;
+      tangentX = (b.x - a.x) / length;
+      tangentZ = (b.z - a.z) / length;
+    }
+    walked += length;
+  });
+  // Keep the group's order consistent with the guide's direction.
+  if (axisX * tangentX + axisZ * tangentZ < 0) { axisX = -axisX; axisZ = -axisZ; }
+  const projected = members.map(member => ({
+    member,
+    t: (member.previous.x - anchorPrevious.x) * axisX + (member.previous.z - anchorPrevious.z) * axisZ,
+  }));
+  const before = projected.filter(entry => entry.t < 0).sort((a, b) => b.t - a.t);
+  const after = projected.filter(entry => entry.t >= 0).sort((a, b) => a.t - b.t);
+
+  const at = (arc: number) => {
+    let left = arc;
+    for (let index = 0; index < lengths.length; index++) {
+      if (left <= lengths[index] || index === lengths.length - 1) {
+        const t = lengths[index] > 1e-9 ? Math.min(1, left / lengths[index]) : 0;
+        return new Vector3(guide[index].x + (guide[index + 1].x - guide[index].x) * t, anchorTarget.y,
+          guide[index].z + (guide[index + 1].z - guide[index].z) * t);
+      }
+      left -= lengths[index];
+    }
+    return guide[guide.length - 1].clone();
+  };
+  // Slots fill outward from the anchor; when the guide ends on one side the
+  // overflow continues past the last slot on the other side.
+  const slotsBefore: number[] = [];
+  const slotsAfter: number[] = [];
+  for (let k = 1; anchorArc - k * spacing >= -1e-6; k++) slotsBefore.push(anchorArc - k * spacing);
+  for (let k = 1; anchorArc + k * spacing <= total + 1e-6; k++) slotsAfter.push(anchorArc + k * spacing);
+  const plan: AdjacentPlacementPlan[] = [];
+  const assign = (entries: typeof projected, own: number[], other: number[]) => {
+    for (const entry of entries) {
+      const arc = own.shift() ?? other.shift();
+      if (arc === undefined) return;
+      plan.push({ robot: entry.member.robot, position: at(arc) });
+    }
+  };
+  if (before.length > slotsBefore.length) {
+    assign(after, slotsAfter, slotsBefore);
+    assign(before, slotsBefore, slotsAfter);
+  } else {
+    assign(before, slotsBefore, slotsAfter);
+    assign(after, slotsAfter, slotsBefore);
+  }
+  return plan;
+}
+
+// Gesture action: sends the waiting marchers that stood next to the most
+// recently placed marcher on the previous page to evenly spaced spots along
+// the selected guide. Returns null when no recent placement anchors it.
+export function directAdjacentBlankPageMarchers(guide: readonly Vector3[], scene: Scene) {
+  const anchor = recentBlankPageAnchor();
+  if (!anchor) return null;
+  const { robot, page } = anchor;
+  const anchorState = players.get(robot);
+  if (!anchorState) return null;
+  const candidates = [...page.pending.keys()].flatMap(other => {
+    const previous = players.get(other)?.counts[page.previous]?.position;
+    return previous ? [{ robot: other, previous }] : [];
+  });
+  const plan = planAdjacentGuidePlacements(anchorState.counts[page.previous].position,
+    anchorState.counts[page.count].position, candidates, guide);
+  let placed = 0;
+  directingAdjacentMarchers = true;
+  try {
+    for (const entry of plan) {
+      setRobotHeld(entry.robot, true);
+      if (placeRobot(entry.robot, entry.position, scene)) placed++;
+      else setRobotHeld(entry.robot, false);
+    }
+  } finally {
+    directingAdjacentMarchers = false;
+  }
+  if (lastBlankPagePlacement) lastBlankPagePlacement.time = performance.now();
+  return { placed, blocked: plan.length - placed };
+}
+
+export function endBlankChartPage() {
+  const page = blankChartPage;
+  if (!page) return;
+  blankChartPage = null;
+  lastBlankPagePlacement = null;
+  [...page.pending].forEach(([robot, ghost]) => {
+    ghost.dispose();
+    if (!robot.isDisposed()) robot.setEnabled(true);
+  });
+  page.pending.clear();
+  page.claimed.clear();
+  applyGlobalCountToAllRobots();
+  if (sharedScene) recalculateCollisionMarkers(sharedScene);
+  notifyBlankChartPage();
+}
+
 // Prepends "hold in place" counts to a robot's route so it departs later than
 // count 0 on the shared global clock — e.g. staggering a crowd's departures
 // so they don't all cross the same crowded space at the exact same moment.
@@ -2380,7 +2944,8 @@ export function stepAll(direction: 1 | -1) {
   transportRevision++;
   globalPlayback.playing = false;
   globalPlayback.stepAccumulatorSeconds = 0;
-  globalPlayback.countIndex = Math.min(getMaxCountIndex(), Math.max(0, globalPlayback.countIndex + direction));
+  globalPlayback.countIndex = clampToBlankChartPageSpan(
+    Math.min(getMaxCountIndex(), Math.max(0, globalPlayback.countIndex + direction)));
   if (repeatElapsed !== null) repeatElapsed = globalPlayback.countIndex;
   applyGlobalCountToAllRobots();
 }
@@ -2414,6 +2979,11 @@ export function scrubBy(deltaCounts: number) {
 
 export function jogGhostBandBy(deltaCounts: number) {
   if (!Number.isFinite(deltaCounts) || deltaCounts === 0) return;
+  if (blankChartPage) {
+    // Jog the real band through the transition so placed marchers can be checked.
+    seekToCount(clampToBlankChartPageSpan(globalPlayback.countIndex + deltaCounts));
+    return;
+  }
   setGhostBandPreviewEnabled(true);
   scrubBy(deltaCounts);
 }
@@ -2433,6 +3003,10 @@ export function getRobotPositionAtCount(robot: TransformNode, countIndex: number
   const state = players.get(robot);
   if (!state) return robot.position;
   return state.counts[Math.min(state.counts.length - 1, Math.max(0, countIndex))]?.position ?? null;
+}
+
+export function getRoutedRobots(): TransformNode[] {
+  return [...players.keys()];
 }
 
 export function getRobotPositionsAtCount(countIndex: number): Vector3[] {

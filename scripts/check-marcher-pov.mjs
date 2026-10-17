@@ -122,7 +122,7 @@ globalThis.Follower = MarcherPOVCamera;`, context);
   const triggerContext = vm.createContext({
     follower, scene, TargetCamera,
     pick: null,
-    findRobotRoot: () => pickedRobot,
+    findRobotRoot: () => pickedRobot, selectDrawingGuideFromRay: () => false, getControllerRay: () => null, controller: {},
     getRobotCounts: () => routed ? [{}, {}] : null,
     selectRobot: value => { triggerSelection = value; },
     getSelected: () => triggerSelection,
