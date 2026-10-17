@@ -53,9 +53,10 @@ try {
   const plate = scene.getTransformNodeByName('instrumentPlateRoot');
   assert.equal(watch.isEnabled(), false);
   assert.equal(plate.isEnabled(), false);
-  for (const name of ['mediaWatchBezel', 'mediaWatchStrap', 'mediaWatchCrown']) {
-    assert.ok(scene.getMeshByName(name), 'Watch includes a case, wraparound strap, and crown');
+  for (const name of ['mediaWatchBezel', 'mediaWatchCrown']) {
+    assert.ok(scene.getMeshByName(name), 'Watch includes a case and crown');
   }
+  assert.equal(scene.getMeshByName('mediaWatchStrap'), null, 'Watch has no band');
   const caseSize = scene.getMeshByName('mediaWatchBezel').getBoundingInfo().boundingBox.extendSize.scale(2 * 0.48);
   assert.ok(caseSize.x < 0.09 && caseSize.z < 0.06, 'Watch case has wearable dimensions');
 

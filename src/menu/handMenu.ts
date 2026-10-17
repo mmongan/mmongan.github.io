@@ -328,20 +328,16 @@ function ensureMenuMeshes() {
     { width: 0.164, height: 0.012, depth: 0.09 }, scene);
   const bezel = MeshBuilder.CreateBox("mediaWatchBezel",
     { width: 0.18, height: 0.025, depth: 0.106 }, scene);
-  const strap = MeshBuilder.CreateTorus("mediaWatchStrap",
-    { diameter: 0.15, thickness: 0.018, tessellation: 24 }, scene);
-  strap.rotation.x = Math.PI / 2;
-  strap.scaling.z = 2;
   const crown = MeshBuilder.CreateCylinder("mediaWatchCrown",
     { diameter: 0.025, height: 0.018, tessellation: 12 }, scene);
   crown.rotation.z = Math.PI / 2;
   crown.position.x = 0.096;
-  watchMeshes = [strap, bezel, face, crown];
+  watchMeshes = [bezel, face, crown];
   watchMeshes.forEach(mesh => {
     mesh.material = mesh === bezel || mesh === crown ? caseMaterial : watchMaterial;
     mesh.isPickable = true;
     mesh.parent = watchRoot;
-    mesh.position.y = mesh === strap ? -0.07 : mesh === bezel ? -0.016 : -0.008;
+    mesh.position.y = mesh === bezel ? -0.016 : -0.008;
     mesh.setEnabled(false);
   });
   watchPanel = new MediaWatchPanel(watchRoot,

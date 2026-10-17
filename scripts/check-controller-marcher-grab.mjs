@@ -36,6 +36,7 @@ assert.equal(nearContext.findMarcherNearHand(new Vector3(0, 0.05, 0), 'left'), r
 
 robot.rotation = { y: 0.8 };
 robot.getAbsolutePosition = () => new Vector3(0.5, 0.8, 0.3);
+robot.computeWorldMatrix = () => {};
 const transferStart = handSource.indexOf('  function transferDraftGrab(');
 const transferEnd = handSource.indexOf('  function beginFormationPull(', transferStart);
 assert.ok(transferStart >= 0 && transferEnd > transferStart);
@@ -67,8 +68,12 @@ for (const sourceType of ['hand', 'controller']) {
     assert.equal(grab.originalRotationY, 0.2, 'Cancellation still restores the original pose');
     assert.equal(nearContext.marcherPinchHands.has('left'), false);
     nearContext.handPlacementDrafts.clear();
-    assert.equal(nearContext.transferDraftGrab('left', point, sourceType, 0), false,
-      'Placed marchers keep the existing formation-pull behavior');
+    assert.equal(nearContext.transferDraftGrab('left', point, sourceType, 0), sourceType === 'hand',
+      'Tracked hands transfer placed marchers; controllers retain formation pulling');
+    if (sourceType === 'hand') {
+      nearContext.marcherGrabs.delete('left');
+      nearContext.marcherGrabs.set('right', grab);
+    }
     nearContext.handPlacementDrafts.add(robot);
     assert.equal(nearContext.transferDraftGrab('left', new Vector3(4, 0, 0), sourceType, 0), false,
       'The receiving hand must touch the draft');
