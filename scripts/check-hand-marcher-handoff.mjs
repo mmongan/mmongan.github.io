@@ -35,6 +35,8 @@ let releases = 0;
 let creations = 0;
 let savedFacing;
 let panelPicks = 0;
+let paletteHit = null;
+let chosenInstrument = null;
 const context = vm.createContext({
   scene, pathRoot, Vector3, Matrix, Ray, Axis,
   FIELD_WIDTH_YARDS: 53.333, FIELD_LENGTH_YARDS: 120,
@@ -66,6 +68,8 @@ const context = vm.createContext({
   pickFloatingPanel: () => { panelPicks++; return null; },
   getFloatingPanelNear: () => null, pickMenuControl: () => null,
   getFloatingPanelButtonNearPoint: () => null,
+  getHandMenuHitNearPoint: () => paletteHit,
+  selectNewMarcherInstrument(instrument) { chosenInstrument = instrument; },
   updateFormationPullPreview() {},
   MARCHER_TWIST_COMMIT_RADIANS: 20 * Math.PI / 180,
   TURF_PRECISION_SCALE: 0.35,
@@ -90,6 +94,7 @@ const loopEnd = source.indexOf('    updateFormationPullPreview();', loopStart);
 assert.ok(loopStart >= 0 && loopEnd > loopStart);
 const functions = [
   section('  function beginMarcherGrab(', '  // A deliberate wrist twist'),
+  section('  function grabPaletteMarcher(', '  function restoreMarcherRendering('),
   section('  function commitMarcherTwist(', '  function finishMarcherGrab('),
   section('  function findMarcherNearHand(', '  function getFormationFieldPoint('),
   section('  function getSidelineDraftPosition(', '  function isHandMarcherInteraction('),
@@ -239,6 +244,32 @@ try {
     robot: draft, source: 'hand', initialRotationY: 0.8, originalRotationY: 0,
   }, 0.8);
   assert.equal(savedFacing, 0.8, 'Deliberate facing changes made before handoff still persist on drop');
+  grabs.clear(); pinches.clear(); hands.clear(); drafts.clear();
+  const paletteButton = new Vector3(2, 1.3, 0.4);
+  paletteHit = { action: 'createMarcher', instrument: 'sousaphone' };
+  hands.set('right', handAt(paletteButton.clone()));
+  const paletteCreations = creations;
+  context.update();
+  paletteHit = null;
+  const paletteGrab = grabs.get('right');
+  assert.equal(chosenInstrument, 'sousaphone', 'Palette pinch picks that instrument for the new marcher');
+  assert.equal(creations, paletteCreations + 1, 'Palette pinch creates exactly one marcher');
+  assert.ok(paletteGrab && drafts.has(paletteGrab.robot), 'New palette marcher is held as a discardable draft');
+  near(paletteGrab.robot.getAbsolutePosition(), paletteButton, 'New marcher appears in the grab at the palette');
+  hands.get('right').point.x += 0.25;
+  context.update();
+  near(paletteGrab.robot.getAbsolutePosition(), paletteButton.add(new Vector3(0.25, 0, 0)),
+    'Palette marcher follows the pinching hand');
+  assert.equal(creations, paletteCreations + 1, 'Holding the pinch never creates more marchers');
+  const paletteReleases = releases;
+  hands.get('right').closed = false;
+  context.update();
+  assert.equal(releases, paletteReleases + 1, 'Releasing the pinch drops the palette marcher');
+  hands.set('left', handAt(new Vector3(-2, 1.3, 0.4)));
+  paletteHit = { action: 'drillChartPad' };
+  context.update();
+  paletteHit = null;
+  assert.equal(chosenInstrument, 'sousaphone', 'Non-instrument buttons never pick a palette instrument');
   console.log('Hand marcher checks passed: left/right draft and placed handoffs via model/wrist/palm/fingertip, panel priority, 4.5 cm contact margin, same-frame release, no jumps/duplicates, receiver ownership, ground-level creation, turf precision placement, tabletop transforms, and stadium bounds.');
 } finally {
   scene.dispose();

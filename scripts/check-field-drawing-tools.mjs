@@ -13,6 +13,7 @@ import { Plane } from '@babylonjs/core/Maths/math.plane.js';
 import { FreeCamera } from '@babylonjs/core/Cameras/freeCamera.js';
 import { Camera } from '@babylonjs/core/Cameras/camera.js';
 import { Ray } from '@babylonjs/core/Culling/ray.js';
+import { Observable } from '@babylonjs/core/Misc/observable.js';
 import '@babylonjs/core/Culling/ray.js';
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
@@ -45,7 +46,11 @@ let revokedDownload;
 const testPng = 'data:image/png;base64,iVBORw0KGgo=';
 const gridToggle = { checked: false, dispatchEvent() {} };
 const gridInterval = { value: '5', get valueAsNumber() { return Number(this.value); } };
+let testARScale = 1 / 120;
+const arScaleChanged = new Observable();
 const context = vm.createContext({
+  getARScale: () => testARScale, getARScaleRange: () => ({ min: 0.002, max: 1, default: 1 / 120 }),
+  onARScaleChangedObservable: arScaleChanged,
   scene, MeshBuilder, TransformNode, StandardMaterial, Matrix, Quaternion, Vector3, Color3, Plane, Ray, FreeCamera, Camera,
   CreateScreenshotUsingRenderTarget: (...args) => {
     if (captureFailure) throw new Error('Image capture failed');
@@ -309,6 +314,30 @@ try {
   assert.ok(Math.abs(Vector3.Distance(square[0], square[1]) - Math.sqrt(2) * 0.12 * stencil.scaling.x / 0.05) < 1e-5,
     'Physical span transforms to the correct field-local radius');
   act('clear');
+  {
+    const desktopCamera = scene.activeCamera;
+    const xrCamera = new FreeCamera('drawingXRCamera', new Vector3(0, 1.6, -3), scene);
+    xrCamera.getClassName = () => 'WebXRCamera';
+    scene.activeCamera = xrCamera;
+    testARScale = 1;
+    act('ruler');
+    const ruler = scene.getTransformNodeByName('fieldTool-ruler');
+    const base = ruler.scaling.x / 120;
+    assert.ok(base >= 0.5 && base <= 3, 'Full-size field tools keep the chosen span, multiplied by the field scale');
+    const fieldSurfaceY = Vector3.TransformCoordinates(new Vector3(0, -0.48, 0), root.computeWorldMatrix(true)).y;
+    assert.ok(ruler.position.y >= fieldSurfaceY + 0.16 * ruler.scaling.y - 1e-6, 'Giant tools are placed above the field surface');
+    testARScale = 1 / 60;
+    arScaleChanged.notifyObservers(testARScale);
+    assert.ok(Math.abs(ruler.scaling.x - base * 2) < 1e-9, 'Held tools resize with the field scale');
+    act('larger');
+    assert.ok(Math.abs(ruler.scaling.x - base * 1.25 * 2) < 1e-9, 'Span changes keep the field-proportional size');
+    act('smaller');
+    act('stop');
+    assert.equal(ruler.scaling.x, 0.65, 'Docked tools keep their tray size');
+    testARScale = 1 / 120;
+    scene.activeCamera = desktopCamera;
+    xrCamera.dispose();
+  }
   act('laser');
   const laser = scene.getTransformNodeByName('fieldTool-laser');
   laser.rotationQuaternion.copyFrom(Quaternion.FromEulerAngles(0, 0.7, 0));

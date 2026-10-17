@@ -13,8 +13,9 @@ interface MemoryWireDependencies {
   field: TransformNode;
   prepare(): boolean;
   allowed(): boolean;
-  selected(): void;
+  selected(fromGrip: boolean): void;
   commit(points: Vector3[]): void;
+  contactScale(): number;
 }
 
 export function createMemoryWire(deps: MemoryWireDependencies) {
@@ -40,7 +41,7 @@ export function createMemoryWire(deps: MemoryWireDependencies) {
   class WireGrip extends DetachableFloatingPanel {
     override begin(source: string, world: Matrix) {
       if (!deps.prepare()) return;
-      deps.selected();
+      deps.selected(true);
       super.begin(source, world);
     }
   }
@@ -48,7 +49,7 @@ export function createMemoryWire(deps: MemoryWireDependencies) {
   class BendHandle extends DetachableFloatingPanel {
     override begin(source: string, world: Matrix) {
       if (!deps.prepare()) return;
-      deps.selected();
+      deps.selected(false);
       root.setParent(null);
       super.begin(source, world);
     }
@@ -127,7 +128,7 @@ export function createMemoryWire(deps: MemoryWireDependencies) {
       Vector3.TransformNormal(Vector3.Up(), fieldWorld).normalize()) >= 0.95;
     const projected = points.map(point => Vector3.TransformCoordinates(Vector3.TransformCoordinates(point, world), fieldInverse));
     const touching = panel.grabbed() && aligned && projected.every(point =>
-      Math.abs(point.y - FIELD_SURFACE_Y) * scale <= 0.025);
+      Math.abs(point.y - FIELD_SURFACE_Y) * scale <= 0.025 * deps.contactScale());
     if (touching) {
       pending = projected.map(point => new Vector3(point.x, FIELD_SURFACE_Y + 0.025, point.z));
     } else if (pending) {

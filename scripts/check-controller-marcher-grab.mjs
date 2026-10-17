@@ -96,6 +96,8 @@ let stickX = 0;
 let deltaTime = 100;
 let scale = 1;
 let painting = false;
+let nearPaletteHit = null;
+let paletteGrab;
 const gripPoint = new Vector3(0.2, 0.8, 0.4);
 const direction = Vector3.Forward();
 const controller = { inputSource: {}, grip: {
@@ -110,6 +112,8 @@ const context = vm.createContext({
   SCRUB_DEADZONE: 0.2, GRAB_DEPTH_BASE_SPEED: 6, GRAB_DEPTH_TELESCOPE_RATE: 2.5, getARScale: () => scale,
   isGripPressed: () => grip, getTriggerPressed: () => false,
   isFloatingPanelGrabbed: () => false, getFloatingPanelNear: () => null,
+  getFloatingPanelButtonNearPoint: () => nearPaletteHit, getHandMenuHitNearPoint: () => null,
+  pickMenuControl: () => null, getHandMenuHit: () => null,
   pickFloatingPanel: () => null, getControllerPosition: value => value.grip,
   getControllerRay: () => ({ origin: Vector3.Zero(), direction }),
   scene: {
@@ -119,6 +123,11 @@ const context = vm.createContext({
   findRobotRoot: () => robot,
   handInteraction: {
     transferDraftGrab: () => false,
+    grabPaletteMarcher: (...args) => {
+      if (args[1]?.action !== 'createMarcher') return false;
+      paletteGrab = args;
+      return true;
+    },
     findMarcherNearHand: () => near, getFacingYaw: () => 0,
     beginControllerFormationPull: () => false,
     updateControllerFormationPull: () => false,
@@ -136,6 +145,16 @@ const axesStart = source.indexOf('function getThumbstickAxes(');
 const axesSource = source.slice(axesStart);
 const axesEnd = axesSource.match(/\r?\n}\r?\n/);
 vm.runInContext(transform(axesSource.slice(0, axesEnd.index + axesEnd[0].length)), context);
+nearPaletteHit = { action: 'createMarcher', instrument: 'trumpet' };
+context.update();
+assert.equal(begun, undefined, 'Gripping an instrument button does not grab a nearby marcher');
+assert.equal(paletteGrab[1].instrument, 'trumpet', 'Grip on an instrument button pulls out that instrument');
+assert.equal(paletteGrab[2], gripPoint, 'Palette marcher starts in the physical grip');
+assert.equal(paletteGrab[3], 'controller');
+assert.equal(paletteGrab[4], -1, 'Palette marcher uses a near grab so the thumbstick telescopes it');
+nearPaletteHit = null;
+grip = false; context.update(); grip = true;
+context.gripHeld.clear();
 context.update();
 assert.equal(begun[1], robot);
 assert.equal(begun[2], gripPoint, 'Near grab anchors at the physical grip, not the aim ray');

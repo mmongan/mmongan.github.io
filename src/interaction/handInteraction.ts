@@ -38,7 +38,8 @@ import {
   beginFloatingPanelGrab, endFloatingPanelGrab, getFloatingPanelNear, getFloatingPanelButtonNearPoint,
   isFloatingPanelGrabbed, pickFloatingPanel, updateFloatingPanelGrab,
 } from '../menu/floatingPanel';
-import { getHandMenuHit, pickMenuControl } from '../menu/handMenu';
+import { getHandMenuHit, getHandMenuHitNearPoint, pickMenuControl } from '../menu/handMenu';
+import type { MarcherInstrument } from '../robot/robot';
 import { getControllerYaw, rotateAroundY } from './controllers';
 import { tryManualMarcherPose } from '../robot/manualPlacement';
 import { createMarcherDragGhost } from '../robot/marcherGhost';
@@ -114,6 +115,7 @@ export interface HandPathDependencies {
   refreshStepHandles: () => void;
   snapToStepGrid: (point: Vector3) => Vector3;
   activateHandMenuAtPoint: (point: Vector3) => boolean;
+  selectNewMarcherInstrument: (instrument: MarcherInstrument) => void;
   activateChartButton: (action: NonNullable<ReturnType<typeof getHandMenuHit>>) => void;
   notifyPlacement: (message: string) => void;
   captureMarcherMove: (robot: TransformNode) => () => void;
@@ -146,6 +148,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
     refreshStepHandles,
     snapToStepGrid,
     activateHandMenuAtPoint,
+    selectNewMarcherInstrument,
     activateChartButton,
     notifyPlacement,
     captureMarcherMove,
@@ -266,6 +269,32 @@ export function createHandInteraction(paths: HandPathDependencies) {
     });
     setRobotHeld(robot, true);
     selectRobot(robot);
+  }
+
+  // Grabbing an instrument button on a palette pulls a brand-new marcher out
+  // of it, already held; releasing it on the turf places it, elsewhere discards it.
+  function grabPaletteMarcher(
+    handedness: string,
+    hit: ReturnType<typeof getHandMenuHit>,
+    point: Vector3,
+    source: 'hand' | 'controller',
+    rayDistance = 0,
+    facingYaw: number | null = null
+  ) {
+    if (hit?.action !== 'createMarcher' || formationPull || marcherGrabs.has(handedness)) return false;
+    selectNewMarcherInstrument(hit.instrument);
+    const position = Vector3.TransformCoordinates(point, Matrix.Invert(pathRoot.computeWorldMatrix(true)));
+    const draft = createStandingMarcher(position);
+    draft.position.copyFrom(position);
+    handPlacementDrafts.add(draft);
+    beginMarcherGrab(handedness, draft, point, source, rayDistance, facingYaw);
+    if (!marcherGrabs.has(handedness)) {
+      handPlacementDrafts.delete(draft);
+      draft.dispose();
+      return false;
+    }
+    if (source === 'hand') marcherPinchHands.add(handedness);
+    return true;
   }
 
   function restoreMarcherRendering(grab: MarcherGrab) {
@@ -1002,7 +1031,10 @@ export function createHandInteraction(paths: HandPathDependencies) {
         const action = getFloatingPanelButtonNearPoint(point) ??
           (!near && menuPick?.hit && (!pick?.hit || menuPick.distance <= pick.distance + 0.001)
             ? getHandMenuHit(menuPick) : null);
-        if (action || near || pick?.hit) {
+        if (action && grabPaletteMarcher(handedness, action, point, 'hand', 0, getHandFacingYaw(handedness))) {
+          // The new marcher is carried by this pinch, not treated as a button tap.
+          handPinches.set(handedness, true);
+        } else if (action || near || pick?.hit) {
           padHands.add(handedness);
           if (action) activateChartButton(action);
           else beginFloatingPanelGrab(handedness, getHandGrabMatrix(hand),
@@ -1152,6 +1184,8 @@ export function createHandInteraction(paths: HandPathDependencies) {
         continue;
       }
       const point = thumb.add(index).scale(0.5);
+      if (!wasPinching && grabPaletteMarcher(handedness, getHandMenuHitNearPoint(point), point, 'hand', 0,
+        getHandFacingYaw(handedness))) continue;
       if (!wasPinching && activateHandMenuAtPoint(point)) {
         marcherPinchHands.add(handedness);
         continue;
@@ -1406,6 +1440,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
     },
     beginMarcherGrab,
     transferDraftGrab,
+    grabPaletteMarcher,
     beginControllerFormationPull: (handedness: string, point: Vector3, target?: TransformNode) =>
       (handedness === 'left' || handedness === 'right') &&
       beginFormationPull(handedness, point, 'controller', target),

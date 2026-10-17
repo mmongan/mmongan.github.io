@@ -144,7 +144,7 @@ import {
 } from '../menu/drillChartPad';
 import {
   beginFloatingPanelGrab, beginFloatingPanelPointerDrag, endFloatingPanelGrab,
-  getFloatingPanelNear, isFloatingPanelGrabbed, isFloatingPanelMesh,
+  getFloatingPanelButtonNearPoint, getFloatingPanelNear, isFloatingPanelGrabbed, isFloatingPanelMesh,
   nudgeFloatingPanelDistance, pickFloatingPanel, updateFloatingPanelGrab, telescopeFloatingPanelGrab,
   updateFloatingPanelPointerDrag,
 } from '../menu/floatingPanel';
@@ -2576,6 +2576,10 @@ const handInteraction = createHandInteraction({
     executeMenuAction(hit);
     return true;
   },
+  selectNewMarcherInstrument: (instrument) => {
+    selectRobot(null);
+    chooseInstrument(instrument);
+  },
   activateChartButton: executeMenuAction,
   notifyPlacement: showPlacementNotice,
   captureMarcherMove,
@@ -2735,6 +2739,19 @@ export function updateRobotPathFromControllers() {
     }
     if (!marcherGrab && gripPressed && !wasGripPressed && !menuInteractionHeld.get(handedness)) {
       const gripNode = getControllerPosition(controller);
+      // Gripping an instrument button pulls a new marcher of that instrument into the grab.
+      const gripPoint = gripNode.getAbsolutePosition();
+      const facingYaw = handInteraction.getFacingYaw(getControllerRay(controller).direction);
+      const nearButton = getFloatingPanelButtonNearPoint(gripPoint) ?? getHandMenuHitNearPoint(gripPoint);
+      if (nearButton && handInteraction.grabPaletteMarcher(handedness, nearButton, gripPoint, "controller", -1,
+        facingYaw)) return;
+      const paletteRay = getControllerRay(controller);
+      const paletteMenuPick = pickMenuControl(paletteRay);
+      const palettePanelPick = pickFloatingPanel(paletteRay);
+      if (paletteMenuPick?.hit && paletteMenuPick.pickedPoint &&
+        (!palettePanelPick?.hit || paletteMenuPick.distance <= palettePanelPick.distance + 0.001) &&
+        handInteraction.grabPaletteMarcher(handedness, getHandMenuHit(paletteMenuPick),
+          paletteMenuPick.pickedPoint, "controller", paletteMenuPick.distance, facingYaw)) return;
       const nearPad = getFloatingPanelNear(gripNode.getAbsolutePosition(), 0.06);
       const pick = nearPad ? null : pickFloatingPanel(getControllerRay(controller));
       if (nearPad || pick?.hit) {

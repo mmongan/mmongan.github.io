@@ -19,6 +19,7 @@ import { draftingSaveButton, draftingRestoreButton, draftingDeleteButton, drafti
   fieldGridToggle, fieldGridInterval, draftingCameraButton, draftingPhotoRestoreButton,
   draftingPhotoDownloadButton, draftingPhotoPreview } from '../ui/dom';
 import { createMemoryWire } from './memoryWire';
+import { getARScale, getARScaleRange, onARScaleChangedObservable } from '../xr/ar';
 import { constrainedDraftLine, divideDraftLine, measureDraftLine, offsetDraftLine, sampleDraftSpline } from './draftingGeometry';
 import { createDraftingHandles } from './draftingHandles';
 import { DRAFTING_WORKSPACE_KEY, parseDraftingWorkspace, serializeDraftingWorkspace,
@@ -136,6 +137,28 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
   let laserPoints: Vector3[] = [];
   let desktopLaserAim = false;
   let span = 1;
+  // In XR, held tools grow with the field so they cover the same yardage at every scale.
+  function fieldToolScale() {
+    if (scene.activeCamera?.getClassName() !== 'WebXRCamera') return 1;
+    const factor = getARScale() / getARScaleRange().default;
+    return Number.isFinite(factor) && factor > 0 ? factor : 1;
+  }
+  const heldSpans = new WeakMap<TransformNode, number>();
+  function sizeHeld(root: TransformNode, base: number) {
+    heldSpans.set(root, base);
+    root.scaling.setAll(base * fieldToolScale());
+  }
+  function heldSpan(root: TransformNode) {
+    return heldSpans.get(root) ?? root.scaling.x / fieldToolScale();
+  }
+  function placeHeldTool(panel: DetachableFloatingPanel, root: TransformNode) {
+    const factor = fieldToolScale();
+    panel.placeForViewer({ desktop: { distance: 0.6, height: -0.08, side: 0.3 },
+      xr: { distance: 0.35 * factor, height: -0.15 * Math.min(1, factor) }, side: 0.25 * factor, uprightInXR: true });
+    if (factor <= 1) return;
+    const surfaceY = Vector3.TransformCoordinates(new Vector3(0, FIELD_SURFACE_Y, 0), deps.root.computeWorldMatrix(true)).y;
+    root.position.y = Math.max(root.position.y, surfaceY + 0.16 * root.scaling.y);
+  }
   let offsetSide = 1;
   let parallelReference = false;
   let restoreArmedUntil = 0;
@@ -804,7 +827,11 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
         desktopLaserAim = false;
         displayLaser([]);
         selected = kind;
-        span = root.scaling.x;
+        if (root.parent === dock) {
+          span = root.scaling.x;
+          root.setParent(null);
+          sizeHeld(root, span);
+        } else span = heldSpan(root);
         super.begin(source, world);
         deps.notify(toolInstructions(kind) ?? (kind === 'laser'
           ? 'Laser: rotate the held level to project a green line across the field. Use Pin laser line on the Tools tray to save a guide. Desktop: drag on the field to aim.'
@@ -851,7 +878,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
   (['tSquare', 'setSquare', 'dividers', 'tape', 'spline', 'offset', 'annotation', 'yarn', 'stickyNote'] as const)
     .forEach((kind, index) => makeTool(kind, draftingRoot, index));
   const memoryWire = createMemoryWire({
-    dock: trayRoot, field: deps.root, commit,
+    dock: trayRoot, field: deps.root, commit, contactScale: fieldToolScale,
     allowed: () => !floorCalibrationToggle?.checked,
     prepare: () => {
       if (floorCalibrationToggle?.checked) {
@@ -861,9 +888,16 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
       deps.prepare();
       return true;
     },
-    selected: () => {
+    selected: (fromGrip: boolean) => {
       selected = 'wire';
-      span = memoryWire.root.scaling.x;
+      if (memoryWire.root.parent === null) span = heldSpan(memoryWire.root);
+      else {
+        span = memoryWire.root.scaling.x;
+        if (fromGrip) {
+          memoryWire.root.setParent(null);
+          sizeHeld(memoryWire.root, span);
+        }
+      }
       deps.notify('Memory wire: hold the copper grip to move it; pull cyan beads to bend. Press flat onto turf and lift to stamp. Desktop: drag on the field to stamp the remembered shape.');
     },
   });
@@ -1059,8 +1093,8 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     }
     if (value === 'smaller' || value === 'larger') {
       span = Math.max(0.5, Math.min(3, span * (value === 'larger' ? 1.25 : 0.8)));
-      tools.filter(tool => tool.kind === selected).forEach(tool => { tool.stroke = null; tool.root.scaling.setAll(span); });
-      if (selected === 'wire') memoryWire.root.scaling.setAll(span);
+      tools.filter(tool => tool.kind === selected).forEach(tool => { tool.stroke = null; sizeHeld(tool.root, span); });
+      if (selected === 'wire') sizeHeld(memoryWire.root, span);
       display([]);
       deps.notify(`Tool span: ${Math.round(span * 100)}%.`);
       return;
@@ -1082,19 +1116,17 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     selected = value;
     if (value === 'wire') {
       memoryWire.root.setParent(null);
-      memoryWire.root.scaling.setAll(span);
-      memoryWire.panel.placeForViewer({ desktop: { distance: 0.6, height: -0.08, side: 0.3 },
-        xr: { distance: 0.35, height: -0.15 }, side: 0.25, uprightInXR: true });
+      sizeHeld(memoryWire.root, span);
+      placeHeldTool(memoryWire.panel, memoryWire.root);
       return;
     }
     const tool = tools.find(tool => tool.kind === value);
     if (!tool) throw new Error(`Unknown physical drawing tool: ${value}`);
     tool.panel.release();
     tool.root.setParent(null);
-    tool.root.scaling.setAll(span);
+    sizeHeld(tool.root, span);
     tool.root.setEnabled(true);
-    tool.panel.placeForViewer({ desktop: { distance: 0.6, height: -0.08, side: 0.3 },
-      xr: { distance: 0.35, height: -0.15 }, side: 0.25, uprightInXR: true });
+    placeHeldTool(tool.panel, tool.root);
     deps.notify(toolInstructions(value) ?? (value === 'laser'
       ? 'Laser: drag on the field to aim a live line, then use Pin laser line on the Tools tray. In XR, hold and rotate the level; release turns the beam off.'
       : value.endsWith('Cutter')
@@ -1320,7 +1352,8 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
       const tipWorld = Vector3.TransformCoordinates(tool.tip, world);
       let tip = local(tipWorld);
       const scaleY = Vector3.TransformNormal(Vector3.Up(), deps.root.getWorldMatrix()).length();
-      if (Math.abs(tip.y - FIELD_SURFACE_Y) * scaleY > 0.025) { finishTool(tool); continue; }
+      const contact = 0.025 * fieldToolScale();
+      if (Math.abs(tip.y - FIELD_SURFACE_Y) * scaleY > contact) { finishTool(tool); continue; }
       tip.y = FIELD_SURFACE_Y + 0.025;
       if (tool.kind === 'pencil') {
         const ruler = tools.find(candidate => candidate.kind === 'ruler' && candidate.root.parent === null);
@@ -1330,11 +1363,11 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
           const b = local(Vector3.TransformCoordinates(ruler.edge, rulerWorld));
           const direction = b.subtract(a);
           const length = direction.lengthSquared();
-          if (length > 0 && Math.abs(a.y - FIELD_SURFACE_Y) * scaleY <= 0.025 &&
-            Math.abs(b.y - FIELD_SURFACE_Y) * scaleY <= 0.025) {
+          if (length > 0 && Math.abs(a.y - FIELD_SURFACE_Y) * scaleY <= contact &&
+            Math.abs(b.y - FIELD_SURFACE_Y) * scaleY <= contact) {
             const t = Math.max(0, Math.min(1, Vector3.Dot(tip.subtract(a), direction) / length));
             const projected = a.add(direction.scale(t));
-            if (Vector3.Distance(projected, tip) * scaleY <= 0.035) {
+            if (Vector3.Distance(projected, tip) * scaleY <= contact * 1.4) {
               projected.y = tip.y;
               tip = projected;
             }
@@ -1343,7 +1376,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
       }
       if (tool.kind === 'eraser') {
         const previous = tool.stroke?.[0] ?? tip;
-        erase(previous, tip, Math.max(0.1, 0.04 * span / scaleY));
+        erase(previous, tip, Math.max(0.1, 0.04 * tool.root.scaling.x / scaleY));
         tool.stroke = [tip];
       } else if (tool.kind === 'pencil') {
         tool.stroke ??= [tip.clone()];
@@ -1356,7 +1389,14 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
       }
     }
   });
+  const scaleObserver = onARScaleChangedObservable.add(() => {
+    for (const root of [...tools.map(tool => tool.root), memoryWire.root]) {
+      const base = heldSpans.get(root);
+      if (base !== undefined && root.parent === null) root.scaling.setAll(base * fieldToolScale());
+    }
+  });
   scene.onDisposeObservable.addOnce(() => {
+    onARScaleChangedObservable.remove(scaleObserver);
     scene.onBeforeRenderObservable.remove(observer);
     window.removeEventListener('pointerup', pointerUp);
     window.removeEventListener('blur', cancelPointer);
