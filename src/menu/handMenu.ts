@@ -58,6 +58,7 @@ export type HandMenuHit =
   | { action: "drillChartPage"; direction: 1 | -1 }
   | { action: "drillChartTransition"; kind: "shape" | "pace" | "style" }
   | { action: "drillChartApplyTransition" }
+  | { action: "drillChartSaveDraft" | "drillChartResumeDraft" }
   | { action: "seek"; fraction: number };
 
 function roundedRect(

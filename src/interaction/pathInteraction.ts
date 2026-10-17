@@ -40,8 +40,11 @@ import { hideInstrumentPanel, summonInstrumentPanel } from '../menu/instrumentPa
 import {
   executeDrawingToolAction, handleDrawingPointer, initFieldDrawingTools,
   isDrawingPointerActive, isFieldDrawingToolActive, selectDrawingGuideNear, snapToSelectedDrawingGuide,
-  clearDrawingGuides, getSelectedDrawingGuidePoints,
+  clearDrawingGuides, getSelectedDrawingGuidePoints, exportDrawingWorkspace, importDrawingWorkspace,
 } from './fieldDrawingTools';
+import {
+  CHART_PAGE_DRAFT_KEY, parseChartPageDraft, roundVector, serializeChartPageDraft, type ChartPageDraft,
+} from '../robot/chartPageDraft';
 import type { ThumbJogState } from './thumbJogGesture';
 import {
   activeControllers as controllerRegistry,
@@ -99,6 +102,18 @@ import {
   playAll,
   registerRobotCounts,
   onMarcherStrideLimited,
+  captureMarcherSchedules,
+  captureBlankChartPage,
+  restoreMarcherSchedule,
+  resumeBlankChartPage,
+  setChartTransition,
+  getDrillTransportState,
+  getMarchTempo,
+  MARCHER_INSTRUMENTS,
+  MARCHING_GAITS,
+  TRANSITION_PATH_SHAPES,
+  TRANSITION_PACES,
+  TRANSITION_STYLE_INDICES,
 } from '../robot/robot';
 import { duplicateDrillButton, duplicateDrillStatus } from '../ui/dom';
 import { MAX_MARCHING_STRIDE_YARDS } from '../robot/gaitSelection';
@@ -108,7 +123,7 @@ import { onManualPlacementBlocked, tryManualMarcherPose, tryManualMarcherPoses }
 import type { MarcherInstrument } from '../robot/robot';
 import { getOpenMarchSectionInstrument, loadOpenMarchFromUrl, OPEN_MARCH_EXAMPLE, OPEN_MARCH_URL_PARAM } from '../robot/openMarchUrl';
 import type { OpenMarchImportedDrill } from '../robot/openMarchFormat';
-import { clearDrillLabels, setDrillLabels, setDrillLabelsVisible } from '../robot/drillLabels';
+import { clearDrillLabels, getDrillLabel, setDrillLabels, setDrillLabelsVisible } from '../robot/drillLabels';
 import { clearShowInfo, setShowInfo } from '../menu/showInfoPanel';
 import { cycleMusicStandStaff, setMusicStandVisible, summonMusicStand } from '../menu/musicStand';
 import { isMarcherPOVActive, setMarcherPOVEnabled } from '../camera/marcherPOV';
@@ -142,7 +157,7 @@ import {
   updateScoreboardHornPoseFromPick,
   updateScoreboardTempoFromPick,
 } from '../field/scoreboard';
-import { canvas, collisionMarkersToggle, floorCalibrationToggle, fullScaleVRButton, tabletopScaleButton, showAllPathsToggle, placementModeToggle, eraseModeToggle, drillChartPadToggle, insertChartPageButton, marcherInstrumentRadios, undoEraseButton, redoEraseButton, addRandomRobotsButton, marcherCountInput, marcherCountValue, generateDrillButton, openMarchForm, openMarchUrlInput, openMarchButton, openMarchExampleButton, openMarchStatus, drillLabelsToggle } from '../ui/dom';
+import { canvas, collisionMarkersToggle, floorCalibrationToggle, fullScaleVRButton, tabletopScaleButton, showAllPathsToggle, placementModeToggle, eraseModeToggle, drillChartPadToggle, insertChartPageButton, saveChartDraftButton, resumeChartDraftButton, marcherInstrumentRadios, undoEraseButton, redoEraseButton, addRandomRobotsButton, marcherCountInput, marcherCountValue, generateDrillButton, openMarchForm, openMarchUrlInput, openMarchButton, openMarchExampleButton, openMarchStatus, drillLabelsToggle } from '../ui/dom';
 import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS, FIELD_SURFACE_Y } from '../field/constants';
 import { buildSynchronizedPaths, FORMATION_SPACING_YARDS, generateMarchingDrillPaths, getDrillSectionInstrument, MARCH_STEP_YARDS } from '../robot/drill';
 import { isGuideOnField } from './fieldDrawingGeometry';
@@ -490,6 +505,129 @@ function addBlankChartPage() {
   showPlacementNotice(`Blank page at count ${count}: draw guides, then grab or place the ${waiting} ghost marchers.`);
 }
 insertChartPageButton?.addEventListener("click", addBlankChartPage);
+
+// Saves the chart page draft in progress (every marcher's schedule, the open
+// blank page with its waiting ghosts, the transition and the drafted guides)
+// to this browser so it can be resumed after a reload.
+function saveChartPageDraft() {
+  if (marcherGrabs.size > 0) {
+    showPlacementNotice("Release the grabbed marcher before saving the chart page draft.");
+    return;
+  }
+  const schedules = captureMarcherSchedules();
+  if (schedules.length === 0) {
+    showPlacementNotice("Add marchers before saving a chart page draft.");
+    return;
+  }
+  const page = captureBlankChartPage();
+  const indexByRobot = new Map(schedules.map((schedule, index) => [schedule.robot, index]));
+  const transition = getChartTransition();
+  const draft: ChartPageDraft = {
+    version: 1,
+    savedAt: new Date().toISOString(),
+    beat: getDrillTransportState().beat,
+    tempoBpm: getMarchTempo(),
+    transition: { shape: transition.shape, pace: transition.pace, styleIndex: transition.styleIndex },
+    page: page && {
+      count: page.count, previous: page.previous, next: page.next,
+      waiting: page.waiting.map(robot => indexByRobot.get(robot)).filter((index): index is number => index !== undefined),
+    },
+    marchers: schedules.map((schedule) => {
+      const label = getDrillLabel(schedule.robot);
+      return {
+        instrument: schedule.instrument, gait: schedule.gaitIndex, rest: schedule.instrumentRestPose,
+        color: roundVector(schedule.color.r, schedule.color.g, schedule.color.b), step: schedule.stepSizeYards,
+        ...(schedule.fixedFacingY === undefined ? {} : { fixed: schedule.fixedFacingY }),
+        ...(label ? { label } : {}),
+        counts: schedule.counts.map((count) => ({
+          p: roundVector(count.position.x, count.position.y, count.position.z), r: count.rotationY,
+          ...(count.facingY === undefined ? {} : { f: count.facingY }),
+          ...(count.styleIndex === undefined ? {} : { s: count.styleIndex }),
+        })),
+      };
+    }),
+    drafting: exportDrawingWorkspace(),
+  };
+  try {
+    localStorage.setItem(CHART_PAGE_DRAFT_KEY, serializeChartPageDraft(draft));
+  } catch (error) {
+    showPlacementNotice(`Could not save the chart page draft: ${error instanceof Error ? error.message : String(error)}`);
+    return;
+  }
+  const waiting = draft.page?.waiting.length ?? 0;
+  showPlacementNotice(draft.page
+    ? `Saved page at count ${draft.page.count}: ${schedules.length - waiting} placed, ${waiting} waiting. Resume restores it.`
+    : `Saved ${schedules.length} marchers at count ${Math.round(draft.beat)}. Resume restores them.`);
+}
+
+// Replaces the field with the saved chart page draft, reopening its blank
+// page so the waiting marchers are ghosts again.
+function resumeChartPageDraft() {
+  let draft: ChartPageDraft;
+  try {
+    const json = localStorage.getItem(CHART_PAGE_DRAFT_KEY);
+    if (!json) {
+      showPlacementNotice("No saved chart page draft in this browser yet. Press Save first.");
+      return;
+    }
+    draft = parseChartPageDraft(json);
+    const badInstrument = draft.marchers.find((marcher) =>
+      !(MARCHER_INSTRUMENTS as readonly string[]).includes(marcher.instrument) || marcher.gait >= MARCHING_GAITS.length ||
+      marcher.counts.some((count) => count.s !== undefined && count.s >= MARCHING_GAITS.length));
+    if (badInstrument) throw new Error(`Saved chart page draft has an unknown instrument or gait (${badInstrument.instrument}).`);
+  } catch (error) {
+    showPlacementNotice(error instanceof Error ? error.message : String(error));
+    return;
+  }
+  clearAllRobots();
+  const labels: { robot: TransformNode; label: string }[] = [];
+  const robots = draft.marchers.map((marcher) => {
+    const robot = createLowPolyRobot(scene, marcher.gait);
+    robot.parent = pathRoot;
+    const counts = marcher.counts.map((count) => ({
+      position: new Vector3(count.p[0], count.p[1], count.p[2]), rotationY: count.r,
+      ...(count.f === undefined ? {} : { facingY: count.f }),
+      ...(count.s === undefined ? {} : { styleIndex: count.s }),
+    }));
+    restoreMarcherSchedule(robot, {
+      instrument: marcher.instrument as MarcherInstrument, instrumentRestPose: marcher.rest,
+      color: new Color3(...marcher.color), stepSizeYards: marcher.step, fixedFacingY: marcher.fixed, counts,
+    }, scene);
+    const path = counts.map((count) => count.position.clone());
+    robotPaths.set(robot, path);
+    updateRobotPathLine(robot, path);
+    if (marcher.label) labels.push({ robot, label: marcher.label });
+    return robot;
+  });
+  setMarchTempo(draft.tempoBpm);
+  const shape = TRANSITION_PATH_SHAPES.find((entry) => entry.id === draft.transition.shape)?.id;
+  const pace = TRANSITION_PACES.find((entry) => entry.id === draft.transition.pace)?.id;
+  setChartTransition({
+    ...(shape ? { shape } : {}), ...(pace ? { pace } : {}),
+    ...(TRANSITION_STYLE_INDICES.includes(draft.transition.styleIndex) ? { styleIndex: draft.transition.styleIndex } : {}),
+  });
+  setDrillLabels(scene, pathRoot, labels);
+  const last = Math.max(0, ...draft.marchers.map((marcher) => marcher.counts.length - 1));
+  const pages = Array.from({ length: Math.floor(last / 8) + 1 }, (_, index) => index * 8);
+  if (pages[pages.length - 1] !== last) pages.push(last);
+  selectionTools?.setPages(pages.map((count, index) => ({ name: `Set ${index + 1}`, count })));
+  clearDrawingGuides();
+  const drafting = draft.drafting ? importDrawingWorkspace(draft.drafting) : true;
+  if (draft.page) {
+    resumeBlankChartPage({ ...draft.page, waiting: draft.page.waiting.map((index) => robots[index]) }, scene);
+  } else {
+    seekToCount(Math.min(last, Math.round(draft.beat)));
+  }
+  refreshCollisionMarkers(scene);
+  redrawDrillChartPad();
+  const saved = new Date(draft.savedAt).toLocaleString();
+  const guides = drafting === true ? "" : ` Guides were not restored: ${drafting}`;
+  showPlacementNotice(draft.page
+    ? `Resumed page at count ${draft.page.count} saved ${saved}: ${draft.page.waiting.length} marchers waiting.${guides}`
+    : `Resumed ${robots.length} marchers saved ${saved}.${guides}`);
+}
+saveChartDraftButton?.addEventListener("click", saveChartPageDraft);
+resumeChartDraftButton?.addEventListener("click", resumeChartPageDraft);
 
 // Applies the transition library choice to the move from the previous chart
 // page into the one shown: the selected marcher, or every marcher.
@@ -2224,6 +2362,12 @@ function executeMenuAction(hit: NonNullable<ReturnType<typeof getHandMenuHit>>) 
     }
     case "drillChartApplyTransition":
       applyChartTransition();
+      break;
+    case "drillChartSaveDraft":
+      saveChartPageDraft();
+      break;
+    case "drillChartResumeDraft":
+      resumeChartPageDraft();
       break;
     case "instrument":
       chooseInstrument(hit.instrument);

@@ -196,10 +196,13 @@ function createPad(): Pad {
   const edgeX = PAD_WIDTH / 2 - BUTTON_WIDTH / 2 - 0.012;
   const transitionY = bottomY + BUTTON_HEIGHT + 0.004;
   const transitionX = (slot: number) => (slot - 1.5) * (BUTTON_WIDTH + 0.012);
+  const bottomX = (slot: number) => (slot - 2) * (BUTTON_WIDTH + 0.006);
   const buttonDefinitions: { label: string; name: string; x: number; y: number; hit: HandMenuHit }[] = [
     { label: "◀ Prev", name: "-1", x: -edgeX, y: bottomY, hit: { action: "drillChartPage", direction: -1 } },
     { label: "X", name: "hide", x: 0, y: bottomY, hit: { action: "drillChartHide" } },
-    { label: "+ Page", name: "insert", x: 0, y: bottomY, hit: { action: "drillChartInsertPage" } },
+    { label: "Save", name: "saveDraft", x: bottomX(1), y: bottomY, hit: { action: "drillChartSaveDraft" } },
+    { label: "+ Page", name: "insert", x: bottomX(2), y: bottomY, hit: { action: "drillChartInsertPage" } },
+    { label: "Resume", name: "resumeDraft", x: bottomX(3), y: bottomY, hit: { action: "drillChartResumeDraft" } },
     { label: "Next ▶", name: "1", x: edgeX, y: bottomY, hit: { action: "drillChartPage", direction: 1 } },
     { label: "Path ▸", name: "path", x: transitionX(0), y: transitionY,
       hit: { action: "drillChartTransition", kind: "shape" } },
@@ -504,12 +507,21 @@ export function pickDrillChartPad(ray: Ray) {
 
 export function getDrillChartButtonNearPoint(point: Vector3): HandMenuHit | null {
   if (!pad || !visible) return null;
+  // Neighbouring buttons' touch margins overlap, so the nearest one wins.
+  let nearest: HandMenuHit | null = null;
+  let nearestDistance = Infinity;
   for (const [button, action] of pad.buttons) {
     const local = Vector3.TransformCoordinates(point, button.computeWorldMatrix(true).clone().invert());
     if (Math.abs(local.x) <= BUTTON_WIDTH / 2 + 0.01 &&
-      Math.abs(local.y) <= BUTTON_HEIGHT / 2 + 0.01 && Math.abs(local.z) <= 0.04) return action;
+      Math.abs(local.y) <= BUTTON_HEIGHT / 2 + 0.01 && Math.abs(local.z) <= 0.04) {
+      const distance = local.x * local.x + local.y * local.y;
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearest = action;
+      }
+    }
   }
-  return null;
+  return nearest;
 }
 
 // Grabs keep the pad's pose fixed relative to the grabbing hand/controller;

@@ -2155,9 +2155,11 @@ export function setRobotHeld(robot: TransformNode, held: boolean) {
   if (held) {
     const ghost = page?.pending.get(robot);
     if (page && ghost) {
-      // Picking up a ghost brings its marcher onto the new page.
+      // Picking up a ghost puts the real marcher in the grab; the ghost stays
+      // behind at the previous-page spot as a dimmer, ungrabbable reference.
       page.pending.delete(robot);
-      ghost.dispose();
+      setBlankPageGhostWaiting(robot, ghost, false);
+      page.leftBehind.set(robot, ghost);
       page.claimed.add(robot);
       robot.setEnabled(true);
       notifyBlankChartPage();
@@ -2170,8 +2172,16 @@ export function setRobotHeld(robot: TransformNode, held: boolean) {
     const state = players.get(robot);
     if (state) applyGlobalCount(robot, state);
     if (page?.claimed.delete(robot)) {
-      // Released without being placed: it returns to the waiting ghosts.
-      showBlankPageGhost(robot);
+      // Released without being placed: its ghost becomes grabbable again.
+      const ghost = page.leftBehind.get(robot);
+      page.leftBehind.delete(robot);
+      if (ghost && !ghost.isDisposed()) {
+        setBlankPageGhostWaiting(robot, ghost, true);
+        page.pending.set(robot, ghost);
+        robot.setEnabled(false);
+      } else {
+        showBlankPageGhost(robot);
+      }
       notifyBlankChartPage();
     }
   }
@@ -2547,6 +2557,8 @@ interface BlankChartPage {
   next: number;
   pending: Map<TransformNode, TransformNode>;
   claimed: Set<TransformNode>;
+  // Ghosts whose marchers were picked up stay at the previous-page spot.
+  leftBehind: Map<TransformNode, TransformNode>;
 }
 let blankChartPage: BlankChartPage | null = null;
 let blankChartPageTransportObserver: Observer<DrillTransportState> | null = null;
@@ -2573,6 +2585,18 @@ function notifyBlankChartPage() {
   onBlankChartPageChangedObservable.notifyObservers(getBlankChartPageState());
 }
 
+const BLANK_PAGE_GHOST_ALPHA = 0.28;
+const LEFT_BEHIND_GHOST_ALPHA = 0.14;
+
+function setBlankPageGhostWaiting(robot: TransformNode, ghost: TransformNode, waiting: boolean) {
+  ghost.getChildMeshes().forEach((mesh) => {
+    mesh.isPickable = waiting;
+    if (mesh.material) mesh.material.alpha = waiting ? BLANK_PAGE_GHOST_ALPHA : LEFT_BEHIND_GHOST_ALPHA;
+  });
+  if (waiting) blankPageGhostOwners.set(ghost, robot);
+  else blankPageGhostOwners.delete(ghost);
+}
+
 function showBlankPageGhost(robot: TransformNode) {
   const page = blankChartPage;
   const parent = robot.parent;
@@ -2581,13 +2605,13 @@ function showBlankPageGhost(robot: TransformNode) {
   robot.computeWorldMatrix(true);
   const ghost = createMarcherDragGhost(robot, parent);
   ghost.name = 'blankChartPageGhost';
-  ghost.getChildMeshes().forEach((mesh) => { mesh.isPickable = true; });
   robot.setEnabled(false);
-  blankPageGhostOwners.set(ghost, robot);
+  setBlankPageGhostWaiting(robot, ghost, true);
   page.pending.set(robot, ghost);
   ghost.onDisposeObservable.addOnce(() => {
     blankPageGhostOwners.delete(ghost);
     if (page.pending.get(robot) === ghost) page.pending.delete(robot);
+    if (page.leftBehind.get(robot) === ghost) page.leftBehind.delete(robot);
   });
 }
 
@@ -2637,12 +2661,18 @@ export function insertBlankChartPage(afterCount: number, countsPerPage: number, 
     invalidateLegBake(state);
   });
   seekToCount(count);
-  blankChartPage = {
-    count, previous: at, next: Math.min(count + countsPerPage, getMaxCountIndex()),
-    pending: new Map(), claimed: new Set(),
-  };
+  openBlankChartPage(count, at, Math.min(count + countsPerPage, getMaxCountIndex()), null, scene);
+  return count;
+}
+
+// Starts placing ghosts on the page at `count` (already seeked to). `waiting`
+// limits which marchers wait as ghosts; null means every enabled marcher.
+function openBlankChartPage(
+  count: number, previous: number, next: number, waiting: ReadonlySet<TransformNode> | null, scene: Scene
+) {
+  blankChartPage = { count, previous, next, pending: new Map(), claimed: new Set(), leftBehind: new Map() };
   players.forEach((_state, robot) => {
-    if (robot.isEnabled() && !heldRobots.has(robot)) showBlankPageGhost(robot);
+    if (robot.isEnabled() && !heldRobots.has(robot) && (!waiting || waiting.has(robot))) showBlankPageGhost(robot);
   });
   blankChartPageTransportObserver ??= onDrillTransportChangedObservable.add((transport) => {
     // Leaving the move into the new page (seek or playback) finishes it; unplaced marchers keep holding.
@@ -2653,7 +2683,86 @@ export function insertBlankChartPage(afterCount: number, countsPerPage: number, 
   });
   recalculateCollisionMarkers(scene);
   notifyBlankChartPage();
-  return count;
+}
+
+// --- Saving a chart page draft in progress: every marcher's full schedule
+// plus which marchers still wait as ghosts on the open blank page.
+export interface MarcherScheduleSnapshot {
+  robot: TransformNode;
+  gaitIndex: number;
+  instrument: MarcherInstrument;
+  instrumentRestPose: boolean;
+  color: Color3;
+  stepSizeYards: number;
+  fixedFacingY?: number;
+  counts: RobotCount[];
+}
+
+export interface BlankChartPageSnapshot {
+  count: number;
+  previous: number;
+  next: number;
+  waiting: TransformNode[];
+}
+
+export function captureMarcherSchedules(): MarcherScheduleSnapshot[] {
+  const snapshots: MarcherScheduleSnapshot[] = [];
+  allRobots.forEach((robot) => {
+    const parts = marcherParts.get(robot);
+    if (robot.isDisposed() || !parts) return;
+    const state = players.get(robot);
+    if (!state && !robot.isEnabled()) return;
+    const counts = state?.counts.length
+      ? state.counts.map((count) => ({ ...count, position: count.position.clone() }))
+      : [{ position: robot.position.clone(), rotationY: robot.rotation.y }];
+    snapshots.push({
+      robot, gaitIndex: parts.gaitIndex, instrument: parts.instrument, instrumentRestPose: parts.instrumentRestPose,
+      color: getRobotColor(robot).clone(), stepSizeYards: state?.stepSizeYards ?? DEFAULT_STEP_SIZE_YARDS,
+      fixedFacingY: state?.fixedFacingY, counts,
+    });
+  });
+  return snapshots;
+}
+
+export function captureBlankChartPage(): BlankChartPageSnapshot | null {
+  const page = blankChartPage;
+  return page && {
+    count: page.count, previous: page.previous, next: page.next,
+    waiting: [...page.pending.keys(), ...page.claimed],
+  };
+}
+
+// Recreates a marcher's saved schedule exactly (counts keep their facings and
+// transition styles), so a restored drill plays back as it was saved.
+export function restoreMarcherSchedule(
+  robot: TransformNode, snapshot: Omit<MarcherScheduleSnapshot, 'robot' | 'gaitIndex'>, scene: Scene
+) {
+  if (snapshot.counts.length === 0) return;
+  ensureSharedObserver(scene);
+  setMarcherInstrument(robot, snapshot.instrument);
+  setMarcherInstrumentRestPose(robot, snapshot.instrumentRestPose);
+  setRobotColor(robot, snapshot.color);
+  const counts = snapshot.counts.map((count) => ({ ...count, position: count.position.clone() }));
+  const oldState = players.get(robot);
+  if (oldState) invalidateLegBake(oldState);
+  players.set(robot, {
+    points: counts.map((count) => count.position.clone()), stepSizeYards: snapshot.stepSizeYards,
+    counts, fixedFacingY: snapshot.fixedFacingY,
+  });
+  robot.setEnabled(true);
+  applyGlobalCount(robot, players.get(robot)!);
+}
+
+// Reopens a saved blank page: seeks to it and shows the waiting marchers as ghosts.
+export function resumeBlankChartPage(snapshot: BlankChartPageSnapshot, scene: Scene) {
+  endBlankChartPage();
+  setGhostBandPreviewEnabled(false);
+  const last = getMaxCountIndex();
+  const count = Math.min(last, Math.max(0, Math.round(snapshot.count)));
+  const previous = Math.min(count, Math.max(0, Math.round(snapshot.previous)));
+  seekToCount(count);
+  openBlankChartPage(count, previous, Math.min(last, Math.max(count, Math.round(snapshot.next))),
+    new Set(snapshot.waiting), scene);
 }
 
 // Places the waiting marcher whose ghost is nearest `position` onto the blank page.
@@ -2848,8 +2957,10 @@ export function endBlankChartPage() {
     ghost.dispose();
     if (!robot.isDisposed()) robot.setEnabled(true);
   });
+  [...page.leftBehind.values()].forEach((ghost) => ghost.dispose());
   page.pending.clear();
   page.claimed.clear();
+  page.leftBehind.clear();
   applyGlobalCountToAllRobots();
   if (sharedScene) recalculateCollisionMarkers(sharedScene);
   notifyBlankChartPage();

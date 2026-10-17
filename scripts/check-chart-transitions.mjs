@@ -114,5 +114,10 @@ assert.match(robot, /globalPlayback\.countIndex = clampToBlankChartPageSpan\(/);
 assert.match(robot, /if \(blankChartPage\) \{\n\s+\/\/ Jog the real band[^\n]*\n\s+seekToCount\(clampToBlankChartPageSpan\(/);
 assert.match(pad, /count >= blank\.previous && count <= blank\.count/);
 assert.match(pad, /if \(getBlankChartPageState\(\)\) endBlankChartPage\(\);\n\s+seekToCount\(setCounts\[target\]\)/);
+// Grabbing a ghost leaves it behind as an ungrabbable reference; cancelling restores it.
+assert.match(robot, /setBlankPageGhostWaiting\(robot, ghost, false\);\n\s+page\.leftBehind\.set\(robot, ghost\);/);
+assert.match(robot, /setBlankPageGhostWaiting\(robot, ghost, true\);\n\s+page\.pending\.set\(robot, ghost\);/);
+assert.match(robot, /page\.leftBehind\.values\(\)\]\.forEach\(\(ghost\) => ghost\.dispose\(\)\)/);
+assert.doesNotMatch(robot, /page\.pending\.delete\(robot\);\n\s+ghost\.dispose\(\);/);
 
 console.log('chart transition and adjacent marcher checks passed');

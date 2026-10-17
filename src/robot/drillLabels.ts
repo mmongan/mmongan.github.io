@@ -39,6 +39,10 @@ export function setDrillLabelsVisible(visible: boolean) {
   labelSystem?.mesh.setEnabled(visible && labelEntries.length > 0);
 }
 
+export function getDrillLabel(robot: TransformNode): string | undefined {
+  return labelEntries.find((entry) => entry.robot === robot)?.label;
+}
+
 export function clearDrillLabels() {
   labelEntries = [];
   if (labelObserver) labelObserver.remove();

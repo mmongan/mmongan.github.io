@@ -110,6 +110,8 @@ export const undoEraseButton = document.getElementById("undoEraseButton") as HTM
 export const redoEraseButton = document.getElementById("redoEraseButton") as HTMLButtonElement | null;
 export const drillChartPadToggle = document.getElementById("drillChartPadToggle") as HTMLInputElement | null;
 export const insertChartPageButton = document.getElementById("insertChartPageButton") as HTMLButtonElement | null;
+export const saveChartDraftButton = document.getElementById("saveChartDraftButton") as HTMLButtonElement | null;
+export const resumeChartDraftButton = document.getElementById("resumeChartDraftButton") as HTMLButtonElement | null;
 export const marcherInstrumentRadios = Array.from(
   document.querySelectorAll<HTMLInputElement>('input[name="marcherInstrument"]')
 );

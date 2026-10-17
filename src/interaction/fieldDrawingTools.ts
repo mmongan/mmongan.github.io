@@ -88,6 +88,14 @@ export function clearDrawingGuides() {
 export function getSelectedDrawingGuidePoints(): readonly Vector3[] | null {
   return drawing?.selectedPoints() ?? null;
 }
+/** Serialized drafting guides and settings (same format as Save drafting), or null before init. */
+export function exportDrawingWorkspace(): string | null {
+  return drawing?.exportWorkspace() ?? null;
+}
+/** Replaces guides/settings from exportDrawingWorkspace JSON; throws if the JSON is invalid. */
+export function importDrawingWorkspace(json: string): true | string {
+  return drawing?.importWorkspace(json) ?? 'Drafting tools are not ready.';
+}
 
 export function closestPointOnGuide(points: readonly Vector3[], point: Vector3) {
   let best: Vector3 | null = null;
@@ -1218,6 +1226,12 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
       return;
     }
     restoreArmedUntil = 0;
+    const result = applyWorkspace(snapshot);
+    workspaceMessage(typeof result === 'string' ? result :
+      `Restored ${guides.length} drafting guides. Marchers and routes are unchanged.`);
+  }
+  // Replaces the current guides and drafting settings; returns an error message on failure.
+  function applyWorkspace(snapshot: DraftingWorkspace): true | string {
     // Build and validate the replacement before removing any current guide.
     const replacements: Guide[] = [];
     try {
@@ -1228,8 +1242,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
       }
     } catch (error) {
       replacements.forEach(disposeGuide);
-      workspaceMessage(`Could not build saved drafting; current guides unchanged: ${String(error)}`);
-      return;
+      return `Could not build saved drafting; current guides unchanged: ${String(error)}`;
     }
     cancelPointer();
     deps.prepare();
@@ -1246,7 +1259,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
       fieldGridToggle.dispatchEvent(new Event('change'));
     }
     updateDraftStatus();
-    workspaceMessage(`Restored ${guides.length} drafting guides. Marchers and routes are unchanged.`);
+    return true;
   }
   const saveWorkspace = () => action('saveDrafting');
   const restoreWorkspace = () => action('restoreDrafting');
@@ -1370,5 +1383,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
   return { action, pointer, pointerActive: () => pointerStroke !== null, active: () => selected !== null,
     selectNear, snapToSelected,
     clearGuides: () => { const count = guides.length; guides.splice(0).forEach(disposeGuide); return count; },
-    selectedPoints: () => selectedGuide?.points ?? null };
+    selectedPoints: () => selectedGuide?.points ?? null,
+    exportWorkspace: () => serializeDraftingWorkspace(collectWorkspace()),
+    importWorkspace: (json: string) => applyWorkspace(parseDraftingWorkspace(json)) };
 }
