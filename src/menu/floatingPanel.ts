@@ -147,6 +147,17 @@ export class FloatingPanel {
     return source === undefined ? this.source !== null : this.grabWorlds.has(source);
   }
 
+  // Pushes or pulls a one-handed grab along the line from the grabbing controller to the panel.
+  telescope(source: string, delta: number) {
+    if (this.source !== source || this.stretch || this.sliderDrag) return false;
+    const offset = this.offset.getTranslation();
+    const distance = offset.length();
+    if (distance < 1e-4) offset.set(0, 0, 1);
+    else offset.scaleInPlace(1 / distance);
+    this.offset.setTranslation(offset.scale(Math.min(20, Math.max(0.05, distance + delta))));
+    return true;
+  }
+
   placeForViewer(placement: ViewerPlacement) {
     const camera = scene.activeCamera;
     if (!camera) return false;
@@ -273,6 +284,10 @@ export function endFloatingPanelGrab(source: string) {
 
 export function isFloatingPanelGrabbed(source?: string) {
   return [...panels].some(panel => panel.grabbed(source));
+}
+
+export function telescopeFloatingPanelGrab(source: string, delta: number) {
+  return [...panels].some(panel => panel.telescope(source, delta));
 }
 
 export function beginFloatingPanelPointerDrag(ray: Ray) {

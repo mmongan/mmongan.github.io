@@ -196,6 +196,10 @@ let watchPanel: FloatingPanel | null = null;
 let instrumentPlateRoot: TransformNode | null = null;
 let instrumentPlatePanel: FloatingPanel | null = null;
 let instrumentPlateButtons: Mesh[] = [];
+let draftingPlateRoot: TransformNode | null = null;
+let draftingPlateAnchor: TransformNode | null = null;
+let draftingPlateButtons: Mesh[] = [];
+let draftingPlateMeshes: Mesh[] = [];
 let formationButtons: Mesh[] = [];
 let letterButtons: Mesh[] = [];
 let attachedTo: AbstractMesh | null = null;
@@ -264,6 +268,9 @@ export function setMenuHandTracking(tracking: WebXRHandTracking | null) {
 }
 
 export function getHandMenuHitNearPoint(point: Vector3): HandMenuHit | null {
+  let nearest: HandMenuHit | null = null;
+  let nearestDistance = 0.015;
+  let nearestCenterDistance = Infinity;
   for (const [mesh, action] of buttonActions) {
     if (!mesh.isEnabled() || !mesh.isVisible) continue;
     mesh.computeWorldMatrix(true);
@@ -273,9 +280,15 @@ export function getHandMenuHitNearPoint(point: Vector3): HandMenuHit | null {
       Math.max(bounds.minimumWorld.y - point.y, 0, point.y - bounds.maximumWorld.y),
       Math.max(bounds.minimumWorld.z - point.z, 0, point.z - bounds.maximumWorld.z)
     );
-    if (distance < 0.015) return action;
+    const centerDistance = Vector3.DistanceSquared(bounds.centerWorld, point);
+    // Prefer the closest button so adjacent buttons' touch margins don't steal the pinch.
+    if (distance < nearestDistance || (distance === nearestDistance && centerDistance < nearestCenterDistance)) {
+      nearest = action;
+      nearestDistance = distance;
+      nearestCenterDistance = centerDistance;
+    }
   }
-  return null;
+  return nearest;
 }
 
 // Lets other menus (e.g. the stadium video board) reuse the same trigger-pick
@@ -292,8 +305,31 @@ export function pickMenuControl(ray: Ray): PickingInfo | null {
   return scene.pickWithRay(new Ray(ray.origin, ray.direction.normalizeToNew(), 250), isMenuControl);
 }
 
+// Controllers open the hand menus with face buttons instead of a palm-up
+// pose: X toggles the instrument menu and Y the media watch, both attached
+// to the controller that pressed them.
+let controllerMenuHand: string | null = null;
+let controllerInstrumentMenuOpen = false;
+let controllerMediaMenuOpen = false;
+let controllerMenuShown = false;
+
+export type ControllerHandMenu = "instruments" | "media";
+
+export function toggleControllerHandMenu(menu: ControllerHandMenu, handedness: string): boolean {
+  const open = menu === "instruments" ? controllerInstrumentMenuOpen : controllerMediaMenuOpen;
+  const show = !open || controllerMenuHand !== handedness;
+  controllerMenuHand = handedness;
+  if (menu === "instruments") controllerInstrumentMenuOpen = show;
+  else controllerMediaMenuOpen = show;
+  return show;
+}
+
+export function getControllerHandMenus() {
+  return { hand: controllerMenuHand, instruments: controllerInstrumentMenuOpen, media: controllerMediaMenuOpen };
+}
+
 export function isHandMenuVisible(): boolean {
-  return attachedTo !== null && (progressBar?.plane.isEnabled() ?? false);
+  return (attachedTo !== null || controllerMenuShown) && (progressBar?.plane.isEnabled() ?? false);
 }
 
 function ensureMenuMeshes() {
@@ -436,6 +472,34 @@ function ensureMenuMeshes() {
     new Vector3(0.0775, 0.025, 0.09),
     new Map(instrumentButtons.map(button => [button, buttonActions.get(button)!])));
   instrumentPlateRoot.setEnabled(false);
+  // Right tracked palm: compact drafting launcher plate, separate from the controller tool buttons.
+  draftingPlateAnchor = new TransformNode("draftingPlateAnchor", scene);
+  draftingPlateRoot = new TransformNode("draftingPlateRoot", scene);
+  draftingPlateRoot.parent = draftingPlateAnchor;
+  draftingPlateRoot.position.set(0, BUTTON_Y, -0.195);
+  const draftingSpacing = BUTTON_SIZE * 1.6;
+  draftingPlateButtons = ([
+    ["Tools", { action: "drawingTool", tool: "show" }, -draftingSpacing, 0.03],
+    ["Stncl", { action: "drawingTool", tool: "stencils" }, 0, 0.03],
+    ["Cut", { action: "drawingTool", tool: "cutters" }, draftingSpacing, 0.03],
+    ["Draft", { action: "drawingTool", tool: "drafting" }, -draftingSpacing, 0],
+    ["Paint", { action: "marcherPaint", command: "show" }, 0, 0],
+    ["Proj", { action: "fieldProjector", command: "show" }, draftingSpacing, 0],
+  ] as const).map(([label, action, x, z]) => {
+    const button = createButton(label, x, action);
+    button.name = `draftingPlateButton-${label}`;
+    button.scaling.setAll(1.4);
+    button.parent = draftingPlateRoot;
+    button.position.set(x, 0, z);
+    return button;
+  });
+  const draftingPlate = MeshBuilder.CreateBox("draftingPlate",
+    { width: draftingSpacing * 2 + BUTTON_SIZE * 2, height: 0.008, depth: 0.075 }, scene);
+  draftingPlate.parent = draftingPlateRoot;
+  draftingPlate.position.set(0, -0.006, 0.015);
+  draftingPlate.material = watchMaterial;
+  draftingPlateMeshes = [draftingPlate];
+  draftingPlateRoot.setEnabled(false);
   const presets: Array<{
     label: string;
     preset: "line" | "arc" | "circle" | "block" | "triangle" | "square" | "pentagon" | "hexagon" | "star";
@@ -518,18 +582,24 @@ export function updateHandMenu(
   let menuPose: HandMenuPose | null = null;
   let trackedPose: HandMenuPose | null = null;
   let flatPalm = false;
-  for (const controller of controllers.values()) {
-    const grip = controller.grip;
-    if (!grip || controller.inputSource.hand) continue;
-    grip.computeWorldMatrix(true);
-    const pose = getHandMenuPose(grip.getAbsolutePosition(), grip.getDirection(Axis.Y), grip.getDirection(Axis.Z));
-    if (pose && pose.normal.y > PALM_UP_DOT_THRESHOLD) {
-      palmUpGrip = grip;
+  let draftingPose: HandMenuPose | null = null;
+  let controllerGrip: AbstractMesh | null = null;
+  if (controllerMenuHand && (controllerInstrumentMenuOpen || controllerMediaMenuOpen)) {
+    for (const controller of controllers.values()) {
+      const grip = controller.grip;
+      if (!grip || controller.inputSource.hand || controller.inputSource.handedness !== controllerMenuHand) continue;
+      grip.computeWorldMatrix(true);
+      const pose = getHandMenuPose(grip.getAbsolutePosition(), grip.getDirection(Axis.Y), grip.getDirection(Axis.Z));
+      if (!pose) continue;
+      controllerGrip = palmUpGrip = grip;
       menuPose = pose;
       break;
     }
   }
-  if (!palmUpGrip && trackedHands) {
+  controllerMenuShown = controllerGrip !== null;
+  // Controllers only show menus via X/Y; tracked-hand palm gestures apply when no controller is held.
+  const controllerConnected = [...controllers.values()].some(controller => controller.grip && !controller.inputSource.hand);
+  if (!palmUpGrip && !controllerConnected && trackedHands) {
     for (const handedness of ['left', 'right'] as const) {
       const hand = trackedHands.getHandByHandedness(handedness);
       if (!hand) continue;
@@ -561,9 +631,14 @@ export function updateHandMenu(
         ] as const;
         if (fingers.every(([tip, knuckle]) =>
           Vector3.Distance(joint(tip), wristPoint) > Vector3.Distance(joint(knuckle), wristPoint) * 1.35)) {
-          flatPalm = true;
-          menuPose = pose;
-          palmUpGrip = wrist;
+          // Left flat palm shows instruments; right flat palm shows drafting tools.
+          if (handedness === 'left') {
+            flatPalm = true;
+            menuPose = pose;
+            palmUpGrip = wrist;
+          } else {
+            draftingPose = pose;
+          }
         }
       }
     }
@@ -589,12 +664,14 @@ export function updateHandMenu(
       watchRoot.parent = handMenuAnchor;
       watchRoot.position.set(0, WATCH_Y, WATCH_Z);
     }
-    watchRoot.setEnabled(palmUpGrip !== null || trackedPose !== null);
+    watchRoot.setEnabled(controllerGrip ? controllerMediaMenuOpen : trackedPose !== null);
   }
   if (instrumentPlateRoot && instrumentPlatePanel && !instrumentPlatePanel.userPlaced) {
     instrumentPlateRoot.parent = handMenuAnchor;
     instrumentPlateRoot.position.set(0, BUTTON_Y, -0.195);
-    instrumentPlateRoot.setEnabled(trackedPose ? flatPalm : palmUpGrip !== null && formationLibraryPage === "closed");
+    instrumentPlateRoot.setEnabled(controllerGrip
+      ? controllerInstrumentMenuOpen && formationLibraryPage === "closed"
+      : trackedPose !== null && flatPalm);
   }
   instrumentPlateButtons.forEach(button => {
     button.setEnabled(instrumentPlateRoot?.isEnabled() ?? false);
@@ -604,6 +681,17 @@ export function updateHandMenu(
       button.material.emissiveColor.set(1, active ? 0.85 : 1, active ? 0.35 : 1);
     }
   });
+  if (draftingPlateRoot && draftingPlateAnchor) {
+    if (draftingPose) {
+      draftingPlateAnchor.position.copyFrom(draftingPose.position);
+      draftingPlateAnchor.rotationQuaternion = draftingPose.rotation;
+      draftingPlateAnchor.computeWorldMatrix(true);
+    }
+    const draftingVisible = draftingPose !== null;
+    draftingPlateRoot.setEnabled(draftingVisible);
+    draftingPlateButtons.forEach(button => button.setEnabled(draftingVisible));
+    draftingPlateMeshes.forEach(mesh => mesh.setEnabled(draftingVisible));
+  }
   const watchVisible = watchRoot?.isEnabled() ?? false;
   progressBar.plane.setEnabled(watchVisible);
   watchButtons.forEach(button => button.setEnabled(watchVisible));
@@ -614,7 +702,7 @@ export function updateHandMenu(
     drawProgressBar(progressBar.ctx, progressBar.texture, shownProgress);
   }
 
-  if (!palmUpGrip || trackedPose) {
+  if (!controllerGrip || !controllerInstrumentMenuOpen) {
     buttons.filter(button => !watchButtons.includes(button) && !instrumentPlateButtons.includes(button))
       .forEach(button => button.setEnabled(false));
     formationButtons.forEach((button) => button.setEnabled(false));
@@ -662,7 +750,7 @@ export function updateHandMenu(
     if (action === "marcherPOV" && button.material instanceof StandardMaterial) {
       button.material.emissiveColor.set(marcherPOVActive ? 0.45 : 1, marcherPOVActive ? 0.8 : 1, 1);
     }
-    button.setEnabled((watchButtons.includes(button) || formationLibraryPage === "closed") &&
+    button.setEnabled(formationLibraryPage === "closed" &&
       (action !== "formationLibrary" || formationAnchorAvailable) &&
       (action !== "undoErase" || undoEraseAvailable) &&
       (action !== "redoErase" || redoEraseAvailable) &&

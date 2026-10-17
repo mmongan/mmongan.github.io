@@ -51,6 +51,8 @@ try {
   update();
   const watch = scene.getTransformNodeByName('mediaWatchRoot');
   const plate = scene.getTransformNodeByName('instrumentPlateRoot');
+  const drafting = scene.getTransformNodeByName('draftingPlateRoot');
+  assert.ok(drafting, 'Right palm has a drafting plate');
   assert.equal(watch.isEnabled(), false);
   assert.equal(plate.isEnabled(), false);
   for (const name of ['mediaWatchBezel', 'mediaWatchCrown']) {
@@ -87,23 +89,33 @@ try {
         joint.isVisible = false;
         joints.set(name, joint);
       }
+      const palmPlate = handedness === 'left' ? plate : drafting;
+      const otherPlate = handedness === 'left' ? drafting : plate;
       const hand = { getJointMesh: name => joints.get(name) };
       context.setMenuHandTracking({ getHandByHandedness: side => side === handedness ? hand : null });
       for (const yaw of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
         parent.rotation.set(0.2, yaw, -0.25);
         update();
-        assert.ok(watch.isEnabled() && plate.isEnabled(), `${handedness} shows instruments on a flat palm`);
+        assert.ok(watch.isEnabled() && palmPlate.isEnabled(), `${handedness} shows ${handedness === 'left' ? 'instruments' : 'drafting'} on a flat palm`);
+        assert.equal(otherPlate.isEnabled(), false, `${handedness} flat palm shows only its own plate`);
+        if (handedness === 'right') {
+          const draft = scene.getMeshByName('draftingPlateButton-Draft');
+          assert.ok(draft.isEnabled(), 'Drafting plate buttons are shown');
+          const hit = context.getHandMenuHitNearPoint(draft.getAbsolutePosition());
+          assert.equal(hit?.action, 'drawingTool');
+          assert.equal(hit?.tool, 'drafting', 'Draft button opens the drafting tray');
+        }
         const normal = parent.getDirection(Axis.Y).normalize();
         const forward = parent.getDirection(new Vector3(0, 0, forwardZ)).normalize();
         const wrist = joints.get(WebXRHandJoint.WRIST).getAbsolutePosition();
         near(watch.getAbsolutePosition(), wrist.subtract(normal.scale(0.025)).subtract(forward.scale(0.045)),
           'Media watch sits on the back of the wrist toward the forearm');
-        near(plate.getAbsolutePosition(), wrist.add(normal.scale(0.09)).add(forward.scale(0.195)),
+        near(palmPlate.getAbsolutePosition(), wrist.add(normal.scale(0.09)).add(forward.scale(0.195)),
           'Instrument plate is above the palm toward the fingers');
         near(watch.getDirection(Axis.Y).normalize(), normal.negate(), 'Watch faces away from the back of the wrist');
-        near(plate.getDirection(Axis.Y), normal, 'Instrument plate faces outward from the palm');
+        near(palmPlate.getDirection(Axis.Y), normal, 'Instrument plate faces outward from the palm');
         near(watch.absoluteScaling, Vector3.One().scale(0.48), 'Watch has wearable dimensions independent of joint radius');
-        near(plate.absoluteScaling, Vector3.One(), 'Instrument menu does not inherit the joint radius');
+        near(palmPlate.absoluteScaling, Vector3.One(), 'Instrument menu does not inherit the joint radius');
         const button = scene.getMeshByName('handMenuButton->||');
         const world = button.computeWorldMatrix(true);
         const left = Vector3.TransformCoordinates(new Vector3(-0.011, 0, 0), world);
@@ -111,7 +123,7 @@ try {
         assert.ok(Math.abs(Vector3.Distance(left, right) - 0.022 * 0.48) < 1e-6,
           'Transport buttons keep their physical size');
         assert.equal(scene.getMeshByName('handMenuButton-Tools').isEnabled(), false,
-          'Flat palm contains no drafting or utility buttons');
+          'Flat palm does not show the controller utility buttons');
       }
       const summonCount = () => handedness === 'left' ? summons : draftingSummons;
       const beforeSummon = summonCount();
@@ -133,7 +145,7 @@ try {
       parent.rotation.set(0, 0, Math.PI);
       update();
       assert.equal(watch.isEnabled(), true, 'Wearable watch follows a lowered palm');
-      assert.equal(plate.isEnabled(), false, 'Palm down hides instruments');
+      assert.equal(palmPlate.isEnabled(), false, 'Palm down hides instruments');
       parent.rotation.z = Math.PI / 2;
       update();
       assert.equal(watch.isEnabled(), true, 'Wearable watch stays on the wrist edge-on');
@@ -145,12 +157,21 @@ try {
       update();
       now += 600;
       update();
-      assert.equal(plate.isEnabled(), false, 'Closed fingers hide the instrument menu');
+      assert.equal(palmPlate.isEnabled(), false, 'Closed fingers hide the instrument menu');
       assert.equal(summonCount(), beforeSummon, 'Closed fingers do not summon the palette');
       parent.rotation.setAll(0);
       joints.get(WebXRHandJoint.MIDDLE_FINGER_PHALANX_PROXIMAL).position.setAll(0);
       update();
       assert.equal(watch.isEnabled(), false, 'Collapsed/uninitialized joints do not open a menu');
+      joints.get(WebXRHandJoint.MIDDLE_FINGER_PHALANX_PROXIMAL).position.set(0, 0, forwardZ * 0.1);
+      update();
+      assert.equal(watch.isEnabled(), true, 'Restored joints show the wearable watch again');
+      const heldGrip = MeshBuilder.CreateBox('heldControllerGrip', {}, scene);
+      controllers.set('held', { grip: heldGrip, inputSource: { handedness: handedness === 'left' ? 'right' : 'left' } });
+      update();
+      assert.ok(!watch.isEnabled() && !palmPlate.isEnabled(), 'Menus do not auto-show while a controller is connected');
+      controllers.delete('held');
+      heldGrip.dispose();
       context.setMenuHandTracking(null);
       parent.dispose();
     }
@@ -162,7 +183,23 @@ try {
   grip.rotation.set(0.2, 0.7, 0.1);
   controllers.set('left', { grip, inputSource: { handedness: 'left' } });
   update();
-  assert.ok(watch.isEnabled() && plate.isEnabled(), 'Controllers still open both menus');
+  assert.ok(!watch.isEnabled() && !plate.isEnabled(), 'Controllers no longer open menus by pose alone');
+  assert.equal(context.toggleControllerHandMenu('instruments', 'left'), true, 'X opens the instrument menu');
+  update();
+  assert.ok(plate.isEnabled() && !watch.isEnabled(), 'X shows only the instrument menu');
+  assert.equal(scene.getMeshByName('handMenuButton-Tools').isEnabled(), true, 'Instrument menu includes its tool buttons');
+  assert.equal(context.toggleControllerHandMenu('media', 'left'), true, 'Y opens the media watch');
+  update();
+  assert.ok(watch.isEnabled() && plate.isEnabled(), 'X and Y menus can be open together');
+  assert.equal(context.isHandMenuVisible(), true, 'Media watch enables thumbstick jogging');
+  context.toggleControllerHandMenu('instruments', 'left');
+  update();
+  assert.ok(watch.isEnabled() && !plate.isEnabled(), 'Second X press closes only the instrument menu');
+  assert.equal(scene.getMeshByName('handMenuButton-Tools').isEnabled(), false, 'Closing X hides its tool buttons');
+  assert.equal(scene.getMeshByName('handMenuButton->||').isEnabled(), true, 'Media buttons stay with Y');
+  context.toggleControllerHandMenu('instruments', 'left');
+  update();
+  assert.ok(watch.isEnabled() && plate.isEnabled(), 'Controllers open both menus with X and Y');
   near(watch.getAbsolutePosition(), Vector3.TransformCoordinates(
     new Vector3(0, 0.035, 0.13), grip.computeWorldMatrix(true)), 'Controller watch placement is preserved');
   near(plate.getAbsolutePosition(), Vector3.TransformCoordinates(

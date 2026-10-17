@@ -176,6 +176,10 @@ try {
     const buttonActions = new Map([...palmButtons, ...mediaButtons]);
     const formationButtons = [], letterButtons = [];
     let attachedTo = null, trackedHands = null, lastDrawnProgress = -1;
+    let controllerMenuHand = "left", controllerInstrumentMenuOpen = true, controllerMediaMenuOpen = true;
+    let controllerMenuShown = false;
+    let draftingPlateRoot = null, draftingPlateAnchor = null;
+    const draftingPlateButtons = [], draftingPlateMeshes = [];
     let formationLibraryPage = "closed";
     const activeInstrument = "trumpet";
     const BUTTON_Y = 0.09, PALM_UP_DOT_THRESHOLD = 0.5;
@@ -186,7 +190,7 @@ try {
   palmContext.updateHandMenu(palmControllers, 0);
   assert.ok(palmButtons.every(([mesh]) => mesh.isEnabled() && mesh.parent === plateRoot) &&
     plateRoot.parent === palmContext.handMenuAnchor,
-    'Turning the controller palm up displays every instrument over that hand');
+    'X on the controller displays every instrument over that hand');
   assert.ok(mediaButtons.every(([mesh]) => mesh.isEnabled() && mesh.parent === watchRoot) &&
     watchRoot.parent === palmContext.handMenuAnchor && watchRoot.position.y === 0.035,
     'Transport buttons follow the wrist at watch height rather than palm-menu height');
@@ -197,10 +201,16 @@ try {
   assert.ok(mediaButtons.every(([mesh]) => mesh.isEnabled()), 'Watch stays usable in the formation library');
   assert.ok(palmButtons.every(([mesh]) => !mesh.isEnabled()));
   palmUp = false;
+  vm.runInContext('formationLibraryPage = "closed"', palmContext);
   palmContext.updateHandMenu(palmControllers, 0);
-  assert.ok(palmButtons.every(([mesh]) => !mesh.isEnabled()), 'Turning the palm down hides instrument buttons');
+  assert.ok(palmButtons.every(([mesh]) => mesh.isEnabled()) && mediaButtons.every(([mesh]) => mesh.isEnabled()),
+    'Controller menus no longer depend on palm orientation');
+  vm.runInContext('controllerInstrumentMenuOpen = false; controllerMediaMenuOpen = false;', palmContext);
+  palmContext.updateHandMenu(palmControllers, 0);
+  assert.ok(palmButtons.every(([mesh]) => !mesh.isEnabled()), 'Closing X hides instrument buttons');
   assert.ok(mediaButtons.every(([mesh]) => !mesh.isEnabled()));
-  assert.equal(watchFace.isEnabled(), false, 'Watch hides when the wrist is turned away');
+  assert.equal(watchFace.isEnabled(), false, 'Closing Y hides the watch');
+  vm.runInContext('controllerInstrumentMenuOpen = true; controllerMediaMenuOpen = true;', palmContext);
   palmUp = true;
   vm.runInContext('formationLibraryPage = "closed"', palmContext);
   palmContext.updateHandMenu(palmControllers, 0);
@@ -221,7 +231,7 @@ try {
   assert.equal(watchRoot.parent, null);
   assert.ok(plateRoot.position.equals(platePosition) && watchRoot.position.equals(watchPosition),
     'Detached panels do not reattach or move when the wrist returns');
-  console.log('Instrument panel and watch passed: all 17 instrument/guard choices, unobstructed labels, creation actions, visibility toggle, palm-up choices, wrist transport layout, formation-library transport, and hide/release.');
+  console.log('Instrument panel and watch passed: all 17 instrument/guard choices, unobstructed labels, creation actions, visibility toggle, controller X/Y choices, wrist transport layout, formation-library transport, and hide/release.');
 } finally {
   scene.dispose();
   engine.dispose();

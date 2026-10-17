@@ -21,11 +21,12 @@ import { scene } from '../scene/engine';
 import { connectMidiXRSession } from '../audio/midiPlayback';
 import { connectMarcherPOVXR, isMarcherPOVActive, setMarcherPOVEnabled } from '../camera/marcherPOV';
 import { setTableHeightForPosture } from '../menu/settings';
+import { isHandMenuVisible } from '../menu/handMenu';
 import { xrModeInputs, getSelectedXRMode, floorCalibrationToggle, fullScaleVRButton, tabletopScaleButton, giantModeButton, roomWidthInput, roomLengthInput, sittingModeToggle } from '../ui/dom';
 import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS } from '../field/constants';
 import { enterARTabletopMode, exitARTabletopMode, getARPosition, getARScale, getARScaleRange, setARPosition, setARScale, setFieldHeightMode, getFieldHeightMode, setARSurfaceHeight, placeTabletopInFrontOfCamera } from './ar';
 import { getGloveHandTrackingOptions } from './gloveMeshes';
-import { setActiveController, removeActiveController, setHandTracking, getActiveControllers, consumeFloorCalibrationGesture, setHandFloorContact } from '../interaction/pathInteraction';
+import { setActiveController, removeActiveController, setHandTracking, getActiveControllers, consumeFloorCalibrationGesture, setHandFloorContact, isControllerGrabbing } from '../interaction/pathInteraction';
 
 RegisterWebXROculusTouchMotionController();
 WebXRMotionControllerManager.PrioritizeOnlineRepository = true;
@@ -133,9 +134,36 @@ export function initXR(teleportGrid: Mesh) {
   // otherwise "AR" still launches an opaque immersive-vr session (black background).
   let xrExperience: WebXRDefaultExperience | undefined;
   let navigationOptions: IWebXRTeleportationOptions | undefined;
+  // Every controller thumbstick navigates the world unless the media watch is
+  // visible (the media hand's thumbstick then jogs the timeline) or the
+  // controller is holding a marcher (its thumbstick telescopes the marcher).
+  type NavigationHands = "left" | "right" | "both" | "none";
+  function getNavigationHands(): NavigationHands {
+    const mediaVisible = isHandMenuVisible();
+    const mediaHand = getNavigationControllerHand() === "left" ? "right" : "left";
+    const hands = (["left", "right"] as const).filter(hand =>
+      !(mediaVisible && hand === mediaHand) && !isControllerGrabbing(hand));
+    return hands.length === 2 ? "both" : hands[0] ?? "none";
+  }
+  let navigationHands: NavigationHands = "both";
+  const getNavigationHandedness = () =>
+    navigationHands === "both" || navigationHands === "none" ? undefined : navigationHands;
+  function syncNavigationHandedness() {
+    if (!navigationOptions) return;
+    const hands = getNavigationHands();
+    if (hands === navigationHands) return;
+    navigationHands = hands;
+    navigationOptions.forceHandedness = getNavigationHandedness();
+    const teleportation = xrExperience?.teleportation;
+    if (teleportation?.attached) teleportation.detach();
+    teleportGrid.setEnabled(false);
+    updateTeleportationAvailability();
+  }
+  scene.onBeforeRenderObservable.add(syncNavigationHandedness);
   swapControllerRolesToggle?.addEventListener("change", () => {
     if (!navigationOptions) return;
-    navigationOptions.forceHandedness = getNavigationControllerHand();
+    navigationHands = getNavigationHands();
+    navigationOptions.forceHandedness = getNavigationHandedness();
     const teleportation = xrExperience?.teleportation;
     if (teleportation?.attached) teleportation.detach();
     teleportGrid.setEnabled(false);
@@ -352,7 +380,7 @@ export function initXR(teleportGrid: Mesh) {
 
   function updateTeleportationAvailability() {
     const teleportation = xrExperience?.teleportation;
-    const enabled = isTeleportationEnabled();
+    const enabled = isTeleportationEnabled() && navigationHands !== "none";
     if (!teleportation) {
       teleportGrid.setEnabled(false);
       return;
@@ -566,10 +594,11 @@ export function initXR(teleportGrid: Mesh) {
 
       navigationOptions = undefined;
       if (preferredMode !== "immersive-ar") {
+        navigationHands = getNavigationHands();
         navigationOptions = {
           xrInput: xrExperience.input,
           floorMeshes: getFieldFloorMeshes(),
-          forceHandedness: getNavigationControllerHand(),
+          forceHandedness: getNavigationHandedness(),
         };
         xrExperience.teleportation = xrExperience.baseExperience.featuresManager.enableFeature(
           WebXRFeatureName.TELEPORTATION, "stable", navigationOptions

@@ -127,7 +127,7 @@ import { clearDrillLabels, getDrillLabel, setDrillLabels, setDrillLabelsVisible 
 import { clearShowInfo, setShowInfo } from '../menu/showInfoPanel';
 import { cycleMusicStandStaff, setMusicStandVisible, summonMusicStand } from '../menu/musicStand';
 import { isMarcherPOVActive, setMarcherPOVEnabled } from '../camera/marcherPOV';
-import { getHandMenuHit, getHandMenuHitNearPoint, pickMenuControl, setMenuHandTracking, setFormationCommitAvailable, setFormationLibraryOpen, setFormationLibraryPage, setFormationLibraryAnchorAvailable, setEraseModeActive, setEraseHistoryAvailable, setDrillChartPadActive, setInstrumentMenuActive, isHandMenuVisible, isMenuControl } from '../menu/handMenu';
+import { getHandMenuHit, getHandMenuHitNearPoint, pickMenuControl, setMenuHandTracking, setFormationCommitAvailable, setFormationLibraryOpen, setFormationLibraryPage, setFormationLibraryAnchorAvailable, setEraseModeActive, setEraseHistoryAvailable, setDrillChartPadActive, setInstrumentMenuActive, isHandMenuVisible, isMenuControl, toggleControllerHandMenu } from '../menu/handMenu';
 import {
   flipDrillChartPage,
   getDrillChartTransitionSpan,
@@ -140,7 +140,7 @@ import {
 import {
   beginFloatingPanelGrab, beginFloatingPanelPointerDrag, endFloatingPanelGrab,
   getFloatingPanelNear, isFloatingPanelGrabbed, isFloatingPanelMesh,
-  nudgeFloatingPanelDistance, pickFloatingPanel, updateFloatingPanelGrab,
+  nudgeFloatingPanelDistance, pickFloatingPanel, updateFloatingPanelGrab, telescopeFloatingPanelGrab,
   updateFloatingPanelPointerDrag,
 } from '../menu/floatingPanel';
 import type { FormationLetter } from '../menu/handMenu';
@@ -437,6 +437,8 @@ showAllPathsToggle?.addEventListener("change", () => {
 
 const instrumentPaletteButtonHeld = new Map<string, boolean>();
 
+// Left controller X toggles the instrument hand menu; right controller A
+// summons the floating instrument panel.
 function updateInstrumentPaletteFromControllers() {
   controllerRegistry.forEach((controller, handedness) => {
     if (controller.inputSource.hand) return;
@@ -448,7 +450,11 @@ function updateInstrumentPaletteFromControllers() {
     instrumentPaletteButtonHeld.set(handedness, isPressed);
 
     if (isPressed && !wasPressed) {
-      summonInstrumentPanel();
+      if (xButton || (!aButton && controller.inputSource.handedness === "left")) {
+        toggleControllerHandMenu("instruments", controller.inputSource.handedness);
+      } else {
+        summonInstrumentPanel();
+      }
     }
   });
 }
@@ -795,6 +801,7 @@ const PALM_SWEEP_DOWN_DOT = 0.6;
 // Fingertips this many palm lengths from the wrist count as extended.
 const PALM_SWEEP_OPEN_RATIO = 1.6;
 
+// Left controller Y toggles the media watch; right controller B opens the drafting tools.
 function updateDraftingToolsFromControllers() {
   controllerRegistry.forEach((controller, handedness) => {
     if (controller.inputSource.hand) return;
@@ -806,7 +813,11 @@ function updateDraftingToolsFromControllers() {
     draftingToolsButtonHeld.set(handedness, isPressed);
 
     if (isPressed && !wasPressed) {
-      executeDrawingToolAction({ action: 'drawingTool', tool: 'drafting' });
+      if (yButton || (!bButton && controller.inputSource.handedness === "left")) {
+        toggleControllerHandMenu("media", controller.inputSource.handedness);
+      } else {
+        executeDrawingToolAction({ action: 'drawingTool', tool: 'drafting' });
+      }
     }
   });
 }
@@ -817,6 +828,16 @@ function updateDraftingToolsFromControllers() {
 const SCRUB_DEADZONE = 0.2;
 const GRAB_DEPTH_BASE_SPEED = 6;
 const GRAB_DEPTH_TELESCOPE_RATE = 2.5;
+const PANEL_GRAB_DEPTH_SPEED = 1.5;
+
+function getThumbstickAxes(controller: WebXRInputSource) {
+  const stick = controller.motionController?.getComponentOfType("thumbstick");
+  const axes = controller.inputSource.gamepad?.axes;
+  return {
+    x: stick?.axes.x ?? (axes && axes.length >= 4 ? axes[2] : axes?.[0]) ?? 0,
+    y: stick?.axes.y ?? (axes && axes.length >= 4 ? axes[3] : axes?.[1]) ?? 0,
+  };
+}
 const SCRUB_COUNTS_PER_SECOND = 16;
 let scrubRemainder = 0;
 let mediaHandTracking: WebXRHandTracking | null = null;
@@ -2681,7 +2702,18 @@ export function updateRobotPathFromControllers() {
       if (!holding) {
         endFloatingPanelGrab(handedness);
         padGrabButtons.delete(handedness);
-      } else updateFloatingPanelGrab(handedness, getControllerPosition(controller).computeWorldMatrix(true));
+      } else {
+        // Thumbstick forward/back pushes or pulls the held panel instead of navigating.
+        const axis = getThumbstickAxes(controller).y;
+        const deflection = Math.abs(axis) > SCRUB_DEADZONE
+          ? Math.sign(axis) * (Math.min(1, Math.abs(axis)) - SCRUB_DEADZONE) / (1 - SCRUB_DEADZONE)
+          : 0;
+        if (deflection !== 0) {
+          const deltaSeconds = Math.min(0.1, scene.getEngine().getDeltaTime() / 1000);
+          telescopeFloatingPanelGrab(handedness, -deflection * PANEL_GRAB_DEPTH_SPEED * deltaSeconds);
+        }
+        updateFloatingPanelGrab(handedness, getControllerPosition(controller).computeWorldMatrix(true));
+      }
       return;
     }
     if (!marcherGrab && gripPressed && !wasGripPressed && !menuInteractionHeld.get(handedness)) {
@@ -2701,10 +2733,7 @@ export function updateRobotPathFromControllers() {
       if (!gripPressed) finishMarcherGrab(handedness, true);
       else {
         const ray = getControllerRay(controller);
-        const stick = controller.motionController?.getComponentOfType("thumbstick");
-        const axes = controller.inputSource.gamepad?.axes;
-        const axis = stick?.axes.y ?? (axes && axes.length >= 4 ? axes[3] : axes?.[1]) ?? 0;
-        const turnAxis = stick?.axes.x ?? (axes && axes.length >= 4 ? axes[2] : axes?.[0]) ?? 0;
+        const { y: axis, x: turnAxis } = getThumbstickAxes(controller);
         const deflection = (value: number) => Math.abs(value) > SCRUB_DEADZONE
           ? Math.sign(value) * (Math.min(1, Math.abs(value)) - SCRUB_DEADZONE) / (1 - SCRUB_DEADZONE)
           : 0;
@@ -3047,6 +3076,13 @@ export function updateRobotPathFromControllers() {
 // to know which controllers are live without duplicating controller tracking.
 export function getActiveControllers(): ReadonlyMap<string, WebXRInputSource> {
   return getRegisteredControllers();
+}
+
+// A controller holding a marcher, formation, or panel uses its thumbstick for positioning.
+export function isControllerGrabbing(handedness: string): boolean {
+  return marcherGrabs.get(handedness)?.source === "controller" ||
+    isFloatingPanelGrabbed(handedness) ||
+    handInteraction.isControllerFormationPullHand(handedness);
 }
 
 export function consumeFloorCalibrationGesture(handedness: string, source: "hand" | "controller") {

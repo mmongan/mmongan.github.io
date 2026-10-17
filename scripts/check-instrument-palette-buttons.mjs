@@ -9,12 +9,14 @@ const end = source.indexOf('// In placement mode,', start);
 assert.ok(start >= 0 && end > start);
 const controllers = new Map();
 let opens = 0;
+const toggles = [];
 const context = vm.createContext({
   controllerRegistry: controllers, summonInstrumentPanel: () => { opens++; },
+  toggleControllerHandMenu: (menu, hand) => { toggles.push(`${menu}:${hand}`); return true; },
 });
 vm.runInContext(stripTypeScriptTypes(source.slice(start, end)), context);
 const update = () => context.updateInstrumentPaletteFromControllers();
-for (const [hand, button] of [['left', 'x-button'], ['right', 'a-button']]) {
+for (const [hand, button] of [['right', 'a-button']]) {
   let pressed = false;
   controllers.clear();
   controllers.set(hand, {
@@ -61,7 +63,7 @@ context.executeDrawingToolAction = action => {
   draftingOpens++;
 };
 vm.runInContext(stripTypeScriptTypes(source.slice(draftingStart, draftingEnd)), context);
-for (const [hand, button] of [['left', 'y-button'], ['right', 'b-button']]) {
+for (const [hand, button] of [['right', 'b-button']]) {
   let pressed = false;
   controllers.clear();
   controllers.set(hand, {
@@ -96,5 +98,21 @@ controllers.set('trackedDrafting', { inputSource: { hand: {}, gamepad: { buttons
 context.updateDraftingToolsFromControllers();
 assert.equal(draftingOpens, beforeDrafting + 1, 'Tracked hands do not activate Y/B shortcuts');
 assert.ok(source.includes('draftingToolsButtonHeld.delete(handedness);'));
-console.log('Instrument palette shortcuts passed: X, A, hold/repress, raw gamepad fallback, and tracked-hand exclusion.');
+for (const [button, menu, run] of [['x-button', 'instruments', () => context.updateInstrumentPaletteFromControllers()],
+  ['y-button', 'media', () => context.updateDraftingToolsFromControllers()]]) {
+  let pressed = false;
+  controllers.clear();
+  controllers.set('left', { inputSource: { handedness: 'left' },
+    motionController: { getComponent: id => id === button ? { pressed } : undefined } });
+  run();
+  toggles.length = 0;
+  const before = [opens, draftingOpens];
+  pressed = true;
+  run();
+  run();
+  assert.deepEqual(toggles, [`${menu}:left`], `Left ${button} toggles the ${menu} hand menu once per press`);
+  assert.deepEqual([opens, draftingOpens], before, `Left ${button} does not open floating panels`);
+}
+
+console.log('Instrument palette shortcuts passed: A, left X/Y hand-menu toggles, hold/repress, raw gamepad fallback, and tracked-hand exclusion.');
 console.log('Drafting shortcuts passed: Y, B, hold/repress, raw fallback, and no A/X or tracked-hand conflict.');

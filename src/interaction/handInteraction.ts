@@ -1423,6 +1423,8 @@ export function createHandInteraction(paths: HandPathDependencies) {
       if (formationPull?.shapedOffsets) finishFormationPull(true);
     },
     hasPendingFormation: () => formationPull?.shapedOffsets !== null && formationPull !== null,
+    isControllerFormationPullHand: (handedness: string) => formationPull?.originalGrab.source === 'controller' &&
+      !formationPull.floating && (formationPull.anchorHand === handedness || formationPull.pullHand === handedness),
     consumeFloorCalibrationGesture,
     finishFingerPath,
     finishMarcherGrab,
