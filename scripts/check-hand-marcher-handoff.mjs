@@ -7,6 +7,8 @@ import { Scene } from '@babylonjs/core/scene.js';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.js';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.js';
 import { Matrix, Vector3 } from '@babylonjs/core/Maths/math.vector.js';
+import { Ray } from '@babylonjs/core/Culling/ray.js';
+import { Axis } from '@babylonjs/core/Maths/math.axis.js';
 
 const source = readFileSync(new URL('../src/interaction/handInteraction.ts', import.meta.url), 'utf8')
   .replace(/\r\n/g, '\n');
@@ -32,14 +34,16 @@ const robots = new Set();
 let releases = 0;
 let creations = 0;
 let savedFacing;
+let panelPicks = 0;
 const context = vm.createContext({
-  scene, pathRoot, Vector3, Matrix,
+  scene, pathRoot, Vector3, Matrix, Ray, Axis,
   FIELD_WIDTH_YARDS: 53.333, FIELD_LENGTH_YARDS: 120,
   marcherGrabs: grabs, handPinches: pinches, handPlacementDrafts: drafts,
   placementDrafts: new Map(), marcherPinchHands: new Set(),
   formationPull: null, fingerPath: null, sceneGesture: null,
   padHands: new Set(), fingerPushes: new Set(),
-  WebXRHandJoint: { THUMB_TIP: 'thumb', INDEX_FINGER_TIP: 'index' },
+  WebXRHandJoint: { WRIST: 'wrist', MIDDLE_FINGER_PHALANX_PROXIMAL: 'palm',
+    THUMB_TIP: 'thumb', INDEX_FINGER_TIP: 'index' },
   handTracking: { getHandByHandedness: hand => hands.get(hand) },
   findRobotRoot: mesh => robots.has(mesh.parent) ? mesh.parent : null,
   getHandFacingYaw: hand => hand === 'left' ? 0.3 : -0.6,
@@ -58,6 +62,10 @@ const context = vm.createContext({
     grabs.delete(hand);
   },
   finishFingerPush() {}, activateHandMenuAtPoint: () => false,
+  isFloatingPanelGrabbed: () => false,
+  pickFloatingPanel: () => { panelPicks++; return null; },
+  getFloatingPanelNear: () => null, pickMenuControl: () => null,
+  getFloatingPanelButtonNearPoint: () => null,
   updateFormationPullPreview() {},
   MARCHER_TWIST_COMMIT_RADIANS: 20 * Math.PI / 180,
   getRobotCounts: () => [{ rotationY: 0 }, { rotationY: 0 }],
@@ -89,6 +97,7 @@ const functions = [
     for (const [side, hand] of hands) {
       if (hand.closed) pinchedPoints.set(side, hand.point);
     }
+    ${section('    // Pinches that start on a floating panel', "    const left = pinchedPoints.get('left');")}
     transferTrackedHandGrabs(pinchedPoints);
     ${source.slice(loopStart, loopEnd)}
   }`,
@@ -99,8 +108,13 @@ vm.runInContext(stripTypeScriptTypes(functions, { mode: 'transform' }), context)
 const handAt = (point, closed = true) => {
   const hand = {
     point, closed,
+    xrController: { pointer: {
+      getAbsolutePosition: () => point, getDirection: () => Vector3.Forward(),
+    } },
     getJointMesh: joint => ({
-      getAbsolutePosition: () => hand.point.add(new Vector3(
+      getAbsolutePosition: () => joint === 'wrist' || joint === 'palm'
+        ? hand.point.add(new Vector3(0, joint === 'wrist' ? -0.08 : -0.04, 0))
+        : hand.point.add(new Vector3(
         joint === 'thumb' ? -0.005 : 0.005,
         hand.closed ? 0 : (joint === 'thumb' ? -0.04 : 0.04), 0
       )),
@@ -128,45 +142,63 @@ try {
   root.position.setAll(0);
   root.rotation.setAll(0);
   for (const from of ['left', 'right']) {
-    for (const draft of [false, true]) {
-      for (const releaseTogether of [false, true]) {
-        const to = from === 'left' ? 'right' : 'left';
-        grabs.clear(); pinches.clear(); hands.clear(); drafts.clear();
-        scene.incrementRenderId();
-        const robot = context.createStandingMarcher(new Vector3(0, -0.46, 0));
-        if (draft) drafts.add(robot);
-        const originalPoint = new Vector3(0, -0.36, 0);
-        context.beginMarcherGrab(from, robot, originalPoint, 'hand', 0, 0.3);
-        const originalGrab = grabs.get(from);
-        pinches.set(from, true);
-        hands.set(from, handAt(originalPoint, !releaseTogether));
-        hands.set(to, handAt(new Vector3(0.03, -0.35, 0)));
-        const position = robot.position.clone();
-        const beforeReleases = releases;
-        const beforeCreations = creations;
-        context.update();
-        assert.ok(grabs.get(to) === originalGrab, 'Transfers existing grab state to receiving hand');
-        assert.equal(grabs.has(from), false, 'Previous hand no longer owns marcher');
-        near(robot.position, position, 'Handoff does not jump position');
-        assert.equal(robot.rotation.y, 0, 'Handoff does not jump facing');
-        assert.equal(releases, beforeReleases, 'Same-frame release never drops or commits transferred marcher');
-        assert.equal(creations, beforeCreations, 'Handoff does not create a duplicate');
-        assert.equal(context.formationPull, null, 'Tracked-hand handoff never starts formation pulling');
-        hands.get(to).point.x += 0.2;
-        context.update();
-        near(robot.position, position.add(new Vector3(0.2, 0, 0)),
-          `Receiver moves marcher from new contact offset (${from}, ${draft}, ${releaseTogether}; pinches ${JSON.stringify([...pinches])})`);
-        hands.get(from).closed = false;
-        context.update();
-        assert.ok(grabs.get(to) === originalGrab, 'Releasing previous hand does not affect receiver');
-        hands.get(to).closed = false;
-        context.update();
-        assert.equal(releases, beforeReleases + 1, 'Only receiver release finishes placement');
-        robot.dispose();
-        robots.delete(robot);
+    for (const target of ['marcher', 'wrist', 'palm', 'index']) {
+      for (const draft of [false, true]) {
+        for (const releaseTogether of [false, true]) {
+          const to = from === 'left' ? 'right' : 'left';
+          grabs.clear(); pinches.clear(); hands.clear(); drafts.clear();
+          scene.incrementRenderId();
+          const robot = context.createStandingMarcher(new Vector3(0, -0.46, 0));
+          if (draft) drafts.add(robot);
+          const originalPoint = new Vector3(0, target === 'marcher' ? -0.36 : 1.5, 0);
+          context.beginMarcherGrab(from, robot, originalPoint, 'hand', 0, 0.3);
+          const originalGrab = grabs.get(from);
+          pinches.set(from, true);
+          hands.set(from, handAt(originalPoint, !releaseTogether));
+          const contact = target === 'marcher' ? new Vector3(0.03, -0.35, 0)
+            : hands.get(from).getJointMesh(target).getAbsolutePosition().add(new Vector3(0.03, 0, 0));
+          hands.set(to, handAt(contact));
+          if (target !== 'marcher') {
+            assert.equal(context.findMarcherNearHand(contact, from), null,
+              'Hand-only contact does not touch any part of the marcher');
+          }
+          const position = robot.position.clone();
+          const beforeReleases = releases;
+          const beforeCreations = creations;
+          const beforePanelPicks = panelPicks;
+          context.update();
+          assert.equal(panelPicks, beforePanelPicks, 'Hand contact takes priority over panel rays');
+          assert.ok(grabs.get(to) === originalGrab, 'Transfers existing grab state to receiving hand');
+          assert.equal(grabs.has(from), false, 'Previous hand no longer owns marcher');
+          near(robot.position, position, 'Handoff does not jump position');
+          assert.equal(robot.rotation.y, 0, 'Handoff does not jump facing');
+          assert.equal(releases, beforeReleases, 'Same-frame release never drops or commits transferred marcher');
+          assert.equal(creations, beforeCreations, 'Handoff does not create a duplicate');
+          assert.equal(context.formationPull, null, 'Tracked-hand handoff never starts formation pulling');
+          hands.get(to).point.x += 0.2;
+          context.update();
+          near(robot.position, position.add(new Vector3(0.2, 0, 0)),
+            `Receiver moves marcher from new contact offset (${from}, ${draft}, ${releaseTogether}; pinches ${JSON.stringify([...pinches])})`);
+          hands.get(from).closed = false;
+          context.update();
+          assert.ok(grabs.get(to) === originalGrab, 'Releasing previous hand does not affect receiver');
+          hands.get(to).closed = false;
+          context.update();
+          assert.equal(releases, beforeReleases + 1, 'Only receiver release finishes placement');
+          robot.dispose();
+          robots.delete(robot);
+        }
       }
     }
   }
+  grabs.clear(); pinches.clear(); hands.clear(); drafts.clear();
+  hands.set('left', handAt(new Vector3(0, 1.5, 0)));
+  const wrist = hands.get('left').getJointMesh('wrist').getAbsolutePosition();
+  assert.equal(context.isPointNearHoldingHand(wrist.add(new Vector3(0.0449, 0, 0)), 'left'), true,
+    'Hand target includes the 4.5 cm contact margin');
+  assert.equal(context.isPointNearHoldingHand(wrist.add(new Vector3(0.0451, 0, 0)), 'left'), false,
+    'Distant pinches do not count as hand contact');
+  assert.equal(context.isPointNearHoldingHand(wrist, 'right'), false, 'Missing hand cannot receive contact');
   grabs.clear(); pinches.clear(); hands.clear(); drafts.clear();
   hands.set('left', handAt(new Vector3(10, 1.5, 0)));
   context.update();
@@ -180,7 +212,7 @@ try {
     robot: draft, source: 'hand', initialRotationY: 0.8, originalRotationY: 0,
   }, 0.8);
   assert.equal(savedFacing, 0.8, 'Deliberate facing changes made before handoff still persist on drop');
-  console.log('Hand marcher checks passed: left/right draft and placed handoffs, same-frame release, no jumps/duplicates, receiver ownership, ground-level creation, tabletop transforms, and stadium bounds.');
+  console.log('Hand marcher checks passed: left/right draft and placed handoffs via model/wrist/palm/fingertip, panel priority, 4.5 cm contact margin, same-frame release, no jumps/duplicates, receiver ownership, ground-level creation, tabletop transforms, and stadium bounds.');
 } finally {
   scene.dispose();
   engine.dispose();

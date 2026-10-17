@@ -45,6 +45,7 @@ Object.assign(nearContext, {
   placementDrafts: new Map(),
   marcherPinchHands: new Set(),
   formationPull: null,
+  handTracking: null,
 });
 vm.runInContext(transform(handSource.slice(transferStart, transferEnd)), nearContext);
 for (const sourceType of ['hand', 'controller']) {

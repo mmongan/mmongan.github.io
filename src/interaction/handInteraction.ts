@@ -485,7 +485,8 @@ export function createHandInteraction(paths: HandPathDependencies) {
     for (const [from, grab] of marcherGrabs) {
       if (grab.source !== source || (source === 'controller' && !handPlacementDrafts.has(grab.robot) &&
         ![...placementDrafts.values()].includes(grab.robot)) ||
-        findMarcherNearHand(point, from) !== grab.robot) continue;
+        (findMarcherNearHand(point, from) !== grab.robot &&
+          (source !== 'hand' || !isPointNearHoldingHand(point, from)))) continue;
       grab.robot.computeWorldMatrix(true);
       grab.offset = grab.robot.getAbsolutePosition().subtract(point);
       grab.initialRotationY = grab.robot.rotation.y;
@@ -500,6 +501,16 @@ export function createHandInteraction(paths: HandPathDependencies) {
       return true;
     }
     return false;
+  }
+
+  function isPointNearHoldingHand(point: Vector3, handedness: string) {
+    if (handedness !== 'left' && handedness !== 'right') return false;
+    const hand = handTracking?.getHandByHandedness(handedness);
+    if (!hand) return false;
+    return Object.values(WebXRHandJoint).some((joint) => {
+      const position = hand.getJointMesh(joint)?.getAbsolutePosition();
+      return position && Vector3.DistanceSquared(point, position) <= 0.045 ** 2;
+    });
   }
 
   function transferTrackedHandGrabs(pinchedPoints: Map<string, Vector3>) {
@@ -940,10 +951,13 @@ export function createHandInteraction(paths: HandPathDependencies) {
     for (const handedness of ['left', 'right'] as const) {
       const hand = handTracking.getHandByHandedness(handedness);
       const point = pinchedPoints.get(handedness);
+      const handoff = point && !formationPull && !marcherGrabs.has(handedness) &&
+        [...marcherGrabs].some(([from, grab]) =>
+          grab.source === 'hand' && isPointNearHoldingHand(point, from));
       if (isFloatingPanelGrabbed(handedness)) {
         if (hand && point) updateFloatingPanelGrab(handedness, getHandGrabMatrix(hand));
         else endFloatingPanelGrab(handedness);
-      } else if (hand && point && !(handPinches.get(handedness) ?? false)) {
+      } else if (hand && point && !handoff && !(handPinches.get(handedness) ?? false)) {
         const pointer = hand.xrController.pointer;
         const ray = new Ray(pointer.getAbsolutePosition(), pointer.getDirection(Axis.Z), 3);
         const pick = pickFloatingPanel(ray);
