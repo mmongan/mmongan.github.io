@@ -18,8 +18,6 @@ import { addInstrumentButtonModel } from './instrumentButtonModel';
 import { DetachableFloatingPanel, type FloatingPanel } from './floatingPanel';
 import type { FieldDrawingTool } from '../interaction/fieldDrawingGeometry';
 import { getHandMenuPose, getTrackedHandMenuPose, type HandMenuPose } from './handMenuPose';
-import { summonInstrumentPanel } from './instrumentPanel';
-import { executeDrawingToolAction } from '../interaction/fieldDrawingTools';
 
 // How closely the controller's local "up" must line up with world up to
 // count as palm-up (like checking a smartwatch). May need tuning per headset.
@@ -32,7 +30,6 @@ const BUTTON_SIZE = 0.022;
 const BUTTON_Y = 0.09;
 const WATCH_Y = 0.035;
 const WATCH_Z = 0.13;
-const OPEN_PALM_HOLD_MS = 500;
 
 export type FormationLetter =
   | "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" | "K" | "L" | "M"
@@ -42,7 +39,6 @@ export type HandMenuHit =
   | { action: "fieldProjector"; command: import('../interaction/fieldImageProjector').FieldProjectorCommand }
   | { action: "marcherPaint"; command: "show" | "done" | "paintSelected" }
   | { action: "marcherPaintColor"; color: string }
-  | { action: "aslNaming"; command: import('./aslNamingPanel').NamingAction }
   | { action: "drawingTool"; tool: FieldDrawingTool | "camera" | "takePhoto" | "restorePhoto" | "downloadPhoto" | "saveDrafting" | "restoreDrafting" | "deleteDrafting" | "drafting" | "draftSpacingLess" | "draftSpacingMore" | "draftAngle" | "draftSide" | "draftReference" | "addTack" | "laserPin" | "wireReset" | "show" | "stencils" | "cutters" | "hide" | "smaller" | "larger" | "stop" | "formation" | "path" | "synchronizedRoutes" | "undo" | "clear" }
   | { action: "playPause" | "rewind" | "fastForward" | "stepBack" | "stepForward" | "fullScaleVR" | "tabletopScale" | "commitFormation" | "eraseMode" | "undoErase" | "redoErase" | "musicStandStaffToggle" }
   | { action: "formationLibrary" | "formationLibraryBack" | "formationLibraryClose" | "lettersLibrary" }
@@ -201,9 +197,9 @@ let formationButtons: Mesh[] = [];
 let letterButtons: Mesh[] = [];
 let attachedTo: AbstractMesh | null = null;
 let handMenuAnchor: TransformNode | null = null;
+let watchAnchor: TransformNode | null = null;
 let lastDrawnProgress = -1;
 let trackedHands: WebXRHandTracking | null = null;
-const openPalmHolds = new Map<string, { wrist: AbstractMesh; since: number; summoned: boolean }>();
 
 class MediaWatchPanel extends DetachableFloatingPanel {
   override get canGrab() { return !trackedHands; }
@@ -258,7 +254,6 @@ export function setFormationLibraryAnchorAvailable(available: boolean) {
 
 export function setMenuHandTracking(tracking: WebXRHandTracking | null) {
   trackedHands = tracking;
-  openPalmHolds.clear();
   if (tracking && watchPanel) {
     watchPanel.release();
     watchPanel.userPlaced = false;
@@ -301,6 +296,7 @@ export function isHandMenuVisible(): boolean {
 function ensureMenuMeshes() {
   if (progressBar) return;
   handMenuAnchor = new TransformNode("handMenuAnchor", scene);
+  watchAnchor = new TransformNode("mediaWatchAnchor", scene);
   progressBar = createProgressBarPlane();
   const spacing = BUTTON_SIZE + 0.006;
   buttons = [
@@ -312,6 +308,7 @@ function ensureMenuMeshes() {
   ];
   watchButtons = [...buttons];
   watchRoot = new TransformNode("mediaWatchRoot", scene);
+  watchRoot.scaling.setAll(0.48);
   watchButtons.forEach(button => {
     button.parent = watchRoot;
     button.position.y = 0;
@@ -323,16 +320,28 @@ function ensureMenuMeshes() {
   watchMaterial.diffuseColor = new Color3(0.04, 0.06, 0.1);
   watchMaterial.emissiveColor = new Color3(0.015, 0.025, 0.04);
   watchMaterial.specularColor = Color3.Black();
+  const caseMaterial = new StandardMaterial("mediaWatchCaseMaterial", scene);
+  caseMaterial.diffuseColor = new Color3(0.26, 0.29, 0.33);
+  caseMaterial.specularColor = new Color3(0.7, 0.72, 0.75);
+  caseMaterial.specularPower = 64;
   const face = MeshBuilder.CreateBox("mediaWatchFace",
-    { width: 0.16, height: 0.008, depth: 0.085 }, scene);
-  const strap = MeshBuilder.CreateBox("mediaWatchStrap",
-    { width: 0.18, height: 0.006, depth: 0.035 }, scene);
-  watchMeshes = [strap, face];
+    { width: 0.164, height: 0.012, depth: 0.09 }, scene);
+  const bezel = MeshBuilder.CreateBox("mediaWatchBezel",
+    { width: 0.18, height: 0.025, depth: 0.106 }, scene);
+  const strap = MeshBuilder.CreateTorus("mediaWatchStrap",
+    { diameter: 0.15, thickness: 0.018, tessellation: 24 }, scene);
+  strap.rotation.x = Math.PI / 2;
+  strap.scaling.z = 2;
+  const crown = MeshBuilder.CreateCylinder("mediaWatchCrown",
+    { diameter: 0.025, height: 0.018, tessellation: 12 }, scene);
+  crown.rotation.z = Math.PI / 2;
+  crown.position.x = 0.096;
+  watchMeshes = [strap, bezel, face, crown];
   watchMeshes.forEach(mesh => {
-    mesh.material = watchMaterial;
+    mesh.material = mesh === bezel || mesh === crown ? caseMaterial : watchMaterial;
     mesh.isPickable = true;
     mesh.parent = watchRoot;
-    mesh.position.y = mesh === strap ? -0.014 : -0.006;
+    mesh.position.y = mesh === strap ? -0.07 : mesh === bezel ? -0.016 : -0.008;
     mesh.setEnabled(false);
   });
   watchPanel = new MediaWatchPanel(watchRoot,
@@ -380,9 +389,6 @@ function ensureMenuMeshes() {
   const cutterButton = createButton("Cut", spacing, { action: "drawingTool", tool: "cutters" });
   cutterButton.position.z = 0.075;
   buttons.push(cutterButton);
-  const namingButton = createButton("Name", -spacing * 2, { action: "aslNaming", command: "toggle" });
-  namingButton.position.z = 0.075;
-  buttons.push(namingButton);
   const paintButton = createButton("Paint", spacing * 2, { action: "marcherPaint", command: "show" });
   paintButton.position.z = 0.075;
   buttons.push(paintButton);
@@ -512,7 +518,7 @@ export function updateHandMenu(
   let palmUpGrip: AbstractMesh | null = null;
   let menuPose: HandMenuPose | null = null;
   let trackedPose: HandMenuPose | null = null;
-  const openHands = new Set<string>();
+  let flatPalm = false;
   for (const controller of controllers.values()) {
     const grip = controller.grip;
     if (!grip || controller.inputSource.hand) continue;
@@ -556,25 +562,14 @@ export function updateHandMenu(
         ] as const;
         if (fingers.every(([tip, knuckle]) =>
           Vector3.Distance(joint(tip), wristPoint) > Vector3.Distance(joint(knuckle), wristPoint) * 1.35)) {
-          openHands.add(handedness);
-          let hold = openPalmHolds.get(handedness);
-          if (!hold || hold.wrist !== wrist) {
-            hold = { wrist, since: performance.now(), summoned: false };
-            openPalmHolds.set(handedness, hold);
-          }
-          if (!hold.summoned && performance.now() - hold.since >= OPEN_PALM_HOLD_MS) {
-            if (handedness === 'left') summonInstrumentPanel();
-            else executeDrawingToolAction({ action: 'drawingTool', tool: 'drafting' });
-            hold.summoned = true;
-          }
+          flatPalm = true;
+          menuPose = pose;
+          palmUpGrip = wrist;
         }
       }
     }
   }
 
-  for (const handedness of openPalmHolds.keys()) {
-    if (!openHands.has(handedness)) openPalmHolds.delete(handedness);
-  }
   if (!menuPose && trackedPose) menuPose = trackedPose;
   if (handMenuAnchor && menuPose) {
     handMenuAnchor.position.copyFrom(menuPose.position);
@@ -582,14 +577,25 @@ export function updateHandMenu(
     handMenuAnchor.computeWorldMatrix(true);
   }
   if (watchRoot && watchPanel && !watchPanel.userPlaced) {
-    watchRoot.parent = handMenuAnchor;
-    watchRoot.position.set(0, WATCH_Y, WATCH_Z);
+    if (trackedPose && watchAnchor) {
+      const wristDirection = Vector3.Forward().rotateByQuaternionToRef(trackedPose.rotation, new Vector3());
+      const pose = getHandMenuPose(trackedPose.position, trackedPose.normal.negate(), wristDirection);
+      if (pose) {
+        watchAnchor.position.copyFrom(pose.position);
+        watchAnchor.rotationQuaternion = pose.rotation;
+      }
+      watchRoot.parent = watchAnchor;
+      watchRoot.position.set(0, 0.025, 0.045);
+    } else {
+      watchRoot.parent = handMenuAnchor;
+      watchRoot.position.set(0, WATCH_Y, WATCH_Z);
+    }
     watchRoot.setEnabled(palmUpGrip !== null || trackedPose !== null);
   }
   if (instrumentPlateRoot && instrumentPlatePanel && !instrumentPlatePanel.userPlaced) {
     instrumentPlateRoot.parent = handMenuAnchor;
     instrumentPlateRoot.position.set(0, BUTTON_Y, -0.195);
-    instrumentPlateRoot.setEnabled(palmUpGrip !== null && trackedPose === null && formationLibraryPage === "closed");
+    instrumentPlateRoot.setEnabled(trackedPose ? flatPalm : palmUpGrip !== null && formationLibraryPage === "closed");
   }
   instrumentPlateButtons.forEach(button => {
     button.setEnabled(instrumentPlateRoot?.isEnabled() ?? false);
@@ -609,7 +615,7 @@ export function updateHandMenu(
     drawProgressBar(progressBar.ctx, progressBar.texture, shownProgress);
   }
 
-  if (!palmUpGrip) {
+  if (!palmUpGrip || trackedPose) {
     buttons.filter(button => !watchButtons.includes(button) && !instrumentPlateButtons.includes(button))
       .forEach(button => button.setEnabled(false));
     formationButtons.forEach((button) => button.setEnabled(false));

@@ -117,7 +117,6 @@ import { createHandInteraction } from './handInteraction';
 import { executeMarcherPaintAction, initMarcherPaint, isMarcherPainting, stopMarcherPainting, tryPaintMarcher } from './marcherPaint';
 import { executeFieldProjectorAction, initFieldImageProjector } from './fieldImageProjector';
 import { EditHistory } from './editHistory';
-import { executeASLNamingAction, initASLNaming, isFingerspellingNamingActive, setNamingHandTracking } from '../menu/aslNaming';
 import {
   isScoreboardGaitPick,
   isScoreboardHornPosePick,
@@ -614,7 +613,7 @@ function updateScrubFromControllers(deltaSeconds: number) {
   if (hasMediaThumbstick || marcherGrabs.get(mediaHand)?.source === "controller") {
     resetThumbJog(thumbJogState);
   } else {
-    axisValue = isFingerspellingNamingActive() ? 0 : getHandThumbJogAxis(deltaSeconds);
+    axisValue = getHandThumbJogAxis(deltaSeconds);
   }
 
   if (Math.abs(axisValue) <= SCRUB_DEADZONE) {
@@ -2071,9 +2070,6 @@ function executeMenuAction(hit: NonNullable<ReturnType<typeof getHandMenuHit>>) 
     case "musicStandSummon":
       summonMusicStand();
       break;
-    case "aslNaming":
-      executeASLNamingAction(hit.command);
-      break;
     case "drillChartHide":
       setDrillChartPadVisible(false);
       break;
@@ -2259,7 +2255,6 @@ const handInteraction = createHandInteraction({
 const { marcherGrabs } = handInteraction;
 
 export function setHandTracking(tracking: WebXRHandTracking | null) {
-  setNamingHandTracking(tracking);
   mediaHandTracking = tracking;
   resetThumbJog(thumbJogState);
   scrubRemainder = 0;
@@ -2291,7 +2286,6 @@ function finishMarcherGrab(handedness: string, commit: boolean) {
 }
 
 export function updateTabletopHands() {
-  if (isFingerspellingNamingActive()) return;
   handInteraction.updateTabletopHands();
   setFormationCommitAvailable(handInteraction.hasPendingFormation());
   setFormationLibraryAnchorAvailable(
@@ -2304,7 +2298,6 @@ function finishFingerPath(commit: boolean) {
 }
 
 export function updateHandPathDrawing() {
-  if (isFingerspellingNamingActive()) return;
   handInteraction.updateHandPathDrawing();
 }
 
@@ -3056,13 +3049,6 @@ export function initInteraction() {
     snap: snapToStepGrid,
     snapAngle,
     constrain: constrainFormationMovement,
-  });
-  initASLNaming(() => selectedRobot, () => {
-    stopMarcherPainting();
-    handInteraction.prepareForErase();
-    selectionTools?.disable();
-    setEraseMode(false);
-    executeDrawingToolAction({ action: 'drawingTool', tool: 'stop' });
   });
   setEraseMode(!!eraseModeToggle?.checked);
   undoEraseButton?.addEventListener("click", () => executeMenuAction({ action: "undoErase" }));

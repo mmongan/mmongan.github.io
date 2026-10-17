@@ -53,6 +53,11 @@ try {
   const plate = scene.getTransformNodeByName('instrumentPlateRoot');
   assert.equal(watch.isEnabled(), false);
   assert.equal(plate.isEnabled(), false);
+  for (const name of ['mediaWatchBezel', 'mediaWatchStrap', 'mediaWatchCrown']) {
+    assert.ok(scene.getMeshByName(name), 'Watch includes a case, wraparound strap, and crown');
+  }
+  const caseSize = scene.getMeshByName('mediaWatchBezel').getBoundingInfo().boundingBox.extendSize.scale(2 * 0.48);
+  assert.ok(caseSize.x < 0.09 && caseSize.z < 0.06, 'Watch case has wearable dimensions');
 
   for (const rightHanded of [false, true]) {
     scene.useRightHandedSystem = rightHanded;
@@ -86,24 +91,26 @@ try {
       for (const yaw of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
         parent.rotation.set(0.2, yaw, -0.25);
         update();
-        assert.ok(watch.isEnabled() && !plate.isEnabled(), `${handedness} wears watch without the old palm plate`);
+        assert.ok(watch.isEnabled() && plate.isEnabled(), `${handedness} shows instruments on a flat palm`);
         const normal = parent.getDirection(Axis.Y).normalize();
         const forward = parent.getDirection(new Vector3(0, 0, forwardZ)).normalize();
         const wrist = joints.get(WebXRHandJoint.WRIST).getAbsolutePosition();
-        near(watch.getAbsolutePosition(), wrist.add(normal.scale(0.035)).subtract(forward.scale(0.13)),
-          'Media watch is above the palm side of the wrist');
+        near(watch.getAbsolutePosition(), wrist.subtract(normal.scale(0.025)).subtract(forward.scale(0.045)),
+          'Media watch sits on the back of the wrist toward the forearm');
         near(plate.getAbsolutePosition(), wrist.add(normal.scale(0.09)).add(forward.scale(0.195)),
           'Instrument plate is above the palm toward the fingers');
-        near(watch.getDirection(Axis.Y), normal, 'Watch faces outward from the palm');
+        near(watch.getDirection(Axis.Y).normalize(), normal.negate(), 'Watch faces away from the back of the wrist');
         near(plate.getDirection(Axis.Y), normal, 'Instrument plate faces outward from the palm');
-        near(watch.absoluteScaling, Vector3.One(), 'Watch does not inherit the wrist joint radius');
+        near(watch.absoluteScaling, Vector3.One().scale(0.48), 'Watch has wearable dimensions independent of joint radius');
         near(plate.absoluteScaling, Vector3.One(), 'Instrument menu does not inherit the joint radius');
         const button = scene.getMeshByName('handMenuButton->||');
         const world = button.computeWorldMatrix(true);
         const left = Vector3.TransformCoordinates(new Vector3(-0.011, 0, 0), world);
         const right = Vector3.TransformCoordinates(new Vector3(0.011, 0, 0), world);
-        assert.ok(Math.abs(Vector3.Distance(left, right) - 0.022) < 1e-6,
+        assert.ok(Math.abs(Vector3.Distance(left, right) - 0.022 * 0.48) < 1e-6,
           'Transport buttons keep their physical size');
+        assert.equal(scene.getMeshByName('handMenuButton-Tools').isEnabled(), false,
+          'Flat palm contains no drafting or utility buttons');
       }
       const summonCount = () => handedness === 'left' ? summons : draftingSummons;
       const beforeSummon = summonCount();
@@ -112,10 +119,10 @@ try {
       assert.equal(summonCount(), beforeSummon, 'Open palm waits 500 ms');
       now += 1;
       update();
-      assert.equal(summonCount(), beforeSummon + 1, 'Left palm opens instruments; right palm opens drafting');
+      assert.equal(summonCount(), beforeSummon, 'Flat palm does not summon a separate floating palette');
       now += 1000;
       update();
-      assert.equal(summonCount(), beforeSummon + 1, 'Held palm summons once, without repeated repositioning');
+      assert.equal(summonCount(), beforeSummon, 'Holding flat palm only keeps the instrument menu attached');
       const watchPosition = watch.getAbsolutePosition().clone();
       context.beginFloatingPanelGrab('other', Matrix.Identity(), undefined, watchPosition, 0.03, true);
       assert.notEqual(watch.parent, null, 'Tracked watch cannot be detached');
@@ -137,7 +144,8 @@ try {
       update();
       now += 600;
       update();
-      assert.equal(summonCount(), beforeSummon + 1, 'Closed fingers do not summon the palette');
+      assert.equal(plate.isEnabled(), false, 'Closed fingers hide the instrument menu');
+      assert.equal(summonCount(), beforeSummon, 'Closed fingers do not summon the palette');
       parent.rotation.setAll(0);
       joints.get(WebXRHandJoint.MIDDLE_FINGER_PHALANX_PROXIMAL).position.setAll(0);
       update();

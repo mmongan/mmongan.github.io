@@ -1,19 +1,5 @@
 // Shared DOM references for the canvas and application controls.
 export const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
-export const aslNamingEnabled = document.getElementById("aslNamingEnabled") as HTMLInputElement | null;
-export const aslNamingHand = document.getElementById("aslNamingHand") as HTMLSelectElement | null;
-export const aslNamingTarget = document.getElementById("aslNamingTarget") as HTMLSelectElement | null;
-export const aslTrainingLetter = document.getElementById("aslTrainingLetter") as HTMLSelectElement | null;
-export const aslLetterReference = document.getElementById("aslLetterReference") as HTMLOutputElement | null;
-export const aslLetterImage = document.getElementById("aslLetterImage") as HTMLImageElement | null;
-export const aslTrainedLetters = document.getElementById("aslTrainedLetters") as HTMLOutputElement | null;
-export const aslRecordLetter = document.getElementById("aslRecordLetter") as HTMLButtonElement | null;
-export const aslAcceptLetter = document.getElementById("aslAcceptLetter") as HTMLButtonElement | null;
-export const aslNameText = document.getElementById("aslNameText") as HTMLInputElement | null;
-export const aslNamingStatus = document.getElementById("aslNamingStatus") as HTMLOutputElement | null;
-export const aslNameBackspace = document.getElementById("aslNameBackspace") as HTMLButtonElement | null;
-export const aslNameSpace = document.getElementById("aslNameSpace") as HTMLButtonElement | null;
-export const aslApplyName = document.getElementById("aslApplyName") as HTMLButtonElement | null;
 export const ghostBandToggle = document.getElementById("ghostBandToggle") as HTMLInputElement | null;
 export const ghostBandTimeline = document.getElementById("ghostBandTimeline") as HTMLInputElement | null;
 export const ghostBandStatus = document.getElementById("ghostBandStatus") as HTMLOutputElement | null;

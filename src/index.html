@@ -434,30 +434,6 @@
           <label class="radio-option"><input id="marcherFootprintsToggle" type="checkbox" /><span>Show selected marcher's full-route footprints</span></label>
           <output id="marcherFootprintsStatus" class="settings-status" aria-live="polite"></output>
           <p>Select a marcher on the field. Cyan left and gold right prints show sole contact anchors sampled from the same leg solver as playback at each stance entry along the full route. Gait cadence, MIDI beat units, facing, and bounded stride placement are included. Initial planted feet are included; repeated mark-time contacts overlap. Prints are projected onto the turf, not a recording of heel/toe pressure or a playback trail. Selection, gait, timing, or route changes update them. The overlay does not edit the drill or move playback and is hidden during floor calibration.</p>
-          <details>
-            <summary>ASL fingerspelled names (personal calibration)</summary>
-            <p>Experimental, not a built-in ASL translator. Teach at least two letters using your own ASL signs, then explicitly accept recognized letters. Record the entire motion for J/Z. Templates stay in memory until reload. Naming suspends hand grabbing/drawing and hand-thumb jogging.</p>
-            <label class="radio-option"><input id="aslNamingEnabled" type="checkbox" /><span>Enable fingerspelling input</span></label>
-            <label for="aslNamingHand">Signing hand</label>
-            <select id="aslNamingHand"><option value="right">Right</option><option value="left">Left</option></select>
-            <label for="aslNamingTarget">Name target</label>
-            <select id="aslNamingTarget"><option value="marcher">Selected marcher</option><option value="wire">Remembered wire shape</option></select>
-            <label for="aslTrainingLetter">Letter or digit to teach (A-Z, 0-9)</label>
-            <select id="aslTrainingLetter" aria-describedby="aslLetterReference"></select>
-            <img id="aslLetterImage" alt="ASL letter A handshape" width="240" height="200" style="display:block;max-width:100%;object-fit:contain;background:white;border-radius:8px" />
-            <p>Hand images: WPClipart and Danielle-Claude Belanger, public domain, via <a href="https://commons.wikimedia.org/wiki/File:Sign_language_A.svg" target="_blank" rel="noopener noreferrer">Wikimedia Commons</a>. <a href="./asl/ATTRIBUTION.txt" target="_blank" rel="noopener noreferrer">Image credits</a>.</p>
-            <output id="aslLetterReference" class="settings-status"></output>
-            <output id="aslTrainedLetters" class="settings-status" aria-live="polite"></output>
-            <p>A-Z and 0-9 are reference signs, not recognition templates. J and Z require motion. For isolated numbers 1-5, the palm generally faces the signer; number orientation varies with context. Zero/O and nine/F share handshapes and may be ambiguous to this recognizer. Use your chosen signing hand and learn orientation and movement from an ASL instructor.</p>
-            <button id="aslRecordLetter" type="button">Record sign (1.2 seconds)</button>
-            <output id="aslNamingStatus" class="settings-status" aria-live="polite"></output>
-            <button id="aslAcceptLetter" type="button" disabled>Accept recognized letter</button>
-            <label for="aslNameText">Name (editable fallback)</label>
-            <input id="aslNameText" maxlength="40" autocomplete="off" />
-            <button id="aslNameBackspace" type="button">Backspace</button>
-            <button id="aslNameSpace" type="button">Space</button>
-            <button id="aslApplyName" type="button">Apply name</button>
-          </details>
           <label class="settings-label" for="ghostBandTimeline">Ghost-band timeline</label>
           <input id="ghostBandTimeline" type="range" min="0" max="1" step="0.1" value="0" disabled />
           <output id="ghostBandStatus" class="settings-status" aria-live="polite"></output>
