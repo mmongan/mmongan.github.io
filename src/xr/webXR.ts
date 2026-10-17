@@ -23,7 +23,7 @@ import { connectMarcherPOVXR, isMarcherPOVActive, setMarcherPOVEnabled } from '.
 import { setTableHeightForPosture } from '../menu/settings';
 import { xrModeInputs, getSelectedXRMode, floorCalibrationToggle, fullScaleVRButton, tabletopScaleButton, giantModeButton, roomWidthInput, roomLengthInput, sittingModeToggle } from '../ui/dom';
 import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS } from '../field/constants';
-import { enterARTabletopMode, exitARTabletopMode, getARPosition, getARScale, getARScaleRange, setARPosition, setARScale, setFieldHeightMode, getFieldHeightMode, setARSurfaceHeight } from './ar';
+import { enterARTabletopMode, exitARTabletopMode, getARPosition, getARScale, getARScaleRange, setARPosition, setARScale, setFieldHeightMode, getFieldHeightMode, setARSurfaceHeight, placeTabletopInFrontOfCamera } from './ar';
 import { getGloveHandTrackingOptions } from './gloveMeshes';
 import { setActiveController, removeActiveController, setHandTracking, getActiveControllers, consumeFloorCalibrationGesture, setHandFloorContact } from '../interaction/pathInteraction';
 
@@ -315,6 +315,8 @@ export function initXR(teleportGrid: Mesh) {
       applyPostureHeight(baseExperience.camera);
       updateTableHeightFromCamera(baseExperience.camera, detectedSitting ?? !!sittingModeToggle?.checked);
     }
+    const camera = baseExperience?.state === WebXRState.IN_XR ? baseExperience.camera : scene.activeCamera;
+    if (camera) placeTabletopInFrontOfCamera(camera);
     updateTeleportationAvailability();
   });
 
@@ -647,6 +649,10 @@ export function initXR(teleportGrid: Mesh) {
             scene.autoClear = true;
             enterARTabletopMode();
             if (giantModeActive) applyRoomScale();
+            else if (state === WebXRState.IN_XR) {
+              placeTabletopInFrontOfCamera(xrExperience!.baseExperience.camera);
+              updateTableHeightFromCamera(xrExperience!.baseExperience.camera, detectedSitting ?? !!sittingModeToggle?.checked);
+            }
           } else {
             scene.clearColor = new Color4(0.03, 0.05, 0.09, 1);
             exitARTabletopMode();

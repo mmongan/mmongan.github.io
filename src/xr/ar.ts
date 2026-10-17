@@ -1,4 +1,5 @@
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
+import type { Camera } from '@babylonjs/core/Cameras/camera.pure';
 import { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.pure';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
 import { Observable } from '@babylonjs/core/Misc/observable.pure';
@@ -125,6 +126,21 @@ export function setARRotation(yaw: number) {
   arPivot.rotation.y = yaw;
 }
 
+export function placeTabletopInFrontOfCamera(camera: Camera) {
+  camera.computeWorldMatrix();
+  const forward = camera.getDirection(new Vector3(0, 0, scene.useRightHandedSystem ? -1 : 1));
+  forward.y = 0;
+  if (forward.lengthSquared() < 0.000001) {
+    const right = camera.getDirection(Vector3.Right());
+    forward.set(-right.z, 0, right.x);
+    if (scene.useRightHandedSystem) forward.negateInPlace();
+  }
+  forward.normalize();
+  arPivot.position.x = camera.globalPosition.x + forward.x * 0.6;
+  arPivot.position.z = camera.globalPosition.z + forward.z * 0.6;
+  setARRotation(Math.atan2(forward.x, forward.z));
+}
+
 // Height is independent of AR/VR mode so it carries over across mode switches.
 export function getARHeight() {
   return arPivot.position.y;
@@ -191,11 +207,10 @@ export function enterARTabletopMode() {
   setARScale(AR_SCALE_DEFAULT);
   setARRotation(0);
   setFieldHeightMode("table");
-  arPivot.position.x = 0;
-  arPivot.position.z = 0.6;
   arPivot.rotation.setAll(0);
   arRoot.position.setAll(0);
   globalScaleRoot.position.setAll(0);
+  if (scene.activeCamera) placeTabletopInFrontOfCamera(scene.activeCamera);
 }
 
 export function exitARTabletopMode() {
