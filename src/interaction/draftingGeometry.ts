@@ -3,6 +3,36 @@ import { FIELD_SURFACE_Y } from '../field/constants';
 
 export type DraftingTool = 'tSquare' | 'setSquare' | 'dividers' | 'tape' | 'spline' | 'offset' | 'annotation' | 'stickyNote';
 
+export function snapDraftingPoint(point: Vector3, guides: readonly (readonly Vector3[])[],
+  gridInterval: number | null, radius = 0.25): Vector3 {
+  let best: Vector3 | null = null;
+  let distance = radius;
+  const consider = (candidate: Vector3) => {
+    const next = Math.hypot(candidate.x - point.x, candidate.z - point.z);
+    if (next <= distance) { distance = next; best = new Vector3(candidate.x, point.y, candidate.z); }
+  };
+  for (const points of guides) {
+    if (points.length < 2) continue;
+    consider(points[0]); consider(points[points.length - 1]);
+  }
+  if (best) return best;
+  for (const points of guides) {
+    for (let i = 1; i < points.length; i++) {
+      const a = points[i - 1], b = points[i];
+      const dx = b.x - a.x, dz = b.z - a.z, length = dx * dx + dz * dz;
+      if (length < 1e-12) continue;
+      const t = Math.max(0, Math.min(1, ((point.x - a.x) * dx + (point.z - a.z) * dz) / length));
+      consider(new Vector3(a.x + t * dx, point.y, a.z + t * dz));
+    }
+  }
+  if (best) return best;
+  if (gridInterval !== null && Number.isFinite(gridInterval) && gridInterval >= 0.5 && gridInterval <= 20) {
+    consider(new Vector3(Math.round(point.x / gridInterval) * gridInterval, point.y,
+      Math.round(point.z / gridInterval) * gridInterval));
+  }
+  return best ?? point.clone();
+}
+
 export function constrainedDraftLine(start: Vector3, end: Vector3, angle: number | null) {
   const delta = end.subtract(start);
   const heading = Math.atan2(delta.z, delta.x);

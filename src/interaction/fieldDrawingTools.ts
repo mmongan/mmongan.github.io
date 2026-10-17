@@ -12,7 +12,8 @@ import { DetachableFloatingPanel, FloatingPanel } from '../menu/floatingPanel';
 import { registerMenuButton, type HandMenuHit } from '../menu/handMenu';
 import { drawPanelButton } from '../menu/panelStyle';
 import { FIELD_SURFACE_Y } from '../field/constants';
-import { buildLaserGuide, buildToolGuide, guideTouchesSweep, isGuideOnField, type FieldDrawingTool } from './fieldDrawingGeometry';
+import { buildLaserGuide, buildToolGuide, guideTouchesSweep, isGuideOnField, type FieldDrawingTool,
+  type DrawingToolCommand } from './fieldDrawingGeometry';
 import { drawingToolsButton, stencilTrayButton, cookieCutterTrayButton, floorCalibrationToggle,
   draftingToolsButton, draftingSpacing, draftingAngle, draftingText } from '../ui/dom';
 import { draftingSaveButton, draftingRestoreButton, draftingDeleteButton, draftingSaveStatus,
@@ -20,7 +21,15 @@ import { draftingSaveButton, draftingRestoreButton, draftingDeleteButton, drafti
   draftingPhotoDownloadButton, draftingPhotoPreview } from '../ui/dom';
 import { createMemoryWire } from './memoryWire';
 import { getARScale, getARScaleRange, onARScaleChangedObservable } from '../xr/ar';
-import { constrainedDraftLine, divideDraftLine, measureDraftLine, offsetDraftLine, sampleDraftSpline } from './draftingGeometry';
+import { constrainedDraftLine, divideDraftLine, measureDraftLine, offsetDraftLine, sampleDraftSpline, snapDraftingPoint } from './draftingGeometry';
+import { createDraftingTablePanel } from './draftingTablePanel';
+import { draftingModeToggle, draftingTableControls, draftingTableStatus } from '../ui/dom';
+import { tabletopScaleButton } from '../ui/dom';
+import { setMarcherPOVEnabled } from '../camera/marcherPOV';
+import { createDraftingFieldPreview } from '../field/draftingFieldPreview';
+import { getARPosition, setARPosition, getARRotation, setARRotation, setARScale,
+  getFieldHeightMode, setFieldHeightMode, getFieldHeightSetting, setARSurfaceHeight,
+  placeTabletopInFrontOfCamera } from '../xr/ar';
 import { DRAFTING_WORKSPACE_KEY, parseDraftingWorkspace, serializeDraftingWorkspace,
   type DraftingWorkspace, type WorkspaceGuide } from './draftingWorkspace';
 import { captureDraftingPhoto, DRAFTING_CAMERA_KEY, parseDraftingPhoto, type DraftingPhoto } from './draftingCamera';
@@ -65,12 +74,14 @@ export function initFieldDrawingTools(deps: DrawingDependencies) {
 }
 export function executeDrawingToolAction(action: Extract<HandMenuHit, { action: 'drawingTool' }>) {
   drawing?.action(action.tool);
+  drawing?.updateTableStatus();
 }
 export function handleDrawingPointer(type: 'down' | 'move' | 'up', point: Vector3 | null) {
   return drawing?.pointer(type, point) ?? false;
 }
 export function isDrawingPointerActive() { return drawing?.pointerActive() ?? false; }
 export function isFieldDrawingToolActive() { return drawing?.active() ?? false; }
+export function isDraftingTableMode() { return drawing?.tableMode() ?? false; }
 /** Toggles selection of the guide nearest a root-local point. `vertical` also requires the point near the yarn height. */
 export function selectDrawingGuideNear(point: Vector3, radius: number, vertical = false) {
   return drawing?.selectNear(point, radius, vertical) ?? false;
@@ -162,6 +173,14 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
   let restoreArmedUntil = 0;
   let restoringPhoto = false;
   let takingPhoto = false;
+  const noteWidth = 2.4, noteDepth = 1.2;
+  let tableMode = false;
+  let fullSizePreview = false;
+  let previousFieldPose: { position: Vector3; scale: number; yaw: number; heightMode: 'floor' | 'table' } | null = null;
+  const fieldPreview = createDraftingFieldPreview(deps.root);
+  let tableSnap = true;
+  let previousGridVisible = false;
+  const tablePanel = createDraftingTablePanel();
   const yarnRadius = 0.012;
   const trayRoot = new TransformNode('drawingToolTray', scene);
   const stencilRoot = new TransformNode('fieldStencilTray', scene);
@@ -249,6 +268,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
   button('Straighten wire', -0.2, 0.5, 0.3, 'wireReset');
   button('Save laser line', 0.2, 0.5, 0.3, 'laserPin');
   button('Advanced tools', 0.55, 0.1, 0.25, 'drafting');
+  button('Drafting table', 0.55, -0.005, 0.25, 'table');
   button('Span -', -0.235, -0.005, 0.22, 'smaller');
   button('Span +', 0, -0.005, 0.22, 'larger');
   button('Put away', 0.235, -0.005, 0.22, 'stop');
@@ -294,21 +314,15 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
   cutterRoot.setEnabled(false);
 
   function show() {
-    trayRoot.setEnabled(true);
-    tray.placeForViewer({ desktop: { distance: 1.6, height: 0, side: 0 },
-      xr: { distance: 0.7, height: -0.12 }, side: 0, uprightInXR: true });
+    showToolTray(trayRoot, tray, 1.6, 0.7, 0);
   }
   drawingToolsButton?.addEventListener('click', show);
   function showStencils() {
-    stencilRoot.setEnabled(true);
-    stencilTray.placeForViewer({ desktop: { distance: 1.6, height: 0, side: 0 },
-      xr: { distance: 0.7, height: -0.12 }, side: 0.35, uprightInXR: true });
+    showToolTray(stencilRoot, stencilTray, 1.6, 0.7, 0.35);
   }
   stencilTrayButton?.addEventListener('click', showStencils);
   function showCutters() {
-    cutterRoot.setEnabled(true);
-    cutterTray.placeForViewer({ desktop: { distance: 1.6, height: 0, side: 0 },
-      xr: { distance: 0.7, height: -0.12 }, side: -0.35, uprightInXR: true });
+    showToolTray(cutterRoot, cutterTray, 1.6, 0.7, -0.35);
   }
   cookieCutterTrayButton?.addEventListener('click', showCutters);
   buildTray(draftingRoot, draftingMeshes, 'advancedDraftingTrayBacking', 1.4, 1.6);
@@ -330,9 +344,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     new Vector3(0.71, 0.81, 0.01), draftingButtons);
   draftingRoot.setEnabled(false);
   function showDrafting() {
-    draftingRoot.setEnabled(true);
-    draftingTray.placeForViewer({ desktop: { distance: 1.8, height: 0, side: 0 },
-      xr: { distance: 0.85, height: -0.1 }, side: 0, uprightInXR: true });
+    showToolTray(draftingRoot, draftingTray, 1.8, 0.85, 0);
   }
   draftingToolsButton?.addEventListener('click', showDrafting);
   const draftStatusCanvas = document.createElement('canvas');
@@ -353,11 +365,165 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
       `${spacing === null ? 'Invalid spacing' : `${spacing.toFixed(3)} yd`} | ${getDraftAngle()} deg | ` +
       `Offset ${offsetSide > 0 ? 'left' : 'right'} | ${parallelReference ? 'Guide parallel' : 'Field axes'}`);
     draftStatusTexture.update();
+    updateTableStatus();
   }
   draftingSpacing?.addEventListener('change', updateDraftStatus);
   draftingAngle?.addEventListener('change', updateDraftStatus);
   updateDraftStatus();
 
+  function showToolTray(active: TransformNode, activePanel: FloatingPanel,
+    distance: number, xrDistance: number, side: number) {
+    const xrTable = tableMode && scene.activeCamera?.getClassName() === 'WebXRCamera';
+    if (tableMode) {
+      for (const [root, panel] of [[trayRoot, tray], [stencilRoot, stencilTray],
+        [cutterRoot, cutterTray], [draftingRoot, draftingTray]] as const) {
+        if (root !== active) { panel.release(); root.setEnabled(false); }
+      }
+    }
+    active.scaling.setAll(xrTable ? 0.65 : 1);
+    active.setEnabled(true);
+    activePanel.placeForViewer({ desktop: { distance, height: 0, side: 0 },
+      xr: { distance: xrTable ? 0.65 : xrDistance, height: -0.12 },
+      side: xrTable ? 0.4 : side, uprightInXR: true });
+  }
+  function updateTableStatus() {
+    const step = getDraftSpacing();
+    const message = `${tableMode ? 'Drafting table' : 'Field'} | ${selected ?? 'Select guides'} | ` +
+      `Snap ${tableSnap ? 'on' : 'off'} | View ${fullSizePreview ? 'on' : 'off'} | ${guides.length} guides | ` +
+      `${selectedGuide ? `Selected: ${measureDraftLine(selectedGuide.points).yards.toFixed(2)} yd` : 'No selection'} | ` +
+      `Step ${step ?? '?'} yd / ${getDraftAngle()} deg`;
+    tablePanel.status(message);
+    if (draftingTableStatus) draftingTableStatus.value = message;
+  }
+  function setTableMode(enabled: boolean) {
+    if (guidesBusy() || tools.some(tool => tool.panel.grabbed()) || memoryWire.panel.grabbed() ||
+      memoryWire.handles.some(handle => handle.grabbed())) {
+      deps.notify('Finish the stroke and release drafting tools before changing drafting mode.');
+      if (draftingModeToggle) draftingModeToggle.checked = tableMode;
+      return;
+    }
+    if (enabled && floorCalibrationToggle?.checked) {
+      deps.notify('Finish floor calibration before entering drafting mode.');
+      if (draftingModeToggle) draftingModeToggle.checked = tableMode;
+      return;
+    }
+    if (enabled !== tableMode) {
+      if (enabled) {
+        deps.prepare();
+        previousFieldPose = { position: getARPosition(), scale: getARScale(),
+          yaw: getARRotation(), heightMode: getFieldHeightMode() };
+        setMarcherPOVEnabled(false);
+        tabletopScaleButton?.click();
+        setARScale(getARScaleRange().default);
+        setFieldHeightMode('table');
+        const camera = scene.activeCamera;
+        if (camera) {
+          camera.computeWorldMatrix();
+          placeTabletopInFrontOfCamera(camera);
+          const surface = camera.getClassName() === 'WebXRCamera'
+            ? Math.max(getFieldHeightSetting('floor'),
+              Math.min(getFieldHeightSetting('table'), camera.globalPosition.y - 0.45))
+            : camera.globalPosition.y - 0.45;
+          setARSurfaceHeight(surface);
+        }
+        previousGridVisible = fieldGridToggle?.checked ?? false;
+        if (fieldGridToggle) {
+          fieldGridToggle.checked = true;
+          fieldGridToggle.dispatchEvent(new Event('change'));
+        }
+      } else if (fieldGridToggle) {
+        fieldGridToggle.checked = previousGridVisible;
+        fieldGridToggle.dispatchEvent(new Event('change'));
+      }
+      tableMode = enabled;
+      action('stop');
+      if (!enabled) {
+        fieldPreview.setEnabled(false);
+        if (previousFieldPose) {
+          setFieldHeightMode(previousFieldPose.heightMode);
+          setARScale(previousFieldPose.scale);
+          setARRotation(previousFieldPose.yaw);
+          setARPosition(previousFieldPose.position);
+          previousFieldPose = null;
+        }
+      } else if (fullSizePreview) showFullSizePreview();
+    }
+    if (draftingModeToggle) draftingModeToggle.checked = tableMode;
+    if (draftingTableControls) draftingTableControls.hidden = !tableMode;
+    if (enabled) { tablePanel.show(); show(); }
+    else { tablePanel.hide(); action('hide'); }
+    updateTableStatus();
+    deps.notify(enabled ? 'Drafting table ready. Select a tool or select a guide to edit it without pins.'
+      : 'Drafting mode closed. Guides are preserved and the previous field placement is restored.');
+  }
+  function showFullSizePreview() {
+    const camera = scene.activeCamera;
+    const floor = camera && camera.getClassName() !== 'WebXRCamera'
+      ? camera.globalPosition.y - 1.7 : getFieldHeightSetting('floor');
+    fieldPreview.setEnabled(true, floor);
+  }
+  function snapForDrafting(point: Vector3) {
+    if (!tableMode || !tableSnap) return point.clone();
+    const snapped = snapDraftingPoint(point, guides.filter(g => !g.options.sticky).map(g => g.points),
+      fieldGridToggle?.checked ? fieldGridInterval?.valueAsNumber ?? null : null);
+    return isGuideOnField([snapped, snapped]) ? snapped : point.clone();
+  }
+  function editSelectedGuide(command: DrawingToolCommand) {
+    if (!selectedGuide) { deps.notify('Select a drafted guide first.'); return; }
+    if (guidesBusy()) { deps.notify('Finish drawing before editing a guide.'); return; }
+    deps.prepare();
+    const guide = selectedGuide;
+    if (command === 'guideDelete') {
+      guides.splice(guides.indexOf(guide), 1);
+      disposeGuide(guide); updateTableStatus();
+      deps.notify('Selected guide deleted.'); return;
+    }
+    const step = getDraftSpacing();
+    if (step === null) return;
+    if (command === 'guideDuplicate' && guides.length >= 100) {
+      deps.notify('Guide limit reached (100). Erase or clear guides before duplicating.'); return;
+    }
+    const dx = command === 'guideLeft' ? -step :
+      command === 'guideRight' || command === 'guideDuplicate' ? step : 0;
+    const dz = command === 'guideBack' ? -step : command === 'guideForward' ? step : 0;
+    const angle = (command === 'guideRotateLeft' ? -getDraftAngle() :
+      command === 'guideRotateRight' ? getDraftAngle() : 0) * Math.PI / 180;
+    const centerX = (Math.min(...guide.points.map(p => p.x)) + Math.max(...guide.points.map(p => p.x))) / 2;
+    const centerZ = (Math.min(...guide.points.map(p => p.z)) + Math.max(...guide.points.map(p => p.z))) / 2;
+    const transform = (p: Vector3) => new Vector3(
+      centerX + (p.x - centerX) * Math.cos(angle) - (p.z - centerZ) * Math.sin(angle) + dx, p.y,
+      centerZ + (p.x - centerX) * Math.sin(angle) + (p.z - centerZ) * Math.cos(angle) + dz);
+    const points = guide.points.map(transform);
+    const options = { ...guide.options,
+      controls: guide.options.controls?.map(transform), divisions: guide.options.divisions?.map(transform) };
+    if (!isGuideOnField(points) || (options.controls && !isGuideOnField(options.controls)) ||
+      (options.divisions && !isGuideOnField(options.divisions))) {
+      deps.notify('Guide edit rejected: keep the whole guide inside the field.'); return;
+    }
+    const meshes = createGuideMeshes(points, options);
+    if (command === 'guideDuplicate') {
+      const copy: Guide = { points, options, meshes };
+      guides.push(copy); setSelectedGuide(copy);
+    } else {
+      guide.meshes.forEach(mesh => mesh.dispose());
+      guide.points = points; guide.options = options; guide.meshes = meshes;
+      highlightGuide(guide);
+    }
+    updateTableStatus();
+    deps.notify(command === 'guideDuplicate' ? 'Guide duplicated and selected.' : 'Selected guide updated.');
+  }
+  const tableModeChanged = () => setTableMode(draftingModeToggle?.checked ?? false);
+  draftingModeToggle?.addEventListener('change', tableModeChanged);
+  const tableControlListeners: Array<readonly [HTMLButtonElement, () => void]> = [];
+  draftingTableControls?.querySelectorAll<HTMLButtonElement>('button[data-drafting-action]').forEach(control => {
+    const command = control.dataset.draftingAction;
+    const match = [...tablePanel.commands].find(item => item === command);
+    if (!match) throw new Error(`Unknown drafting-table control: ${command}`);
+    const listener = () => action(match);
+    control.addEventListener('click', listener);
+    tableControlListeners.push([control, listener]);
+  });
+  updateTableStatus();
   function local(world: Vector3) {
     return Vector3.TransformCoordinates(world, deps.root.computeWorldMatrix(true).clone().invert());
   }
@@ -439,9 +605,10 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
       material.disableLighting = true; material.emissiveColor = Color3.White();
       material.backFaceCulling = false;
       const plaque = MeshBuilder.CreatePlane(options.sticky ? 'draftingStickyNote' : 'draftingGuideLabel',
-        { width: options.sticky ? 2.4 : 3.2, height: options.sticky ? 1.2 : 0.4 }, scene);
+        { width: options.sticky ? noteWidth : 3.2, height: options.sticky ? noteDepth : 0.4 }, scene);
       plaque.parent = deps.root; plaque.position.copyFrom(points[Math.floor(points.length / 2)]);
       plaque.position.y += 0.08; plaque.rotation.x = Math.PI / 2;
+      if (options.sticky) plaque.rotation.y = -Math.atan2(end.z - start.z, end.x - start.x);
       plaque.material = material; plaque.isPickable = false;
       plaque.metadata = { label };
       plaque.onDisposeObservable.addOnce(() => material.dispose(false, true));
@@ -459,34 +626,51 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
   function highlightGuide(guide: Guide) {
     const yarn = guide.meshes.find(mesh => mesh.name === 'drawingGuide');
     if (yarn) yarn.material = guide === selectedGuide ? selectedYarnMaterial : yarnMaterial;
+    const note = guide.meshes.find(mesh => mesh.name === 'draftingStickyNote');
+    if (note && note.material instanceof StandardMaterial) {
+      note.material.emissiveColor = guide === selectedGuide ? new Color3(1, 0.75, 0.25) : Color3.White();
+    }
   }
   function setSelectedGuide(guide: Guide | null) {
     const previous = selectedGuide;
     selectedGuide = guide;
     if (previous) highlightGuide(previous);
     if (guide) highlightGuide(guide);
+    updateTableStatus();
   }
   function selectNear(point: Vector3, radius: number, vertical: boolean) {
     if (floorCalibrationToggle?.checked || takingPhoto) return false;
     let nearest: Guide | null = null;
     let nearestDistance = radius;
     for (const guide of guides) {
-      if (guide.options.sticky) continue;
+      if (guide.options.sticky && !tableMode) continue;
       const hit = closestPointOnGuide(guide.points, point);
       if (!hit) continue;
-      const distance = vertical
+      let distance = vertical
         ? Math.hypot(hit.distance, point.y - (FIELD_SURFACE_Y + yarnRadius + 0.002)) : hit.distance;
+      if (guide.options.sticky) {
+        const start = guide.points[0], end = guide.points[guide.points.length - 1];
+        const center = guide.points[Math.floor(guide.points.length / 2)];
+        const angle = Math.atan2(end.z - start.z, end.x - start.x);
+        const dx = point.x - center.x, dz = point.z - center.z;
+        distance = Math.hypot(
+          Math.max(0, Math.abs(dx * Math.cos(angle) + dz * Math.sin(angle)) - noteWidth / 2),
+          Math.max(0, Math.abs(-dx * Math.sin(angle) + dz * Math.cos(angle)) - noteDepth / 2),
+          vertical ? point.y - (center.y + 0.08) : 0);
+      }
       if (distance <= nearestDistance) { nearest = guide; nearestDistance = distance; }
     }
     if (!nearest) return false;
     const deselect = nearest === selectedGuide;
     setSelectedGuide(deselect ? null : nearest);
-    deps.notify(deselect ? 'Guide deselected. Released marchers place freely.'
+    deps.notify(tableMode ? (deselect ? 'Guide deselected.' : 'Guide selected. Use Move, Rotate, Duplicate or Delete in the drafting workspace.')
+      : deselect ? 'Guide deselected. Released marchers place freely.'
       : 'Guide selected. Released marchers snap onto it; drafting actions use it.');
     return true;
   }
   function snapToSelected(point: Vector3) {
-    return selectedGuide ? closestPointOnGuide(selectedGuide.points, point)?.point ?? null : null;
+    return selectedGuide && !selectedGuide.options.sticky
+      ? closestPointOnGuide(selectedGuide.points, point)?.point ?? null : null;
   }
   function disposeGuide(guide: Guide) {
     if (guide === selectedGuide) selectedGuide = null;
@@ -509,6 +693,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     const committedPoints = points.map(point => point.clone());
     const guide: Guide = { points: committedPoints, meshes: createGuideMeshes(committedPoints, options), options };
     guides.push(guide);
+    updateTableStatus();
     deps.notify(`Guide ready (${guides.length}). Create formation or Create path uses the ${selectedGuide
       ? 'selected' : 'newest'} guide; tap or pinch a guide to select it.`);
   }
@@ -825,6 +1010,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
         desktopLaserAim = false;
         displayLaser([]);
         selected = kind;
+        updateTableStatus();
         if (root.parent === dock) {
           span = root.scaling.x;
           root.setParent(null);
@@ -876,8 +1062,14 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
   (['tSquare', 'setSquare', 'dividers', 'tape', 'spline', 'offset', 'annotation', 'stickyNote'] as const)
     .forEach((kind, index) => makeTool(kind, draftingRoot, index));
   const memoryWire = createMemoryWire({
-    dock: trayRoot, field: deps.root, commit, contactScale: fieldToolScale,
-    allowed: () => !floorCalibrationToggle?.checked,
+    dock: trayRoot, field: deps.root,
+    commit: points => {
+      if (points.length < 2) { commit(points); return; }
+      const delta = snapForDrafting(points[0]).subtract(points[0]);
+      commit(points.map(point => point.add(delta)));
+    },
+    contactScale: fieldToolScale,
+    allowed: () => !floorCalibrationToggle?.checked && !takingPhoto,
     prepare: () => {
       if (floorCalibrationToggle?.checked) {
         deps.notify('Finish floor calibration before using drawing tools.');
@@ -945,11 +1137,37 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
       }
     } else commit(points);
   }
-  function action(value: FieldDrawingTool | 'show' | 'stencils' | 'cutters' | 'hide' | 'smaller' | 'larger' | 'stop' |
-    'formation' | 'path' | 'synchronizedRoutes' | 'undo' | 'clear' | 'wireReset' | 'laserPin' | 'drafting' |
-    'draftSpacingLess' | 'draftSpacingMore' | 'draftAngle' | 'draftSide' | 'draftReference' |
-    'saveDrafting' | 'restoreDrafting' | 'deleteDrafting' | 'takePhoto' | 'restorePhoto' | 'downloadPhoto') {
+  function action(value: DrawingToolCommand) {
     if (takingPhoto) { workspaceMessage('Wait for the field snapshot to finish.'); return; }
+    if (value === 'table' || value === 'tableExit') { setTableMode(value === 'table'); return; }
+    if (value === 'tablePreview') {
+      if (!tableMode) { deps.notify('Enter drafting mode before showing the full-size field.'); return; }
+      fullSizePreview = !fullSizePreview;
+      if (fullSizePreview) showFullSizePreview();
+      else fieldPreview.setEnabled(false);
+      updateTableStatus();
+      deps.notify(fullSizePreview ? 'Live full-size field shown in the distance. Editing stays on the tabletop.'
+        : 'Full-size field preview hidden.');
+      return;
+    }
+    if (value === 'tableSnap' || value === 'tableGrid' || value.startsWith('guide')) {
+      if (!tableMode) { deps.notify('Enter Drafting table mode before using workspace editing controls.'); return; }
+      if (floorCalibrationToggle?.checked) { deps.notify('Finish floor calibration before editing drafting.'); return; }
+      if (value === 'tableSnap') {
+        tableSnap = !tableSnap;
+        deps.notify(`Drafting snap ${tableSnap ? 'on: endpoints, guide lines, then nearby grid points' : 'off'}.`);
+      } else if (value === 'tableGrid') {
+        if (fieldGridToggle) {
+          fieldGridToggle.checked = !fieldGridToggle.checked;
+          fieldGridToggle.dispatchEvent(new Event('change'));
+        }
+      } else if (value === 'guideSelect') {
+        action('stop');
+        deps.prepare();
+        deps.notify('Select a guide on the field, then use the workspace editing controls.');
+      } else editSelectedGuide(value);
+      updateTableStatus(); return;
+    }
     if (value === 'takePhoto') { void takePhoto(); return; }
     if (value === 'restorePhoto') {
       try {
@@ -998,6 +1216,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
       stencilTray.release(); stencilRoot.setEnabled(false);
       cutterTray.release(); cutterRoot.setEnabled(false);
       draftingTray.release(); draftingRoot.setEnabled(false);
+      tablePanel.hide();
       return;
     }
     if (floorCalibrationToggle?.checked) { deps.notify('Finish floor calibration before using drawing tools.'); return; }
@@ -1034,7 +1253,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     }
     if (value === 'draftReference') {
       parallelReference = !parallelReference;
-      deps.notify(parallelReference ? 'T-square uses the newest guide direction.' : 'T-square aligns to field axes.');
+      deps.notify(parallelReference ? 'T-square uses the selected or newest guide direction.' : 'T-square aligns to field axes.');
       updateDraftStatus();
       return;
     }
@@ -1089,8 +1308,8 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
       selected = null; deps.notify('Drawing tools returned to their trays.'); return;
     }
     deps.prepare();
-    selected = value;
     if (value === 'wire') {
+      selected = 'wire';
       memoryWire.root.setParent(null);
       sizeHeld(memoryWire.root, span);
       placeHeldTool(memoryWire.panel, memoryWire.root);
@@ -1098,19 +1317,28 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     }
     const tool = tools.find(tool => tool.kind === value);
     if (!tool) throw new Error(`Unknown physical drawing tool: ${value}`);
+    selected = tool.kind;
     tool.panel.release();
     tool.root.setParent(null);
     sizeHeld(tool.root, span);
     tool.root.setEnabled(true);
     placeHeldTool(tool.panel, tool.root);
-    deps.notify(toolInstructions(value) ?? (value === 'laser'
+    deps.notify(toolInstructions(tool.kind) ?? (value === 'laser'
       ? 'Laser: drag on the field to aim a live line, then use Save laser line on the Tools tray. In XR, hold and rotate the level; release turns the beam off.'
       : value.endsWith('Cutter')
       ? `${value}: press onto the field and lift to stamp a formation. Desktop: drag center to radius. Span +/- changes size.`
       : `${value}: grab the tool and touch its tip/edge to the field; lift to finish. Desktop: drag on the field. Span +/- changes size.`));
   }
   function pointer(type: 'down' | 'move' | 'up', point: Vector3 | null) {
+    if (tableMode && !selected && !floorCalibrationToggle?.checked && !takingPhoto && point) {
+      if (type === 'down') {
+        deps.prepare();
+        if (!selectNear(point, 0.35, false)) setSelectedGuide(null);
+      }
+      return true;
+    }
     if (!selected || selected === 'camera' || floorCalibrationToggle?.checked || takingPhoto) return false;
+    if (point && selected !== 'eraser' && selected !== 'laser') point = snapForDrafting(point);
     restoreArmedUntil = 0;
     if (type === 'down') {
       if (!point) return false;
@@ -1331,6 +1559,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
       const contact = 0.025 * fieldToolScale();
       if (Math.abs(tip.y - FIELD_SURFACE_Y) * scaleY > contact) { finishTool(tool); continue; }
       tip.y = FIELD_SURFACE_Y + 0.025;
+      if (tool.kind !== 'eraser') tip = snapForDrafting(tip);
       if (tool.kind === 'pencil') {
         const ruler = tools.find(candidate => candidate.kind === 'ruler' && candidate.root.parent === null);
         if (ruler?.root.isEnabled()) {
@@ -1359,7 +1588,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
         updatePencilStroke(tool.stroke, tip);
         display(tool.stroke);
       } else {
-        const edge = local(Vector3.TransformCoordinates(tool.edge, world));
+        const edge = snapForDrafting(local(Vector3.TransformCoordinates(tool.edge, world)));
         tool.stroke = makeStroke(tool.kind, tip, edge);
         display(tool.stroke);
       }
@@ -1381,6 +1610,10 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     stencilTrayButton?.removeEventListener('click', showStencils);
     cookieCutterTrayButton?.removeEventListener('click', showCutters);
     draftingToolsButton?.removeEventListener('click', showDrafting);
+    draftingModeToggle?.removeEventListener('change', tableModeChanged);
+    tableControlListeners.forEach(([control, listener]) => control.removeEventListener('click', listener));
+    tablePanel.dispose();
+    fieldPreview.dispose();
     draftingSpacing?.removeEventListener('change', updateDraftStatus);
     draftingAngle?.removeEventListener('change', updateDraftStatus);
     draftingSaveButton?.removeEventListener('click', saveWorkspace);
@@ -1407,9 +1640,15 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
   function guidesBusy() {
     return pointerStroke !== null || takingPhoto || tools.some(tool => tool.stroke !== null);
   }
-  return { action, pointer, pointerActive: () => pointerStroke !== null, active: () => selected !== null,
+  return { action, pointer, updateTableStatus, tableMode: () => tableMode,
+    pointerActive: () => pointerStroke !== null, active: () => selected !== null || tableMode,
     selectNear, snapToSelected,
-    clearGuides: () => { const count = guides.length; guides.splice(0).forEach(disposeGuide); return count; },
+    clearGuides: () => {
+      const count = guides.length;
+      guides.splice(0).forEach(disposeGuide);
+      updateTableStatus();
+      return count;
+    },
     selectedPoints: () => selectedGuide?.points ?? null,
     exportWorkspace: () => serializeDraftingWorkspace(collectWorkspace()),
     importWorkspace: (json: string) => applyWorkspace(parseDraftingWorkspace(json)),

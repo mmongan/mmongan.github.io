@@ -19,7 +19,7 @@ import {
   getScaleGestureSurfaceHeight,
 } from '../xr/ar';
 import { scene } from '../scene/engine';
-import { selectDrawingGuideNear, snapToSelectedDrawingGuide } from './fieldDrawingTools';
+import { isDraftingTableMode, selectDrawingGuideNear, snapToSelectedDrawingGuide } from './fieldDrawingTools';
 import {
   findRobotRoot,
   getGlobalCountIndex,
@@ -1231,6 +1231,13 @@ export function createHandInteraction(paths: HandPathDependencies) {
         continue;
       }
       if (marcherGrab || wasPinching) continue;
+      if (isDraftingTableMode()) {
+        const matrix = pathRoot.computeWorldMatrix(true);
+        const scale = Vector3.TransformNormal(Vector3.Right(), matrix).length();
+        if (scale > 0) selectDrawingGuideNear(
+          Vector3.TransformCoordinates(point, Matrix.Invert(matrix)), 0.03 / scale, true);
+        continue;
+      }
       const robot = findMarcherNearHand(point);
       if (robot) {
         beginMarcherGrab(handedness, robot, point, 'hand', 0, facingYaw);

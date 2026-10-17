@@ -39,7 +39,7 @@ import { resetThumbJog, updateThumbJog } from './thumbJogGesture';
 import { hideInstrumentPanel, summonInstrumentPanel } from '../menu/instrumentPanel';
 import {
   executeDrawingToolAction, handleDrawingPointer, initFieldDrawingTools,
-  isDrawingPointerActive, isFieldDrawingToolActive, selectDrawingGuideNear, snapToSelectedDrawingGuide,
+  isDrawingPointerActive, isFieldDrawingToolActive, isDraftingTableMode, selectDrawingGuideNear, snapToSelectedDrawingGuide,
   clearDrawingGuides, getSelectedDrawingGuidePoints, exportDrawingWorkspace, importDrawingWorkspace,
 } from './fieldDrawingTools';
 import {
@@ -2800,7 +2800,7 @@ export function updateRobotPathFromControllers() {
       return;
     }
 
-    if (!eraseMode && !isMarcherPainting() && gripPressed && !wasGripPressed &&
+    if (!eraseMode && !isMarcherPainting() && !isDraftingTableMode() && gripPressed && !wasGripPressed &&
       !menuInteractionHeld.get(handedness)) {
       const gripPoint = getControllerPosition(controller).getAbsolutePosition();
       if (handInteraction.transferDraftGrab(handedness, gripPoint, "controller",
@@ -2872,6 +2872,11 @@ export function updateRobotPathFromControllers() {
       if (isMarcherPainting()) {
         const pick = scene.pickWithRay(ray, mesh => findRobotRoot(mesh) !== null);
         tryPaintMarcher(pick?.hit ? findRobotRoot(pick.pickedMesh) : null);
+        menuInteractionHeld.set(handedness, true);
+        return;
+      }
+      if (isDraftingTableMode()) {
+        selectDrawingGuideFromRay(ray);
         menuInteractionHeld.set(handedness, true);
         return;
       }
@@ -3605,6 +3610,7 @@ export function initInteraction() {
       tryPaintMarcher(pick?.hit ? findRobotRoot(pick.pickedMesh) : null);
       return;
     }
+    if (isDraftingTableMode()) return;
     const ghostPick = scene.pickWithRay(getPointerRay(), isGhostBandMesh);
     if (!floorCalibrationToggle?.checked && ghostPick?.hit && ghostPick.pickedMesh &&
       jumpToGhostBandTime(ghostPick.pickedMesh)) return;

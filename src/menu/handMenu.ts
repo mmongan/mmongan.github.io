@@ -16,7 +16,6 @@ import { scene } from '../scene/engine';
 import type { MarcherInstrument } from '../robot/robot';
 import { addInstrumentButtonModel } from './instrumentButtonModel';
 import { DetachableFloatingPanel, type FloatingPanel } from './floatingPanel';
-import type { FieldDrawingTool } from '../interaction/fieldDrawingGeometry';
 import { getHandMenuPose, getTrackedHandMenuPose, type HandMenuPose } from './handMenuPose';
 
 // How closely the controller's local "up" must line up with world up to
@@ -39,7 +38,7 @@ export type HandMenuHit =
   | { action: "fieldProjector"; command: import('../interaction/fieldImageProjector').FieldProjectorCommand }
   | { action: "marcherPaint"; command: "show" | "done" | "paintSelected" }
   | { action: "marcherPaintColor"; color: string }
-  | { action: "drawingTool"; tool: FieldDrawingTool | "camera" | "takePhoto" | "restorePhoto" | "downloadPhoto" | "saveDrafting" | "restoreDrafting" | "deleteDrafting" | "drafting" | "draftSpacingLess" | "draftSpacingMore" | "draftAngle" | "draftSide" | "draftReference" | "laserPin" | "wireReset" | "show" | "stencils" | "cutters" | "hide" | "smaller" | "larger" | "stop" | "formation" | "path" | "synchronizedRoutes" | "undo" | "clear" }
+  | { action: "drawingTool"; tool: import('../interaction/fieldDrawingGeometry').DrawingToolCommand }
   | { action: "playPause" | "rewind" | "fastForward" | "stepBack" | "stepForward" | "fullScaleVR" | "tabletopScale" | "commitFormation" | "eraseMode" | "undoErase" | "redoErase" | "musicStandStaffToggle" }
   | { action: "formationLibrary" | "formationLibraryBack" | "formationLibraryClose" | "lettersLibrary" }
   | { action: "formationGridSnap" }

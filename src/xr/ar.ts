@@ -189,6 +189,10 @@ export function getFieldHeightMode() {
   return fieldHeightMode;
 }
 
+export function getFieldHeightSetting(mode: "floor" | "table") {
+  return fieldHeights[mode];
+}
+
 export function setFieldHeightSetting(mode: "floor" | "table", height: number) {
   fieldHeights[mode] = height;
   if (fieldHeightMode === mode) setFieldHeightMode(mode);

@@ -21,6 +21,7 @@ const selectedYarnMaterial = { name: 'selected' };
 const context = vm.createContext({
   Vector3, FIELD_SURFACE_Y: -0.48, yarnRadius: 0.012, yarnMaterial, selectedYarnMaterial,
   floorCalibrationToggle: { checked: false }, takingPhoto: false,
+  tableMode: false, updateTableStatus() {},
   deps: { notify: message => notices.push(message) },
 });
 vm.runInContext(stripTypeScriptTypes(`

@@ -37,6 +37,8 @@ let savedFacing;
 let panelPicks = 0;
 let paletteHit = null;
 let chosenInstrument = null;
+let draftingTableActive = false;
+const draftingSelections = [];
 const context = vm.createContext({
   scene, pathRoot, Vector3, Matrix, Ray, Axis,
   FIELD_WIDTH_YARDS: 53.333, FIELD_LENGTH_YARDS: 120,
@@ -73,7 +75,11 @@ const context = vm.createContext({
   updateFormationPullPreview() {},
   MARCHER_TWIST_COMMIT_RADIANS: 20 * Math.PI / 180,
   TURF_PRECISION_SCALE: 0.35,
-  selectDrawingGuideNear: () => false,
+  selectDrawingGuideNear: (...args) => {
+    if (!draftingTableActive) return false;
+    draftingSelections.push(args); return true;
+  },
+  isDraftingTableMode: () => draftingTableActive,
   getRobotCounts: () => [{ rotationY: 0 }, { rotationY: 0 }],
   getGlobalCountIndex: () => 0,
   setRobotFacing: (robot, yaw) => { savedFacing = yaw; },
@@ -270,6 +276,21 @@ try {
   context.update();
   paletteHit = null;
   assert.equal(chosenInstrument, 'sousaphone', 'Non-instrument buttons never pick a palette instrument');
+  draftingTableActive = true;
+  for (const scale of [1, 1 / 120]) {
+    grabs.clear(); pinches.clear(); hands.clear(); drafts.clear();
+    root.scaling.setAll(scale); root.position.set(3, 0.8, -2); root.rotation.y = 0.7;
+    const local = new Vector3(2, -0.455, 3);
+    const world = Vector3.TransformCoordinates(local, pathRoot.computeWorldMatrix(true));
+    const before = creations;
+    hands.set('left', handAt(world));
+    context.update();
+    assert.equal(creations, before, 'Drafting mode pinches never create marchers');
+    assert.equal(grabs.size, 0, 'Drafting mode pinches select guides instead of grabbing marchers');
+    near(draftingSelections.at(-1)[0], local, 'Drafting selection uses field coordinates at every scale');
+    assert.equal(draftingSelections.at(-1)[2], true, 'Hand selection still checks turf contact');
+  }
+  draftingTableActive = false;
   console.log('Hand marcher checks passed: left/right draft and placed handoffs via model/wrist/palm/fingertip, panel priority, 4.5 cm contact margin, same-frame release, no jumps/duplicates, receiver ownership, ground-level creation, turf precision placement, tabletop transforms, and stadium bounds.');
 } finally {
   scene.dispose();

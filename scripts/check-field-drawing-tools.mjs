@@ -49,6 +49,13 @@ const gridInterval = { value: '5', get valueAsNumber() { return Number(this.valu
 let testARScale = 1 / 120;
 const arScaleChanged = new Observable();
 const context = vm.createContext({
+  performance,
+  getARPosition: () => Vector3.Zero(), getARRotation: () => 0,
+  getFieldHeightMode: () => 'floor', getFieldHeightSetting: () => 0,
+  setARPosition() {}, setARRotation() {}, setFieldHeightMode() {}, setARSurfaceHeight() {},
+  placeTabletopInFrontOfCamera() {}, setARScale: scale => { testARScale = scale; },
+  tabletopScaleButton: null,
+  setMarcherPOVEnabled() {},
   getARScale: () => testARScale, getARScaleRange: () => ({ min: 0.002, max: 1, default: 1 / 120 }),
   onARScaleChangedObservable: arScaleChanged,
   scene, MeshBuilder, TransformNode, StandardMaterial, Matrix, Quaternion, Vector3, Color3, Plane, Ray, FreeCamera, Camera,
@@ -68,6 +75,7 @@ const context = vm.createContext({
   floorCalibrationToggle: calibration, drawingToolsButton: null, stencilTrayButton: null,
   cookieCutterTrayButton: null,
   draftingToolsButton: null, draftingSpacing: draftSpacingInput, draftingAngle: draftAngleInput,
+  draftingModeToggle: null, draftingTableControls: null, draftingTableStatus: null,
   draftingText: draftTextInput,
   draftingSaveButton: null, draftingRestoreButton: null, draftingDeleteButton: null, draftingSaveStatus: null,
   draftingCameraButton: null, draftingPhotoRestoreButton: null, draftingPhotoDownloadButton: null, draftingPhotoPreview: null,
@@ -99,6 +107,8 @@ const context = vm.createContext({
   },
 });
 vm.runInContext(transform(read('../src/menu/floatingPanel.ts')), context);
+vm.runInContext(transform(read('../src/interaction/draftingTablePanel.ts')), context);
+vm.runInContext(transform(read('../src/field/draftingFieldPreview.ts')), context);
 vm.runInContext(transform(read('../src/interaction/fieldDrawingGeometry.ts')), context);
 vm.runInContext(transform(read('../src/interaction/draftingGeometry.ts')), context);
 vm.runInContext(transform(read('../src/interaction/draftingWorkspace.ts')), context);
@@ -709,7 +719,120 @@ try {
   assert.equal(context.handleDrawingPointer('down', point(0, 0)), false);
   assert.equal(context.guideTouchesSweep([point(0, 0), point(0, 3)], point(2, 0), point(2, 3), 0.5), false,
     'Parallel, separated eraser motion does not delete a guide');
-  console.log('Drafting checks passed: physical tools, laser, advanced geometry, labels, sticky notes, no pins/tacks, local save/restore/delete, paired camera snapshots, corrupt data/storage and capture failures, confirmation, cleanup, tabletop transforms, and calibration gating.');
+  const snapNear = (input, guides, grid, expected, label) =>
+    assert.ok(context.snapDraftingPoint(input, guides, grid).equalsWithEpsilon(expected, 1e-8), label);
+  snapNear(point(1.1, 1.1), [[point(1, 1), point(5, 1)]], 0.5, point(1, 1), 'Endpoints win over lines/grid');
+  snapNear(point(3, 1.1), [[point(1, 1), point(5, 1)]], 0.5, point(3, 1), 'Nearest guide line wins over grid');
+  snapNear(point(2.1, 2.1), [], 1, point(2, 2), 'Nearby grid points snap');
+  snapNear(point(2.4, 2.4), [], 1, point(2.4, 2.4), 'Grid does not pull strokes outside the 0.25-yard tolerance');
+  snapNear(point(2.1, 2.1), [], NaN, point(2.1, 2.1), 'Invalid grid spacing does not produce invalid geometry');
+  gridToggle.checked = false;
+  gridInterval.value = '1';
+  draftSpacingInput.value = '1.25'; draftAngleInput.value = '90';
+  const modePose = root.computeWorldMatrix(true).clone();
+  act('table');
+  assert.equal(context.isDraftingTableMode(), true);
+  assert.equal(gridToggle.checked, true, 'Drafting mode enables the existing grid');
+  assert.equal(scene.getTransformNodeByName('draftingTableWorkspace').isEnabled(), true);
+  assert.equal(testARScale, 1 / 120, 'Drafting mode requests tabletop scale');
+  assert.ok(root.computeWorldMatrix(true).equals(modePose), 'Stubbed AR pose helpers leave the isolated guide root unchanged');
+  act('drafting');
+  assert.equal(scene.getTransformNodeByName('drawingToolTray').isEnabled(), false, 'Only one tool category is open');
+  assert.equal(scene.getTransformNodeByName('advancedDraftingTray').isEnabled(), true);
+  act('stencils');
+  assert.equal(scene.getTransformNodeByName('advancedDraftingTray').isEnabled(), false);
+  act('tableSnap');
+  assert.ok(messages.at(-1).includes('off'));
+  stroke('tape', point(0, 0), point(4, 0));
+  act('guideSelect');
+  assert.equal(context.isFieldDrawingToolActive(), true, 'Table selection remains active after putting tools away');
+  assert.equal(context.handleDrawingPointer('down', point(2, 0)), true, 'Desktop field clicks select guides in table mode');
+  assert.equal(context.getSelectedDrawingGuidePoints().length, 2);
+  act('guideForward');
+  assert.ok(context.getSelectedDrawingGuidePoints().every(p => Math.abs(p.z - 1.25) < 1e-8));
+  act('guideRotateRight');
+  let movedGuide = context.getSelectedDrawingGuidePoints();
+  assert.ok(movedGuide[0].equalsWithEpsilon(point(2, -0.75), 1e-8));
+  assert.ok(movedGuide[1].equalsWithEpsilon(point(2, 3.25), 1e-8), 'Rotation preserves length and uses bounding center');
+  assert.ok(scene.getMeshByName('draftingGuideLabel').metadata.label.includes('90.0'),
+    'Rotating a measurement refreshes its heading label');
+  act('guideDuplicate');
+  assert.equal(guideCount(), 2);
+  assert.ok(context.getSelectedDrawingGuidePoints()[0].equalsWithEpsilon(point(3.25, -0.75), 1e-8));
+  act('guideForward');
+  let tableSave = JSON.parse(context.exportDrawingWorkspace());
+  assert.equal(tableSave.guides[0].points[0].z, -0.75, 'Duplicate edits do not mutate the source');
+  assert.equal(tableSave.guides[1].points[0].z, 0.5);
+  assert.equal(tableSave.guides[1].options.controls[0].z, 0.5, 'Edited control coordinates are saved');
+  assert.equal(context.importDrawingWorkspace(JSON.stringify(tableSave)), true);
+  assert.equal(context.getSelectedDrawingGuidePoints(), null, 'Restore clears stale selection');
+  act('guideDelete');
+  assert.ok(messages.at(-1).includes('Select a drafted guide'), 'Missing selection is explicit');
+  act('clear');
+  stroke('ruler', point(25, 0), point(26, 0));
+  act('guideSelect'); context.handleDrawingPointer('down', point(25.5, 0));
+  const boundarySave = context.exportDrawingWorkspace();
+  act('guideRight');
+  assert.ok(messages.at(-1).includes('rejected'));
+  assert.equal(context.exportDrawingWorkspace(), boundarySave, 'Out-of-field edit leaves geometry and save unchanged');
+  act('clear');
+  stroke('spline', point(-4, 0), point(4, 0));
+  act('guideSelect');
+  context.handleDrawingPointer('down', point(0, 1));
+  act('guideLeft');
+  const splineSave = context.exportDrawingWorkspace();
+  assert.equal(context.importDrawingWorkspace(splineSave), true);
+  assert.equal(context.exportDrawingWorkspace(), splineSave, 'Transformed spline controls round-trip exactly');
+  act('clear');
+  stroke('stickyNote', point(2, 3), point(2, 3));
+  act('guideSelect');
+  context.handleDrawingPointer('down', point(2, 3));
+  assert.ok(context.getSelectedDrawingGuidePoints(), 'Sticky notes can be selected in drafting mode');
+  assert.equal(context.snapToSelectedDrawingGuide(point(2, 5)), null, 'Notes never attract released marchers');
+  context.selectDrawingGuideNear(point(2, 3), 0.1);
+  assert.equal(context.getSelectedDrawingGuidePoints(), null);
+  const noteSurface = new Vector3(3, -0.48 + 0.105, 3.4);
+  assert.equal(context.selectDrawingGuideNear(noteSurface, 0.03, true), true,
+    'Hands select the visible note surface rather than an invisible line underneath it');
+  act('guideRight');
+  assert.ok(Math.abs(scene.getMeshByName('draftingStickyNote').position.x - 3.35) < 1e-6,
+    'Notes move without pins and without stretching');
+  act('guideDelete');
+  assert.equal(guideCount(), 0);
+  assert.equal(scene.getMeshByName('draftingStickyNote'), null);
+  act('tableSnap');
+  stroke('ruler', point(0.1, 0.1), point(4.1, 0.1));
+  act('path');
+  assert.ok(conversions.at(-1)[1][0].equalsWithEpsilon(point(0, 0)));
+  assert.ok(conversions.at(-1)[1][1].equalsWithEpsilon(point(4, 0)), 'Desktop tools use shared grid snapping');
+  act('clear');
+  act('pencil');
+  pencil.rotationQuaternion.copyFrom(Quaternion.Identity());
+  pencil.position.set(0.1, -0.48 + 0.12 * pencil.scaling.y, 0.1);
+  context.beginFloatingPanelGrab('right', Matrix.Identity(), mesh, undefined, 0.03, true);
+  scene.onBeforeRenderObservable.notifyObservers(scene);
+  act('tableExit');
+  assert.equal(context.isDraftingTableMode(), true, 'Mode changes are blocked during held strokes');
+  pencil.position.x = 4.1;
+  scene.onBeforeRenderObservable.notifyObservers(scene);
+  context.endFloatingPanelGrab('right');
+  scene.onBeforeRenderObservable.notifyObservers(scene);
+  act('path');
+  assert.ok(conversions.at(-1)[1][0].equalsWithEpsilon(point(0, 0)));
+  assert.ok(conversions.at(-1)[1][1].equalsWithEpsilon(point(4, 0)), 'Held tools share the desktop snapping rules');
+  act('tableExit');
+  assert.equal(context.isDraftingTableMode(), false);
+  assert.equal(gridToggle.checked, false, 'Exiting restores the previous grid visibility');
+  assert.equal(guideCount(), 1, 'Exiting preserves the current page guides');
+  assert.equal(scene.getTransformNodeByName('draftingTableWorkspace').isEnabled(), false);
+  assert.equal(context.isFieldDrawingToolActive(), false, 'Normal field interaction resumes on exit');
+  assert.ok(root.computeWorldMatrix(true).equals(modePose));
+  calibration.checked = true;
+  act('table');
+  assert.equal(context.isDraftingTableMode(), false, 'Calibration blocks entry');
+  calibration.checked = false;
+  act('clear');
+  console.log('Drafting checks passed: physical tools, laser, advanced geometry, pin-free drafting-table lifecycle, shared snapping, selected-guide edits, bounds, persistence, camera, cleanup, tabletop transforms, and calibration gating.');
 } finally {
   scene.dispose();
   engine.dispose();

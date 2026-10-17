@@ -305,6 +305,48 @@
             <span>Show instrument panel</span>
           </label>
           <button id="instrumentPanelButton" type="button">Open instrument panel to create marchers</button>
+          <h3>Drafting table</h3>
+          <label class="radio-option"><input id="draftingModeToggle" type="checkbox" /><span>Use field as a drafting table</span></label>
+          <p>Draft on a tabletop-sized field placed in front of you. Toggle Full-size view for a live, view-only field in the distance, including marchers and guides; editing stays on the table. Exiting restores the previous field placement. No pins. Endpoint and line snaps take priority over nearby grid points.</p>
+          <div id="draftingTableControls" hidden>
+            <div class="radio-row">
+              <button type="button" data-drafting-action="show">Drawing tools</button>
+              <button type="button" data-drafting-action="drafting">Precision tools</button>
+              <button type="button" data-drafting-action="stencils">Stencils</button>
+              <button type="button" data-drafting-action="cutters">Formation cutters</button>
+            </div>
+            <div class="radio-row">
+              <button type="button" data-drafting-action="guideSelect">Select guides / put tools away</button>
+              <button type="button" data-drafting-action="tableSnap">Toggle drafting snap</button>
+              <button type="button" data-drafting-action="tableGrid">Toggle field grid</button>
+              <button type="button" data-drafting-action="tablePreview">Full-size view on/off</button>
+            </div>
+            <div class="radio-row">
+              <button type="button" data-drafting-action="guideLeft">Move -X</button>
+              <button type="button" data-drafting-action="guideRight">Move +X</button>
+              <button type="button" data-drafting-action="guideBack">Move -Z</button>
+              <button type="button" data-drafting-action="guideForward">Move +Z</button>
+            </div>
+            <div class="radio-row">
+              <button type="button" data-drafting-action="guideRotateLeft">Rotate -</button>
+              <button type="button" data-drafting-action="guideRotateRight">Rotate +</button>
+              <button type="button" data-drafting-action="guideDuplicate">Duplicate selected</button>
+              <button type="button" data-drafting-action="guideDelete">Delete selected</button>
+            </div>
+            <div class="radio-row">
+              <button type="button" data-drafting-action="draftSpacingLess">Move step -</button>
+              <button type="button" data-drafting-action="draftSpacingMore">Move step +</button>
+              <button type="button" data-drafting-action="draftAngle">Rotation angle</button>
+            </div>
+            <div class="radio-row">
+              <button type="button" data-drafting-action="formation">Create formation</button>
+              <button type="button" data-drafting-action="path">Create path</button>
+              <button type="button" data-drafting-action="synchronizedRoutes">Route selected form</button>
+              <button type="button" data-drafting-action="undo">Remove newest guide</button>
+            </div>
+            <p>Moves use Divider spacing / parallel offset below. Rotations use the set-square angle around the guide's bounding center. Duplicates are independent copies shifted +X by one move step. Out-of-field edits are rejected. Undo guide removes the newest whole guide, not individual edits.</p>
+          </div>
+          <output id="draftingTableStatus" aria-live="polite"></output>
           <button id="drawingToolsButton" type="button">Open field drawing tools</button>
           <button id="draftingToolsButton" type="button">Open advanced drafting tools</button>
           <label class="settings-label" for="fieldProjectorFile">Image projector: local tracing image</label>
@@ -336,7 +378,7 @@
           </select>
           <label class="settings-label" for="draftingText">Annotation text</label>
           <input id="draftingText" type="text" maxlength="80" value="Note" />
-          <p>Advanced drafting: T-square, set square, dividers, measuring tape, editable spline, parallel offsets, annotations, and sticky notes. Drag on the field or grab a tool and touch its working edge to the turf. Spacing, angle, offset side, and parallel-reference controls are also on the advanced tray. Notes use the text above.</p>
+          <p>Advanced drafting: T-square, set square, dividers, measuring tape, spline, parallel offsets, annotations, and sticky notes. Drag on the field or grab a tool and touch its working edge to the turf. Drafting-table mode adds shared snapping and pin-free selected-guide edits. Spacing, angle, offset side, and parallel-reference controls are also on the advanced tray. Notes use the text above.</p>
           <div class="radio-row">
             <button id="draftingSaveButton" type="button">Save drafting locally</button>
             <button id="draftingRestoreButton" type="button">Restore saved drafting</button>

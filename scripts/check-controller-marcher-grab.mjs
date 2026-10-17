@@ -98,6 +98,7 @@ let scale = 1;
 let painting = false;
 let nearPaletteHit = null;
 let paletteGrab;
+let draftingTableActive = false;
 const gripPoint = new Vector3(0.2, 0.8, 0.4);
 const direction = Vector3.Forward();
 const controller = { inputSource: {}, grip: {
@@ -109,6 +110,7 @@ const context = vm.createContext({
   padGrabButtons: new Map(), menuInteractionHeld: new Map(),
   eraseMode: false,
   isMarcherPainting: () => painting,
+  isDraftingTableMode: () => draftingTableActive,
   SCRUB_DEADZONE: 0.2, GRAB_DEPTH_BASE_SPEED: 6, GRAB_DEPTH_TELESCOPE_RATE: 2.5, getARScale: () => scale,
   isGripPressed: () => grip, getTriggerPressed: () => false,
   isFloatingPanelGrabbed: () => false, getFloatingPanelNear: () => null,
@@ -153,6 +155,11 @@ assert.equal(paletteGrab[2], gripPoint, 'Palette marcher starts in the physical 
 assert.equal(paletteGrab[3], 'controller');
 assert.equal(paletteGrab[4], -1, 'Palette marcher uses a near grab so the thumbstick telescopes it');
 nearPaletteHit = null;
+grip = false; context.update(); grip = true;
+draftingTableActive = true;
+context.gripHeld.clear(); context.update();
+assert.equal(begun, undefined, 'Drafting-table mode prevents ordinary marcher grabs');
+draftingTableActive = false;
 grip = false; context.update(); grip = true;
 context.gripHeld.clear();
 context.update();
