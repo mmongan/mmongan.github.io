@@ -90,7 +90,7 @@ export function parseDraftingWorkspace(json: string): DraftingWorkspace {
       const controls = points(options.controls, options.editable === 'spline' ? 3 : 2,
         options.editable === 'spline' ? 3 : 64);
       if (controls.some((p, i) => i > 0 && Vector3.Distance(p, controls[i - 1]) < 0.05)) {
-        throw new Error('Saved drafting pins are too close together.');
+        throw new Error('Saved drafting control points are too close together.');
       }
       result.options.controls = controls;
       result.points = options.editable === 'spline' ? sampleDraftSpline(controls) : controls.map(p => p.clone());

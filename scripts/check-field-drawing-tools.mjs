@@ -101,7 +101,6 @@ const context = vm.createContext({
 vm.runInContext(transform(read('../src/menu/floatingPanel.ts')), context);
 vm.runInContext(transform(read('../src/interaction/fieldDrawingGeometry.ts')), context);
 vm.runInContext(transform(read('../src/interaction/draftingGeometry.ts')), context);
-vm.runInContext(transform(read('../src/interaction/draftingHandles.ts')), context);
 vm.runInContext(transform(read('../src/interaction/draftingWorkspace.ts')), context);
 vm.runInContext(transform(read('../src/interaction/draftingCamera.ts')), context);
 vm.runInContext(transform(read('../src/interaction/memoryWire.ts')), context);
@@ -191,11 +190,9 @@ try {
   assert.equal(guideCount(), 1, 'Held memory wire pressed flat on turf stamps a guide on release');
   assert.equal(scene.getMeshByName('drawingGuide')?.material?.name, 'drawingGuideYarnMaterial',
     'Committed layout guides use visible yarn rather than thin line geometry');
-  assert.ok(scene.getMeshByName('drawingGuideTackHead-0'), 'Layout guides are anchored by thumbtacks');
-  assert.ok(scene.getMeshByName('drawingGuideTackPin-0'), 'Thumbtacks include visible pins');
+  assert.equal(scene.meshes.filter(mesh => /Tack|draftPin/.test(mesh.name)).length, 0,
+    'Layout guides use no thumbtacks or pins');
   act('clear');
-  assert.equal(scene.getMeshByName('drawingGuideTackHead-0'), null,
-    'Clearing guides removes their thumbtacks');
   act('pencil');
   assert.equal(scene.meshes.filter(mesh => mesh.name.startsWith('toolMark-')).length, 12,
     'Ruler and protractor have numbered graduations');
@@ -269,15 +266,75 @@ try {
   scene.onBeforeRenderObservable.notifyObservers(scene);
   assert.equal(guideCount(), 1, 'Physical pencil draws only when held and touching the field');
   act('clear');
+  stroke('ruler', point(0, 0), point(4, 2));
+  assert.equal(context.selectDrawingGuideNear(point(2, 1), 0.1), true);
+  stroke('pencil', point(4.1, 2), point(8, 5));
+  assert.equal(guideCount(), 1, 'Pencil extends the original straight guide, not a second guide');
+  let extended = context.getSelectedDrawingGuidePoints();
+  assert.ok(extended[1].equalsWithEpsilon(point(8.4, 4.2)), 'Extension projects onto the original heading');
+  stroke('pencil', point(0, 0), point(-4, -3));
+  extended = context.getSelectedDrawingGuidePoints();
+  assert.ok(extended[0].equalsWithEpsilon(point(-4.4, -2.2)), 'Either endpoint can be extended outward');
+  const beforeInward = extended.map(p => p.clone());
+  stroke('pencil', point(-4.4, -2.2), point(0, 0));
+  assert.ok(context.getSelectedDrawingGuidePoints().every((p, i) => p.equalsWithEpsilon(beforeInward[i])),
+    'Drawing inward does not shorten an existing guide');
+  stroke('pencil', point(8.4, 4.2), point(100, 50));
+  extended = context.getSelectedDrawingGuidePoints();
+  assert.ok(Math.abs(extended[1].x - 53.333 / 2) < 1e-6, 'Extensions stop exactly at the field boundary');
+  assert.ok(Math.abs(extended[1].z - extended[1].x / 2) < 1e-6, 'Boundary clipping preserves heading');
+  act('clear');
+  stroke('ruler', point(0, 0), point(4, 0));
+  stroke('pencil', point(4.251, 0), point(6, 2));
+  assert.equal(guideCount(), 2, 'Pencil remains freehand outside the endpoint tolerance');
+  act('clear');
+  stroke('spline', point(-4, 0), point(4, 0));
+  stroke('pencil', point(4, 0), point(6, 2));
+  assert.equal(guideCount(), 2, 'Curved guides do not capture a freehand pencil stroke');
+  act('clear');
+  stroke('tape', point(0, 0), point(3, 0));
+  stroke('pencil', point(3, 0), point(6, 1));
+  assert.equal(guideCount(), 1);
+  assert.ok(scene.getMeshByName('draftingGuideLabel').metadata.label.includes('6.00 yd'),
+    'Extending a measured straight guide refreshes its label');
+  const extendedSave = JSON.parse(context.exportDrawingWorkspace());
+  assert.equal(extendedSave.guides[0].options.controls[1].x, 6,
+    'Extended control points are persisted instead of restoring the old length');
+  act('clear');
+  for (const scale of [1, 0.05]) {
+    root.position.set(3, 1, -2); root.rotation.y = 0.7; root.scaling.setAll(scale);
+    root.computeWorldMatrix(true);
+    stroke('ruler', point(0, 0), point(3, 0));
+    act('pencil');
+    pencil.rotationQuaternion.copyFrom(Quaternion.RotationAxis(Vector3.Up(), 0.7));
+    const placePencilTip = x => {
+      const tipWorld = Vector3.TransformCoordinates(new Vector3(x, -0.48, 0), root.computeWorldMatrix(true));
+      pencil.position.copyFrom(tipWorld.add(new Vector3(0, 0.12 * pencil.scaling.y, 0)));
+    };
+    placePencilTip(3);
+    context.beginFloatingPanelGrab('right', Matrix.Identity(), mesh, undefined, 0.03, true);
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    placePencilTip(6);
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    context.endFloatingPanelGrab('right');
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    act('path');
+    assert.equal(guideCount(), 1, 'Held pencil extends the same guide at full and tabletop scale');
+    assert.ok(conversions.at(-1)[1][1].equalsWithEpsilon(point(6, 0), 1e-5),
+      'Held extension stays field-local under translation, rotation and scale');
+    act('clear');
+  }
+  root.position.setAll(0); root.rotation.setAll(0); root.scaling.setAll(1);
+  root.computeWorldMatrix(true);
   act('laserPin');
   assert.ok(messages.at(-1).includes('Aim the laser'), 'Pinning without a beam reports what is missing');
   stroke('laser', point(0, 0), point(4, 0));
   assert.equal(guideCount(), 0, 'Aiming the laser does not silently commit a guide');
   const desktopBeam = scene.getMeshByName('fieldLaserBeam');
-  assert.ok(desktopBeam, 'Desktop drag leaves a live laser line ready to pin');
+  assert.ok(desktopBeam, 'Desktop drag leaves a live laser line ready to save');
   assert.equal(desktopBeam.parent, root);
   act('laserPin');
-  assert.equal(guideCount(), 1, 'Pin laser explicitly saves the beam as a layout guide');
+  assert.equal(guideCount(), 1, 'Save laser line explicitly saves the beam as a layout guide');
   act('path');
   assert.ok(Math.abs(conversions.at(-1)[1][0].x + 53.333 / 2) < 1e-6);
   assert.ok(Math.abs(conversions.at(-1)[1][1].x - 53.333 / 2) < 1e-6,
@@ -373,10 +430,10 @@ try {
   root.computeWorldMatrix(true);
   act('drafting');
   assert.equal(scene.getTransformNodeByName('advancedDraftingTray').isEnabled(), true);
-  const draftingKinds = ['tSquare', 'setSquare', 'dividers', 'tape', 'spline', 'offset', 'annotation', 'yarn'];
+  const draftingKinds = ['tSquare', 'setSquare', 'dividers', 'tape', 'spline', 'offset', 'annotation'];
   assert.ok(draftingKinds.every(kind => scene.getTransformNodeByName(`fieldTool-${kind}`)),
     'All eight advanced implements exist as grabbable physical tools');
-  assert.ok(actions.size > 0 && [...actions.values()].some(hit => hit.tool === 'addTack'));
+  assert.ok(![...actions.values()].some(hit => hit.tool === 'addTack'), 'The tray has no Add tack button');
   stroke('tSquare', point(0, 0), point(4, 1));
   act('path');
   assert.ok(Math.abs(conversions.at(-1)[1][1].z) < 1e-8, 'T-square constrains lines to field axes');
@@ -394,8 +451,9 @@ try {
   stroke('ruler', point(0, 0), point(5, 0));
   draftSpacingInput.value = '1.25';
   stroke('dividers', point(0, 0), point(1, 0));
-  assert.equal(scene.meshes.filter(mesh => mesh.name.startsWith('drawingGuideTackHead-')).length, 8,
-    'Divider copy adds five exactly spaced marks alongside the source guide three tacks');
+  assert.equal(scene.meshes.filter(mesh => mesh.name.startsWith('drawingGuideDivisionMark-')).length, 5,
+    'Divider copy adds five exactly spaced flat marks and the source guide has none');
+  assert.equal(scene.meshes.filter(mesh => /Tack/.test(mesh.name)).length, 0, 'Dividers use no tacks');
   const divisions = context.divideDraftLine([point(0, 0), point(2, 0), point(2, 3)], 1.25);
   assert.equal(divisions.length, 5);
   assert.ok(divisions[2].equalsWithEpsilon(point(2, 0.5)), 'Dividers follow path length through corners');
@@ -419,8 +477,8 @@ try {
   act('clear');
   stroke('tape', point(0, 0), point(3, 4));
   assert.ok(scene.getMeshByName('draftingGuideLabel').metadata.label.includes('5.00 yd | 8.00 steps'));
+  assert.equal(scene.getMeshByName('draftPinHead-0'), null, 'Tape measurements create no draggable pins');
   act('clear');
-  assert.equal(scene.getMeshByName('draftPinHead-0'), null, 'Clear removes editable handles as well as yarn');
   stroke('annotation', point(0, 0), point(2, 0));
   assert.equal(scene.getMeshByName('draftingGuideLabel').metadata.label, 'Test note');
   act('clear');
@@ -433,64 +491,17 @@ try {
   act('path');
   const oldCurve = conversions.at(-1)[1];
   assert.equal(oldCurve.length, 65);
-  const middlePin = scene.getMeshByName('draftPinHead-1');
-  context.beginFloatingPanelGrab('right', Matrix.Identity(), middlePin, undefined, 0.03, true);
-  context.updateFloatingPanelGrab('right', Matrix.Translation(0, 0, 2));
-  context.endFloatingPanelGrab('right');
-  scene.onBeforeRenderObservable.notifyObservers(scene);
-  act('path');
-  assert.ok(conversions.at(-1)[1][32].z > oldCurve[32].z + 0.9, 'Moving a spline control changes the saved curve');
+  assert.ok(oldCurve[32].z > 0.5, 'Spline creates a bent curve without control pins');
+  assert.equal(scene.getMeshByName('draftPinHead-1'), null, 'Splines create no draggable pins');
   act('clear');
-  stroke('yarn', point(-3, 0), point(3, 0));
-  act('addTack');
-  assert.equal(scene.meshes.filter(mesh => mesh.name.startsWith('draftPinHead-')).length, 3,
-    'Add tack inserts another independently draggable yarn pin');
-  const yarnPin = scene.getMeshByName('draftPinHead-1');
-  context.beginFloatingPanelGrab('left', Matrix.Identity(), yarnPin, undefined, 0.03, true);
-  context.updateFloatingPanelGrab('left', Matrix.Translation(0, 0, 2));
-  context.endFloatingPanelGrab('left');
-  scene.onBeforeRenderObservable.notifyObservers(scene);
-  act('path');
-  assert.equal(conversions.at(-1)[1].length, 3);
-  assert.ok(Math.abs(conversions.at(-1)[1][1].z - 2) < 1e-6, 'Yarn follows dragged pins in saved guide geometry');
-  const beforeInvalidMove = conversions.at(-1)[1].map(p => p.clone());
-  context.beginFloatingPanelGrab('left', Matrix.Identity(), yarnPin, undefined, 0.03, true);
-  context.updateFloatingPanelGrab('left', Matrix.Translation(100, 0, 0));
-  context.endFloatingPanelGrab('left');
-  act('path');
-  assert.ok(conversions.at(-1)[1].every((p, i) => p.equalsWithEpsilon(beforeInvalidMove[i])),
-    'Out-of-field pin movement leaves the last valid guide intact');
-  act('undo');
-  assert.equal(scene.getMeshByName('draftPinHead-0'), null, 'Undo cleans up pin registrations and meshes');
   root.position.set(3, 1, -2); root.rotation.y = 0.7; root.scaling.setAll(0.05);
   root.computeWorldMatrix(true);
-  stroke('yarn', point(-3, 0), point(3, 0));
-  const tabletopPin = scene.getMeshByName('draftPinHead-0');
-  const fieldDelta = Vector3.TransformNormal(new Vector3(0, 0, 2), root.getWorldMatrix());
-  context.beginFloatingPanelGrab('right', Matrix.Identity(), tabletopPin, undefined, 0.03, true);
-  context.updateFloatingPanelGrab('right', Matrix.Translation(...fieldDelta.asArray()));
-  context.endFloatingPanelGrab('right');
-  scene.onBeforeRenderObservable.notifyObservers(scene);
+  stroke('tape', point(-3, 0), point(3, 0));
   act('path');
-  assert.ok(conversions.at(-1)[1][0].equalsWithEpsilon(point(-3, 2), 1e-5),
-    'Pin movement converts correctly under tabletop translation, rotation, and scale');
-  const labelCountBefore = scene.meshes.filter(mesh => mesh.name === 'draftingGuideLabel').length;
-  const downwardRay = new Ray(
-    tabletopPin.getAbsolutePosition().add(new Vector3(0, 1, 0)), Vector3.Down(), 3
-  );
-  assert.equal(context.beginFloatingPanelPointerDrag(downwardRay), true,
-    'Desktop pointer can pick an editable tabletop pin');
-  const pointerTarget = Vector3.TransformCoordinates(point(-2, 3), root.computeWorldMatrix(true));
-  context.updateFloatingPanelPointerDrag(new Ray(pointerTarget.add(new Vector3(0, 1, 0)), Vector3.Down(), 3));
-  context.endFloatingPanelGrab('pointer');
-  act('path');
-  assert.ok(conversions.at(-1)[1][0].equalsWithEpsilon(point(-2, 3), 1e-5),
-    'Desktop pin dragging intersects the transformed field plane');
-  assert.equal(scene.meshes.filter(mesh => mesh.name === 'draftingGuideLabel').length, labelCountBefore);
-  calibration.checked = true;
-  context.beginFloatingPanelGrab('right', Matrix.Identity(), tabletopPin, undefined, 0.03, true);
-  assert.equal(context.isFloatingPanelGrabbed('right'), false, 'Calibration blocks pin grabbing');
-  calibration.checked = false;
+  assert.ok(conversions.at(-1)[1][0].equalsWithEpsilon(point(-3, 0), 1e-5),
+    'Tape converts correctly under tabletop translation, rotation, and scale');
+  act('undo');
+  assert.equal(guideCount(), 0, 'Undo removes the whole tape guide');
   act('clear');
   root.position.setAll(0); root.rotation.setAll(0); root.scaling.setAll(1);
   root.computeWorldMatrix(true);
@@ -525,13 +536,7 @@ try {
   draftTextInput.value = 'Remember the opening set';
   stroke('stickyNote', point(2, 3), point(2, 3));
   assert.equal(scene.getMeshByName('draftingStickyNote').metadata.label, draftTextInput.value);
-  const stickyPin = scene.getMeshByName('draftPinHead-0');
-  context.beginFloatingPanelGrab('right', Matrix.Identity(), stickyPin, undefined, 0.03, true);
-  context.updateFloatingPanelGrab('right', Matrix.Translation(2, 0, 1));
-  context.endFloatingPanelGrab('right');
-  scene.onBeforeRenderObservable.notifyObservers(scene);
-  assert.ok(scene.getMeshByName('draftingStickyNote').position.x > 4,
-    'Dragging a sticky-note pin translates the note');
+  assert.equal(scene.getMeshByName('draftPinHead-0'), null, 'Sticky notes create no draggable pins');
   stroke('tape', point(0, 0), point(3, 4));
   stroke('spline', point(-4, 0), point(4, 0));
   gridToggle.checked = true; gridInterval.value = '2.5';
@@ -546,8 +551,8 @@ try {
   assert.equal(guideCount(), 3, 'Local restore rebuilds saved guides');
   assert.equal(scene.getMeshByName('draftingStickyNote').metadata.label, 'Remember the opening set');
   assert.ok(scene.getMeshByName('draftingGuideLabel').metadata.label.includes('5.00 yd'));
-  assert.equal(scene.meshes.filter(mesh => mesh.name.startsWith('draftPinHead-')).length, 7,
-    'Restored sticky, tape, and spline pins remain editable');
+  assert.equal(scene.meshes.filter(mesh => mesh.name.startsWith('draftPinHead-')).length, 0,
+    'Restored sticky, tape, and spline guides have no pins');
   assert.equal(gridToggle.checked, true); assert.equal(gridInterval.value, '2.5');
   assert.equal(draftTextInput.value, 'Remember the opening set');
   stroke('ruler', point(0, 0), point(2, 0));
@@ -588,11 +593,12 @@ try {
   assert.ok(messages.at(-1).includes('confirm'), 'Drawing disarms an earlier replacement confirmation');
   act('clear');
   act('restoreDrafting');
-  const restoredPin = scene.getMeshByName('draftPinHead-0');
-  context.beginFloatingPanelGrab('right', Matrix.Identity(), restoredPin, undefined, 0.03, true);
+  const heldTool = scene.getTransformNodeByName('fieldTool-tape').getChildMeshes().find(mesh => mesh.isPickable);
+  context.beginFloatingPanelGrab('right', Matrix.Identity(), heldTool, undefined, 0.03, true);
   act('saveDrafting');
-  assert.ok(messages.at(-1).includes('Release drafting'), 'Saving while a pin is held is explicitly blocked');
+  assert.ok(messages.at(-1).includes('Release drafting'), 'Saving while a tool is held is explicitly blocked');
   context.endFloatingPanelGrab('right');
+  act('stop');
   act('saveDrafting');
   assert.ok(messages.at(-1).includes('Saved 3'));
   calibration.checked = true;
@@ -634,7 +640,7 @@ try {
   assert.equal(revokedDownload, 'blob:field-photo', 'Download blob URLs are cleaned up');
   assert.ok(capturedRenderList.includes(fieldSurface));
   assert.ok(capturedRenderList.includes(scene.getMeshByName('draftingStickyNote')));
-  assert.ok(capturedRenderList.includes(scene.getMeshByName('draftPinHead-0')));
+  assert.ok(capturedRenderList.includes(scene.getMeshByName('drawingGuide')));
   assert.ok(!capturedRenderList.includes(excludedRoute), 'Capture excludes marching routes');
   assert.ok(!capturedRenderList.includes(excludedTray), 'Capture excludes tool trays and camera');
   assert.equal(scene.getCameraByName('draftingSnapshotCamera'), null, 'Temporary camera is disposed');
@@ -703,7 +709,7 @@ try {
   assert.equal(context.handleDrawingPointer('down', point(0, 0)), false);
   assert.equal(context.guideTouchesSweep([point(0, 0), point(0, 3)], point(2, 0), point(2, 3), 0.5), false,
     'Parallel, separated eraser motion does not delete a guide');
-  console.log('Drafting checks passed: physical tools, laser, advanced geometry, labels, sticky notes, editable pins, local save/restore/delete, paired camera snapshots, corrupt data/storage and capture failures, confirmation, cleanup, tabletop transforms, and calibration gating.');
+  console.log('Drafting checks passed: physical tools, laser, advanced geometry, labels, sticky notes, no pins/tacks, local save/restore/delete, paired camera snapshots, corrupt data/storage and capture failures, confirmation, cleanup, tabletop transforms, and calibration gating.');
 } finally {
   scene.dispose();
   engine.dispose();

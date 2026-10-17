@@ -507,7 +507,7 @@ function addBlankChartPage() {
   if (floorCalibrationToggle?.checked) return;
   const afterPage = getDrillChartPageIndex();
   if (!canSwapChartPageGuides() || !showChartPageGuides(afterPage)) {
-    showPlacementNotice("Finish drawing and release drafting pins before adding a chart page.");
+    showPlacementNotice("Finish drawing before adding a chart page.");
     return;
   }
   selectRobot(null);

@@ -1,7 +1,7 @@
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
 import { FIELD_SURFACE_Y } from '../field/constants';
 
-export type DraftingTool = 'tSquare' | 'setSquare' | 'dividers' | 'tape' | 'spline' | 'offset' | 'annotation' | 'yarn' | 'stickyNote';
+export type DraftingTool = 'tSquare' | 'setSquare' | 'dividers' | 'tape' | 'spline' | 'offset' | 'annotation' | 'stickyNote';
 
 export function constrainedDraftLine(start: Vector3, end: Vector3, angle: number | null) {
   const delta = end.subtract(start);

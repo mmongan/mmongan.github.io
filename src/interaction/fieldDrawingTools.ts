@@ -21,7 +21,6 @@ import { draftingSaveButton, draftingRestoreButton, draftingDeleteButton, drafti
 import { createMemoryWire } from './memoryWire';
 import { getARScale, getARScaleRange, onARScaleChangedObservable } from '../xr/ar';
 import { constrainedDraftLine, divideDraftLine, measureDraftLine, offsetDraftLine, sampleDraftSpline } from './draftingGeometry';
-import { createDraftingHandles } from './draftingHandles';
 import { DRAFTING_WORKSPACE_KEY, parseDraftingWorkspace, serializeDraftingWorkspace,
   type DraftingWorkspace, type WorkspaceGuide } from './draftingWorkspace';
 import { captureDraftingPhoto, DRAFTING_CAMERA_KEY, parseDraftingPhoto, type DraftingPhoto } from './draftingCamera';
@@ -46,7 +45,6 @@ interface Guide {
   points: Vector3[];
   meshes: AbstractMesh[];
   options: GuideOptions;
-  handles?: ReturnType<typeof createDraftingHandles>;
 }
 interface Tool {
   kind: FieldDrawingTool;
@@ -101,7 +99,7 @@ export function importDrawingWorkspace(json: string): true | string {
 export function swapDrawingGuides(next: readonly WorkspaceGuide[]): WorkspaceGuide[] | null {
   return drawing ? drawing.swapGuides(next) : null;
 }
-/** Whether a guide is being drawn or has a held pin, so the field's guides cannot be swapped. */
+/** Whether a guide is being drawn, so the field's guides cannot be swapped. */
 export function areDrawingGuidesBusy() {
   return drawing?.guidesBusy() ?? true;
 }
@@ -165,7 +163,6 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
   let restoringPhoto = false;
   let takingPhoto = false;
   const yarnRadius = 0.012;
-  const tackSpacing = 3.5;
   const trayRoot = new TransformNode('drawingToolTray', scene);
   const stencilRoot = new TransformNode('fieldStencilTray', scene);
   const cutterRoot = new TransformNode('fieldCookieCutterTray', scene);
@@ -199,16 +196,14 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
   const yarnMaterial = new StandardMaterial('drawingGuideYarnMaterial', scene);
   yarnMaterial.diffuseColor = new Color3(0.72, 0.12, 0.16);
   yarnMaterial.specularColor = new Color3(0.16, 0.08, 0.08);
-  const tackHeadMaterial = new StandardMaterial('drawingGuideTackHeadMaterial', scene);
-  tackHeadMaterial.diffuseColor = new Color3(0.92, 0.12, 0.14);
-  tackHeadMaterial.specularColor = new Color3(0.45, 0.35, 0.35);
+  const divisionMarkMaterial = new StandardMaterial('drawingGuideDivisionMarkMaterial', scene);
+  divisionMarkMaterial.diffuseColor = new Color3(0.92, 0.12, 0.14);
+  divisionMarkMaterial.specularColor = Color3.Black();
+  divisionMarkMaterial.backFaceCulling = false;
   const selectedYarnMaterial = new StandardMaterial('drawingGuideSelectedYarnMaterial', scene);
   selectedYarnMaterial.diffuseColor = new Color3(1, 0.82, 0.1);
   selectedYarnMaterial.emissiveColor = new Color3(0.75, 0.55, 0.05);
   selectedYarnMaterial.specularColor = Color3.Black();
-  const tackPinMaterial = new StandardMaterial('drawingGuideTackPinMaterial', scene);
-  tackPinMaterial.diffuseColor = new Color3(0.68, 0.72, 0.78);
-  tackPinMaterial.specularColor = new Color3(0.75, 0.75, 0.75);
   const laserMaterial = new StandardMaterial('fieldLaserMaterial', scene);
   laserMaterial.emissiveColor = new Color3(0.1, 1, 0.2);
   laserMaterial.diffuseColor = laserMaterial.emissiveColor;
@@ -252,7 +247,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
   }
   buildTray(trayRoot, meshes, 'drawingToolTrayBacking', 1.4);
   button('Straighten wire', -0.2, 0.5, 0.3, 'wireReset');
-  button('Pin laser line', 0.2, 0.5, 0.3, 'laserPin');
+  button('Save laser line', 0.2, 0.5, 0.3, 'laserPin');
   button('Advanced tools', 0.55, 0.1, 0.25, 'drafting');
   button('Span -', -0.235, -0.005, 0.22, 'smaller');
   button('Span +', 0, -0.005, 0.22, 'larger');
@@ -319,7 +314,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
   buildTray(draftingRoot, draftingMeshes, 'advancedDraftingTrayBacking', 1.4, 1.6);
   const draftCommands = [
     ['Spacing -', 'draftSpacingLess'], ['Spacing +', 'draftSpacingMore'], ['Angle', 'draftAngle'],
-    ['Offset side', 'draftSide'], ['Parallel ref', 'draftReference'], ['Add tack', 'addTack'],
+    ['Offset side', 'draftSide'], ['Parallel ref', 'draftReference'],
     ['Formation', 'formation'], ['Path', 'path'], ['Route selected form', 'synchronizedRoutes'], ['Undo guide', 'undo'],
     ['Clear guides', 'clear'], ['Put away', 'stop'], ['Hide trays', 'hide'],
   ] as const;
@@ -391,32 +386,6 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     }
     laserPoints = points.map(point => point.clone());
   }
-  function tackPositions(points: Vector3[]) {
-    const positions = [points[0].clone()];
-    let distanceToNextTack = tackSpacing;
-    let distanceAlongLine = 0;
-    for (let index = 1; index < points.length; index++) {
-      const start = points[index - 1];
-      const end = points[index];
-      const segmentLength = Vector3.Distance(start, end);
-      if (segmentLength <= 1e-6) continue;
-      while (distanceToNextTack < distanceAlongLine + segmentLength) {
-        positions.push(Vector3.Lerp(start, end,
-          (distanceToNextTack - distanceAlongLine) / segmentLength));
-        distanceToNextTack += tackSpacing;
-      }
-      if (index < points.length - 1) {
-        const incoming = end.subtract(start).normalize();
-        const outgoing = points[index + 1].subtract(end).normalize();
-        if (Vector3.Dot(incoming, outgoing) < Math.cos(Math.PI / 5)) positions.push(end.clone());
-      }
-      distanceAlongLine += segmentLength;
-    }
-    const last = points[points.length - 1];
-    if (Vector3.Distance(positions[0], last) > 0.08) positions.push(last.clone());
-    return positions.filter((position, index) =>
-      positions.findIndex(candidate => Vector3.Distance(candidate, position) < 0.08) === index);
-  }
   function createGuideMeshes(points: Vector3[], options: GuideOptions = {}) {
     const yarnPath = points.map(point => new Vector3(
       point.x, FIELD_SURFACE_Y + yarnRadius + 0.002, point.z
@@ -428,28 +397,17 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     yarn.material = yarnMaterial;
     yarn.isVisible = !options.sticky;
     yarn.isPickable = false;
-    const tacks: AbstractMesh[] = [];
-    const anchors = options.editable ? [] : options.divisions ?? tackPositions(points);
-    anchors.forEach((point, index) => {
-      const pin = MeshBuilder.CreateCylinder(`drawingGuideTackPin-${index}`, {
-        height: 0.08, diameterTop: 0.002, diameterBottom: 0.012, tessellation: 8,
-      }, scene);
-      pin.parent = deps.root;
-      pin.position.set(point.x, FIELD_SURFACE_Y - 0.025, point.z);
-      pin.material = tackPinMaterial;
-      pin.isPickable = false;
-      tacks.push(pin);
-      const head = MeshBuilder.CreateSphere(`drawingGuideTackHead-${index}`, {
-        diameter: 0.08, segments: 8,
-      }, scene);
-      head.parent = deps.root;
-      head.position.set(point.x, FIELD_SURFACE_Y + 0.035, point.z);
-      head.scaling.y = 0.45;
-      head.material = tackHeadMaterial;
-      head.isPickable = false;
-      tacks.push(head);
+    const result: AbstractMesh[] = [yarn];
+    // Divider steps are flat turf marks so the guide stays pin-free.
+    (options.divisions ?? []).forEach((point, index) => {
+      const mark = MeshBuilder.CreateDisc(`drawingGuideDivisionMark-${index}`, { radius: 0.06, tessellation: 12 }, scene);
+      mark.parent = deps.root;
+      mark.position.set(point.x, FIELD_SURFACE_Y + 0.004, point.z);
+      mark.rotation.x = Math.PI / 2;
+      mark.material = divisionMarkMaterial;
+      mark.isPickable = false;
+      result.push(mark);
     });
-    const result: AbstractMesh[] = [yarn, ...tacks];
     if (options.label || options.measure) {
       const { yards, steps } = measureDraftLine(points);
       const start = points[0], end = points[points.length - 1];
@@ -532,30 +490,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
   }
   function disposeGuide(guide: Guide) {
     if (guide === selectedGuide) selectedGuide = null;
-    guide.handles?.dispose();
     guide.meshes.forEach(mesh => mesh.dispose());
-  }
-  function attachGuideHandles(guide: Guide) {
-    guide.handles?.dispose();
-    const controls = guide.options.controls;
-    if (!controls || !guide.options.editable) return;
-    guide.handles = createDraftingHandles({
-      field: deps.root, points: controls, material: tackHeadMaterial,
-      translate: guide.options.sticky,
-      allowed: () => !floorCalibrationToggle?.checked && !takingPhoto,
-      prepare: deps.prepare, notify: deps.notify,
-      changed: next => {
-        restoreArmedUntil = 0;
-        const points = guide.options.editable === 'spline' ? sampleDraftSpline(next) : next.map(p => p.clone());
-        if (!isGuideOnField(points) || measureDraftLine(points).yards < 0.05 ||
-          next.some((p, i) => i > 0 && Vector3.Distance(p, next[i - 1]) < 0.05)) return false;
-        guide.points = points;
-        guide.meshes.forEach(mesh => mesh.dispose());
-        guide.meshes = createGuideMeshes(points, guide.options);
-        highlightGuide(guide);
-        return true;
-      },
-    });
   }
   function commit(points: Vector3[], options: GuideOptions = {}) {
     display([]);
@@ -574,7 +509,6 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     const committedPoints = points.map(point => point.clone());
     const guide: Guide = { points: committedPoints, meshes: createGuideMeshes(committedPoints, options), options };
     guides.push(guide);
-    attachGuideHandles(guide);
     deps.notify(`Guide ready (${guides.length}). Create formation or Create path uses the ${selectedGuide
       ? 'selected' : 'newest'} guide; tap or pinch a guide to select it.`);
   }
@@ -588,6 +522,74 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
   }
   function append(stroke: Vector3[], point: Vector3) {
     if (Vector3.Distance(stroke[stroke.length - 1], point) >= 0.05 && stroke.length < 512) stroke.push(point.clone());
+  }
+  const pencilExtensions = new WeakMap<Vector3[], {
+    guide: Guide; index: number; endpoint: Vector3; direction: Vector3;
+  }>();
+  function beginPencilStroke(point: Vector3) {
+    let nearest = 0.25;
+    let extension: { guide: Guide; index: number; endpoint: Vector3; direction: Vector3 } | null = null;
+    for (const guide of guides) {
+      if (guide.options.sticky || guide.options.editable === 'spline' ||
+        guide.options.divisions || (guide.options.label && !guide.options.measure)) continue;
+      const start = guide.points[0], end = guide.points[guide.points.length - 1];
+      const direction = new Vector3(end.x - start.x, 0, end.z - start.z);
+      const length = direction.length();
+      if (length < 0.05) continue;
+      direction.scaleInPlace(1 / length);
+      if (guide.points.some(p => {
+        const offset = p.subtract(start);
+        const along = Vector3.Dot(offset, direction);
+        return Math.abs(offset.x * direction.z - offset.z * direction.x) > 0.01 ||
+          along < -0.01 || along > length + 0.01;
+      })) continue;
+      for (const index of [0, guide.points.length - 1]) {
+        const endpoint = guide.points[index];
+        const distance = Math.hypot(point.x - endpoint.x, point.z - endpoint.z);
+        if (distance > nearest) continue;
+        nearest = distance;
+        extension = { guide, index, endpoint: endpoint.clone(),
+          direction: direction.scale(index === 0 ? -1 : 1) };
+      }
+    }
+    const stroke = extension ? extension.guide.points.map(p => p.clone()) : [point.clone()];
+    if (extension) pencilExtensions.set(stroke, extension);
+    return stroke;
+  }
+  function updatePencilStroke(stroke: Vector3[], point: Vector3) {
+    const extension = pencilExtensions.get(stroke);
+    if (!extension) { append(stroke, point); return; }
+    const { endpoint, direction, index } = extension;
+    const boundary = buildLaserGuide(endpoint, direction);
+    if (boundary.length !== 2) return;
+    const limit = Math.max(0, Vector3.Dot(boundary[1].subtract(endpoint), direction));
+    const distance = Math.max(0, Math.min(limit, Vector3.Dot(point.subtract(endpoint), direction)));
+    stroke[index] = endpoint.add(direction.scale(distance));
+  }
+  function finishPencilExtension(points: Vector3[]) {
+    const extension = pencilExtensions.get(points);
+    if (!extension) return false;
+    pencilExtensions.delete(points);
+    display([]);
+    if (!guides.includes(extension.guide)) {
+      deps.notify('Line extension canceled: the original guide was removed.');
+      return true;
+    }
+    if (Vector3.Distance(points[extension.index], extension.endpoint) < 0.05) {
+      deps.notify('Line unchanged. Draw outward at least 0.05 yards to extend it.');
+      return true;
+    }
+    const guide = extension.guide;
+    const options = { ...guide.options };
+    if (options.controls) options.controls = points.map(p => p.clone());
+    const meshes = createGuideMeshes(points, options);
+    guide.meshes.forEach(mesh => mesh.dispose());
+    guide.points = points.map(p => p.clone());
+    guide.options = options;
+    guide.meshes = meshes;
+    highlightGuide(guide);
+    deps.notify('Straight guide extended. Its direction and selection are preserved.');
+    return true;
   }
   function releasePointerCamera() {
     if (pointerCamera && !pointerCamera.isDisposed()) pointerCamera.attachControl(true);
@@ -627,7 +629,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
       return [new Vector3(start.x, FIELD_SURFACE_Y + 0.025, start.z),
         new Vector3(start.x + 0.1, FIELD_SURFACE_Y + 0.025, start.z)];
     }
-    if (kind === 'tape' || kind === 'yarn' || kind === 'annotation' || kind === 'dividers') {
+    if (kind === 'tape' || kind === 'annotation' || kind === 'dividers') {
       return [start.clone(), end.clone()];
     }
     if (kind === 'offset') {
@@ -639,16 +641,16 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
   }
   function toolInstructions(kind: FieldDrawingTool) {
     const instructions: Partial<Record<FieldDrawingTool, string>> = {
+      pencil: 'Pencil: draw freehand or along a ruler. Start within 0.25 yards of a straight guide endpoint and draw outward to extend that guide along its original direction.',
       tSquare: 'T-square: drag or touch its edge to draw field-axis lines. Parallel ref switches to the newest guide direction.',
       setSquare: `Set square: drag or touch its edge to draw at multiples of ${getDraftAngle()} degrees. Angle cycles 30/45/60/90.`,
       dividers: 'Dividers: drag or touch/lift to mark equal intervals along the newest guide (or the drawn segment). Spacing +/- sets yards.',
-      tape: 'Tape: drag two field points or touch/lift its edge to save a yards, 8-to-5 steps, and angle label. Drag its endpoint pins to remeasure.',
-      spline: 'French curve: drag endpoints or touch/lift to create a smooth curve. Drag its three red pins to adjust endpoints and bend.',
+      tape: 'Tape: drag two field points or touch/lift its edge to save a yards, 8-to-5 steps, and       angle label. Erase and redraw to remeasure.',
+            spline: 'French curve: drag endpoints or touch/lift to create a smooth curve.',
       offset: 'Offset: drag or touch/lift to copy the newest guide at the configured spacing. Offset side swaps left/right. Draw a source guide first.',
       annotation: 'Annotation: drag a leader or touch/lift to place your Settings note text on the field.',
-      stickyNote: 'Sticky note: click or touch/lift on the field to place the text from Settings. Drag its red pins to move it. Save locally preserves notes.',
+      stickyNote: 'Sticky note: click or touch/lift on the field to place the text from Settings. Save locally preserves notes.',
       camera: 'Camera: use Take photo on the advanced tray or Camera in Settings to capture the field and save drafting together. Restore photo recalls drafting; Download PNG exports the image.',
-      yarn: 'Yarn: drag or touch/lift to place two movable thumbtacks. Add tack inserts a pin in the longest span; drag pins to stretch the yarn.',
     };
     return instructions[kind];
   }
@@ -687,7 +689,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
       lens.parent = root; lens.rotation.x = Math.PI / 2; lens.position.z = -0.05;
       lens.material = metal; parts.add(lens);
       const shutter = MeshBuilder.CreateSphere('draftingCameraShutter', { diameter: 0.025, segments: 8 }, scene);
-      shutter.parent = root; shutter.position.set(0.05, 0.05, 0); shutter.material = tackHeadMaterial;
+      shutter.parent = root; shutter.position.set(0.05, 0.05, 0); shutter.material = divisionMarkMaterial;
       const shutterAction: HandMenuHit = { action: 'drawingTool', tool: 'takePhoto' };
       registerMenuButton(shutter, shutterAction);
       new FloatingPanel(root, new Set([shutter]), root, Vector3.Zero(), new Map([[shutter, shutterAction]]));
@@ -727,10 +729,6 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     } else if (kind === 'annotation') {
       rod('draftingAnnotationPen', new Vector3(0, 0.1, 0), tip, 0.012).material = plastic;
       edge.set(0.12, -0.12, 0);
-    } else if (kind === 'yarn') {
-      tip.set(-0.12, -0.12, 0); edge.set(0.12, -0.12, 0);
-      rod('draftingYarnSpool', new Vector3(0, -0.07, 0), new Vector3(0, 0.07, 0), 0.045).material = yarnMaterial;
-      rod('draftingYarnLooseEnd', tip, edge, 0.004).material = yarnMaterial;
     } else if (kind === 'laser') {
       tip.set(-0.08, 0, 0);
       edge.set(0.08, 0, 0);
@@ -834,7 +832,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
         } else span = heldSpan(root);
         super.begin(source, world);
         deps.notify(toolInstructions(kind) ?? (kind === 'laser'
-          ? 'Laser: rotate the held level to project a green line across the field. Use Pin laser line on the Tools tray to save a guide. Desktop: drag on the field to aim.'
+          ? 'Laser: rotate the held level to project a green line across the field. Use Save laser line on the Tools tray to save a guide. Desktop: drag on the field to aim.'
           : `${kind}: touch the working edge to the field, then lift. Desktop: drag on the field after picking up the tool.`));
       }
     }
@@ -875,7 +873,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     makeTool(kind, trayRoot, index));
   stencils.forEach(([, kind], index) => makeTool(kind, stencilRoot, index));
   cutters.forEach(([, kind], index) => makeTool(kind, cutterRoot, index));
-  (['tSquare', 'setSquare', 'dividers', 'tape', 'spline', 'offset', 'annotation', 'yarn', 'stickyNote'] as const)
+  (['tSquare', 'setSquare', 'dividers', 'tape', 'spline', 'offset', 'annotation', 'stickyNote'] as const)
     .forEach((kind, index) => makeTool(kind, draftingRoot, index));
   const memoryWire = createMemoryWire({
     dock: trayRoot, field: deps.root, commit, contactScale: fieldToolScale,
@@ -906,6 +904,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     tool.stroke = null;
   }
   function finishStroke(kind: FieldDrawingTool, points: Vector3[]) {
+    if (kind === 'pencil' && finishPencilExtension(points)) return;
     if (kind === 'dividers') {
       const spacing = getDraftSpacing();
       if (spacing === null) return;
@@ -922,8 +921,8 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
       const start = points[0].clone(), end = points[64].clone();
       const middle = points[32].scale(2).subtract(start.add(end).scale(0.5));
       commit(points, { editable: 'spline', controls: [start, middle, end] });
-    } else if (kind === 'yarn' || kind === 'tape') {
-      commit(points, { editable: 'yarn', controls: points.map(p => p.clone()), measure: kind === 'tape' });
+    } else if (kind === 'tape') {
+      commit(points, { editable: 'yarn', controls: points.map(p => p.clone()), measure: true });
     } else if (kind === 'annotation' || kind === 'stickyNote') {
       const text = (draftingText?.value ?? 'Note').trim().slice(0, 80);
       if (!text) { deps.notify('Enter annotation text in Settings before placing a note.'); display([]); return; }
@@ -948,7 +947,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
   }
   function action(value: FieldDrawingTool | 'show' | 'stencils' | 'cutters' | 'hide' | 'smaller' | 'larger' | 'stop' |
     'formation' | 'path' | 'synchronizedRoutes' | 'undo' | 'clear' | 'wireReset' | 'laserPin' | 'drafting' |
-    'draftSpacingLess' | 'draftSpacingMore' | 'draftAngle' | 'draftSide' | 'draftReference' | 'addTack' |
+    'draftSpacingLess' | 'draftSpacingMore' | 'draftAngle' | 'draftSide' | 'draftReference' |
     'saveDrafting' | 'restoreDrafting' | 'deleteDrafting' | 'takePhoto' | 'restorePhoto' | 'downloadPhoto') {
     if (takingPhoto) { workspaceMessage('Wait for the field snapshot to finish.'); return; }
     if (value === 'takePhoto') { void takePhoto(); return; }
@@ -1039,32 +1038,9 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
       updateDraftStatus();
       return;
     }
-    if (value === 'addTack') {
-      const guide = activeGuide();
-      const controls = guide?.options.controls;
-      if (!guide || guide.options.editable !== 'yarn' || guide.options.sticky || !controls) {
-        deps.notify('Create a yarn line or tape measurement before adding a tack.');
-        return;
-      }
-      if (controls.length >= 64) { deps.notify('Pin limit reached (64 per editable yarn line).'); return; }
-      let longest = 1;
-      for (let i = 2; i < controls.length; i++) {
-        if (Vector3.Distance(controls[i - 1], controls[i]) >
-          Vector3.Distance(controls[longest - 1], controls[longest])) longest = i;
-      }
-      if (Vector3.Distance(controls[longest - 1], controls[longest]) < 0.1) {
-        deps.notify('Spread the yarn pins apart before inserting another tack.');
-        return;
-      }
-      controls.splice(longest, 0, controls[longest - 1].add(controls[longest]).scale(0.5));
-      guide.points = controls.map(p => p.clone());
-      attachGuideHandles(guide);
-      deps.notify('Tack added at the longest span midpoint. Drag it anywhere on the field.');
-      return;
-    }
     if (value === 'laserPin') {
       if (laserPoints.length !== 2) {
-        deps.notify('Aim the laser across the field before pinning a line.');
+        deps.notify('Aim the laser across the field before saving a line.');
         return;
       }
       commit(laserPoints.map(point => point.clone()));
@@ -1128,7 +1104,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     tool.root.setEnabled(true);
     placeHeldTool(tool.panel, tool.root);
     deps.notify(toolInstructions(value) ?? (value === 'laser'
-      ? 'Laser: drag on the field to aim a live line, then use Pin laser line on the Tools tray. In XR, hold and rotate the level; release turns the beam off.'
+      ? 'Laser: drag on the field to aim a live line, then use Save laser line on the Tools tray. In XR, hold and rotate the level; release turns the beam off.'
       : value.endsWith('Cutter')
       ? `${value}: press onto the field and lift to stamp a formation. Desktop: drag center to radius. Span +/- changes size.`
       : `${value}: grab the tool and touch its tip/edge to the field; lift to finish. Desktop: drag on the field. Span +/- changes size.`));
@@ -1138,7 +1114,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     restoreArmedUntil = 0;
     if (type === 'down') {
       if (!point) return false;
-      pointerStroke = [point.clone()];
+      pointerStroke = selected === 'pencil' ? beginPencilStroke(point) : [point.clone()];
       pointerAnchor = point.clone();
       if (!pointerCamera) {
         pointerCamera = scene.activeCamera;
@@ -1148,7 +1124,8 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     if (point && pointerStroke) {
       const previous = pointerStroke[pointerStroke.length - 1];
       if (selected === 'eraser') erase(previous, point, 0.5);
-      if (selected === 'pencil' || selected === 'eraser') append(pointerStroke, point);
+      if (selected === 'pencil') updatePencilStroke(pointerStroke, point);
+      else if (selected === 'eraser') append(pointerStroke, point);
       else if (pointerAnchor) pointerStroke = selected === 'wire'
         ? memoryWire.shapeAt(pointerAnchor, point) : makeStroke(selected, pointerAnchor, point);
       if (selected === 'laser') {
@@ -1197,17 +1174,17 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     return parseDraftingPhoto(json);
   }
   async function takePhoto() {
-    if (floorCalibrationToggle?.checked || pointerStroke || guides.some(guide => guide.handles?.grabbed()) ||
+    if (floorCalibrationToggle?.checked || pointerStroke ||
       tools.some(tool => tool.kind !== 'camera' && (tool.panel.grabbed() || tool.stroke !== null)) ||
       memoryWire.panel.grabbed() || memoryWire.handles.some(handle => handle.grabbed())) {
-      workspaceMessage('Finish floor calibration and release drawing tools/pins before taking a snapshot.');
+      workspaceMessage('Finish floor calibration and release drawing tools before taking a snapshot.');
       return;
     }
     takingPhoto = true; restoreArmedUntil = 0;
     workspaceMessage('Taking top-down field snapshot...');
     try {
       const photo = await captureDraftingPhoto(deps.root, collectWorkspace(),
-        guides.flatMap(guide => [...guide.meshes, ...(guide.handles?.meshes ?? [])]));
+        guides.flatMap(guide => guide.meshes));
       if (scene.isDisposed || serializeDraftingWorkspace(collectWorkspace()) !== photo.workspace) {
         throw new Error('Drafting or settings changed during capture. Take another photo.');
       }
@@ -1226,8 +1203,8 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
       return;
     }
     if (pointerStroke || tools.some(tool => tool.panel.grabbed()) || memoryWire.panel.grabbed() ||
-      memoryWire.handles.some(handle => handle.grabbed()) || guides.some(guide => guide.handles?.grabbed())) {
-      workspaceMessage('Release drafting tools and pins before saving or restoring.');
+      memoryWire.handles.some(handle => handle.grabbed())) {
+      workspaceMessage('Release drafting tools before saving or restoring.');
       return;
     }
     if (command === 'deleteDrafting') {
@@ -1278,7 +1255,6 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
       for (const saved of snapshot.guides) {
         const guide: Guide = { ...saved, meshes: createGuideMeshes(saved.points, saved.options) };
         replacements.push(guide);
-        attachGuideHandles(guide);
       }
     } catch (error) {
       replacements.forEach(disposeGuide);
@@ -1379,8 +1355,8 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
         erase(previous, tip, Math.max(0.1, 0.04 * tool.root.scaling.x / scaleY));
         tool.stroke = [tip];
       } else if (tool.kind === 'pencil') {
-        tool.stroke ??= [tip.clone()];
-        append(tool.stroke, tip);
+        tool.stroke ??= beginPencilStroke(tip);
+        updatePencilStroke(tool.stroke, tip);
         display(tool.stroke);
       } else {
         const edge = local(Vector3.TransformCoordinates(tool.edge, world));
@@ -1424,13 +1400,12 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     draftingRoot.dispose();
     metal.dispose(); felt.dispose(); wood.dispose(); graphite.dispose(); plastic.dispose();
     pencilMaterial.dispose(); eraserMaterial.dispose();
-    yarnMaterial.dispose(); selectedYarnMaterial.dispose(); tackHeadMaterial.dispose(); tackPinMaterial.dispose();
+    yarnMaterial.dispose(); selectedYarnMaterial.dispose(); divisionMarkMaterial.dispose();
     laserMaterial.dispose();
     drawing = null;
   });
   function guidesBusy() {
-    return pointerStroke !== null || takingPhoto || tools.some(tool => tool.stroke !== null) ||
-      guides.some(guide => guide.handles?.grabbed());
+    return pointerStroke !== null || takingPhoto || tools.some(tool => tool.stroke !== null);
   }
   return { action, pointer, pointerActive: () => pointerStroke !== null, active: () => selected !== null,
     selectNear, snapToSelected,
@@ -1439,7 +1414,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     exportWorkspace: () => serializeDraftingWorkspace(collectWorkspace()),
     importWorkspace: (json: string) => applyWorkspace(parseDraftingWorkspace(json)),
     // Replaces the guides on the field (keeping settings) and returns the removed ones,
-    // or null while a guide is being drawn or its pins are held.
+    // or null while a guide is being drawn.
     guidesBusy,
     swapGuides: (next: readonly WorkspaceGuide[]): WorkspaceGuide[] | null => {
       if (guidesBusy()) return null;
@@ -1449,7 +1424,6 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
         const guide: Guide = { points: saved.points, options: saved.options,
           meshes: createGuideMeshes(saved.points, saved.options) };
         guides.push(guide);
-        attachGuideHandles(guide);
       }
       updateDraftStatus();
       return removed.map(guide => ({ points: guide.points, options: guide.options }));

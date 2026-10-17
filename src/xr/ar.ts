@@ -159,16 +159,25 @@ export function setARSurfaceHeight(height: number) {
   arPivot.position.y = height - FIELD_SURFACE_Y * getARScale();
 }
 
-// While scaling, a small (tabletop) field keeps the requested surface height,
-// but as it approaches full size it settles onto the floor so life-size
-// marchers stand on the ground instead of at eye level.
-const FLOOR_BLEND_START_SCALE = 0.1;
+// While scaling, a tabletop-size field keeps the requested surface height,
+// but as it grows past the tabletop it settles onto the floor so a large
+// field or life-size marchers stand on the ground instead of at eye level.
 export function getScaleAwareSurfaceHeight(height: number, scale: number) {
-  if (scale <= FLOOR_BLEND_START_SCALE) return height;
-  const t = Math.min(1, Math.log(scale / FLOOR_BLEND_START_SCALE) /
-    Math.log(AR_SCALE_MAX / FLOOR_BLEND_START_SCALE));
+  if (scale <= AR_SCALE_DEFAULT) return height;
+  const t = Math.min(1, Math.log(scale / AR_SCALE_DEFAULT) /
+    Math.log(AR_SCALE_MAX / AR_SCALE_DEFAULT));
   const eased = t * t * (3 - 2 * t);
   return height + (fieldHeights.floor - height) * eased;
+}
+
+// Hands naturally rise while spreading apart, so vertical hand motion stops
+// moving the field once it has grown 4x during the gesture.
+const GESTURE_LIFT_FADE_RATIO = 4;
+export function getScaleGestureSurfaceHeight(startSurfaceY: number, verticalDelta: number,
+  startScale: number, scale: number) {
+  const growth = scale > startScale
+    ? Math.min(1, Math.log(scale / startScale) / Math.log(GESTURE_LIFT_FADE_RATIO)) : 0;
+  return getScaleAwareSurfaceHeight(startSurfaceY + verticalDelta * (1 - growth), scale);
 }
 
 export function setFieldHeightMode(mode: "floor" | "table") {

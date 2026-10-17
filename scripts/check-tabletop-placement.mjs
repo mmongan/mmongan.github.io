@@ -133,24 +133,32 @@ try {
     }
   }
   context.setFieldHeightSetting('floor', 0);
-  for (const scale of [0.002, 1 / 120, 1 / 60, 0.1]) {
+  for (const scale of [0.002, 1 / 240, 1 / 120]) {
     assert.equal(context.getScaleAwareSurfaceHeight(1.2, scale), 1.2, 'Tabletop scales keep the gesture height');
   }
+  assert.ok(context.getScaleAwareSurfaceHeight(1.2, 0.1) < 0.7,
+    'A field grown well past tabletop size is pulled most of the way to the floor');
   assert.ok(Math.abs(context.getScaleAwareSurfaceHeight(1.6, 1)) < 1e-9,
     'Full-size scaling puts the ground on the floor, not at eye level');
   let previous = Infinity;
-  for (let scale = 0.1; scale <= 1.0001; scale *= 1.1) {
+  for (let scale = 1 / 120; scale <= 1.0001; scale *= 1.1) {
     const blended = context.getScaleAwareSurfaceHeight(1.6, scale);
     assert.ok(blended <= previous + 1e-9 && blended >= -1e-9, 'Floor blend descends smoothly while scaling up');
     previous = blended;
   }
+  assert.equal(context.getScaleGestureSurfaceHeight(0.75, 0.4, 1 / 240, 1 / 240), 1.15,
+    'Hands still lift a tabletop field when its size is unchanged');
+  assert.equal(context.getScaleGestureSurfaceHeight(0.75, 0.4, 1 / 480, 1 / 120), 0.75,
+    'Hands rising while spreading do not lift a growing field toward eye level');
+  assert.ok(context.getScaleGestureSurfaceHeight(0.75, 0.6, 1 / 120, 0.05) < 0.75,
+    'Growing from tabletop settles toward the floor even with raised hands');
   context.setFieldHeightSetting('floor', 0.05);
   assert.ok(Math.abs(context.getScaleAwareSurfaceHeight(1.6, 1) - 0.05) < 1e-9,
     'Full-size scaling honours a calibrated floor height');
   context.setFieldHeightSetting('floor', 0);
   for (const file of ['controllers.ts', 'handInteraction.ts']) {
     const interaction = readFileSync(new URL(`../src/interaction/${file}`, import.meta.url), 'utf8');
-    assert.match(interaction, /setARSurfaceHeight\(getScaleAwareSurfaceHeight\(surfaceHeight, scale\)\)/,
+    assert.match(interaction, /setARSurfaceHeight\(getScaleGestureSurfaceHeight\(/,
       'Both resize inputs preserve gesture height at tabletop scale and settle to the floor at full size');
     assert.doesNotMatch(interaction, /setARSurfaceHeightForScaleGesture/, 'No threshold height resets remain');
   }

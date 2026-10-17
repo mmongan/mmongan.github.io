@@ -39,7 +39,7 @@ export type HandMenuHit =
   | { action: "fieldProjector"; command: import('../interaction/fieldImageProjector').FieldProjectorCommand }
   | { action: "marcherPaint"; command: "show" | "done" | "paintSelected" }
   | { action: "marcherPaintColor"; color: string }
-  | { action: "drawingTool"; tool: FieldDrawingTool | "camera" | "takePhoto" | "restorePhoto" | "downloadPhoto" | "saveDrafting" | "restoreDrafting" | "deleteDrafting" | "drafting" | "draftSpacingLess" | "draftSpacingMore" | "draftAngle" | "draftSide" | "draftReference" | "addTack" | "laserPin" | "wireReset" | "show" | "stencils" | "cutters" | "hide" | "smaller" | "larger" | "stop" | "formation" | "path" | "synchronizedRoutes" | "undo" | "clear" }
+  | { action: "drawingTool"; tool: FieldDrawingTool | "camera" | "takePhoto" | "restorePhoto" | "downloadPhoto" | "saveDrafting" | "restoreDrafting" | "deleteDrafting" | "drafting" | "draftSpacingLess" | "draftSpacingMore" | "draftAngle" | "draftSide" | "draftReference" | "laserPin" | "wireReset" | "show" | "stencils" | "cutters" | "hide" | "smaller" | "larger" | "stop" | "formation" | "path" | "synchronizedRoutes" | "undo" | "clear" }
   | { action: "playPause" | "rewind" | "fastForward" | "stepBack" | "stepForward" | "fullScaleVR" | "tabletopScale" | "commitFormation" | "eraseMode" | "undoErase" | "redoErase" | "musicStandStaffToggle" }
   | { action: "formationLibrary" | "formationLibraryBack" | "formationLibraryClose" | "lettersLibrary" }
   | { action: "formationGridSnap" }
