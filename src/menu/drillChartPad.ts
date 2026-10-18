@@ -32,6 +32,7 @@ import { getMarcherPOVRobot, getMarcherPOVLabel } from '../camera/marcherPOV';
 import { getChartPageCounts, getChartPageTimeline, isAuthoredChartPage } from '../robot/chartPageTimeline';
 import { isChartGhostModeEnabled } from '../robot/chartPageGhostMode';
 import { isDraftingTableMode } from '../interaction/fieldDrawingTools';
+import { isDraftingToolsEnabled } from '../interaction/editingMode';
 
 export const DRILL_CHART_COUNTS_PER_SET = 8;
 
@@ -69,6 +70,9 @@ let visible = false;
 const POINTER_SOURCE = "pointer";
 let lastSignature = "";
 let framesUntilRedraw = 0;
+let whiteboardPose: Matrix | null = null;
+let whiteboardVisible = false;
+let whiteboardPlaced = false;
 const visibilityListeners = new Set<(visible: boolean) => void>();
 
 // Regular beat boundaries plus authored formations that fall between them.
@@ -480,6 +484,14 @@ function refreshPage(force = false) {
 // Floats the pad below eye level on the viewer's left.
 function placeInFrontOfViewer() {
   if (!pad) return;
+  if (isDraftingToolsEnabled()) {
+    pad.interaction.placeForViewer({
+      desktop: { distance: 2, height: 0, side: -1.5 },
+      xr: { distance: 1.8, height: 0 },
+      side: -1.5, uprightInXR: true,
+    });
+    return;
+  }
   pad.interaction.placeForViewer({
     desktop: { distance: DESKTOP_SPAWN_DISTANCE, height: -DESKTOP_SPAWN_DROP, side: -0.45 },
     xr: { distance: SPAWN_DISTANCE, height: -SPAWN_DROP },
@@ -586,6 +598,21 @@ export function isDrillChartPadGrabbed(source?: string) {
 }
 
 scene.onBeforeRenderObservable.add(() => {
+  if (isDraftingToolsEnabled() && !whiteboardPose) {
+    pad ??= createPad();
+    whiteboardPose = pad.root.computeWorldMatrix(true).clone();
+    whiteboardVisible = visible;
+    whiteboardPlaced = pad.interaction.userPlaced;
+    pad.root.scaling.setAll(5);
+    pad.interaction.userPlaced = false;
+    setDrillChartPadVisible(true);
+  } else if (!isDraftingToolsEnabled() && whiteboardPose && pad) {
+    pad.interaction.release();
+    setDrillChartPadVisible(whiteboardVisible);
+    whiteboardPose.decompose(pad.root.scaling, pad.root.rotationQuaternion!, pad.root.position);
+    pad.interaction.userPlaced = whiteboardPlaced;
+    whiteboardPose = null;
+  }
   if (!visible || --framesUntilRedraw > 0) return;
   framesUntilRedraw = REDRAW_INTERVAL_FRAMES;
   refreshPage();

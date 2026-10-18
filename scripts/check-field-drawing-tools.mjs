@@ -49,6 +49,8 @@ const gridInterval = { value: '5', get valueAsNumber() { return Number(this.valu
 let testARScale = 1 / 120;
 const arScaleChanged = new Observable();
 const context = vm.createContext({
+  Observable,
+  PANEL_FRAME_COLOR: '#18263b',
   performance,
   getARPosition: () => Vector3.Zero(), getARRotation: () => 0,
   getFieldHeightMode: () => 'floor', getFieldHeightSetting: () => 0,
@@ -106,7 +108,10 @@ const context = vm.createContext({
     removeEventListener: type => pointerListeners.delete(type),
   },
 });
+vm.runInContext(transform(read('../src/interaction/editingMode.ts')), context);
+context.setDrillEditingEnabled(true);
 vm.runInContext(transform(read('../src/menu/floatingPanel.ts')), context);
+vm.runInContext(transform(read('../src/interaction/draftingToolbox.ts')), context);
 vm.runInContext(transform(read('../src/interaction/draftingTablePanel.ts')), context);
 vm.runInContext(transform(read('../src/field/draftingFieldPreview.ts')), context);
 vm.runInContext(transform(read('../src/interaction/fieldDrawingGeometry.ts')), context);
@@ -136,6 +141,12 @@ try {
     createFormation: (points, settings) => { conversions.push(['formation', points, settings]); return true; },
     createPath: points => { conversions.push(['path', points]); return true; },
   });
+  const toolbox = scene.getTransformNodeByName('draftingToolbox');
+  assert.ok(toolbox?.isEnabled(), 'Toolbox appears for immersive editing');
+  for (const name of ['drawingToolTray', 'advancedDraftingTray', 'fieldStencilTray', 'fieldCookieCutterTray']) {
+    assert.equal(scene.getTransformNodeByName(name).parent, toolbox, 'Tool drawers begin inside the box');
+    assert.equal(scene.getTransformNodeByName(name).isEnabled(), false, 'Stored drawers stay closed');
+  }
   act('show');
   assert.equal(scene.getTransformNodeByName('drawingToolTray').isEnabled(), true);
   act('stencils');
@@ -169,6 +180,24 @@ try {
     'circleStencil', 'squareStencil', 'triangleStencil', 'pentagonStencil', 'hexagonStencil', 'starStencil'];
   assert.ok(kinds.every(kind => scene.getTransformNodeByName(`fieldTool-${kind}`)),
     'Trays contain every requested physical tool and stencil');
+  assert.equal(scene.getMeshByName('fieldTool-pencilPanel-close'), null, 'Pencils are tools, not framed panels');
+  act('pencil');
+  assert.equal(scene.getTransformNodeByName('fieldTool-pencil').parent, null);
+  act('toolboxStore');
+  assert.equal(scene.getTransformNodeByName('drawingToolTray').parent, toolbox);
+  assert.equal(scene.getTransformNodeByName('fieldTool-pencil').parent,
+    scene.getTransformNodeByName('drawingToolTray'), 'Store all redocks a withdrawn tool');
+  assert.equal(scene.getTransformNodeByName('fieldTool-pencil').isEnabled(), false);
+  act('show');
+  assert.equal(scene.getTransformNodeByName('drawingToolTray').parent, null, 'Opening a drawer detaches it from storage');
+  assert.equal(scene.getTransformNodeByName('fieldTool-pencil').isEnabled(), true);
+  const close = context.executeFloatingPanelControl({ action: 'panelControl', panelId: toolbox.uniqueId, command: 'close' });
+  assert.equal(close.tool, 'toolboxStore', 'Toolbox close uses storage lifecycle');
+  act(close.tool);
+  assert.equal(toolbox.isEnabled(), false);
+  context.recallFloatingPanels();
+  assert.equal(toolbox.isEnabled(), true, 'Bring panels recalls a closed toolbox');
+  act('show');
   assert.ok(![...actions.values()].some(hit => kinds.includes(hit.tool)),
     'Tools are physical objects rather than selection buttons');
   assert.equal(scene.getTransformNodeByName('fieldTool-pencil').parent.name, 'drawingToolTray');

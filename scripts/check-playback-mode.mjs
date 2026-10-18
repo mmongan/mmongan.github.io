@@ -58,6 +58,9 @@ context.executeMenuAction({ action: 'seek', fraction: 0.5 });
 context.executeMenuAction({ action: 'marcherPOV' });
 assert.deepEqual(actions, ['playPause', 0.5, true], 'Desktop still dispatches playback, seeking and POV');
 context.setDrillEditingEnabled(true);
+assert.equal(context.isMenuActionAvailable({ action: 'drawingTool', tool: 'show' }), false,
+  'Tools remain hidden until drafting is enabled');
+context.setDraftingToolsEnabled(true);
 editing.forEach(action => assert.equal(context.isMenuActionAvailable(action), true));
 context.executeMenuAction({ action: 'drawingTool', tool: 'table' });
 assert.equal(actions.at(-1), 'table', 'Immersive sessions retain editing tools');

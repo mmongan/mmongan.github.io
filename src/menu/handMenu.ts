@@ -4,13 +4,15 @@ import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
 import type { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.pure';
 import { scene } from '../scene/engine';
 import type { MarcherInstrument } from '../robot/robot';
-import { isMenuActionAvailable, onEditingModeChangedObservable } from '../interaction/editingMode';
+import { isMenuActionAvailable, onEditingModeChangedObservable, isDraftingToolAction,
+  isDraftingToolsEnabled, onDraftingToolsChangedObservable } from '../interaction/editingMode';
 
 export type FormationLetter =
   | "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" | "K" | "L" | "M"
   | "N" | "O" | "P" | "Q" | "R" | "S" | "T" | "U" | "V" | "W" | "X" | "Y" | "Z";
 
 export type HandMenuHit =
+  | { action: "panelControl"; panelId: number; command: "close" | "smaller" | "larger" }
   | { action: "fieldProjector"; command: import('../interaction/fieldImageProjector').FieldProjectorCommand }
   | { action: "marcherPaint"; command: "show" | "done" | "paintSelected" }
   | { action: "marcherPaintColor"; color: string }
@@ -40,14 +42,20 @@ export type HandMenuHit =
 // Shared action registry for standalone panels and stadium controls.
 const buttonActions = new Map<AbstractMesh, HandMenuHit>();
 
-export function registerMenuButton(mesh: AbstractMesh, action: HandMenuHit) {
+export function registerMenuButton(mesh: AbstractMesh, action: HandMenuHit,
+  options: { hideOutsideDrafting?: boolean; disabledVisibility?: number } = {}) {
   buttonActions.set(mesh, action);
-  const updateAvailability = () => { mesh.visibility = isMenuActionAvailable(action) ? 1 : 0.25; };
+  const updateAvailability = () => {
+    mesh.isVisible = options.hideOutsideDrafting === false || !isDraftingToolAction(action) || isDraftingToolsEnabled();
+    mesh.visibility = isMenuActionAvailable(action) ? 1 : options.disabledVisibility ?? 0.25;
+  };
   updateAvailability();
   const observer = onEditingModeChangedObservable.add(updateAvailability);
+  const draftingObserver = onDraftingToolsChangedObservable.add(updateAvailability);
   mesh.onDisposeObservable.addOnce(() => {
     buttonActions.delete(mesh);
     onEditingModeChangedObservable.remove(observer);
+    onDraftingToolsChangedObservable.remove(draftingObserver);
   });
 }
 

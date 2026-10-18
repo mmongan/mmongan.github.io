@@ -66,6 +66,8 @@ try {
     const memoryWire = { panel: { grabbed: () => false }, handles: [] };
     const floorCalibrationToggle = { checked: false }, tabletopScaleButton = { click() {} };
     const deps = { prepare() {}, notify() {} }, tablePanel = { show() {}, hide() {} };
+    const toolbox = { store() {} };
+    function setDraftingToolsEnabled() {}
     function guidesBusy() { return false; }
     function action() {}
     function updateTableStatus() {}

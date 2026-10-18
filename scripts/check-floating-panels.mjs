@@ -15,7 +15,9 @@ import { Color3 } from '@babylonjs/core/Maths/math.color.js';
 
 const engine = new NullEngine();
 const scene = new Scene(engine);
-const context = vm.createContext({ scene, Matrix, Quaternion, Vector3, Plane, MeshBuilder, StandardMaterial, Color3 });
+const registered = new Map();
+const context = vm.createContext({ scene, Matrix, Quaternion, Vector3, Plane, MeshBuilder, StandardMaterial, Color3,
+  registerMenuButton(mesh, action) { registered.set(mesh, action); } });
 const source = readFileSync(new URL('../src/menu/floatingPanel.ts', import.meta.url), 'utf8');
 vm.runInContext(`${stripTypeScriptTypes(source, { mode: 'transform' })
   .replace(/^import .*?;\r?$/gm, '').replace(/export /g, '')}
@@ -129,8 +131,9 @@ try {
   assert.ok(Vector3.Distance(score.root.position, new Vector3(0.1, 0.2, 1.3)) < 1e-6);
   assert.ok(score.panel.userPlaced);
   api.beginFloatingPanelGrab('right', start, score.mesh);
-  assert.equal(api.isFloatingPanelGrabbed('left'), false, 'Second hand takes over');
+  assert.equal(api.isFloatingPanelGrabbed('left'), true, 'Second hand joins a two-hand resize');
   api.endFloatingPanelGrab('right');
+  api.endFloatingPanelGrab('left');
   const released = score.root.position.clone();
   api.updateFloatingPanelGrab('right', Matrix.Translation(10, 0, 0));
   assert.ok(score.root.position.equals(released), 'Release preserves placement');
@@ -239,6 +242,30 @@ try {
     api.endFloatingPanelGrab('right');
   }
   const rimMaterial = rails[0].material;
+  const controls = ['smaller', 'larger', 'close'].map(command =>
+    scene.getMeshByName(`rimCoveragePanel-${command}`));
+  for (const control of controls) {
+    assert.ok(control && rimPanel.panel.meshes.has(control), 'Shared header includes owned control buttons');
+    assert.equal(registered.get(control).action, 'panelControl');
+    assert.equal(registered.get(control).panelId, rimPanel.root.uniqueId);
+    control.computeWorldMatrix(true);
+    assert.ok(rimPanel.panel.near(control.getAbsolutePosition()), 'Header controls fit inside contact bounds');
+  }
+  rimPanel.root.scaling.setAll(.5);
+  rimPanel.panel.control('larger');
+  assert.ok(Math.abs(rimPanel.root.scaling.x - .6) < 1e-6, 'Resize respects current XR panel scale');
+  rimPanel.panel.control('smaller');
+  assert.ok(Math.abs(rimPanel.root.scaling.x - .5) < 1e-6);
+  for (let i = 0; i < 20; i++) rimPanel.panel.control('larger');
+  assert.ok(Math.abs(rimPanel.root.scaling.x - 1.5) < 1e-6, 'Default resize has an upper bound');
+  for (let i = 0; i < 40; i++) rimPanel.panel.control('smaller');
+  assert.ok(Math.abs(rimPanel.root.scaling.x - .125) < 1e-6, 'Default resize has a lower bound');
+  rimPanel.panel.begin('right', Matrix.Identity());
+  assert.equal(rimPanel.panel.control('close'), null);
+  assert.equal(rimPanel.panel.grabbed(), false, 'Close releases panel ownership');
+  assert.equal(rimPanel.root.isEnabled(), false, 'Generic close hides stadium panels');
+  rimPanel.panel.recall();
+  assert.equal(rimPanel.root.isEnabled(), true, 'Recall can restore closed standalone stadium panels');
   rimPanel.root.dispose();
   assert.ok(rails.every(rail => rail.isDisposed()) && !scene.materials.includes(rimMaterial),
     'Disposing a panel releases its rails and shared rim material');

@@ -315,15 +315,18 @@
           <button id="insertChartPageButton" type="button">Insert blank chart page after this page</button>
           <button id="saveChartDraftButton" type="button">Save chart page draft (this browser)</button>
           <button id="resumeChartDraftButton" type="button">Resume saved chart page draft</button>
+          <div data-drafting-tools hidden>
           <label class="settings-label">Instrument (selected marcher and new marchers)</label>
           <label class="radio-option">
             <input type="checkbox" id="instrumentPanelToggle" />
             <span>Show instrument panel</span>
           </label>
           <button id="instrumentPanelButton" type="button">Open instrument panel to create marchers</button>
+          </div>
           <h3>Drafting table</h3>
           <label class="radio-option"><input id="draftingModeToggle" type="checkbox" /><span>Use field as a drafting table</span></label>
           <p>Drafting is available in immersive VR/AR on a tabletop-sized field placed in front of you; exiting restores the previous XR field placement. Desktop is a playback-only 1:1 viewer. Toggle Full-size view for a live, view-only field in the distance, including marchers and guides. No pins. Endpoint and line snaps take priority over nearby grid points.</p>
+          <div data-drafting-tools hidden>
           <div id="draftingTableControls" hidden>
             <div class="radio-row">
               <button type="button" data-drafting-action="show">Drawing tools</button>
@@ -486,6 +489,7 @@
           <button id="marcherPaintSelectedButton" type="button">Paint selected marcher</button>
           <output id="marcherPaintStatus" class="settings-status" aria-live="polite"></output>
           <p>Open the grabbable palette here or with Paint on the floating settings panel. Choose a swatch (or custom color above), then click, trigger, or pinch a marcher to recolor only their uniform. Paint selected applies to the current selection. Done paint or the checkbox exits paint mode. Painting replaces movement/selection gestures while active; placement, erase, drawing, and selection editing turn it off. Uniforms, matching route colors, and top-down markers update; instruments/guard equipment are unchanged. Colors are session-only, with no paint undo or show export.</p>
+          </div>
           <label class="settings-label" for="marcherCount">Marchers to add</label>
           <div class="radio-row">
             <input id="marcherCount" type="range" min="1" max="100" step="1" value="8" />

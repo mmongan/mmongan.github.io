@@ -47,6 +47,8 @@ try {
   assert.equal(logo.position.z, 0);
   assert.equal(logo.position.y, -0.48 + 0.012, 'Logo sits just above turf, not at marcher height');
   assert.equal(logo.isPickable, false, 'Logo never intercepts field selection or placement');
+  assert.equal(logo.renderingGroupId, 1, 'Startup logo is drawn above the band');
+  assert.equal(logo.material.disableDepthWrite, true, 'Logo overlay does not write depth over other content');
   assert.equal(logo.checkCollisions, false);
   logo.computeWorldMatrix(true);
   const size = logo.getBoundingInfo().boundingBox.extendSizeWorld.scale(2);

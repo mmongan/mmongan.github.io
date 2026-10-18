@@ -12,7 +12,9 @@ import { drawPanelButton } from '../menu/panelStyle';
 import { getDrillTransportState, onDrillTransportChangedObservable } from '../robot/robot';
 import { FIELD_WIDTH_YARDS } from './constants';
 import { mergeMeshesByMaterial } from './meshMerging';
-import { isDrillEditingEnabled, onEditingModeChangedObservable } from '../interaction/editingMode';
+import {
+  isDrillEditingEnabled, onEditingModeChangedObservable, isMenuActionAvailable, onDraftingToolsChangedObservable,
+} from '../interaction/editingMode';
 
 const MEDIA_SIGNS = [
   { label: 'REWIND', symbol: '<<', action: 'rewind' },
@@ -84,13 +86,16 @@ export function createStadiumCrowd(parent: Mesh) {
     signFaces[2].draw();
   });
   const materials = [...shirts, ...skin, trousers, frameMaterial, ...signFaces.map(face => face.material)];
-  const immersiveSigns = new Set<Mesh>();
-  const modeObserver = onEditingModeChangedObservable.add(enabled => {
-    immersiveSigns.forEach(sign => sign.setEnabled(enabled));
-  });
+  const immersiveSigns = new Map<Mesh, HandMenuHit>();
+  const updateSigns = () => {
+    immersiveSigns.forEach((action, sign) => sign.setEnabled(isDrillEditingEnabled() && isMenuActionAvailable(action)));
+  };
+  const modeObserver = onEditingModeChangedObservable.add(updateSigns);
+  const draftingObserver = onDraftingToolsChangedObservable.add(updateSigns);
   scene.onDisposeObservable.addOnce(() => {
     onDrillTransportChangedObservable.remove(observer);
     onEditingModeChangedObservable.remove(modeObserver);
+    onDraftingToolsChangedObservable.remove(draftingObserver);
     materials.forEach(mat => mat.dispose(false, true));
   });
   let parts: Mesh[] = [];
@@ -161,8 +166,8 @@ export function createStadiumCrowd(parent: Mesh) {
           new DetachableFloatingPanel(frame, new Set([frame, face]), frame,
             new Vector3(1.5, 0.9, 0.08), new Map([[frame, action], [face, action]]));
           if (sign.immersive) {
-            immersiveSigns.add(frame);
-            frame.setEnabled(isDrillEditingEnabled());
+            immersiveSigns.set(frame, action);
+            frame.setEnabled(isDrillEditingEnabled() && isMenuActionAvailable(action));
             frame.onDisposeObservable.addOnce(() => immersiveSigns.delete(frame));
           }
         });

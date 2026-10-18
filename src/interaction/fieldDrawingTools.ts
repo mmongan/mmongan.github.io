@@ -34,6 +34,8 @@ import { DRAFTING_WORKSPACE_KEY, parseDraftingWorkspace, serializeDraftingWorksp
   type DraftingWorkspace, type WorkspaceGuide } from './draftingWorkspace';
 import { captureDraftingPhoto, DRAFTING_CAMERA_KEY, parseDraftingPhoto, type DraftingPhoto } from './draftingCamera';
 import { getGuideMarcherSettings, sampleGuideMarchers, type GuideMarcherSettings } from './guideMarcherLayout';
+import { setDraftingToolsEnabled } from './editingMode';
+import { createDraftingToolbox } from './draftingToolbox';
 
 interface DrawingDependencies {
   root: TransformNode;
@@ -350,6 +352,10 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
   const draftingTray = new FloatingPanel(draftingRoot, draftingMeshes, draftingRoot,
     new Vector3(0.71, 0.81, 0.01), draftingButtons);
   draftingRoot.setEnabled(false);
+  const toolbox = createDraftingToolbox([
+    { root: trayRoot, panel: tray }, { root: draftingRoot, panel: draftingTray },
+    { root: stencilRoot, panel: stencilTray }, { root: cutterRoot, panel: cutterTray },
+  ]);
   function showDrafting() {
     showToolTray(draftingRoot, draftingTray, 1.8, 0.85, 0);
   }
@@ -381,6 +387,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
   function showToolTray(active: TransformNode, activePanel: FloatingPanel,
     distance: number, xrDistance: number, side: number) {
     const xrTable = tableMode && scene.activeCamera?.getClassName() === 'WebXRCamera';
+    active.setParent(null);
     if (tableMode) {
       for (const [root, panel] of [[trayRoot, tray], [stencilRoot, stencilTray],
         [cutterRoot, cutterTray], [draftingRoot, draftingTray]] as const) {
@@ -445,6 +452,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
         fieldGridToggle.dispatchEvent(new Event('change'));
       }
       tableMode = enabled;
+      setDraftingToolsEnabled(enabled);
       action('stop');
       if (!enabled) {
         fieldPreview.setEnabled(false);
@@ -460,7 +468,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     if (draftingModeToggle) draftingModeToggle.checked = tableMode;
     if (draftingTableControls) draftingTableControls.hidden = !tableMode;
     if (enabled) { tablePanel.show(); show(); }
-    else { tablePanel.hide(); action('hide'); }
+    else { tablePanel.hide(); action('hide'); toolbox.store(); }
     updateTableStatus();
     deps.notify(enabled ? `Drafting ${scene.activeCamera?.getClassName() === 'WebXRCamera' ? 'table' : 'field at 1:1'} ready. Select a tool or select a guide to edit it without pins.`
       : 'Drafting mode closed. Guides are preserved and the previous field placement is restored.');
@@ -1032,6 +1040,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
       }
     }
     class PhysicalDrawingTool extends DetachableFloatingPanel {
+      override get hasPanelChrome() { return false; }
       override begin(source: string, world: Matrix) {
         if (floorCalibrationToggle?.checked || takingPhoto) {
           deps.notify('Finish floor calibration before using drawing tools.');
@@ -1171,6 +1180,14 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
   }
   function action(value: DrawingToolCommand) {
     if (takingPhoto) { workspaceMessage('Wait for the field snapshot to finish.'); return; }
+    if (value === 'toolboxStore') {
+      if (guidesBusy()) {
+        deps.notify('Finish the stroke before storing tools.'); return;
+      }
+      action('stop'); action('hide'); toolbox.store();
+      deps.notify('All drafting tools are stored in the toolbox. Open a drawer to use them.');
+      return;
+    }
     if (value === 'guideSpacingLess' || value === 'guideSpacingMore' || value === 'guideSpacingApply' || value === 'guideFacing' ||
       value === 'guideFacingLeft' || value === 'guideFacingRight') {
       if (floorCalibrationToggle?.checked || guidesBusy()) {
@@ -1367,7 +1384,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
         tool.root.rotationQuaternion!.copyFrom(tool.dockRotation);
         tool.root.scaling.setAll(0.65);
       });
-      selected = null; deps.notify('Drawing tools returned to their trays.'); return;
+      selected = null; deps.notify('Drawing tools returned to their toolbox drawers.'); return;
     }
     deps.prepare();
     if (value === 'wire') {

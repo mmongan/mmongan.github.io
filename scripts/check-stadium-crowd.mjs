@@ -69,12 +69,13 @@ try {
     assert.ok(crowd().length > 0 && crowd().length <= 10, 'Static crowd uses at most ten material batches');
     assert.ok(crowd().every(mesh => !mesh.isPickable), 'Spectators do not steal control or field picks');
     counts.push(crowd().reduce((total, mesh) => total + mesh.getTotalVertices(), 0));
-    assert.ok(scene.meshes.length < 260, 'Merged crowd keeps a bounded mesh count');
+    assert.ok(scene.meshes.length < 600, 'Merged crowd and framed signs keep a bounded mesh count');
     for (const face of faces()) {
       const immersive = face.name.includes('-panel-');
       assert.equal(face.isEnabled(), !immersive, 'Panel-launch signs are hidden outside immersive sessions');
     }
     context.setDrillEditingEnabled(true);
+    context.setDraftingToolsEnabled(true);
     for (const face of faces()) {
       assert.equal(face.isEnabled(), true, 'All sign controls become visible in VR/AR');
       face.computeWorldMatrix(true);

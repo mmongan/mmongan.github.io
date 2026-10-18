@@ -26,6 +26,7 @@ import { scene } from '../scene/engine';
 import { createSelectionEditor } from './selectionEditor';
 import {
   DESKTOP_PLAYBACK_NOTICE, isDrillEditingEnabled, isMenuActionAvailable, onEditingModeChangedObservable,
+  DRAFTING_TOOLS_NOTICE, isDraftingToolAction, onDraftingToolsChangedObservable,
 } from './editingMode';
 import { sampleGuideMarchers } from './guideMarcherLayout';
 import { getChartPageTimeline, setChartPageTimeline, getChartPageCounts } from '../robot/chartPageTimeline';
@@ -155,7 +156,7 @@ import {
   beginFloatingPanelGrab, beginFloatingPanelPointerDrag, endFloatingPanelGrab,
   getFloatingPanelButtonNearPoint, getFloatingPanelNear, isFloatingPanelGrabbed, isFloatingPanelMesh,
   nudgeFloatingPanelDistance, pickFloatingPanel, updateFloatingPanelGrab, telescopeFloatingPanelGrab,
-  updateFloatingPanelPointerDrag, recallFloatingPanels,
+  updateFloatingPanelPointerDrag, recallFloatingPanels, executeFloatingPanelControl,
 } from '../menu/floatingPanel';
 import type { FormationLetter } from '../menu/handMenu';
 import { createHandInteraction } from './handInteraction';
@@ -2394,10 +2395,15 @@ const menuInteractionHeld = new Map<string, boolean>();
 
 function executeMenuAction(hit: NonNullable<ReturnType<typeof getHandMenuHit>>) {
   if (!isMenuActionAvailable(hit)) {
-    showPlacementNotice(DESKTOP_PLAYBACK_NOTICE);
+    showPlacementNotice(isDrillEditingEnabled() && isDraftingToolAction(hit) ? DRAFTING_TOOLS_NOTICE : DESKTOP_PLAYBACK_NOTICE);
     return;
   }
   switch (hit.action) {
+    case "panelControl": {
+      const closeAction = executeFloatingPanelControl(hit);
+      if (closeAction) executeMenuAction(closeAction);
+      break;
+    }
     case "fieldProjector":
       executeFieldProjectorAction(hit.command);
       break;
@@ -2407,6 +2413,12 @@ function executeMenuAction(hit: NonNullable<ReturnType<typeof getHandMenuHit>>) 
       break;
     case "drawingTool":
       executeDrawingToolAction(hit);
+      if (hit.tool === 'toolboxStore') {
+        executeMarcherPaintAction({ action: 'marcherPaint', command: 'done' });
+        executeFieldProjectorAction('hide');
+        hideInstrumentPanel();
+        setPlacementMode(false);
+      }
       break;
     case "eraseMode":
       setEraseMode(!eraseMode);
@@ -3517,11 +3529,21 @@ export function initInteraction() {
     setPlacementMode(false);
     stopMarcherPainting();
     hideInstrumentPanel();
+    executeDrawingToolAction({ action: 'drawingTool', tool: 'stop' });
     executeDrawingToolAction({ action: 'drawingTool', tool: 'tableExit' });
     executeDrawingToolAction({ action: 'drawingTool', tool: 'hide' });
     clearStepHandles();
     segments.forEach(updateSegmentHandleVisibility);
   });
+  const draftingObserver = onDraftingToolsChangedObservable.add(enabled => {
+    if (enabled) return;
+    stopMarcherPainting();
+    executeMarcherPaintAction({ action: 'marcherPaint', command: 'done' });
+    executeFieldProjectorAction('hide');
+    hideInstrumentPanel();
+    setPlacementMode(false);
+  });
+  scene.onDisposeObservable.addOnce(() => onDraftingToolsChangedObservable.remove(draftingObserver));
   scene.onDisposeObservable.addOnce(() => onEditingModeChangedObservable.remove(editingObserver));
   setEraseMode(!!eraseModeToggle?.checked);
   undoEraseButton?.addEventListener("click", () => executeMenuAction({ action: "undoErase" }));

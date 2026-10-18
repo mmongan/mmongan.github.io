@@ -42,6 +42,7 @@ const context = vm.createContext({
 try {
   vm.runInContext(load('../src/interaction/editingMode.ts'), context);
   context.setDrillEditingEnabled(true);
+  context.setDraftingToolsEnabled(true);
   scene.activeCamera = new FreeCamera('settingsCamera', Vector3.Zero(), scene);
   vm.runInContext(load('../src/menu/handMenu.ts'), context);
   vm.runInContext(load('../src/menu/floatingPanel.ts'), context);

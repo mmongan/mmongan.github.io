@@ -12,7 +12,7 @@
   box-sizing: border-box;
 }
 
-[data-xr-editing][hidden] {
+[data-xr-editing][hidden], [data-drafting-tools][hidden] {
   display: none !important;
 }
 

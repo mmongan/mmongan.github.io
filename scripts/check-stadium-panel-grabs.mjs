@@ -11,6 +11,7 @@ import { Color3 } from '@babylonjs/core/Maths/math.color.js';
 import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 import { Plane } from '@babylonjs/core/Maths/math.plane.js';
 import { Ray } from '@babylonjs/core/Culling/ray.js';
+import { Observable } from '@babylonjs/core/Misc/observable.js';
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
 const load = source => stripTypeScriptTypes(source, { mode: 'transform' })
@@ -19,7 +20,7 @@ const engine = new NullEngine(), scene = new Scene(engine);
 const stadium = new TransformNode('stadium', scene);
 let tempo = 120, gaitChanges = [], hornChanges = 0;
 const context = vm.createContext({
-  scene, engine, MeshBuilder, TransformNode, StandardMaterial, Color3, Matrix, Quaternion, Vector3, Plane, Ray,
+  scene, engine, MeshBuilder, TransformNode, StandardMaterial, Color3, Matrix, Quaternion, Vector3, Plane, Ray, Observable,
   __APP_VERSION__: 'test', performance,
   document: { createElement: () => ({ getContext: () => new Proxy({}, {
     get: (target, key) => target[key] ?? (() => {}),
@@ -36,7 +37,7 @@ const context = vm.createContext({
   getInstrumentCarryPose: () => false, toggleInstrumentCarryPose: () => { hornChanges++; },
 });
 try {
-  for (const file of ['menu/handMenu', 'menu/floatingPanel', 'field/scoreboard']) {
+  for (const file of ['interaction/editingMode', 'menu/handMenu', 'menu/floatingPanel', 'field/scoreboard']) {
     vm.runInContext(load(read(`../src/${file}.ts`)), context);
   }
   const board = read('../src/field/videoBoard.ts');

@@ -42,6 +42,7 @@ for (const inXR of [false, true]) {
       Vector3, Quaternion, scene,
       pad: { root: chart, interaction: chartInteraction }, root: score, interaction,
       placedCamera: null, placed: false, enabled: true,
+      isDraftingToolsEnabled: () => false,
     });
     vm.runInContext(`${chartConstants}\n${chartPlace}\n${scorePlace}\nplaceInFrontOfViewer(); place();`, context);
     const chartOffset = chart.position.subtract(eye);

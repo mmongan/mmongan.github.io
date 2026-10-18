@@ -11,7 +11,7 @@ export type DrawingToolCommand = FieldDrawingTool | 'show' | 'stencils' | 'cutte
   'formation' | 'path' | 'synchronizedRoutes' | 'undo' | 'clear' | 'wireReset' | 'laserPin' | 'drafting' |
   'draftSpacingLess' | 'draftSpacingMore' | 'draftAngle' | 'draftSide' | 'draftReference' |
   'saveDrafting' | 'restoreDrafting' | 'deleteDrafting' | 'takePhoto' | 'restorePhoto' | 'downloadPhoto' |
-  'table' | 'tableExit' | 'tablePreview' | 'tableSnap' | 'tableGrid' | 'guideSelect' | 'guideLeft' | 'guideRight' |
+  'table' | 'tableExit' | 'toolboxStore' | 'tablePreview' | 'tableSnap' | 'tableGrid' | 'guideSelect' | 'guideLeft' | 'guideRight' |
   'guideForward' | 'guideBack' | 'guideRotateLeft' | 'guideRotateRight' | 'guideDuplicate' | 'guideDelete' |
   'guideSpacingLess' | 'guideSpacingMore' | 'guideSpacingApply' | 'guideFacing' | 'guideFacingLeft' | 'guideFacingRight';
 

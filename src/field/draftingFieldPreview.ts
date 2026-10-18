@@ -39,7 +39,7 @@ export function createDraftingFieldPreview(fieldCoordinates: TransformNode) {
         copy.checkCollisions = false;
         copy.metadata = null;
         copy.actionManager = null;
-        copy.renderingGroupId = 0;
+        copy.renderingGroupId = source.name === 'midfieldLogo' ? source.renderingGroupId : 0;
         copies.set(source, copy);
       }
     }

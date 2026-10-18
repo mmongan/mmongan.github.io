@@ -64,11 +64,13 @@ export function createMidfieldLogo() {
   material.emissiveColor = Color3.White();
   material.specularColor = Color3.Black();
   material.disableLighting = true;
+  material.disableDepthWrite = true;
   const logo = MeshBuilder.CreateGround('midfieldLogo',
     { width: MIDFIELD_LOGO_WIDTH, height: MIDFIELD_LOGO_HEIGHT }, scene);
   logo.position.y = FIELD_SURFACE_Y + 0.012;
   logo.rotation.y = -Math.PI / 2;
   logo.material = material;
+  logo.renderingGroupId = 1;
   logo.isPickable = false;
   let elapsed = 0;
   const fadeObserver = scene.onBeforeRenderObservable.add(() => {

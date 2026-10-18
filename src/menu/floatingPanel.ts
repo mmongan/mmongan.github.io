@@ -7,7 +7,7 @@ import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
 import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
 import { scene } from '../scene/engine';
-import type { HandMenuHit } from './handMenu';
+import { registerMenuButton, type HandMenuHit } from './handMenu';
 import type { PanelTransparencySlider } from './panelTransparencySlider';
 
 const panels = new Set<FloatingPanel>();
@@ -33,8 +33,10 @@ export class FloatingPanel {
   private dragOffset = new Vector3();
   private sliderDrag: { source: string; origin: Vector3; point: Vector3 } | null = null;
   private viewerPlacement: ViewerPlacement | null = null;
+  private closed = false;
   userPlaced = false;
   get canGrab() { return true; }
+  get hasPanelChrome() { return true; }
 
   constructor(
     readonly root: TransformNode,
@@ -47,11 +49,26 @@ export class FloatingPanel {
   ) {
     root.rotationQuaternion ??= Quaternion.FromEulerVector(root.rotation);
     const shortSide = Math.min(halfSize.x, halfSize.y);
-    if (meshes.size && shortSide >= 0.1 && halfSize.z <= shortSide * 0.16) {
+    if (meshes.size && shortSide >= 0.1 && this.hasPanelChrome) {
+      if (!this.resize) {
+        let initialScale: number | null = null;
+        const getScale = () => {
+          initialScale ??= root.scaling.length();
+          return root.scaling.length() / initialScale;
+        };
+        this.resize = {
+          getScale,
+          setScale: value => {
+            const scale = Math.min(3, Math.max(0.25, value));
+            root.scaling.scaleInPlace(scale / getScale());
+            this.userPlaced = true;
+          },
+        };
+      }
       const rim = Math.max(0.018, shortSide * 0.06);
       const depth = Math.max(0.055, shortSide * 0.16, halfSize.z * 2);
       const material = new StandardMaterial(`${root.name}GrabRimMaterial`, scene);
-      material.diffuseColor = new Color3(0.12, 0.32, 0.44);
+      material.diffuseColor = Color3.FromHexString('#18263b');
       material.emissiveColor = new Color3(0.03, 0.1, 0.14);
       material.specularColor = new Color3(0.35, 0.45, 0.5);
       const rails = [
@@ -67,13 +84,82 @@ export class FloatingPanel {
         rail.material = material;
         meshes.add(rail);
       });
-      this.halfSize = new Vector3(halfSize.x + rim, halfSize.y + rim, depth / 2 + halfSize.z / 2);
+      const size = Math.max(0.035, shortSide * 0.24);
+      const y = halfSize.y + rim + size / 2;
+      const front = -Math.max(halfSize.z, depth / 2) - rim;
+      const header = MeshBuilder.CreateBox(`${root.name}PanelHeader`,
+        { width: halfSize.x * 2 + rim * 2, height: size + rim, depth }, scene);
+      header.parent = surface;
+      header.position.set(0, y, halfSize.z / 2);
+      header.material = material;
+      meshes.add(header);
+      const controlMaterial = new StandardMaterial(`${root.name}PanelControlMaterial`, scene);
+      controlMaterial.diffuseColor = Color3.FromHexString('#38bdf8');
+      controlMaterial.emissiveColor = Color3.FromHexString('#38bdf8').scale(0.5);
+      const glyphMaterial = new StandardMaterial(`${root.name}PanelGlyphMaterial`, scene);
+      glyphMaterial.diffuseColor = Color3.White();
+      glyphMaterial.emissiveColor = Color3.White();
+      glyphMaterial.disableLighting = true;
+      (['smaller', 'larger', 'close'] as const).forEach((command, index) => {
+        const x = halfSize.x - size / 2 - (2 - index) * size * 1.25;
+        const button = MeshBuilder.CreateBox(`${root.name}Panel-${command}`,
+          { width: size, height: size, depth: rim }, scene);
+        button.parent = surface;
+        button.position.set(x, y, front);
+        button.material = controlMaterial;
+        const action: HandMenuHit = { action: 'panelControl', panelId: root.uniqueId, command };
+        const own = (mesh: AbstractMesh) => {
+          meshes.add(mesh); buttons.set(mesh, action); registerMenuButton(mesh, action);
+        };
+        own(button);
+        for (let line = 0; line < (command === 'smaller' ? 1 : 2); line++) {
+          const glyph = MeshBuilder.CreateBox(`${root.name}Panel-${command}Glyph${line}`,
+            { width: size * 0.58, height: size * 0.09, depth: rim * 0.2 }, scene);
+          glyph.parent = button;
+          glyph.position.z = -rim * 0.65;
+          glyph.rotation.z = command === 'close' ? (line ? -1 : 1) * Math.PI / 4 : line * Math.PI / 2;
+          glyph.material = glyphMaterial;
+          own(glyph);
+        }
+      });
+      this.halfSize = new Vector3(halfSize.x + rim, halfSize.y + rim * 1.5 + size,
+        Math.max(depth / 2 + halfSize.z / 2, -front + rim));
       root.onDisposeObservable.addOnce(() => material.dispose());
+      root.onDisposeObservable.addOnce(() => { controlMaterial.dispose(); glyphMaterial.dispose(); });
     }
+
     panels.add(this);
     root.onDisposeObservable.addOnce(() => {
       panels.delete(this);
     });
+  }
+
+  control(command: 'close' | 'smaller' | 'larger'): HandMenuHit | null {
+    if (command !== 'close') {
+      if (this.resize) {
+        this.resize.setScale(this.resize.getScale() * (command === 'larger' ? 1.2 : 1 / 1.2));
+        this.userPlaced = true;
+      }
+      return null;
+    }
+    this.release();
+    this.closed = true;
+    for (const action of this.buttons.values()) {
+      if (action.action === 'drawingTool' && action.tool === 'toolboxStore') {
+        this.root.setEnabled(false);
+        return action;
+      }
+      if (action.action === 'drillChartHide' || action.action === 'musicStandHide' ||
+        action.action === 'instrumentPanelHide' || action.action === 'xrSettingsHide' ||
+        (action.action === 'drawingTool' && (action.tool === 'hide' || action.tool === 'tableExit')) ||
+        (action.action === 'marcherPaint' && action.command === 'done') ||
+        (action.action === 'fieldProjector' && action.command === 'hide')) {
+        this.closed = false;
+        return action;
+      }
+    }
+    this.root.setEnabled(false);
+    return null;
   }
 
   near(point: Vector3, tolerance = 0.03) {
@@ -216,6 +302,10 @@ export class FloatingPanel {
   }
 
   recall() {
+    if (this.closed) {
+      this.root.setEnabled(true);
+      this.closed = false;
+    }
     if (this.viewerPlacement) this.placeForViewer(this.viewerPlacement);
   }
 
@@ -309,6 +399,12 @@ export class DetachableFloatingPanel extends FloatingPanel {
 
 export function recallFloatingPanels() {
   panels.forEach(panel => panel.recall());
+}
+
+export function executeFloatingPanelControl(hit: Extract<HandMenuHit, { action: 'panelControl' }>) {
+  const panel = [...panels].find(panel => panel.root.uniqueId === hit.panelId);
+  if (!panel) throw new Error('This panel is no longer available.');
+  return panel.control(hit.command);
 }
 
 export function isFloatingPanelMesh(mesh: AbstractMesh) {

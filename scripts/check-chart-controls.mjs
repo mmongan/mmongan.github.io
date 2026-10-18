@@ -54,6 +54,7 @@ const context = vm.createContext({
 try {
   vm.runInContext(load(read('../src/interaction/editingMode.ts')), context);
   context.setDrillEditingEnabled(true);
+  context.setDraftingToolsEnabled(true);
   scene.activeCamera = new FreeCamera('chartCamera', Vector3.Zero(), scene);
   for (const file of ['menu/handMenu', 'menu/floatingPanel', 'menu/panelTransparencySlider', 'menu/drillChartPad']) {
     vm.runInContext(load(read(`../src/${file}.ts`)), context);
@@ -123,7 +124,30 @@ try {
     assert.ok(Math.abs(a.position.x - b.position.x) >= sa.x + sb.x - .0001 ||
       Math.abs(a.position.y - b.position.y) >= sa.y + sb.y - .0001, `${a.name} does not overlap ${b.name}`);
   }
-  console.log('Chart controls passed: ghost/drafting toggles, shared play/pause/stepping, external state labels, expanded backing and nonoverlapping controls.');
+  const scaleBefore = root.scaling.x;
+  const chrome = command => scene.getMeshByName(`drillChartPadRootPanel-${command}`);
+  context.executeMenuAction(context.getHandMenuHit({ pickedMesh: chrome('larger') }));
+  assert.ok(Math.abs(root.scaling.x - scaleBefore * 1.2) < 1e-6);
+  context.executeMenuAction(context.getHandMenuHit({ pickedMesh: chrome('smaller') }));
+  assert.ok(Math.abs(root.scaling.x - scaleBefore) < 1e-6);
+  context.executeMenuAction(context.getHandMenuHit({ pickedMesh: chrome('close') }));
+  assert.equal(root.isEnabled(), false, 'Shared close dispatches the chart hide lifecycle');
+  context.setDrillChartPadVisible(true);
+  assert.equal(root.isEnabled(), true, 'Chart reopens normally after shared close');
+  context.setDraftingToolsEnabled(false);
+  root.position.set(1, 2, 3); root.scaling.setAll(0.75);
+  const previousPose = root.computeWorldMatrix(true).clone();
+  context.setDrillChartPadVisible(false);
+  context.setDraftingToolsEnabled(true);
+  scene.onBeforeRenderObservable.notifyObservers(scene);
+  assert.equal(root.isEnabled(), true, 'Drafting opens the chart whiteboard');
+  assert.equal(root.scaling.x, 5, 'Whiteboard is room-sized');
+  context.setDraftingToolsEnabled(false);
+  scene.onBeforeRenderObservable.notifyObservers(scene);
+  assert.equal(root.isEnabled(), false, 'Leaving drafting restores prior chart visibility');
+  assert.ok(root.computeWorldMatrix(true).asArray().every((value, index) =>
+    Math.abs(value - previousPose.asArray()[index]) < 1e-6), 'Leaving drafting restores the original chart pose and size');
+  console.log('Chart controls passed: ghost/drafting toggles, shared transport, common resize/close and reopen, state labels, and nonoverlapping controls.');
 } finally {
   scene.dispose(); engine.dispose();
 }
