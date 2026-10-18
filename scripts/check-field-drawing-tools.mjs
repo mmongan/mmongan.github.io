@@ -111,6 +111,7 @@ vm.runInContext(transform(read('../src/interaction/draftingTablePanel.ts')), con
 vm.runInContext(transform(read('../src/field/draftingFieldPreview.ts')), context);
 vm.runInContext(transform(read('../src/interaction/fieldDrawingGeometry.ts')), context);
 vm.runInContext(transform(read('../src/interaction/draftingGeometry.ts')), context);
+vm.runInContext(transform(read('../src/interaction/guideMarcherLayout.ts')), context);
 vm.runInContext(transform(read('../src/interaction/draftingWorkspace.ts')), context);
 vm.runInContext(transform(read('../src/interaction/draftingCamera.ts')), context);
 vm.runInContext(transform(read('../src/interaction/memoryWire.ts')), context);
@@ -132,7 +133,7 @@ try {
   scene.activeCamera = camera;
   context.initFieldDrawingTools({
     root, notify: message => messages.push(message), prepare() {},
-    createFormation: points => { conversions.push(['formation', points]); return true; },
+    createFormation: (points, settings) => { conversions.push(['formation', points, settings]); return true; },
     createPath: points => { conversions.push(['path', points]); return true; },
   });
   act('show');
@@ -748,6 +749,16 @@ try {
   assert.equal(context.isFieldDrawingToolActive(), true, 'Table selection remains active after putting tools away');
   assert.equal(context.handleDrawingPointer('down', point(2, 0)), true, 'Desktop field clicks select guides in table mode');
   assert.equal(context.getSelectedDrawingGuidePoints().length, 2);
+  act('guideSpacingMore');
+  act('guideFacing');
+  act('guideFacingRight');
+  let configured = JSON.parse(context.exportDrawingWorkspace()).guides[0].options;
+  assert.equal(configured.spacing, 1.563);
+  assert.equal(configured.facing, 'fixed');
+  assert.equal(configured.facingAngle, 15);
+  act('formation');
+  assert.equal(conversions.at(-1)[2].spacing, configured.spacing, 'Formation receives selected-guide spacing');
+  assert.equal(conversions.at(-1)[2].facingAngle, 15, 'Formation receives selected-guide facing');
   act('guideForward');
   assert.ok(context.getSelectedDrawingGuidePoints().every(p => Math.abs(p.z - 1.25) < 1e-8));
   act('guideRotateRight');
@@ -764,6 +775,8 @@ try {
   assert.equal(tableSave.guides[0].points[0].z, -0.75, 'Duplicate edits do not mutate the source');
   assert.equal(tableSave.guides[1].points[0].z, 0.5);
   assert.equal(tableSave.guides[1].options.controls[0].z, 0.5, 'Edited control coordinates are saved');
+  assert.equal(tableSave.guides[1].options.spacing, configured.spacing, 'Duplication preserves individual guide spacing');
+  assert.equal(tableSave.guides[1].options.facingAngle, 15, 'Fixed field facing survives geometry edits');
   assert.equal(context.importDrawingWorkspace(JSON.stringify(tableSave)), true);
   assert.equal(context.getSelectedDrawingGuidePoints(), null, 'Restore clears stale selection');
   act('guideDelete');

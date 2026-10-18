@@ -27,7 +27,7 @@ const hooks = registerHooks({
   },
 });
 const { registerManualPlacementMarcher, tryManualMarcherPose, tryManualMarcherPoses,
-  onManualPlacementBlocked } = await import('../src/robot/manualPlacement.ts');
+  canPlaceManualMarcherPose, onManualPlacementBlocked } = await import('../src/robot/manualPlacement.ts');
 const engine = new NullEngine();
 const scene = new Scene(engine);
 let blocked = 0;
@@ -54,6 +54,14 @@ function marcher(name, position, instrumentSize = null) {
 try {
   const a = marcher('held', new Vector3(-2, 0, 0), 1.5);
   const b = marcher('standing', new Vector3(0, 0, 0));
+  const original = a.position.clone();
+  const blockedBefore = blocked;
+  assert.equal(canPlaceManualMarcherPose(a, new Vector3(-3, 0, 0), 0.4), true);
+  assert.ok(a.position.equals(original), 'Successful preview never moves the real marcher');
+  assert.equal(a.rotation.y, 0, 'Successful preview restores facing');
+  assert.equal(canPlaceManualMarcherPose(a, new Vector3(0, 0, 0), 0, false), false);
+  assert.ok(a.position.equals(original), 'Blocked preview restores the real pose');
+  assert.equal(blocked, blockedBefore, 'Preview checks do not emit blocked-placement feedback');
   assert.equal(tryManualMarcherPose(a, new Vector3(0, 0, -1.3), 0, false), false,
     'Protruding horn blocks placement even with body centers 1.3 yards apart');
   assert.equal(a.position.x, -2, 'Rejected placement restores position');
@@ -110,6 +118,7 @@ try {
   let applied = 0;
   const context = vm.createContext({
     players, allRobots: new Set([editA, editB]), tryManualMarcherPose,
+    getChartPageTimeline: () => ({ authoredCounts: [] }), authorChartPage() {},
     pendingLegBakes: new Set(),
     applyGlobalCount: () => applied++, recalculateCollisionMarkers: () => {},
   });

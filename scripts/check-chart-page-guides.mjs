@@ -77,6 +77,18 @@ assert.equal(store.restoreChartPageGuides(2, [...saved.pages, { page: 5, draftin
 page = 0; frame();
 assert.equal(names(), 'a', 'Resumed drafts restore other pages\' guides');
 
+assert.equal(store.remapChartPageGuides([0, 8, 16], [0, 4, 8, 12, 16]), true);
+page = 4; frame();
+assert.equal(names(), 'b', 'Interval changes retain guides at their original count');
+page = 0; frame();
+assert.equal(names(), 'a');
+assert.throws(() => store.remapChartPageGuides([0, 4, 8, 12, 16], [0, 8]), /cannot be removed/);
+assert.equal(names(), 'a', 'Rejected remapping leaves visible guides intact');
+assert.equal(store.remapChartPageGuides([0, 4, 8, 12, 16], [0, 8, 12, 16, 20, 24],
+  count => count > 0 ? count + 8 : count), true);
+page = 5; frame();
+assert.equal(names(), 'b', 'Insertion preserves guides by shifted beat count, not a one-page assumption');
+
 const draft = load('../src/robot/chartPageDraft.ts', {});
 const base = {
   version: 1, savedAt: 'now', beat: 0, tempoBpm: 120, page: null, drafting: null,

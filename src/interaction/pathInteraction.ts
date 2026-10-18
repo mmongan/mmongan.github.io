@@ -24,6 +24,9 @@ import {
 } from '../xr/ar';
 import { scene } from '../scene/engine';
 import { createSelectionEditor } from './selectionEditor';
+import { sampleGuideMarchers } from './guideMarcherLayout';
+import { getChartPageTimeline, setChartPageTimeline, getChartPageCounts } from '../robot/chartPageTimeline';
+import { parseDraftingWorkspace } from './draftingWorkspace';
 import {
   alignFormationPoints, constrainDrillMovement, snapDrillPoint, transformFormationPoint,
   type FormationAlignment, type FormationTransform,
@@ -44,7 +47,7 @@ import {
 } from './fieldDrawingTools';
 import {
   captureChartPageGuides, canSwapChartPageGuides, forgetOtherChartPageGuides, initChartPageGuides,
-  insertChartPageGuides, restoreChartPageGuides, showChartPageGuides,
+  remapChartPageGuides, restoreChartPageGuides, showChartPageGuides,
 } from './chartPageGuides';
 import {
   CHART_PAGE_DRAFT_KEY, parseChartPageDraft, roundVector, serializeChartPageDraft, type ChartPageDraft,
@@ -135,6 +138,7 @@ import { getHandMenuHit, getHandMenuHitNearPoint, pickMenuControl, setMenuHandTr
 import {
   flipDrillChartPage,
   getDrillChartPageIndex,
+  getDrillChartSetCounts,
   getDrillChartTransitionSpan,
   insertBlankDrillChartPage,
   redrawDrillChartPad,
@@ -506,6 +510,8 @@ drillChartPadToggle?.addEventListener("change", () => setDrillChartPadVisible(!!
 function addBlankChartPage() {
   if (floorCalibrationToggle?.checked) return;
   const afterPage = getDrillChartPageIndex();
+  const beforeCounts = getDrillChartSetCounts();
+  const at = beforeCounts[afterPage];
   if (!canSwapChartPageGuides() || !showChartPageGuides(afterPage)) {
     showPlacementNotice("Finish drawing before adding a chart page.");
     return;
@@ -518,11 +524,52 @@ function addBlankChartPage() {
       "Add marchers before inserting a chart page.");
     return;
   }
-  insertChartPageGuides(afterPage);
+  const afterCounts = getDrillChartSetCounts();
+  const shiftedNames = [...chartPageNames].map(([previous, name]): [number, string] =>
+    [previous > at ? previous + getChartPageTimeline().beatsPerPage : previous, name]);
+  chartPageNames.clear();
+  shiftedNames.forEach(([count, name]) => chartPageNames.set(count, name));
+  remapChartPageGuides(beforeCounts, afterCounts,
+    previous => previous > at ? previous + getChartPageTimeline().beatsPerPage : previous);
+  showChartPageGuides(afterCounts.indexOf(count));
+  refreshChartEditorPages();
   const waiting = getBlankChartPageState()?.waiting ?? 0;
   showPlacementNotice(`Blank page at count ${count}: draw guides, then grab or place the ${waiting} ghost marchers.`);
 }
 insertChartPageButton?.addEventListener("click", addBlankChartPage);
+
+const chartBeatsPerPage = document.getElementById('chartBeatsPerPage') as HTMLInputElement | null;
+const chartPageNames = new Map<number, string>();
+function refreshChartEditorPages() {
+  const counts = getDrillChartSetCounts();
+  selectionTools?.setPages(counts.map((count, index) => ({
+    name: chartPageNames.get(count) ?? `Set ${index + 1}`, count,
+  })));
+  if (chartBeatsPerPage) chartBeatsPerPage.value = String(getChartPageTimeline().beatsPerPage);
+}
+chartBeatsPerPage?.addEventListener('change', () => {
+  const beatsPerPage = chartBeatsPerPage.valueAsNumber;
+  if (!chartBeatsPerPage.reportValidity() || !Number.isInteger(beatsPerPage)) return;
+  if (floorCalibrationToggle?.checked || getBlankChartPageState() || !canSwapChartPageGuides()) {
+    chartBeatsPerPage.value = String(getChartPageTimeline().beatsPerPage);
+    showPlacementNotice('Finish drawing, floor calibration, or the open blank page before changing page beats.');
+    return;
+  }
+  const before = getDrillChartSetCounts();
+  showChartPageGuides(getDrillChartPageIndex());
+  const saved = captureChartPageGuides();
+  const visible = exportDrawingWorkspace();
+  const withGuides = saved.pages.map(entry => before[entry.page]);
+  if (visible && parseDraftingWorkspace(visible).guides.length) withGuides.push(before[saved.shown]);
+  const timeline = getChartPageTimeline();
+  setChartPageTimeline({ beatsPerPage,
+    authoredCounts: [...timeline.authoredCounts, ...withGuides.filter(count => count !== undefined)] });
+  remapChartPageGuides(before, getDrillChartSetCounts());
+  showChartPageGuides(getDrillChartPageIndex());
+  refreshChartEditorPages();
+  redrawDrillChartPad();
+  showPlacementNotice(`Chart pages now use ${beatsPerPage} beats; authored formations and drafted pages are preserved.`);
+});
 
 // Saves the chart page draft in progress (every marcher's schedule, the open
 // blank page with its waiting ghosts, the transition and the drafted guides)
@@ -568,6 +615,7 @@ function saveChartPageDraft() {
     drafting: exportDrawingWorkspace(),
     draftingPage: pageGuides.shown,
     pageDrafting: pageGuides.pages,
+    timeline: getChartPageTimeline(),
   };
   try {
     localStorage.setItem(CHART_PAGE_DRAFT_KEY, serializeChartPageDraft(draft));
@@ -629,9 +677,11 @@ function resumeChartPageDraft() {
   });
   setDrillLabels(scene, pathRoot, labels);
   const last = Math.max(0, ...draft.marchers.map((marcher) => marcher.counts.length - 1));
-  const pages = Array.from({ length: Math.floor(last / 8) + 1 }, (_, index) => index * 8);
-  if (pages[pages.length - 1] !== last) pages.push(last);
+  setChartPageTimeline(draft.timeline ?? { beatsPerPage: 8,
+    authoredCounts: Array.from({ length: Math.floor(last / 8) + 1 }, (_, index) => index * 8).concat(last) });
+  const pages = getChartPageCounts(last);
   selectionTools?.setPages(pages.map((count, index) => ({ name: `Set ${index + 1}`, count })));
+  if (chartBeatsPerPage) chartBeatsPerPage.value = String(getChartPageTimeline().beatsPerPage);
   clearDrawingGuides();
   const imported = draft.drafting ? importDrawingWorkspace(draft.drafting) : true;
   const otherPages = restoreChartPageGuides(draft.draftingPage ?? getDrillChartPageIndex(), draft.pageDrafting ?? []);
@@ -1199,6 +1249,7 @@ interface Segment {
   fitClosedCircle: boolean;
   linear?: boolean;
   spacing?: number;
+  guideLayout?: import('./guideMarcherLayout').GuideMarcherSettings;
   erasedFormationIndices?: Set<number>;
   robots: TransformNode[]; // formation: every robot in the rank; path: the one marching robot
 }
@@ -1580,7 +1631,10 @@ function rebuildSegmentContent(segment: Segment) {
     const previousRobots = segment.robots;
     const candidates: TransformNode[] = [];
     const poses: Array<{ robot: TransformNode; position: Vector3; rotationY: number }> = [];
-    const formationPoints = getFormationPoints(segment.controlPoints, segment.fitClosedCircle, segment.spacing, segment.linear);
+    const guidePoses = segment.guideLayout
+      ? sampleGuideMarchers(segment.controlPoints, { ...segment.guideLayout, spacing: segment.spacing }) : null;
+    const formationPoints = guidePoses?.map(pose => pose.position) ??
+      getFormationPoints(segment.controlPoints, segment.fitClosedCircle, segment.spacing, segment.linear);
 
     formationPoints.forEach((point, index) => {      
       if (segment.erasedFormationIndices?.has(index)) return;
@@ -1593,14 +1647,14 @@ function rebuildSegmentContent(segment: Segment) {
       let rotationY = robotPrimitives.rotation.y;
       const next = formationPoints[index + 1] ??
         (isClosedFormation(segment.controlPoints) ? formationPoints[0] : undefined);
-      if (next) {
+      if (next && !guidePoses) {
         const dx = next.x - point.x;
         const dz = next.z - point.z;
         if (dx * dx + dz * dz > 0.0001) {
           rotationY = snapAngle(Math.atan2(dx, dz));
         }
       }
-      poses.push({ robot: robotPrimitives, position: point, rotationY });
+      poses.push({ robot: robotPrimitives, position: point, rotationY: guidePoses?.[index].rotationY ?? rotationY });
     });
     if (!tryManualMarcherPoses(poses, false, new Set(previousRobots))) {
       candidates.forEach((robot) => {
@@ -1639,7 +1693,8 @@ function createSegment(
   robots: TransformNode[],
   anchorRobot?: TransformNode,
   fitClosedCircle = true,
-  linear = false
+  linear = false,
+  guideLayout?: import('./guideMarcherLayout').GuideMarcherSettings
 ): Segment {
   const line = createTubeLine("segmentLine", controlPoints, SEGMENT_COLORS[kind]);
 
@@ -1666,7 +1721,8 @@ function createSegment(
   const segment: Segment = {
     kind, controlPoints, line, moveHandle, pointHandles, rotationHandles, copyHandle,
     anchorRobot, fitClosedCircle, linear, robots,
-    spacing: kind === "formation" ? Number(formationSpacingInput?.value ?? FORMATION_SPACING_YARDS) : undefined,
+    spacing: kind === "formation" ? guideLayout?.spacing ?? Number(formationSpacingInput?.value ?? FORMATION_SPACING_YARDS) : undefined,
+    guideLayout: guideLayout ? { ...guideLayout } : undefined,
   };
   pointHandles.forEach((handle, index) => segmentPointHandleOwner.set(handle, { segment, index }));
   segmentMoveHandleOwner.set(moveHandle, segment);
@@ -2066,6 +2122,9 @@ function transformEditorFormation(transform: FormationTransform, spacing?: numbe
   eraseHistory.clear();
   segment.controlPoints = segment.controlPoints.map(move);
   segment.spacing = nextSpacing;
+  if (segment.guideLayout?.facing === 'fixed') {
+    segment.guideLayout.facingAngle = (segment.guideLayout.facingAngle + transform.rotation * 180 / Math.PI + 360) % 360;
+  }
   refreshEditedFormation(segment);
   publishFormationEdit(`Updated ${segment.robots.length} marchers; spacing ${segment.spacing.toFixed(3)} yards. Routes unchanged.`);
   return true;
@@ -3178,6 +3237,8 @@ function spawnRandomRobots(count: number) {
 // lines, segments/handles, formation connections) so a fresh drill starts on
 // an empty field instead of piling onto whatever was already there.
 function clearAllRobots() {
+  chartPageNames.clear();
+  setChartPageTimeline({ beatsPerPage: getChartPageTimeline().beatsPerPage, authoredCounts: [] });
   if (duplicateDrillStatus) duplicateDrillStatus.value = '';
   selectionTools?.clear();
   eraseHistory.clear();
@@ -3284,9 +3345,8 @@ function spawnMarchingDrill() {
 
   refreshCollisionMarkers(scene);
   const last = Math.max(0, ...paths.map(path => path.length - 1));
-  const counts = Array.from({ length: Math.floor(last / 8) + 1 }, (_, index) => index * 8);
-  if (counts[counts.length - 1] !== last) counts.push(last);
-  selectionTools?.setPages(counts.map((count, index) => ({ name: `Set ${index + 1}`, count })));
+  setChartPageTimeline({ beatsPerPage: getChartPageTimeline().beatsPerPage, authoredCounts: [0, last] });
+  refreshChartEditorPages();
 }
 
 // Replaces the field with an OpenMarch show, each marcher holding the
@@ -3318,7 +3378,10 @@ function spawnOpenMarchDrill(drill: OpenMarchImportedDrill, showName: string, au
   refreshCollisionMarkers(scene);
   setDrillLabels(scene, pathRoot, labels);
   setShowInfo(showName, drill, instruments, tempoBpm);
-  selectionTools?.setPages(drill.pages);
+  setChartPageTimeline({ beatsPerPage: getChartPageTimeline().beatsPerPage,
+    authoredCounts: drill.pages.map(page => page.count) });
+  drill.pages.forEach(page => chartPageNames.set(page.count, page.name));
+  refreshChartEditorPages();
   return tempoBpm;
 }
 
@@ -3393,15 +3456,20 @@ export function initInteraction() {
       setEraseMode(false);
       selectionTools?.disable();
     },
-    createFormation: points => {
-      const anchor = createStandingMarcher(points[0]);
+    createFormation: (points, settings) => {
+      const first = settings ? sampleGuideMarchers(points, settings)[0] : null;
+      const anchor = settings ? createLowPolyRobot(scene) : createStandingMarcher(points[0]);
+      if (first) {
+        anchor.parent = pathRoot;
+        anchor.setEnabled(tryManualMarcherPose(anchor, first.position, first.rotationY, false));
+      }
       if (!anchor.isEnabled()) {
         anchor.dispose();
         showPlacementNotice("Formation origin is occupied. Draw a guide in an empty area.");
         return false;
       }
       const previous = new Set(segments);
-      createSegment("formation", points, [], anchor, false, true);
+      createSegment("formation", points, [], anchor, false, true, settings);
       const created = segments.find(segment => !previous.has(segment));
       if (!created || created.robots.length === 0) {
         if (created) removeEditorForm(created);

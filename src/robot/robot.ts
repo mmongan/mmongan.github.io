@@ -16,6 +16,8 @@ import { buildGaitStepPhaseOffsets, DOUBLE_TIME_ABOVE_YARDS, gaitPhaseAtBeat, is
 import { resolveRepeatPlayback } from './playbackRepeat';
 import { registerManualPlacementMarcher, tryManualMarcherPose, tryManualMarcherPoses } from './manualPlacement';
 import { createMarcherDragGhost } from './marcherGhost';
+import { getChartPageTimeline, setChartPageTimeline, getChartPageCounts, getAuthoredChartPageSpan,
+  authorChartPage, insertChartPageTimeline } from './chartPageTimeline';
 import { CLARINET_MOUTHPIECE_TIP, getClarinetTemplate } from './clarinetModel';
 import { FLUTE_MOUTHPIECE_TIP, getFluteTemplate } from './fluteModel';
 import { getSousaphoneTemplate, SOUSAPHONE_MOUTHPIECE_TIP, SOUSAPHONE_VALVE_GRIP, sousaphoneLoopPoint } from './sousaphoneModel';
@@ -2088,6 +2090,18 @@ export function getRobotFixedFacing(robot: TransformNode): number | null {
   return players.get(robot)?.fixedFacingY ?? null;
 }
 
+export function setPlacedMarcherFacing(robot: TransformNode, facingY: number) {
+  if (!Number.isFinite(facingY)) throw new RangeError('Marcher facing must be finite.');
+  const state = players.get(robot);
+  const count = state?.counts[blankChartPage?.count ?? getGlobalCountIndex()];
+  if (!state || !count) return;
+  count.facingY = Math.atan2(Math.sin(facingY), Math.cos(facingY));
+  invalidateLegBake(state);
+  state.gaitPhaseCache?.clear();
+  state.stepCache = undefined;
+  applyGlobalCount(robot, state);
+}
+
 // Read-only view of a robot's precalculated marching steps, so callers (e.g.
 // per-step grab handles) can position one handle per count.
 export function getRobotCounts(robot: TransformNode): ReadonlyArray<RobotCount> | null {
@@ -2102,11 +2116,13 @@ export function captureMarcherMovement(robot: TransformNode) {
     points: state?.points.map(point => point.clone()),
     counts: state?.counts.map(count => ({ ...count, position: count.position.clone() })),
     fixedFacingY: state?.fixedFacingY,
+    timeline: getChartPageTimeline(),
   };
 }
 
 export function restoreMarcherMovement(robot: TransformNode, snapshot: ReturnType<typeof captureMarcherMovement>) {
   if (robot.isDisposed()) throw new Error('Cannot restore movement of a disposed marcher.');
+  setChartPageTimeline(snapshot.timeline);
   heldRobots.delete(robot);
   robot.position.copyFrom(snapshot.position);
   robot.rotation.y = snapshot.rotationY;
@@ -2191,6 +2207,15 @@ export function placeRobot(robot: TransformNode, position: Vector3, scene: Scene
   if (blankChartPage && players.get(robot)?.counts[blankChartPage.count]) {
     return placeRobotOnBlankChartPage(robot, position, scene);
   }
+  const count = getGlobalCountIndex();
+  if (players.has(robot) && getChartPageTimeline().authoredCounts.length &&
+    getChartPageCounts(getMaxCountIndex()).includes(count)) {
+    const span = getAuthoredChartPageSpan(count, getMaxCountIndex());
+    if (!setRobotSetPoses(count, [{ robot, position, facingY: robot.rotation.y }],
+      span.previous, span.next, scene)) return null;
+    setRobotHeld(robot, false);
+    return Vector3.Zero();
+  }
   const previous = robot.position.clone();
   const previousYaw = robot.rotation.y;
   const wasHeld = heldRobots.has(robot);
@@ -2229,6 +2254,12 @@ export function setRobotCountPosition(
   const state = players.get(robot);
   const count = state?.counts[index];
   if (!state || !count) return;
+
+  if (getChartPageTimeline().authoredCounts.length && getChartPageCounts(getMaxCountIndex()).includes(index)) {
+    const span = getAuthoredChartPageSpan(index, getMaxCountIndex());
+    setRobotSetPoses(index, [{ robot, position }], span.previous, span.next, scene);
+    return;
+  }
 
   const from = state.counts[index - 1] ?? count;
   const to = state.counts[index + 1] ?? count;
@@ -2313,6 +2344,11 @@ export function setRobotSetPoses(
     });
   }
   if (!accepted) return false;
+  if (getChartPageTimeline().authoredCounts.length) {
+    const span = getAuthoredChartPageSpan(index, getMaxCountIndex());
+    previousSet = span.previous;
+    nextSet = span.next;
+  }
   for (const pose of poses) {
     const state = players.get(pose.robot)!;
     const last = Math.min(nextSet, state.counts.length - 1);
@@ -2338,6 +2374,9 @@ export function setRobotSetPoses(
     state.stepCache = undefined;
     invalidateLegBake(state);
   }
+  authorChartPage(previousSet);
+  authorChartPage(index);
+  authorChartPage(nextSet);
   applyGlobalCountToAllRobots();
   recalculateCollisionMarkers(scene);
   return true;
@@ -2743,6 +2782,7 @@ export function insertBlankChartPage(afterCount: number, countsPerPage: number, 
     state.stepCache = undefined;
     invalidateLegBake(state);
   });
+  insertChartPageTimeline(at, countsPerPage);
   seekToCount(count);
   openBlankChartPage(count, at, Math.min(count + countsPerPage, getMaxCountIndex()), null, scene);
   return count;

@@ -294,8 +294,11 @@
           </div>
           <label class="radio-option">
             <input type="checkbox" id="drillChartPadToggle" />
-            <span>Drill chart pad (floating, grabbable; one page per 8-count set)</span>
+            <span>Drill chart pad (floating, grabbable)</span>
           </label>
+          <label class="settings-label" for="chartBeatsPerPage">Beats per chart page</label>
+          <input id="chartBeatsPerPage" type="number" min="1" max="64" step="1" value="8" />
+          <p>Authored formations keep their counts. Intermediate pages sample the transition at this interval; editing an intermediate page makes it an authored formation. Guides remain attached to their original counts when the interval changes.</p>
           <button id="insertChartPageButton" type="button">Insert blank chart page after this page</button>
           <button id="saveChartDraftButton" type="button">Save chart page draft (this browser)</button>
           <button id="resumeChartDraftButton" type="button">Resume saved chart page draft</button>
@@ -338,6 +341,15 @@
               <button type="button" data-drafting-action="draftSpacingMore">Move step +</button>
               <button type="button" data-drafting-action="draftAngle">Rotation angle</button>
             </div>
+            <div class="radio-row">
+              <button type="button" data-drafting-action="guideSpacingLess">Guide spacing -</button>
+              <button type="button" data-drafting-action="guideSpacingMore">Guide spacing +</button>
+              <button type="button" data-drafting-action="guideSpacingApply">Use divider spacing for guide</button>
+              <button type="button" data-drafting-action="guideFacing">Guide facing mode</button>
+              <button type="button" data-drafting-action="guideFacingLeft">Facing -15 degrees</button>
+              <button type="button" data-drafting-action="guideFacingRight">Facing +15 degrees</button>
+            </div>
+            <p>Select a guide to configure its marcher spacing (0.625-10 yards) and facing: along, reverse, or a fixed field angle (0 degrees toward +Z; 90 toward +X). For exact spacing, enter Divider spacing below and apply it to the guide. Landing ghosts and Create formation use the same spaced positions, starting at the guide's first point.</p>
             <div class="radio-row">
               <button type="button" data-drafting-action="formation">Create formation</button>
               <button type="button" data-drafting-action="path">Create path</button>

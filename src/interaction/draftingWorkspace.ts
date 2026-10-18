@@ -1,12 +1,13 @@
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
 import { FIELD_LENGTH_YARDS, FIELD_SURFACE_Y, FIELD_WIDTH_YARDS } from '../field/constants';
 import { measureDraftLine, sampleDraftSpline } from './draftingGeometry';
+import type { GuideMarcherSettings } from './guideMarcherLayout';
 
 export const DRAFTING_WORKSPACE_KEY = 'chartxr.draftingWorkspace.v1';
 
 export interface WorkspaceGuide {
   points: Vector3[];
-  options: {
+  options: Partial<GuideMarcherSettings> & {
     editable?: 'yarn' | 'spline';
     controls?: Vector3[];
     label?: string;
@@ -84,6 +85,14 @@ export function parseDraftingWorkspace(json: string): DraftingWorkspace {
   const guides: WorkspaceGuide[] = source.guides.map(item => {
     const guide = record(item), options = record(guide.options);
     const result: WorkspaceGuide = { points: points(guide.points, 2, 512), options: {} };
+    if (options.spacing !== undefined) result.options.spacing = numberIn(options.spacing, 0.625, 10);
+    if (options.facing !== undefined) {
+      if (options.facing !== 'along' && options.facing !== 'reverse' && options.facing !== 'fixed') {
+        throw new Error('Invalid guide facing.');
+      }
+      result.options.facing = options.facing;
+    }
+    if (options.facingAngle !== undefined) result.options.facingAngle = numberIn(options.facingAngle, 0, 360);
     if (options.editable !== undefined) {
       if (options.editable !== 'yarn' && options.editable !== 'spline') throw new Error('Invalid editable guide type.');
       result.options.editable = options.editable;

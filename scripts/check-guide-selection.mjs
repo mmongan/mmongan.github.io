@@ -25,13 +25,14 @@ const context = vm.createContext({
   deps: { notify: message => notices.push(message) },
 });
 vm.runInContext(stripTypeScriptTypes(`
+  ${read('guideMarcherLayout.ts').replace(/^import .*?;\r?$/gm, '').replace(/export /g, '')}
   ${section(tools, 'export function closestPointOnGuide(', 'function createFieldDrawingTools(').replace('export ', '')}
   const guides = [];
   let selectedGuide = null;
   const activeGuide = () => selectedGuide ?? guides[guides.length - 1];
   ${section(tools, '  function highlightGuide(', '  function disposeGuide(')}
   function disposeGuide(guide) { if (guide === selectedGuide) selectedGuide = null; }
-  this.api = { guides, closestPointOnGuide, selectNear, snapToSelected, activeGuide, disposeGuide,
+  this.api = { guides, closestPointOnGuide, selectNear, snapToSelected, snapToNearby, activeGuide, disposeGuide,
     selected: () => selectedGuide };
 `, { mode: 'transform' }), context);
 const api = context.api;
@@ -50,6 +51,11 @@ const sticky = guide([[20, 20], [22, 20]], { sticky: true });
 near(api.closestPointOnGuide(line.points, new Vector3(3, 1, 2)).point, new Vector3(3, 1, 0), 'Projects onto a segment, keeping height');
 near(api.closestPointOnGuide(line.points, new Vector3(-4, 0, 1)).point, new Vector3(0, 0, 0), 'Clamps to the start');
 near(api.closestPointOnGuide(bent.points, new Vector3(6, 0, 8)).point, new Vector3(5, 0, 8), 'Uses nearest polyline segment');
+near(api.snapToNearby(new Vector3(3, 1, 0.24), 0.25).position, new Vector3(2.5, 1, 0), 'Nearby guides snap to spaced positions with input height preserved');
+near(api.snapToNearby(new Vector3(-0.2, 1, 0), 0.25).position, new Vector3(0, 1, 0), 'Nearby guide endpoints snap');
+near(api.snapToNearby(new Vector3(5.2, 1, 8), 0.25).position, new Vector3(5, 1, 7.5), 'Bent guides snap to their nearest spaced position');
+assert.equal(api.snapToNearby(new Vector3(3, 1, 0.26), 0.25), null, 'Distant guides do not attract held marchers');
+assert.equal(api.snapToNearby(new Vector3(21, 1, 20), 0.25), null, 'Notes are not snap targets');
 assert.equal(api.closestPointOnGuide([new Vector3(1, 0, 1)], Vector3.Zero()), null, 'Single-point guides do not snap');
 
 assert.equal(api.snapToSelected(new Vector3(3, 0, 2)), null, 'No snapping without a selection');
@@ -79,11 +85,12 @@ context.floorCalibrationToggle.checked = true;
 assert.equal(api.selectNear(new Vector3(5, -0.46, 7), 0.75, false), false, 'Floor calibration blocks selection');
 assert.ok(notices.some(message => message.includes('snap')), 'Selection explains snapping');
 
-const finish = section(hand, '  function finishMarcherGrab(', '    grab.robot.setEnabled(true);');
-assert.ok(finish.indexOf('isTouchingTurf') < finish.indexOf('snapToSelectedDrawingGuide(position)'),
-  'Snapping only happens after the release passes the turf-contact check');
-assert.match(finish, /if \(placed\) position\.copyFrom\(snapped\);\s+else notifyPlacement/,
-  'Blocked snaps fall back to the release point');
+const landing = section(hand, '  function getMarcherLandingPosition(', '  function updateMarcherLandingGhost(');
+assert.ok(landing.indexOf('isTouchingTurf') < landing.indexOf('getNearbyDrawingGuidePose(position)'),
+  'Snapping only happens after the release passes the ground-distance check');
+assert.match(landing, /canPlaceManualMarcherPose\(grab\.robot, snapped\.position/);
+assert.match(landing, /canPlaceManualMarcherPose\(grab\.robot, position/,
+  'Blocked guide snaps test the ground point as a fallback');
 assert.match(hand, /selectDrawingGuideNear\(\s+Vector3\.TransformCoordinates\(point, Matrix\.Invert\(pathMatrix\)\), 0\.03 \/ pathScale, true\)\) continue;/,
   'Hand pinch on a guide selects instead of creating a marcher');
 assert.match(path, /if \(!pickedRobot && selectDrawingGuideFromRay\(getControllerRay\(controller\)\)\) return;/,

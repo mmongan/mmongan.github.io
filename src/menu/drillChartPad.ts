@@ -28,6 +28,7 @@ import { FloatingPanel } from './floatingPanel';
 import { PanelTransparencySlider } from './panelTransparencySlider';
 import { drawPanelButton, PANEL_FRAME_COLOR, PANEL_PAPER_COLOR } from './panelStyle';
 import { getMarcherPOVRobot, getMarcherPOVLabel } from '../camera/marcherPOV';
+import { getChartPageCounts, getChartPageTimeline, isAuthoredChartPage } from '../robot/chartPageTimeline';
 
 export const DRILL_CHART_COUNTS_PER_SET = 8;
 
@@ -68,15 +69,9 @@ let lastSignature = "";
 let framesUntilRedraw = 0;
 const visibilityListeners = new Set<(visible: boolean) => void>();
 
-// Set boundaries every DRILL_CHART_COUNTS_PER_SET counts, plus the drill's
-// final count when it doesn't land on a boundary, so the last page is the
-// ending formation.
+// Regular beat boundaries plus authored formations that fall between them.
 export function getDrillChartSetCounts(): number[] {
-  const last = getDrillLastCountIndex();
-  const counts: number[] = [];
-  for (let count = 0; count <= last; count += DRILL_CHART_COUNTS_PER_SET) counts.push(count);
-  if (counts[counts.length - 1] !== last) counts.push(last);
-  return counts;
+  return getChartPageCounts(getDrillLastCountIndex());
 }
 
 // The page shown is the latest set the playhead has reached, so playback
@@ -113,7 +108,7 @@ export function flipDrillChartPage(direction: 1 | -1) {
 // Inserts a blank page (keyframe) right after the page being shown and turns to it.
 export function insertBlankDrillChartPage(): number | null {
   const setCounts = getDrillChartSetCounts();
-  const count = insertBlankChartPage(setCounts[getCurrentPage(setCounts)], DRILL_CHART_COUNTS_PER_SET, scene);
+  const count = insertBlankChartPage(setCounts[getCurrentPage(setCounts)], getChartPageTimeline().beatsPerPage, scene);
   framesUntilRedraw = 0;
   return count;
 }
@@ -324,7 +319,7 @@ function drawPage(target: Pad, setCounts: number[], page: number) {
   ctx.textBaseline = "alphabetic";
   ctx.textAlign = "left";
   ctx.font = "bold 44px 'Segoe UI', Arial";
-  ctx.fillText(`Set ${page + 1}`, FIELD_LEFT, 66);
+  ctx.fillText(`Set ${page + 1}${isAuthoredChartPage(count, getDrillLastCountIndex()) ? '' : ' (interpolated)'}`, FIELD_LEFT, 66);
   ctx.font = "24px 'Segoe UI', Arial";
   ctx.fillStyle = "#4a5568";
   const moveCounts = count - previousCount;
@@ -443,7 +438,7 @@ function getPageSignature(setCounts: number[], page: number) {
   const transitionSignature = `${transition.shape}:${transition.pace}:${transition.styleIndex}`;
   const povRobot = getMarcherPOVRobot();
   const povSignature = povRobot ? `${povRobot.uniqueId}:${povRobot.position.x.toFixed(3)}:${povRobot.position.z.toFixed(3)}` : '';
-  return `${setCounts.length}:${page}:${count}:${hash}:${getGlobalCountIndex()}:${getSelectedFieldLevel()}:${povSignature}:${transitionSignature}`;
+  return `${setCounts.join(',')}:${getChartPageTimeline().authoredCounts.join(',')}:${page}:${count}:${hash}:${getGlobalCountIndex()}:${getSelectedFieldLevel()}:${povSignature}:${transitionSignature}`;
 }
 
 function refreshPage(force = false) {

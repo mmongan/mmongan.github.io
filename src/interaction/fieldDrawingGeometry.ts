@@ -12,7 +12,8 @@ export type DrawingToolCommand = FieldDrawingTool | 'show' | 'stencils' | 'cutte
   'draftSpacingLess' | 'draftSpacingMore' | 'draftAngle' | 'draftSide' | 'draftReference' |
   'saveDrafting' | 'restoreDrafting' | 'deleteDrafting' | 'takePhoto' | 'restorePhoto' | 'downloadPhoto' |
   'table' | 'tableExit' | 'tablePreview' | 'tableSnap' | 'tableGrid' | 'guideSelect' | 'guideLeft' | 'guideRight' |
-  'guideForward' | 'guideBack' | 'guideRotateLeft' | 'guideRotateRight' | 'guideDuplicate' | 'guideDelete';
+  'guideForward' | 'guideBack' | 'guideRotateLeft' | 'guideRotateRight' | 'guideDuplicate' | 'guideDelete' |
+  'guideSpacingLess' | 'guideSpacingMore' | 'guideSpacingApply' | 'guideFacing' | 'guideFacingLeft' | 'guideFacingRight';
 
 export function buildLaserGuide(origin: Vector3, direction: Vector3): Vector3[] {
   if (![origin.x, origin.z, direction.x, direction.z].every(Number.isFinite)) return [];

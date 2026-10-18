@@ -3,6 +3,8 @@
 // the transition library choice, and the drafted guides. Plain JSON only, so
 // it can be validated before anything in the scene is replaced.
 
+import type { ChartPageTimeline } from './chartPageTimeline';
+
 export const CHART_PAGE_DRAFT_KEY = 'chartxr.chartPageDraft';
 const MAX_MARCHERS = 1000;
 const MAX_COUNTS = 20000;
@@ -49,6 +51,7 @@ export interface ChartPageDraft {
   draftingPage?: number;
   // Every other chart page's drafted guides (drafting workspace JSON per page).
   pageDrafting?: { page: number; drafting: string }[];
+  timeline?: ChartPageTimeline;
 }
 
 const round = (value: number) => Math.round(value * 10000) / 10000;
@@ -166,6 +169,16 @@ export function parseChartPageDraft(json: string): ChartPageDraft {
     }
   }
   const tempoBpm = finite(data.tempoBpm, 'tempo');
+  let timeline: ChartPageTimeline | undefined;
+  if (data.timeline !== undefined) {
+    if (!data.timeline || typeof data.timeline !== 'object') fail('timeline must be an object');
+    const saved = data.timeline as Record<string, unknown>;
+    const beatsPerPage = count(saved.beatsPerPage, 'beats per page');
+    if (beatsPerPage < 1 || beatsPerPage > 64 || !Array.isArray(saved.authoredCounts)) fail('invalid page timeline');
+    const authoredCounts = saved.authoredCounts.map(value => count(value, 'authored count'));
+    if (authoredCounts.some(value => value > 20000)) fail('authored count is too large');
+    timeline = { beatsPerPage, authoredCounts: [...new Set(authoredCounts)].sort((a, b) => a - b) };
+  }
   if (tempoBpm <= 0) fail('tempo must be positive');
   return {
     version: 1, savedAt: data.savedAt, beat: Math.max(0, finite(data.beat, 'count')), tempoBpm,
@@ -173,5 +186,6 @@ export function parseChartPageDraft(json: string): ChartPageDraft {
     page, marchers, drafting: data.drafting as string | null,
     ...(draftingPage === undefined ? {} : { draftingPage }),
     ...(pageDrafting === undefined ? {} : { pageDrafting }),
+    ...(timeline === undefined ? {} : { timeline }),
   };
 }

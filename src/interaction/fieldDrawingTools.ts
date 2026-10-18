@@ -33,16 +33,17 @@ import { getARPosition, setARPosition, getARRotation, setARRotation, setARScale,
 import { DRAFTING_WORKSPACE_KEY, parseDraftingWorkspace, serializeDraftingWorkspace,
   type DraftingWorkspace, type WorkspaceGuide } from './draftingWorkspace';
 import { captureDraftingPhoto, DRAFTING_CAMERA_KEY, parseDraftingPhoto, type DraftingPhoto } from './draftingCamera';
+import { getGuideMarcherSettings, sampleGuideMarchers, type GuideMarcherSettings } from './guideMarcherLayout';
 
 interface DrawingDependencies {
   root: TransformNode;
   notify(message: string): void;
   prepare(): void;
-  createFormation(points: Vector3[]): boolean;
+  createFormation(points: Vector3[], settings?: GuideMarcherSettings): boolean;
   createPath(points: Vector3[]): boolean;
   createSynchronizedRoutes(points: Vector3[]): boolean;
 }
-interface GuideOptions {
+interface GuideOptions extends Partial<GuideMarcherSettings> {
   editable?: 'yarn' | 'spline';
   controls?: Vector3[];
   label?: string;
@@ -89,6 +90,12 @@ export function selectDrawingGuideNear(point: Vector3, radius: number, vertical 
 /** Nearest root-local point on the selected guide (keeping the input height), or null with no selection. */
 export function snapToSelectedDrawingGuide(point: Vector3): Vector3 | null {
   return drawing?.snapToSelected(point) ?? null;
+}
+export function snapToNearbyDrawingGuide(point: Vector3, radius = 0.25): Vector3 | null {
+  return drawing?.snapToNearby(point, radius)?.position ?? null;
+}
+export function getNearbyDrawingGuidePose(point: Vector3, radius = 0.25) {
+  return drawing?.snapToNearby(point, radius) ?? null;
 }
 /** Removes every drafted guide (e.g. for a new blank chart page); returns how many were removed. */
 export function clearDrawingGuides() {
@@ -388,10 +395,13 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
   }
   function updateTableStatus() {
     const step = getDraftSpacing();
+    const layout = selectedGuide ? getGuideMarcherSettings(selectedGuide.options) : null;
     const message = `${tableMode ? 'Drafting table' : 'Field'} | ${selected ?? 'Select guides'} | ` +
       `Snap ${tableSnap ? 'on' : 'off'} | View ${fullSizePreview ? 'on' : 'off'} | ${guides.length} guides | ` +
       `${selectedGuide ? `Selected: ${measureDraftLine(selectedGuide.points).yards.toFixed(2)} yd` : 'No selection'} | ` +
-      `Step ${step ?? '?'} yd / ${getDraftAngle()} deg`;
+      `Step ${step ?? '?'} yd / ${getDraftAngle()} deg` +
+      (layout ? ` | Guide ${layout.spacing.toFixed(3)} yd / ${layout.facing}` +
+        (layout.facing === 'fixed' ? ` ${layout.facingAngle} deg` : '') : '');
     tablePanel.status(message);
     if (draftingTableStatus) draftingTableStatus.value = message;
   }
@@ -664,13 +674,32 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     const deselect = nearest === selectedGuide;
     setSelectedGuide(deselect ? null : nearest);
     deps.notify(tableMode ? (deselect ? 'Guide deselected.' : 'Guide selected. Use Move, Rotate, Duplicate or Delete in the drafting workspace.')
-      : deselect ? 'Guide deselected. Released marchers place freely.'
-      : 'Guide selected. Released marchers snap onto it; drafting actions use it.');
+      : deselect ? 'Guide deselected. Grabbed marchers still snap to nearby guides.'
+      : 'Guide selected for click placement and drafting. Grabbed marchers snap to nearby guides.');
     return true;
   }
   function snapToSelected(point: Vector3) {
     return selectedGuide && !selectedGuide.options.sticky
       ? closestPointOnGuide(selectedGuide.points, point)?.point ?? null : null;
+  }
+  function snapToNearby(point: Vector3, radius: number) {
+    let nearest: { position: Vector3; rotationY: number } | null = null;
+    let distance = radius;
+    for (const guide of guides) {
+      if (guide.options.sticky) continue;
+      const hit = closestPointOnGuide(guide.points, point);
+      if (hit && hit.distance <= distance) {
+        const poses = sampleGuideMarchers(guide.points, guide.options);
+        const pose = poses.reduce<(typeof poses)[number] | null>((best, candidate) =>
+          !best || Math.hypot(candidate.position.x - point.x, candidate.position.z - point.z) <
+            Math.hypot(best.position.x - point.x, best.position.z - point.z) ? candidate : best, null);
+        if (pose) {
+          nearest = { position: new Vector3(pose.position.x, point.y, pose.position.z), rotationY: pose.rotationY };
+          distance = hit.distance;
+        }
+      }
+    }
+    return nearest;
   }
   function disposeGuide(guide: Guide) {
     if (guide === selectedGuide) selectedGuide = null;
@@ -690,6 +719,10 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
       deps.notify('Guide limit reached (100). Erase or clear guides before drawing more.');
       return;
     }
+    const marcherSpacing = getDraftSpacing();
+    if (marcherSpacing === null) return;
+    options = { spacing: Math.max(0.625, Math.min(10, marcherSpacing)),
+      facing: 'along', facingAngle: 0, ...options };
     const committedPoints = points.map(point => point.clone());
     const guide: Guide = { points: committedPoints, meshes: createGuideMeshes(committedPoints, options), options };
     guides.push(guide);
@@ -1139,6 +1172,36 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
   }
   function action(value: DrawingToolCommand) {
     if (takingPhoto) { workspaceMessage('Wait for the field snapshot to finish.'); return; }
+    if (value === 'guideSpacingLess' || value === 'guideSpacingMore' || value === 'guideSpacingApply' || value === 'guideFacing' ||
+      value === 'guideFacingLeft' || value === 'guideFacingRight') {
+      if (floorCalibrationToggle?.checked || guidesBusy()) {
+        deps.notify('Finish drawing or floor calibration before changing guide settings.'); return;
+      }
+      if (!selectedGuide || selectedGuide.options.sticky) {
+        deps.notify('Select a drafted line or curve to configure marcher spacing and facing.'); return;
+      }
+      const settings = getGuideMarcherSettings(selectedGuide.options);
+      if (value === 'guideSpacingApply') {
+        const spacing = getDraftSpacing();
+        if (spacing === null || spacing < 0.625 || spacing > 10) {
+          deps.notify('Enter a marcher spacing from 0.625 to 10 yards in Divider spacing, then apply it.'); return;
+        }
+        settings.spacing = spacing;
+      } else if (value === 'guideSpacingLess' || value === 'guideSpacingMore') {
+        settings.spacing = Number(Math.max(0.625, Math.min(10,
+          settings.spacing * (value === 'guideSpacingMore' ? 1.25 : 0.8))).toFixed(3));
+      } else if (value === 'guideFacing') {
+        settings.facing = settings.facing === 'along' ? 'reverse' : settings.facing === 'reverse' ? 'fixed' : 'along';
+      } else {
+        settings.facing = 'fixed';
+        settings.facingAngle = (settings.facingAngle + (value === 'guideFacingLeft' ? -15 : 15) + 360) % 360;
+      }
+      Object.assign(selectedGuide.options, settings);
+      updateTableStatus();
+      deps.notify(`Guide marchers: ${settings.spacing} yards, ${settings.facing}` +
+        (settings.facing === 'fixed' ? ` ${settings.facingAngle} degrees.` : '.'));
+      return;
+    }
     if (value === 'table' || value === 'tableExit') { setTableMode(value === 'table'); return; }
     if (value === 'tablePreview') {
       if (!tableMode) { deps.notify('Enter drafting mode before showing the full-size field.'); return; }
@@ -1281,7 +1344,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
       const guide = activeGuide();
       if (!guide) { deps.notify('Draw a guide on the field first.'); return; }
       const points = guide.points.map(p => p.clone());
-      if (value === 'formation' ? deps.createFormation(points) : deps.createPath(points)) {
+      if (value === 'formation' ? deps.createFormation(points, getGuideMarcherSettings(guide.options)) : deps.createPath(points)) {
         deps.notify(value === 'formation' ? 'Standing formation created from guide.' : 'Marching path created from guide.');
       }
       return;
@@ -1642,7 +1705,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
   }
   return { action, pointer, updateTableStatus, tableMode: () => tableMode,
     pointerActive: () => pointerStroke !== null, active: () => selected !== null || tableMode,
-    selectNear, snapToSelected,
+    selectNear, snapToSelected, snapToNearby,
     clearGuides: () => {
       const count = guides.length;
       guides.splice(0).forEach(disposeGuide);

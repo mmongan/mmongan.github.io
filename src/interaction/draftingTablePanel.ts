@@ -12,7 +12,7 @@ import type { DrawingToolCommand } from './fieldDrawingGeometry';
 
 export function createDraftingTablePanel() {
   const root = new TransformNode('draftingTableWorkspace', scene);
-  const backing = MeshBuilder.CreateBox('draftingTableBacking', { width: 1.4, height: 1.15, depth: 0.025 }, scene);
+  const backing = MeshBuilder.CreateBox('draftingTableBacking', { width: 1.4, height: 1.4, depth: 0.025 }, scene);
   backing.parent = root;
   const backingMaterial = new StandardMaterial('draftingTableBackingMaterial', scene);
   backingMaterial.diffuseColor = new Color3(0.05, 0.08, 0.1);
@@ -28,6 +28,8 @@ export function createDraftingTablePanel() {
     [['Formation', 'formation'], ['Path', 'path'], ['Route form', 'synchronizedRoutes'], ['Undo guide', 'undo']],
     [['Save locally', 'saveDrafting'], ['Restore saved', 'restoreDrafting'], ['Take photo', 'takePhoto'], ['Clear guides', 'clear']],
     [['Full-size view', 'tablePreview']],
+    [['Guide space -', 'guideSpacingLess'], ['Guide space +', 'guideSpacingMore'], ['Use spacing', 'guideSpacingApply'], ['Guide facing', 'guideFacing']],
+    [['Facing -15', 'guideFacingLeft'], ['Facing +15', 'guideFacingRight']],
   ];
   rows.forEach((row, y) => row.forEach(([label, command], x) => {
     const canvas = document.createElement('canvas');
@@ -44,7 +46,7 @@ export function createDraftingTablePanel() {
     material.backFaceCulling = false;
     const mesh = MeshBuilder.CreatePlane(`draftingTable-${command}`, { width: 0.32, height: 0.075 }, scene);
     mesh.parent = root;
-    mesh.position.set((x - 1.5) * 0.34, 0.32 - y * 0.105, -0.025);
+    mesh.position.set((x - 1.5) * 0.34, 0.44 - y * 0.105, -0.025);
     mesh.material = material;
     meshes.add(mesh);
     const hit: HandMenuHit = { action: 'drawingTool', tool: command };
@@ -63,9 +65,9 @@ export function createDraftingTablePanel() {
   material.disableLighting = true;
   material.backFaceCulling = false;
   const status = MeshBuilder.CreatePlane('draftingTableStatus', { width: 1.32, height: 0.09 }, scene);
-  status.parent = root; status.position.set(0, 0.47, -0.025); status.material = material;
+  status.parent = root; status.position.set(0, 0.59, -0.025); status.material = material;
   status.isPickable = false;
-  const panel = new FloatingPanel(root, meshes, root, new Vector3(0.71, 0.58, 0.02), buttons);
+  const panel = new FloatingPanel(root, meshes, root, new Vector3(0.71, 0.71, 0.02), buttons);
   root.setEnabled(false);
   return {
     commands: new Set(rows.flatMap(row => row.map(([, command]) => command))),

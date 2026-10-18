@@ -89,7 +89,8 @@ function intersects(a: Bounds, b: Bounds, endA = a, endB = b, paddingA = 0, padd
 export function tryManualMarcherPoses(
   poses: readonly ManualMarcherPose[],
   sweep = true,
-  ignored: ReadonlySet<TransformNode> = new Set()
+  ignored: ReadonlySet<TransformNode> = new Set(),
+  validateOnly = false
 ): boolean {
   poses = poses.map((pose) => ({ ...pose, position: pose.position.clone() }));
   const moving = new Set(poses.map(({ robot }) => robot));
@@ -137,7 +138,7 @@ export function tryManualMarcherPoses(
       const endpoint = pairs(current);
       if ([...collisions].some((pair) => !leaving.has(pair)) ||
         (step === steps && endpoint.size > 0)) {
-        onManualPlacementBlocked.notifyObservers();
+        if (!validateOnly) onManualPlacementBlocked.notifyObservers();
         return false;
       }
       for (const pair of leaving) if (!endpoint.has(pair)) leaving.delete(pair);
@@ -146,7 +147,7 @@ export function tryManualMarcherPoses(
     accepted = true;
     return true;
   } finally {
-    if (!accepted) previous.forEach(({ robot, position, rotationY }) => {
+    if (!accepted || validateOnly) previous.forEach(({ robot, position, rotationY }) => {
       robot.position.copyFrom(position);
       robot.rotation.y = rotationY;
       robot.computeWorldMatrix(true);
@@ -156,4 +157,8 @@ export function tryManualMarcherPoses(
 
 export function tryManualMarcherPose(robot: TransformNode, position: Vector3, rotationY = robot.rotation.y, sweep = true) {
   return tryManualMarcherPoses([{ robot, position, rotationY }], sweep);
+}
+
+export function canPlaceManualMarcherPose(robot: TransformNode, position: Vector3, rotationY = robot.rotation.y, sweep = true) {
+  return tryManualMarcherPoses([{ robot, position, rotationY }], sweep, new Set(), true);
 }

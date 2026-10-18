@@ -62,6 +62,28 @@ export function insertChartPageGuides(afterPage: number): boolean {
   return true;
 }
 
+/** Reindexes guides by count when page intervals or authored boundaries change. */
+export function remapChartPageGuides(before: readonly number[], after: readonly number[],
+  countAfter: (count: number) => number = count => count): boolean {
+  const previous = swapDrawingGuides([]);
+  if (!previous) return false;
+  const entries = new Map(storedGuides);
+  if (previous.length) entries.set(shownPage, previous);
+  const remapped = [...entries].map(([page, guides]): [number, WorkspaceGuide[]] => {
+    const count = before[page];
+    const index = count === undefined ? -1 : after.indexOf(countAfter(count));
+    return [index, guides];
+  });
+  if (remapped.some(([page]) => page < 0)) {
+    swapDrawingGuides(previous);
+    throw new Error('A chart page with drafted guides cannot be removed.');
+  }
+  storedGuides.clear();
+  remapped.forEach(([page, guides]) => store(page, guides));
+  shownPage = -1;
+  return true;
+}
+
 /** Forgets the guides of pages not shown (e.g. a different show was loaded). */
 export function forgetOtherChartPageGuides() {
   storedGuides.clear();

@@ -178,15 +178,25 @@ export function initXR(teleportGrid: Mesh) {
   let pendingSitting: boolean | null = null;
   let pendingPostureSince = 0;
 
-  function updateTableHeightFromCamera(camera: WebXRCamera, sitting: boolean) {
-    const height = camera.realWorldHeight;
+  function getCameraSittingPosture(camera: WebXRCamera): boolean | null {
+    const worldScale = xrExperience?.baseExperience.sessionManager.worldScalingFactor ?? 1;
+    const height = getTrackedPlayerHeight(camera) / worldScale;
+    if (!Number.isFinite(height) || height <= 0) return null;
+    return detectedSitting === null
+      ? height < 1.425
+      : detectedSitting ? height < 1.5 : height < 1.35;
+  }
+
+  function updateTableHeightFromCamera(camera: WebXRCamera,
+    sitting = getCameraSittingPosture(camera) ?? detectedSitting ?? !!sittingModeToggle?.checked) {
+    const height = getTrackedPlayerHeight(camera);
     if (!Number.isFinite(height) || height <= 0) return;
     const worldScale = xrExperience?.baseExperience.sessionManager.worldScalingFactor ?? 1;
     const tableAboveFloor = Math.max(0, Math.min(
       (sitting ? 0.75 : 1) * worldScale,
       height - 0.45 * worldScale
     ));
-    setTableHeightForPosture(sitting, getHeadsetFloorY(camera) + tableAboveFloor);
+    setTableHeightForPosture(sitting, getHeadsetFloorY(camera) + playerFloorOffset + tableAboveFloor);
   }
 
   function updateDetectedPosture(camera: WebXRCamera) {
@@ -194,15 +204,11 @@ export function initXR(teleportGrid: Mesh) {
       pendingSitting = null;
       return;
     }
-    const worldScale = xrExperience?.baseExperience.sessionManager.worldScalingFactor ?? 1;
-    const height = camera.realWorldHeight / worldScale;
-    if (!Number.isFinite(height) || height <= 0) {
+    const sitting = getCameraSittingPosture(camera);
+    if (sitting === null) {
       pendingSitting = null;
       return;
     }
-    const sitting = detectedSitting === null
-      ? height < 1.425
-      : detectedSitting ? height < 1.5 : height < 1.35;
     if (sitting === detectedSitting) {
       pendingSitting = null;
       return;
@@ -341,7 +347,7 @@ export function initXR(teleportGrid: Mesh) {
     const baseExperience = xrExperience?.baseExperience;
     if (baseExperience?.state === WebXRState.IN_XR) {
       applyPostureHeight(baseExperience.camera);
-      updateTableHeightFromCamera(baseExperience.camera, detectedSitting ?? !!sittingModeToggle?.checked);
+      updateTableHeightFromCamera(baseExperience.camera);
     }
     const camera = baseExperience?.state === WebXRState.IN_XR ? baseExperience.camera : scene.activeCamera;
     if (camera) placeTabletopInFrontOfCamera(camera);
@@ -615,8 +621,7 @@ export function initXR(teleportGrid: Mesh) {
         applyPostureHeight(camera);
         alignRoomScaleFloor(camera);
         if (getFieldHeightMode() === "table") {
-          updateTableHeightFromCamera(camera, camera.realWorldHeight < 1.425 *
-            xrExperience!.baseExperience.sessionManager.worldScalingFactor);
+          updateTableHeightFromCamera(camera);
         }
       });
 
@@ -680,7 +685,7 @@ export function initXR(teleportGrid: Mesh) {
             if (giantModeActive) applyRoomScale();
             else if (state === WebXRState.IN_XR) {
               placeTabletopInFrontOfCamera(xrExperience!.baseExperience.camera);
-              updateTableHeightFromCamera(xrExperience!.baseExperience.camera, detectedSitting ?? !!sittingModeToggle?.checked);
+              updateTableHeightFromCamera(xrExperience!.baseExperience.camera);
             }
           } else {
             scene.clearColor = new Color4(0.03, 0.05, 0.09, 1);

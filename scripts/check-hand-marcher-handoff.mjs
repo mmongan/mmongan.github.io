@@ -9,6 +9,7 @@ import { TransformNode } from '@babylonjs/core/Meshes/transformNode.js';
 import { Matrix, Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 import { Ray } from '@babylonjs/core/Culling/ray.js';
 import { Axis } from '@babylonjs/core/Maths/math.axis.js';
+import { Color3 } from '@babylonjs/core/Maths/math.color.js';
 
 const source = readFileSync(new URL('../src/interaction/handInteraction.ts', import.meta.url), 'utf8')
   .replace(/\r\n/g, '\n');
@@ -40,7 +41,7 @@ let chosenInstrument = null;
 let draftingTableActive = false;
 const draftingSelections = [];
 const context = vm.createContext({
-  scene, pathRoot, Vector3, Matrix, Ray, Axis,
+  scene, pathRoot, Vector3, Matrix, Ray, Axis, Color3,
   FIELD_WIDTH_YARDS: 53.333, FIELD_LENGTH_YARDS: 120,
   marcherGrabs: grabs, handPinches: pinches, handPlacementDrafts: drafts,
   placementDrafts: new Map(), marcherPinchHands: new Set(),
@@ -53,7 +54,8 @@ const context = vm.createContext({
   getHandFacingYaw: hand => hand === 'left' ? 0.3 : -0.6,
   getMarcherRenderingGroup: () => 0, setMarcherRenderingGroup() {},
   GRABBED_MARCHER_RENDERING_GROUP: 2,
-  captureMarcherMove: () => () => {}, createMarcherDragGhost: () => ({ dispose() {} }),
+  captureMarcherMove: () => () => {}, createMarcherDragGhost: () => new TransformNode('ghost', scene),
+  getNearbyDrawingGuidePose: () => null, canPlaceManualMarcherPose: () => true,
   setRobotHeld() {}, selectRobot() {},
   tryManualMarcherPose: (robot, position, yaw) => {
     robot.position.copyFrom(position);

@@ -19,7 +19,7 @@ import {
   getScaleGestureSurfaceHeight,
 } from '../xr/ar';
 import { scene } from '../scene/engine';
-import { isDraftingTableMode, selectDrawingGuideNear, snapToSelectedDrawingGuide } from './fieldDrawingTools';
+import { isDraftingTableMode, selectDrawingGuideNear, getNearbyDrawingGuidePose } from './fieldDrawingTools';
 import {
   findRobotRoot,
   getGlobalCountIndex,
@@ -28,6 +28,7 @@ import {
   placeRobot,
   setMarcherRenderingGroup,
   setRobotFacing,
+  setPlacedMarcherFacing,
   setRobotHeld,
 } from '../robot/robot';
 import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS } from '../field/constants';
@@ -41,7 +42,7 @@ import {
 import { getHandMenuHit, getHandMenuHitNearPoint, pickMenuControl } from '../menu/handMenu';
 import type { MarcherInstrument } from '../robot/robot';
 import { getControllerYaw, rotateAroundY } from './controllers';
-import { tryManualMarcherPose } from '../robot/manualPlacement';
+import { canPlaceManualMarcherPose, tryManualMarcherPose } from '../robot/manualPlacement';
 import { createMarcherDragGhost } from '../robot/marcherGhost';
 
 type TrackedHand = NonNullable<ReturnType<WebXRHandTracking['getHandByHandedness']>>;
@@ -83,6 +84,7 @@ export interface MarcherGrab {
   controllerYawOffset?: number;
   originalRenderingGroup: number | null;
   ghost?: TransformNode;
+  landingGhost?: TransformNode;
   recordMove?: () => void;
   turfAnchor?: { position: Vector3; target: Vector3 };
 }
@@ -257,7 +259,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
     const existing = !handPlacementDrafts.has(robot) && ![...placementDrafts.values()].includes(robot);
     const recordMove = existing ? captureMarcherMove(robot) : undefined;
     setMarcherRenderingGroup(robot, GRABBED_MARCHER_RENDERING_GROUP);
-    marcherGrabs.set(handedness, {
+    const grab: MarcherGrab = {
       robot, source, rayDistance, originalRenderingGroup,
       ghost: existing ? createMarcherDragGhost(robot, pathRoot) : undefined,
       recordMove,
@@ -266,9 +268,11 @@ export function createHandInteraction(paths: HandPathDependencies) {
       originalRotationY: robot.rotation.y,
       initialRotationY: robot.rotation.y,
       initialFacingYaw: facingYaw,
-    });
+    };
+    marcherGrabs.set(handedness, grab);
     setRobotHeld(robot, true);
     selectRobot(robot);
+    updateMarcherLandingGhost(grab);
   }
 
   // Grabbing an instrument button on a palette pulls a brand-new marcher out
@@ -303,8 +307,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
     grab.originalRenderingGroup = null;
   }
 
-  // Same contact test used to accept a release: feet within tolerance of the turf, inside the field.
-  function isTouchingTurf(worldPosition: Vector3): boolean {
+  function isTouchingTurf(worldPosition: Vector3, radius = 0.05): boolean {
     const field = scene.getMeshByName('field');
     if (!field || !field.isEnabled()) return false;
     const fieldMatrix = field.computeWorldMatrix(true);
@@ -312,15 +315,58 @@ export function createHandInteraction(paths: HandPathDependencies) {
     const fieldUp = Vector3.TransformNormal(Vector3.Up(), fieldMatrix);
     const pathUp = Vector3.TransformNormal(Vector3.Up(), pathRoot.computeWorldMatrix(true));
     const height = local.y * fieldUp.length() - 0.02 * Vector3.Dot(pathUp, fieldUp.normalize());
-    const tolerance = 0.05 * Math.min(1, pathUp.length());
+    const tolerance = radius * pathUp.length();
     return Math.abs(local.x) <= FIELD_WIDTH_YARDS / 2 && Math.abs(local.z) <= FIELD_LENGTH_YARDS / 2 &&
-      Number.isFinite(height) && Math.abs(height) <= tolerance;
+      Number.isFinite(height) && Math.abs(height) <= tolerance + 1e-6 * pathUp.length();
+  }
+
+  function getMarcherLandingPosition(grab: MarcherGrab) {
+    const field = scene.getMeshByName('field');
+    const world = grab.robot.computeWorldMatrix(true).getTranslation();
+    if (!field || !grab.robot.isEnabled() || !isTouchingTurf(world, 0.25)) return null;
+    const fieldMatrix = field.computeWorldMatrix(true);
+    const local = Vector3.TransformCoordinates(world, Matrix.Invert(fieldMatrix));
+    local.y = 0;
+    const position = Vector3.TransformCoordinates(Vector3.TransformCoordinates(local, fieldMatrix),
+      Matrix.Invert(pathRoot.computeWorldMatrix(true)));
+    position.y += 0.02;
+    const snapped = getNearbyDrawingGuidePose(position);
+    const yaw = grab.robot.rotation.y;
+    const sweep = grab.robot.isEnabled();
+    if (snapped && canPlaceManualMarcherPose(grab.robot, snapped.position, snapped.rotationY, sweep)) {
+      return { ...snapped, guideBlocked: false, guideFacing: true };
+    }
+    return canPlaceManualMarcherPose(grab.robot, position, yaw, sweep)
+      ? { position, rotationY: yaw, guideBlocked: !!snapped, guideFacing: false } : null;
+  }
+
+  function updateMarcherLandingGhost(grab: MarcherGrab) {
+    if (formationPull?.originalGrab === grab) {
+      grab.landingGhost?.setEnabled(false);
+      return;
+    }
+    const landing = getMarcherLandingPosition(grab);
+    if (!landing) {
+      grab.landingGhost?.setEnabled(false);
+      return;
+    }
+    if (!grab.landingGhost) {
+      const ghost = createMarcherDragGhost(grab.robot, grab.robot, new Color3(0.35, 1, 0.55));
+      ghost.name = 'marcherLandingGhost';
+      ghost.parent = pathRoot;
+      grab.landingGhost = ghost;
+    }
+    grab.landingGhost.position.copyFrom(landing.position);
+    grab.landingGhost.rotation.set(0, landing.rotationY, 0);
+    grab.landingGhost.scaling.copyFrom(grab.robot.scaling);
+    grab.landingGhost.setEnabled(true);
   }
 
   function moveMarcherGrab(handedness: string, point: Vector3, facingYaw: number | null = null) {
     const grab = marcherGrabs.get(handedness);
     if (!grab || grab.robot.isDisposed()) {
       grab?.ghost?.dispose();
+      grab?.landingGhost?.dispose();
       marcherGrabs.delete(handedness);
       return;
     }
@@ -352,6 +398,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
       yaw = grab.initialRotationY + Math.atan2(Math.sin(yawDelta), Math.cos(yawDelta));
     }
     if (tryManualMarcherPose(grab.robot, position, yaw, grab.robot.isEnabled())) grab.robot.setEnabled(true);
+    updateMarcherLandingGhost(grab);
   }
 
   // A deliberate wrist twist on a scheduled marcher sets the facing it holds
@@ -382,16 +429,16 @@ export function createHandInteraction(paths: HandPathDependencies) {
     marcherGrabs.delete(handedness);
     if (!grab) return;
     grab.ghost?.dispose();
+    grab.landingGhost?.dispose();
     restoreMarcherRendering(grab);
     if (grab.robot.isDisposed()) return;
     const field = scene.getMeshByName('field');
-    if (commit && field) {
-      if (!isTouchingTurf(grab.robot.computeWorldMatrix(true).getTranslation())) {
-        commit = false;
-        notifyPlacement('Move cancelled: release the marcher with its feet touching the turf.');
-      }
+    const landing = commit ? getMarcherLandingPosition(grab) : null;
+    if (commit && !landing) {
+      commit = false;
+      notifyPlacement('Move cancelled: release within 0.25 yards of the turf at a clear landing spot.');
     }
-    if (!commit || !field) {
+    if (!commit || !field || !landing) {
       if (handPlacementDrafts.delete(grab.robot)) {
         setRobotHeld(grab.robot, false);
         grab.robot.dispose();
@@ -401,28 +448,9 @@ export function createHandInteraction(paths: HandPathDependencies) {
       setRobotHeld(grab.robot, false);
       return;
     }
-    grab.robot.computeWorldMatrix(true);
-    field.computeWorldMatrix(true);
-    pathRoot.computeWorldMatrix(true);
-    const local = Vector3.TransformCoordinates(
-      grab.robot.getAbsolutePosition(), Matrix.Invert(field.getWorldMatrix())
-    );
-    local.x = Math.min(FIELD_WIDTH_YARDS / 2, Math.max(-FIELD_WIDTH_YARDS / 2, local.x));
-    local.z = Math.min(FIELD_LENGTH_YARDS / 2, Math.max(-FIELD_LENGTH_YARDS / 2, local.z));
-    local.y = 0;
-    const position = Vector3.TransformCoordinates(
-      Vector3.TransformCoordinates(local, field.getWorldMatrix()),
-      Matrix.Invert(pathRoot.getWorldMatrix())
-    );
-    position.y += 0.02;
-    const snapped = snapToSelectedDrawingGuide(position);
-    let placed = false;
-    if (snapped) {
-      placed = tryManualMarcherPose(grab.robot, snapped, grab.robot.rotation.y, grab.robot.isEnabled());
-      if (placed) position.copyFrom(snapped);
-      else notifyPlacement('Guide snap blocked by a collision; placed where released.');
-    }
-    if (!placed && !tryManualMarcherPose(grab.robot, position, grab.robot.rotation.y, grab.robot.isEnabled())) {
+    const position = landing.position;
+    if (landing.guideBlocked) notifyPlacement('Guide snap blocked by a collision; placed at the ground preview.');
+    if (!tryManualMarcherPose(grab.robot, position, landing.rotationY, grab.robot.isEnabled())) {
       if (handPlacementDrafts.delete(grab.robot)) {
         setRobotHeld(grab.robot, false);
         grab.robot.dispose();
@@ -440,7 +468,8 @@ export function createHandInteraction(paths: HandPathDependencies) {
       setRobotHeld(grab.robot, false);
       return;
     }
-    commitMarcherTwist(grab, dropYaw);
+    if (landing.guideFacing) setPlacedMarcherFacing(grab.robot, dropYaw);
+    else commitMarcherTwist(grab, dropYaw);
     handPlacementDrafts.delete(grab.robot);
     const oldPath = robotPaths.get(grab.robot);
     if (oldPath) {
@@ -610,6 +639,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
     const from = otherHand(handedness);
     const grab = marcherGrabs.get(from);
     if (grab?.source !== source || (target ?? findMarcherNearHand(point, from)) !== grab.robot) return false;
+    grab.landingGhost?.setEnabled(false);
     formationPull = {
       activationTime: performance.now() + FORMATION_PULL_HOLD_MS,
       anchorHand: from,
@@ -897,6 +927,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
 
     marcherGrabs.delete(pull.anchorHand);
     grab.ghost?.dispose();
+    grab.landingGhost?.dispose();
     restoreMarcherRendering(grab);
     handPlacementDrafts.delete(pull.robot);
     createHandFormation(pull.robot, fieldPoints);
