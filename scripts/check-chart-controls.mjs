@@ -114,6 +114,15 @@ try {
   const backing = scene.getMeshByName('drillChartBacking');
   const half = backing.getBoundingInfo().boundingBox.extendSize;
   for (const mesh of controls) {
+    const material = mesh.material;
+    assert.equal(material.transparencyMode, StandardMaterial.MATERIAL_ALPHATEST,
+      `${mesh.name} uses cutout transparency, not angle-dependent blending over the chart`);
+    assert.equal(material.needAlphaBlendingForMesh(mesh), false, 'Button faces remain opaque');
+    assert.equal(material.needAlphaTesting(), true, 'Rounded transparent corners remain cut out');
+    assert.equal(material.useAlphaFromDiffuseTexture, true);
+    assert.equal(material.opacityTexture, null, 'No second opacity layer changes button colors');
+    assert.equal(material.disableLighting, true);
+    assert.ok(material.specularColor.equals(Color3.Black()), 'No view-dependent specular highlights');
     const size = mesh.getBoundingInfo().boundingBox.extendSize;
     assert.ok(Math.abs(mesh.position.x) + size.x <= half.x + .003, `${mesh.name} fits backing width`);
     assert.ok(Math.abs(mesh.position.y - backing.position.y) + size.y <= half.y + .003, `${mesh.name} fits backing height`);

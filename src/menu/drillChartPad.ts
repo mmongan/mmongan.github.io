@@ -238,9 +238,12 @@ function createPad(): Pad {
         mode: name === "ghostMode" ? 'ghost' : name === "draftingMode" ? 'drafting' : 'play' });
     }
     buttonMaterial.diffuseTexture = buttonTexture;
-    buttonMaterial.opacityTexture = buttonTexture;
+    buttonMaterial.useAlphaFromDiffuseTexture = true;
+    buttonMaterial.transparencyMode = StandardMaterial.MATERIAL_ALPHATEST;
+    buttonMaterial.alphaCutOff = 0.5;
     buttonMaterial.emissiveColor = Color3.White();
     buttonMaterial.disableLighting = true;
+    buttonMaterial.specularColor = Color3.Black();
     const isClose = name === "hide";
     const button = MeshBuilder.CreatePlane(`drillChartButton-${name}`, {
       width: isClose ? BUTTON_HEIGHT : BUTTON_WIDTH, height: BUTTON_HEIGHT,
