@@ -890,7 +890,6 @@ function updateDraftingToolsFromControllers() {
 const SCRUB_DEADZONE = 0.2;
 const GRAB_DEPTH_BASE_SPEED = 6;
 const GRAB_DEPTH_TELESCOPE_RATE = 2.5;
-const PANEL_GRAB_DEPTH_SPEED = 1.5;
 
 function getThumbstickAxes(controller: WebXRInputSource) {
   const stick = controller.motionController?.getComponentOfType("thumbstick");
@@ -2793,15 +2792,17 @@ export function updateRobotPathFromControllers() {
         padGrabButtons.delete(handedness);
       } else {
         // Thumbstick forward/back pushes or pulls the held panel instead of navigating.
+        const world = getControllerPosition(controller).computeWorldMatrix(true);
+        updateFloatingPanelGrab(handedness, world);
         const axis = getThumbstickAxes(controller).y;
         const deflection = Math.abs(axis) > SCRUB_DEADZONE
           ? Math.sign(axis) * (Math.min(1, Math.abs(axis)) - SCRUB_DEADZONE) / (1 - SCRUB_DEADZONE)
           : 0;
         if (deflection !== 0) {
           const deltaSeconds = Math.min(0.1, scene.getEngine().getDeltaTime() / 1000);
-          telescopeFloatingPanelGrab(handedness, -deflection * PANEL_GRAB_DEPTH_SPEED * deltaSeconds);
+          telescopeFloatingPanelGrab(handedness, -deflection, deltaSeconds, getControllerRay(controller));
+          updateFloatingPanelGrab(handedness, world);
         }
-        updateFloatingPanelGrab(handedness, getControllerPosition(controller).computeWorldMatrix(true));
       }
       return;
     }

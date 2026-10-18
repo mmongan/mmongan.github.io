@@ -1050,10 +1050,11 @@ export function createHandInteraction(paths: HandPathDependencies) {
       const handoff = point && !formationPull && !marcherGrabs.has(handedness) &&
         [...marcherGrabs].some(([from, grab]) =>
           grab.source === 'hand' && isPointNearHoldingHand(point, from));
-      if (isFloatingPanelGrabbed(handedness)) {
+      if (padHands.has(handedness) && isFloatingPanelGrabbed(handedness)) {
         if (hand && point) updateFloatingPanelGrab(handedness, getHandGrabMatrix(hand));
         else endFloatingPanelGrab(handedness);
-      } else if (hand && point && !handoff && !(handPinches.get(handedness) ?? false)) {
+      } else if (!isFloatingPanelGrabbed(handedness) && hand && point && !handoff &&
+        !(handPinches.get(handedness) ?? false)) {
         const pointer = hand.xrController.pointer;
         const ray = new Ray(pointer.getAbsolutePosition(), pointer.getDirection(Axis.Z), 3);
         const pick = pickFloatingPanel(ray);

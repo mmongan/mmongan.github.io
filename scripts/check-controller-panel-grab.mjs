@@ -42,7 +42,7 @@ const context = vm.createContext({
       return true;
     },
   },
-  SCRUB_DEADZONE: 0.2, PANEL_GRAB_DEPTH_SPEED: 1,
+  SCRUB_DEADZONE: 0.2,
 });
 try {
   vm.runInContext(`${transform(read('../src/menu/floatingPanel.ts'))}
@@ -55,6 +55,23 @@ try {
   const end = source.indexOf('    if (handInteraction.updateControllerFormationPull(', start);
   assert.ok(start >= 0 && end > start);
   vm.runInContext(transform(`function frame() { ${source.slice(start, end)} }`), context);
+  const handSource = read('../src/interaction/handInteraction.ts');
+  const handStart = handSource.indexOf('  function updateTabletopHands() {');
+  const handEnd = handSource.indexOf('    const left = pinchedPoints.get', handStart);
+  assert.ok(handStart >= 0 && handEnd > handStart);
+  const trackedHands = new Map();
+  Object.assign(context, {
+    joystick: { update: () => false },
+    handTracking: { getHandByHandedness: side => trackedHands.get(side) },
+    joystickOwnsHands: false, formationPull: null, circleResize: null, fingerPath: null,
+    floorCalibrationToggle: { checked: false }, sceneGesture: null,
+    padHands: new Set(), handPinches: new Map(),
+    finishFormationPull() {}, finishCircleResize() {},
+    WebXRHandJoint: { THUMB_TIP: 'thumb', INDEX_FINGER_TIP: 'index' },
+    getHandGrabMatrix: hand => hand.world,
+    performance,
+  });
+  vm.runInContext(transform(`${handSource.slice(handStart, handEnd)} }`), context);
   const root = new TransformNode('testPanel', scene);
   root.position.z = 1;
   const face = MeshBuilder.CreateBox('testPanelFace', { width: .6, height: .4, depth: .02 }, scene);
@@ -68,6 +85,7 @@ try {
     new Map([[face, { action: 'playPause' }]]), undefined, slider);
   const frame = () => {
     gripNode.computeWorldMatrix(true);
+    context.updateTabletopHands();
     context.frame();
   };
   const release = () => { grip = false; trigger = false; frame(); };
@@ -139,10 +157,85 @@ try {
   const beforeTelescope = root.position.z;
   stick = -1;
   frame();
-  assert.ok(root.position.z > beforeTelescope, 'Thumbstick pushes a held panel away');
+  assert.ok(Math.abs(root.position.z - beforeTelescope - .4) < 1e-5,
+    'Forward thumbstick applies room-scale base speed plus proportional depth speed');
+  stick = 1;
+  const beforePull = root.position.z;
+  frame();
+  assert.ok(Math.abs(root.position.z - beforePull + (1.5 + beforePull * 2.5) * .1) < 1e-5,
+    'Backward thumbstick brings a held panel closer');
+  stick = .1;
+  const centered = root.position.clone();
+  frame();
+  assert.ok(root.position.equalsWithEpsilon(centered), 'Thumbstick deadzone preserves panel depth');
   release();
   assert.equal(context.padGrabButtons.has('left'), false, 'Release clears controller ownership');
-  console.log('Controller panel grab checks passed: raw/profile grips, near/ray pickup, pose tracking, release, contact priority, trigger/slider takeover, and thumbstick depth.');
+  stick = 0;
+  for (const side of ['left', 'right']) {
+    context.handedness = side;
+    gripNode.position.setAll(0);
+    root.position.set(0, 0, 1);
+    grip = true;
+    frame();
+    for (let step = 1; step <= 4; step++) {
+      gripNode.position.x = step * .1;
+      frame();
+      assert.ok(panel.grabbed(side), 'Hand tracking without a hand must not release a controller grab');
+      assert.ok(Math.abs(root.position.x - step * .1) < 1e-5,
+        'Controller moves the panel over successive real-order hand/controller updates');
+    }
+    trackedHands.set(side, {
+      getJointMesh: joint => ({ getAbsolutePosition: () =>
+        new Vector3(joint === 'thumb' ? 0 : .01, 0, 0) }),
+    });
+    gripNode.position.y = .15;
+    frame();
+    assert.ok(panel.grabbed(side) && Math.abs(root.position.y - .15) < 1e-5,
+      'An unowned tracked-hand pinch cannot hijack or update a controller-owned panel');
+    trackedHands.clear();
+    release();
+    assert.equal(panel.grabbed(), false);
+    root.position.y = 0;
+    context.handPinches.clear();
+  }
+  assert.ok(context.beginFloatingPanelGrab('left', Matrix.Identity(), face, undefined, .03, true));
+  context.padHands.add('left');
+  context.updateTabletopHands();
+  assert.equal(panel.grabbed(), false, 'Losing a tracked hand still releases its own panel grab');
+  assert.equal(context.padHands.size, 0);
+  for (const yaw of [0, .8, -1.4]) {
+    gripNode.position.set(.2, .3, -.1);
+    gripNode.rotation.y = yaw;
+    const world = gripNode.computeWorldMatrix(true);
+    const local = new Vector3(.4, .2, 2);
+    root.position.copyFrom(Vector3.TransformCoordinates(local, world));
+    const direction = Vector3.TransformNormal(Vector3.Forward(), world).normalize();
+    const ray = new Ray(gripNode.position.clone(), direction, 100);
+    assert.ok(context.beginFloatingPanelGrab('left', world, face, undefined, .03, true));
+    const before = root.position.clone();
+    const rotation = root.rotationQuaternion.clone();
+    context.telescopeFloatingPanelGrab('left', 1, .1, ray);
+    context.updateFloatingPanelGrab('left', world);
+    assert.ok(root.position.equalsWithEpsilon(before.add(direction.scale(.65)), 1e-5),
+      'Depth movement follows the controller ray, retaining lateral offset at any wrist yaw');
+    assert.ok(root.rotationQuaternion.equalsWithEpsilon(rotation, 1e-5), 'Depth adjustment retains panel rotation');
+    for (let step = 0; step < 100; step++) {
+      context.telescopeFloatingPanelGrab('left', -1, .1, ray);
+      context.updateFloatingPanelGrab('left', world);
+    }
+    const close = Vector3.TransformCoordinates(root.position, world.clone().invert());
+    assert.ok(close.equalsWithEpsilon(new Vector3(.4, .2, 0), 1e-5),
+      'Retraction stops at the controller plane without losing lateral offset');
+    for (let step = 0; step < 100; step++) {
+      context.telescopeFloatingPanelGrab('left', 1, .1, ray);
+      context.updateFloatingPanelGrab('left', world);
+    }
+    const far = Vector3.TransformCoordinates(root.position, world.clone().invert());
+    assert.ok(far.equalsWithEpsilon(new Vector3(.4, .2, 100), 1e-4),
+      'Telescoping reaches and clamps at 100 meters');
+    context.endFloatingPanelGrab('left');
+  }
+  console.log('Controller panel grab checks passed: raw/profile grips, near/ray pickup, pose tracking, release, contact priority, trigger/slider takeover, thumbstick depth, and hand/controller ownership across frames.');
 } finally {
   scene.dispose();
   engine.dispose();

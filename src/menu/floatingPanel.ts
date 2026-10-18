@@ -293,14 +293,17 @@ export class FloatingPanel {
     return source === undefined ? this.source !== null : this.grabWorlds.has(source);
   }
 
-  // Pushes or pulls a one-handed grab along the line from the grabbing controller to the panel.
-  telescope(source: string, delta: number) {
+  telescope(source: string, direction: number, deltaSeconds: number, ray: Ray) {
     if (this.source !== source || this.stretch || this.sliderDrag) return false;
+    const world = this.grabWorlds.get(source);
+    if (!world) return false;
+    const localDirection = Vector3.TransformNormal(ray.direction, world.clone().invert()).normalize();
     const offset = this.offset.getTranslation();
-    const distance = offset.length();
-    if (distance < 1e-4) offset.set(0, 0, 1);
-    else offset.scaleInPlace(1 / distance);
-    this.offset.setTranslation(offset.scale(Math.min(20, Math.max(0.05, distance + delta))));
+    const depth = Vector3.Dot(offset, localDirection);
+    // Panels stay room-scale; telescopic speed grows with reach, not field scale.
+    const speed = 1.5 + Math.max(0, depth) * 2.5;
+    const next = Math.min(100, Math.max(0, depth + direction * speed * deltaSeconds));
+    this.offset.setTranslation(offset.add(localDirection.scale(next - depth)));
     return true;
   }
 
@@ -521,8 +524,8 @@ export function isFloatingPanelGrabbed(source?: string) {
   return [...panels].some(panel => panel.grabbed(source));
 }
 
-export function telescopeFloatingPanelGrab(source: string, delta: number) {
-  return [...panels].some(panel => panel.telescope(source, delta));
+export function telescopeFloatingPanelGrab(source: string, direction: number, deltaSeconds: number, ray: Ray) {
+  return [...panels].some(panel => panel.telescope(source, direction, deltaSeconds, ray));
 }
 
 export function beginFloatingPanelPointerDrag(ray: Ray) {
