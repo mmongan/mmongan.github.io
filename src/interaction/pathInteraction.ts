@@ -3619,7 +3619,12 @@ export function initInteraction() {
       const menuPick = scene.pick(scene.pointerX, scene.pointerY, isMenuControl);
       const panelPick = pickFloatingPanel(getPointerRay());
       const buttonInFront = menuPick?.hit && (!panelPick?.hit || menuPick.distance <= panelPick.distance + 0.001);
-      if (!buttonInFront && beginFloatingPanelPointerDrag(getPointerRay())) {
+      const scoreboardPick = scene.pick(scene.pointerX, scene.pointerY, isScoreboardTempoScreen);
+      const scoreboardControlInFront = scoreboardPick?.hit &&
+        (!panelPick?.hit || scoreboardPick.distance <= panelPick.distance + 0.001) &&
+        (isScoreboardTempoPick(scoreboardPick) || isScoreboardGaitPick(scoreboardPick) ||
+          isScoreboardHornPosePick(scoreboardPick));
+      if (!buttonInFront && !scoreboardControlInFront && beginFloatingPanelPointerDrag(getPointerRay())) {
         if ("pointerId" in pointerInfo.event && typeof pointerInfo.event.pointerId === "number") {
           panelPointer = pointerInfo.event.pointerId;
           canvas.setPointerCapture(panelPointer);

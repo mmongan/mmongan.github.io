@@ -239,7 +239,7 @@ export class FloatingPanel {
   updatePointer(ray: Ray) {
     if (!this.grabbed('pointer') || !this.dragPlane) return;
     const distance = ray.intersectsPlane(this.dragPlane);
-    if (distance === null || distance <= 0 || distance > 6) return;
+    if (distance === null || distance <= 0 || distance > 250) return;
     if (this.sliderDrag && this.transparencySlider) {
       this.transparencySlider.setFromWorld(ray.origin.add(ray.direction.scale(distance)));
       return;

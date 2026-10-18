@@ -28,6 +28,7 @@ const context = vm.createContext({
   scene, MeshBuilder, TransformNode, StandardMaterial, Matrix, Quaternion, Vector3, Plane, Color3, Ray, ...controls,
   document: { createElement: () => ({ getContext: () => ({ fillText: label => labels.push(label) }) }) },
   DynamicTexture: class { update() {} dispose() {} },
+  Texture: { TRILINEAR_SAMPLINGMODE: 3 },
   drawPanelButton: (_, __, ___, label) => labels.push(label), PANEL_FRAME_COLOR: '#18263b',
   addInstrumentButtonModel(button) {
     const root = new TransformNode('instrumentIconRoot', scene);

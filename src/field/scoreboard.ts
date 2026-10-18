@@ -6,7 +6,10 @@ import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
 import { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.pure';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
+import { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
 import { scene } from '../scene/engine';
+import { attachToARTransform } from '../xr/ar';
+import { DetachableFloatingPanel } from '../menu/floatingPanel';
 import {
   cycleMarchingGait,
   getMarchTempo,
@@ -24,6 +27,13 @@ const HORN_POSE_SCREENS = new Map<AbstractMesh, () => void>();
 const GAIT_SELECTOR_WORLD_Y = 10;
 const HORN_POSE_WORLD_Y = 9.34;
 const TEMPO_TRACK_WORLD_Y = 8.38;
+const SCOREBOARD_Y = 12;
+
+function scoreboardPoint(pick: PickingInfo): Vector3 | null {
+  if (!pick.pickedMesh || !pick.pickedPoint) return null;
+  const local = Vector3.TransformCoordinates(pick.pickedPoint, pick.pickedMesh.computeWorldMatrix(true).clone().invert());
+  return new Vector3(-local.x, local.y + SCOREBOARD_Y, 0);
+}
 
 export function isScoreboardTempoScreen(mesh: AbstractMesh): boolean {
   return TEMPO_SLIDER_SCREENS.has(mesh);
@@ -31,29 +41,29 @@ export function isScoreboardTempoScreen(mesh: AbstractMesh): boolean {
 
 export function isScoreboardTempoPick(pick: PickingInfo): boolean {
   return !!pick.pickedMesh && TEMPO_SLIDER_SCREENS.has(pick.pickedMesh) && !!pick.pickedPoint &&
-    Math.abs(pick.pickedPoint.y - TEMPO_TRACK_WORLD_Y) <= 0.7;
+    Math.abs(scoreboardPoint(pick)!.y - TEMPO_TRACK_WORLD_Y) <= 0.7;
 }
 
 export function updateScoreboardTempoFromPick(pick: PickingInfo): boolean {
   if (!isScoreboardTempoPick(pick) || !pick.pickedMesh || !pick.pickedPoint) return false;
-  TEMPO_SLIDER_SCREENS.get(pick.pickedMesh)!(pick.pickedPoint.x);
+  TEMPO_SLIDER_SCREENS.get(pick.pickedMesh)!(scoreboardPoint(pick)!.x);
   return true;
 }
 
 export function isScoreboardGaitPick(pick: PickingInfo): boolean {
   return !!pick.pickedMesh && GAIT_SELECTOR_SCREENS.has(pick.pickedMesh) && !!pick.pickedPoint &&
-    Math.abs(pick.pickedPoint.y - GAIT_SELECTOR_WORLD_Y) <= 0.7;
+    Math.abs(scoreboardPoint(pick)!.y - GAIT_SELECTOR_WORLD_Y) <= 0.7;
 }
 
 export function updateScoreboardGaitFromPick(pick: PickingInfo): boolean {
   if (!isScoreboardGaitPick(pick) || !pick.pickedMesh || !pick.pickedPoint) return false;
-  GAIT_SELECTOR_SCREENS.get(pick.pickedMesh)!(pick.pickedPoint.x);
+  GAIT_SELECTOR_SCREENS.get(pick.pickedMesh)!(scoreboardPoint(pick)!.x);
   return true;
 }
 
 export function isScoreboardHornPosePick(pick: PickingInfo): boolean {
   return !!pick.pickedMesh && HORN_POSE_SCREENS.has(pick.pickedMesh) && !!pick.pickedPoint &&
-    Math.abs(pick.pickedPoint.y - HORN_POSE_WORLD_Y) <= 0.55;
+    Math.abs(scoreboardPoint(pick)!.y - HORN_POSE_WORLD_Y) <= 0.55;
 }
 
 export function updateScoreboardHornPoseFromPick(pick: PickingInfo): boolean {
@@ -62,13 +72,12 @@ export function updateScoreboardHornPoseFromPick(pick: PickingInfo): boolean {
   return true;
 }
 
-// Create the stadium scoreboard texture and mesh. It is intentionally static in
-// this demo, but it renders using a canvas so it is easy to update later.
+// Canvas-backed stadium scoreboard with shared tempo, gait, and horn controls.
 export function createScoreboard(): void {
   const boardWidth = 16;
   const boardHeight = 8;
   const boardZ = -68;
-  const boardY = 12;
+  const boardY = SCOREBOARD_Y;
 
   const boardCanvas = document.createElement("canvas");
   boardCanvas.width = 512;
@@ -132,6 +141,12 @@ export function createScoreboard(): void {
   screen.position = new Vector3(0, boardY, boardZ + 0.4);
   screen.rotation.y = Math.PI;
   screen.material = boardMaterial;
+  screen.setParent(frame);
+  const root = new TransformNode('scoreboardRoot', scene);
+  frame.setParent(root);
+  attachToARTransform(root);
+  new DetachableFloatingPanel(frame, new Set([frame, screen]), frame,
+    new Vector3((boardWidth + 0.6) / 2, (boardHeight + 0.6) / 2, 0.5));
 
   function drawTempoSlider() {
     const tempo = getMarchTempo();
@@ -169,6 +184,11 @@ export function createScoreboard(): void {
   HORN_POSE_SCREENS.set(screen, () => {
     toggleInstrumentCarryPose();
     drawTempoSlider();
+  });
+  screen.onDisposeObservable.addOnce(() => {
+    TEMPO_SLIDER_SCREENS.delete(screen);
+    GAIT_SELECTOR_SCREENS.delete(screen);
+    HORN_POSE_SCREENS.delete(screen);
   });
   drawTempoSlider();
 

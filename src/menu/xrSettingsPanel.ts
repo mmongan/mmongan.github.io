@@ -3,6 +3,7 @@ import type { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.pure';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
 import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.pure';
+import { Texture } from '@babylonjs/core/Materials/Textures/texture.pure';
 import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
 import { scene } from '../scene/engine';
@@ -65,7 +66,7 @@ export function initXRSettingsPanel() {
     drawPanelButton(ctx, 512, 128, '', active);
     if (close) return;
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 40px Arial';
+    ctx.font = 'bold 52px Arial';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(label, 318, 64, 360);
@@ -78,7 +79,8 @@ export function initXRSettingsPanel() {
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('XR settings panel requires a 2D canvas context.');
     draw(ctx, label, false, action.action === 'xrSettingsHide');
-    const texture = new DynamicTexture(`xrSettings-${label}`, canvas, scene, false);
+    const texture = new DynamicTexture(`xrSettings-${label}`, canvas, scene, true, Texture.TRILINEAR_SAMPLINGMODE);
+    texture.anisotropicFilteringLevel = 8;
     texture.update();
     const material = new StandardMaterial(`xrSettings-${label}Material`, scene);
     material.diffuseTexture = texture;

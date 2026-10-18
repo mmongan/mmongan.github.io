@@ -8,7 +8,8 @@ import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.js';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.js';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
 import { Color3 } from '@babylonjs/core/Maths/math.color.js';
-import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
+import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector.js';
+import { Plane } from '@babylonjs/core/Maths/math.plane.js';
 import { Ray } from '@babylonjs/core/Culling/ray.js';
 
 const load = path => stripTypeScriptTypes(readFileSync(new URL(path, import.meta.url), 'utf8'), { mode: 'transform' })
@@ -17,18 +18,21 @@ const engine = new NullEngine(), scene = new Scene(engine);
 const controls = Object.fromEntries(['sittingModeToggle', 'fieldGridToggle', 'gridSnapToggle']
   .map(name => [name, { checked: false }]));
 const context = vm.createContext({
-  scene, MeshBuilder, TransformNode, StandardMaterial, Color3, Vector3, Ray, ...controls,
+  scene, MeshBuilder, TransformNode, StandardMaterial, Color3, Vector3, Ray, Matrix, Quaternion, Plane, ...controls,
+  Texture: { TRILINEAR_SAMPLINGMODE: 3 },
   document: { createElement() {
-    const ctx = new Proxy({ labels: [] }, {
+    const ctx = new Proxy({ labels: [], textDraws: [] }, {
       get: (target, key) => key in target ? target[key] : () => {},
       set: (target, key, value) => { target[key] = value; return true; },
     });
-    ctx.fillText = text => ctx.labels.push(text);
+    ctx.fillText = text => { ctx.labels.push(text); ctx.textDraws.push({ text, font: ctx.font }); };
     return { getContext: () => ctx };
   } },
   DynamicTexture: class {
     updates = 0;
-    constructor(_, canvas) { this.ctx = canvas.getContext('2d'); }
+    constructor(_, canvas, __, mipmaps, sampling) {
+      this.ctx = canvas.getContext('2d'); this.mipmaps = mipmaps; this.sampling = sampling;
+    }
     update() { this.updates++; }
     dispose() {}
   },
@@ -41,7 +45,7 @@ const context = vm.createContext({
   },
 });
 try {
-  for (const file of ['menu/handMenu', 'menu/panelStyle', 'menu/settingsPanelControls',
+  for (const file of ['menu/handMenu', 'menu/floatingPanel', 'menu/panelStyle', 'menu/settingsPanelControls',
     'menu/settingsButtonIcons', 'field/videoBoardSettings']) {
     vm.runInContext(load(`../src/${file}.ts`), context);
   }
@@ -58,21 +62,36 @@ try {
     assert.equal(JSON.stringify(context.getHandMenuHit({ pickedMesh: button })), JSON.stringify(action));
     const bank = button.parent;
     const half = bank.getBoundingInfo().boundingBox.extendSize;
-    assert.ok(Math.abs(button.position.x) + 1.8 <= half.x && Math.abs(button.position.y) + 1.8 <= half.y);
+    assert.ok(Math.abs(button.position.x) + 2.4 <= half.x && Math.abs(button.position.y) + 1.8 <= half.y);
+    assert.ok(button.getBoundingInfo().boundingBox.extendSize.x >= 2.4,
+      'Distance labels have at least 4.8 yards of physical width');
+    assert.equal(button.material.diffuseTexture.anisotropicFilteringLevel, 8);
+    assert.equal(button.material.diffuseTexture.mipmaps, true);
+    assert.equal(button.material.diffuseTexture.sampling, 3);
+    assert.ok(button.material.diffuseTexture.ctx.textDraws.some(draw => draw.font.includes('100px')),
+      'Labels use the larger distance-readable font');
     const parts = button.getChildMeshes();
     assert.ok(parts.length > 0, 'Every control has a raised icon');
     const inverse = button.computeWorldMatrix(true).clone().invert();
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     for (const part of parts) {
       assert.equal(JSON.stringify(context.getHandMenuHit({ pickedMesh: part })), JSON.stringify(action));
       part.computeWorldMatrix(true);
       const bounds = part.getBoundingInfo().boundingBox.vectorsWorld.map(point => Vector3.TransformCoordinates(point, inverse));
-      assert.ok(bounds.every(point => Math.abs(point.x) <= 1.8 && point.y > -.5 && point.y <= 1.8),
+      bounds.forEach(point => {
+        minX = Math.min(minX, point.x); maxX = Math.max(maxX, point.x);
+        minY = Math.min(minY, point.y); maxY = Math.max(maxY, point.y);
+      });
+      assert.ok(bounds.every(point => Math.abs(point.x) <= 2.4 && point.y > -.5 && point.y <= 1.8),
         `${label}: icons stay above their labels and inside their buttons`);
     }
+    const angularSize = 2 * Math.atan2(Math.max(maxX - minX, maxY - minY) / 2, 130) * 180 / Math.PI;
+    assert.ok(angularSize >= .5, `${label}: icon spans at least half a degree at 130 yards, default board scale`);
   }
   for (const scale of [.5, 1, 1.75]) {
     root.scaling.setAll(scale);
     root.computeWorldMatrix(true);
+    root.getChildMeshes().forEach(mesh => mesh.computeWorldMatrix(true));
     for (const bank of root.getChildMeshes(true)) {
       bank.computeWorldMatrix(true);
       const bounds = bank.getBoundingInfo().boundingBox;
@@ -96,6 +115,7 @@ try {
   root.position.set(2, .7, -3);
   root.rotation.y = .7;
   root.scaling.setAll(.01);
+  root.getChildMeshes().forEach(mesh => mesh.computeWorldMatrix(true));
   const tabletopOrigin = Vector3.TransformCoordinates(new Vector3(0, 1.8, -60), root.computeWorldMatrix(true));
   for (const button of buttons) {
     const target = button.computeWorldMatrix(true).getTranslation();
@@ -115,6 +135,25 @@ try {
     assert.equal(texture.updates, updates + 1);
   }
   const part = buttons[0].getChildMeshes()[0];
+  for (const mesh of buttons.flatMap(button => [button, ...button.getChildMeshes()])) {
+    assert.ok(context.isFloatingPanelMesh(mesh), 'Every settings face and icon can start a panel grab');
+  }
+  const bank = buttons[0].parent;
+  const before = bank.computeWorldMatrix(true).clone();
+  const other = scene.getMeshByName('videoBoardSettingsBank-1');
+  const otherPose = other.computeWorldMatrix(true).clone();
+  assert.ok(context.beginFloatingPanelGrab('left', Matrix.Identity(), part, undefined, .03, true));
+  assert.equal(bank.parent, null, 'Grabbing detaches only the chosen bank from stadium scaling');
+  assert.ok(bank.computeWorldMatrix(true).equalsWithEpsilon(before, 1e-5), 'Pickup preserves world pose and scale');
+  context.updateFloatingPanelGrab('left', Matrix.Translation(.1, .2, .3));
+  context.endFloatingPanelGrab('left');
+  bank.computeWorldMatrix(true);
+  assert.ok(bank.getAbsolutePosition().equalsWithEpsilon(before.getTranslation().add(new Vector3(.1, .2, .3)), 1e-5));
+  assert.ok(other.computeWorldMatrix(true).equalsWithEpsilon(otherPose, 1e-5), 'Other panels stay put');
+  const touchButton = scene.getMeshByName('videoBoardSetting-Full scale');
+  assert.equal(context.getFloatingPanelButtonNearPoint(touchButton.computeWorldMatrix(true).getTranslation()).setting,
+    'fullScale', 'Near-hand button activation follows detached banks');
+  bank.setParent(root);
   root.setEnabled(false);
   assert.equal(context.getHandMenuHitNearPoint(part.getAbsolutePosition()), null);
   root.dispose();

@@ -15,6 +15,7 @@ import { registerMenuButton } from '../menu/handMenu';
 import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS, HASH_OFFSETS_YARDS } from './constants';
 import { TOP_DOWN_MARKER_LAYER_MASK } from '../robot/robot';
 import { createVideoBoardSettings } from './videoBoardSettings';
+import { DetachableFloatingPanel } from '../menu/floatingPanel';
 
 declare const __BUILD_TIME__: string | undefined;
 declare const __APP_VERSION__: string;
@@ -349,6 +350,10 @@ export function createVideoBoard(
     if (!mesh.parent) mesh.setParent(boardRoot);
   });
   attachToARTransform(boardRoot);
+  screen.setParent(frame);
+  hud.setParent(frame);
+  new DetachableFloatingPanel(frame, new Set([frame, screen, hud]), frame,
+    new Vector3((boardWidth + 0.8) / 2, (boardHeight + 0.8) / 2, 0.5));
 
   let lastHudProgress = 0;
   let lastHudUpdateTime = -Infinity;
@@ -409,6 +414,7 @@ function createVideoBoardButtons(y: number, z: number) {
   );
   panel.position = new Vector3(0, y, z + panelDepth / 2);
   panel.material = panelMaterial;
+  const buttons = new Map<Mesh, { action: typeof labels[number]['action'] }>();
 
   labels.forEach((label, index) => {
     const canvas = document.createElement("canvas");
@@ -444,9 +450,13 @@ function createVideoBoardButtons(y: number, z: number) {
     button.position = new Vector3(startX + index * spacing, 0, -panelDepth / 2 - 0.02);
 
     registerMenuButton(button, { action: label.action });
+    buttons.set(button, { action: label.action });
   });
 
-  createTitleBanner(y - panelHeight / 2, z + panelDepth / 2, panelWidth);
+  const banner = createTitleBanner(y - panelHeight / 2, z + panelDepth / 2, panelWidth);
+  banner.setParent(panel);
+  new DetachableFloatingPanel(panel, new Set([panel, ...panel.getChildMeshes()]), panel,
+    new Vector3(panelWidth / 2, panelHeight / 2, panelDepth / 2), buttons);
 }
 
 // A small "OpenChartxr" banner mounted just below the media button panel.
@@ -480,4 +490,5 @@ function createTitleBanner(panelBottomY: number, z: number, width: number) {
   const banner = MeshBuilder.CreatePlane("videoBoardBanner", { width, height: bannerHeight }, scene);
   banner.position = new Vector3(0, panelBottomY - gap - bannerHeight / 2, z);
   banner.material = material;
+  return banner;
 }

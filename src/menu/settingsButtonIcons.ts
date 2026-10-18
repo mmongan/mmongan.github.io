@@ -9,10 +9,10 @@ import { addInstrumentButtonModel } from './instrumentButtonModel';
 export function createSettingsButtonIcon(button: Mesh, action: HandMenuHit, width: number,
   layout: 'inline' | 'stacked' = 'inline') {
   const scene = button.getScene();
-  const scale = layout === 'stacked' ? width / 0.12 : 1;
+  const scale = layout === 'stacked' ? width / 0.1 : 1;
   const offset = layout === 'stacked' ? 0 : width > 0.1 ? -width / 2 + 0.034 : 0;
   const height = layout === 'stacked' ? width * 0.14 : 0;
-  if (action.action === 'instrumentPanelSummon') {
+  if (action.action === 'instrumentPanelSummon' && layout === 'inline') {
     const icon = addInstrumentButtonModel(button, 'trumpet', 0.055 * scale);
     icon.root.position.set(offset, height, -0.025 * scale);
     icon.meshes.forEach(mesh => { mesh.isPickable = true; });
@@ -20,15 +20,16 @@ export function createSettingsButtonIcon(button: Mesh, action: HandMenuHit, widt
   }
   const root = new TransformNode(`settingsIcon-${button.name}`, scene);
   root.parent = button;
-  root.position.set(offset, height, -0.018 * scale);
+  root.position.set(offset, height, layout === 'stacked' ? -0.08 : -0.018 * scale);
   root.scaling.setAll(0.045 * scale);
+  if (layout === 'stacked') root.scaling.z *= 0.2;
   const meshes: Mesh[] = [];
   const colors = ['#58d7f5', '#edf5ff', '#ffc65b', '#c478e9'];
   const materials = colors.map((color, index) => {
     const material = new StandardMaterial(`${root.name}Material${index}`, scene);
     material.diffuseColor = Color3.FromHexString(color);
-    material.emissiveColor = material.diffuseColor.scale(0.22);
-    material.specularColor = new Color3(0.4, 0.4, 0.4);
+    material.emissiveColor = material.diffuseColor.scale(0.75);
+    material.specularColor = new Color3(0.15, 0.15, 0.15);
     material.specularPower = 48;
     return material;
   });
@@ -46,7 +47,7 @@ export function createSettingsButtonIcon(button: Mesh, action: HandMenuHit, widt
   function dot(x: number, y: number, size = 0.18, color = 2) {
     return part(MeshBuilder.CreateSphere(`${root.name}-dot`, { diameter: size, segments: 8 }, scene), x, y, -0.1, color);
   }
-  function bar(x1: number, y1: number, x2: number, y2: number, color = 0, thickness = 0.08) {
+  function bar(x1: number, y1: number, x2: number, y2: number, color = 0, thickness = 0.12) {
     const mesh = box(thickness, Math.hypot(x2 - x1, y2 - y1), (x1 + x2) / 2, (y1 + y2) / 2, color);
     mesh.rotation.z = -Math.atan2(x2 - x1, y2 - y1);
     return mesh;
@@ -72,7 +73,16 @@ export function createSettingsButtonIcon(button: Mesh, action: HandMenuHit, widt
       bar(0.28, -0.15, 0.43, -0.48, 2);
     }
   }
-  if (action.action === 'xrSettingsHide') {
+  if (action.action === 'instrumentPanelSummon') {
+    bar(-0.48, 0.12, 0.25, 0.12, 2, 0.16);
+    bar(-0.3, 0.12, -0.3, -0.22, 2, 0.14);
+    bar(-0.3, -0.22, 0.15, -0.22, 2, 0.14);
+    bar(0.15, -0.22, 0.15, 0.12, 2, 0.14);
+    for (const x of [-0.15, 0, 0.15]) box(0.09, 0.34, x, 0.18, 1);
+    bar(0.25, 0.12, 0.47, 0.36, 2, 0.14);
+    bar(0.25, 0.12, 0.47, -0.12, 2, 0.14);
+    box(0.12, 0.6, 0.49, 0.12, 2);
+  } else if (action.action === 'xrSettingsHide') {
     bar(-0.32, -0.32, 0.32, 0.32, 1, 0.13);
     bar(-0.32, 0.32, 0.32, -0.32, 1, 0.13);
   } else if (action.action === 'xrSettings') {
