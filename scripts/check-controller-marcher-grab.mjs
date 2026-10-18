@@ -166,6 +166,7 @@ Object.assign(context, {
   beginFloatingPanelGrab(...args) {
     assert.equal(args[5], true, 'Grip moves panels instead of activating sliders');
     panelHeld = true;
+    return true;
   },
   updateFloatingPanelGrab() { panelUpdates++; },
   endFloatingPanelGrab() { panelHeld = false; panelEnds++; },

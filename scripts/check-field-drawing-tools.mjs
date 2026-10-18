@@ -53,6 +53,7 @@ const context = vm.createContext({
   PANEL_FRAME_COLOR: '#18263b',
   performance,
   getARPosition: () => Vector3.Zero(), getARRotation: () => 0,
+  isARTabletopModeActive: () => false,
   getFieldHeightMode: () => 'floor', getFieldHeightSetting: () => 0,
   setARPosition() {}, setARRotation() {}, setFieldHeightMode() {}, setARSurfaceHeight() {},
   placeTabletopInFrontOfCamera() {}, setARScale: scale => { testARScale = scale; },

@@ -17,6 +17,7 @@ const engine = new NullEngine();
 const scene = new Scene(engine);
 const registered = new Map();
 const context = vm.createContext({ scene, Matrix, Quaternion, Vector3, Plane, MeshBuilder, StandardMaterial, Color3,
+  isARTabletopModeActive: () => false,
   registerMenuButton(mesh, action) { registered.set(mesh, action); } });
 const source = readFileSync(new URL('../src/menu/floatingPanel.ts', import.meta.url), 'utf8');
 vm.runInContext(`${stripTypeScriptTypes(source, { mode: 'transform' })

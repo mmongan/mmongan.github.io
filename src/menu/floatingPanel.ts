@@ -7,6 +7,8 @@ import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
 import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
 import { scene } from '../scene/engine';
+import { FIELD_LENGTH_YARDS, FIELD_WIDTH_YARDS } from '../field/constants';
+import { getARPosition, getARRotation, getARScale, isARTabletopModeActive } from '../xr/ar';
 import { registerMenuButton, type HandMenuHit } from './handMenu';
 import type { PanelTransparencySlider } from './panelTransparencySlider';
 
@@ -33,6 +35,7 @@ export class FloatingPanel {
   private dragOffset = new Vector3();
   private sliderDrag: { source: string; origin: Vector3; point: Vector3 } | null = null;
   private viewerPlacement: ViewerPlacement | null = null;
+  private placedCamera = scene.activeCamera;
   private closed = false;
   userPlaced = false;
   get canGrab() { return true; }
@@ -129,8 +132,13 @@ export class FloatingPanel {
     }
 
     panels.add(this);
+    const placementObserver = scene.onBeforeRenderObservable.add(() => {
+      if (this.root.isEnabled() && this.viewerPlacement && !this.userPlaced &&
+        this.placedCamera !== scene.activeCamera) this.placeForViewer(this.viewerPlacement);
+    });
     root.onDisposeObservable.addOnce(() => {
       panels.delete(this);
+      scene.onBeforeRenderObservable.remove(placementObserver);
     });
   }
 
@@ -331,8 +339,55 @@ export class FloatingPanel {
     const away = this.root.position.subtract(camera.globalPosition);
     if (inXR && placement.uprightInXR) away.y = 0;
     this.root.lookAt(this.root.position.add(away));
+    if (inXR && isARTabletopModeActive() && getARScale() < 1) {
+      this.placeBesideField(right, placement.side < 0 ? -1 : 1);
+      away.copyFrom(this.root.position).subtractInPlace(camera.globalPosition);
+      if (placement.uprightInXR) away.y = 0;
+      this.root.lookAt(this.root.position.add(away));
+      this.placeBesideField(right, placement.side < 0 ? -1 : 1);
+    }
+    this.placedCamera = camera;
     this.userPlaced = false;
     return true;
+  }
+
+  private projectedBounds(axis: Vector3) {
+    const world = this.surface.computeWorldMatrix(true);
+    let min = Infinity, max = -Infinity;
+    for (const x of [-this.halfSize.x, this.halfSize.x]) {
+      for (const y of [-this.halfSize.y, this.halfSize.y]) {
+        for (const z of [-this.halfSize.z, this.halfSize.z]) {
+          const projection = Vector3.Dot(Vector3.TransformCoordinates(new Vector3(x, y, z), world), axis);
+          min = Math.min(min, projection);
+          max = Math.max(max, projection);
+        }
+      }
+    }
+    return { min, max };
+  }
+
+  private placeBesideField(right: Vector3, side: number) {
+    const yaw = getARRotation();
+    const fieldRight = new Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+    const fieldForward = new Vector3(Math.sin(yaw), 0, Math.cos(yaw));
+    const extent = getARScale() * 0.5 * (
+      FIELD_LENGTH_YARDS * Math.abs(Vector3.Dot(right, fieldRight)) +
+      FIELD_WIDTH_YARDS * Math.abs(Vector3.Dot(right, fieldForward)));
+    const gap = 0.08;
+    let edge = Vector3.Dot(getARPosition(), right) + side * (extent + gap);
+    for (const panel of panels) {
+      if (panel === this) break;
+      if (!panel.viewerPlacement || !panel.root.isEnabled()) continue;
+      if (!panel.userPlaced && panel.placedCamera !== scene.activeCamera) {
+        panel.placeForViewer(panel.viewerPlacement);
+      }
+      const bounds = panel.projectedBounds(right);
+      if (side > 0) edge = Math.max(edge, bounds.max + gap);
+      else edge = Math.min(edge, bounds.min - gap);
+    }
+    const bounds = this.projectedBounds(right);
+    const shift = side > 0 ? Math.max(0, edge - bounds.min) : Math.min(0, edge - bounds.max);
+    this.root.position.addInPlace(right.scale(shift));
   }
 
   private face(eye: Vector3) {
@@ -401,6 +456,12 @@ export function recallFloatingPanels() {
   panels.forEach(panel => panel.recall());
 }
 
+export function placeAutomaticFloatingPanels() {
+  panels.forEach(panel => {
+    if (panel.root.isEnabled() && !panel.userPlaced) panel.recall();
+  });
+}
+
 export function executeFloatingPanelControl(hit: Extract<HandMenuHit, { action: 'panelControl' }>) {
   const panel = [...panels].find(panel => panel.root.uniqueId === hit.panelId);
   if (!panel) throw new Error('This panel is no longer available.');
@@ -442,6 +503,14 @@ export function beginFloatingPanelGrab(source: string, world: Matrix, mesh?: Abs
 
 export function updateFloatingPanelGrab(source: string, world: Matrix) {
   panels.forEach(panel => panel.update(source, world));
+}
+
+export function moveFloatingPanelGrab(source: string, world: Matrix) {
+  const panel = [...panels].find(panel => panel.grabbed(source));
+  if (!panel) return false;
+  panel.end(source);
+  panel.begin(source, world);
+  return true;
 }
 
 export function endFloatingPanelGrab(source: string) {

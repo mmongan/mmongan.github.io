@@ -155,7 +155,7 @@ import {
 import {
   beginFloatingPanelGrab, beginFloatingPanelPointerDrag, endFloatingPanelGrab,
   getFloatingPanelButtonNearPoint, getFloatingPanelNear, isFloatingPanelGrabbed, isFloatingPanelMesh,
-  nudgeFloatingPanelDistance, pickFloatingPanel, updateFloatingPanelGrab, telescopeFloatingPanelGrab,
+  nudgeFloatingPanelDistance, pickFloatingPanel, updateFloatingPanelGrab, moveFloatingPanelGrab, telescopeFloatingPanelGrab,
   updateFloatingPanelPointerDrag, recallFloatingPanels, executeFloatingPanelControl,
 } from '../menu/floatingPanel';
 import type { FormationLetter } from '../menu/handMenu';
@@ -2781,6 +2781,12 @@ export function updateRobotPathFromControllers() {
     const marcherGrab = marcherGrabs.get(handedness);
     if (marcherGrab?.source === "hand") return;
     if (isFloatingPanelGrabbed(handedness)) {
+      if (gripPressed && !wasGripPressed && padGrabButtons.get(handedness) === "trigger") {
+        // Reanchor a trigger/slider drag as a panel grab without changing its pose.
+        if (moveFloatingPanelGrab(handedness, getControllerPosition(controller).computeWorldMatrix(true))) {
+          padGrabButtons.set(handedness, "grip");
+        }
+      }
       const holding = padGrabButtons.get(handedness) === "trigger" ? isPressed : gripPressed;
       if (!holding) {
         endFloatingPanelGrab(handedness);
@@ -2807,6 +2813,12 @@ export function updateRobotPathFromControllers() {
       const nearButton = getFloatingPanelButtonNearPoint(gripPoint) ?? getHandMenuHitNearPoint(gripPoint);
       if (nearButton && handInteraction.grabPaletteMarcher(handedness, nearButton, gripPoint, "controller", -1,
         facingYaw)) return;
+      const nearPad = getFloatingPanelNear(gripPoint, 0.06);
+      if (nearPad && beginFloatingPanelGrab(handedness, gripNode.computeWorldMatrix(true),
+        null, gripPoint, 0.06, true)) {
+        padGrabButtons.set(handedness, "grip");
+        return;
+      }
       const paletteRay = getControllerRay(controller);
       const paletteMenuPick = pickMenuControl(paletteRay);
       const palettePanelPick = pickFloatingPanel(paletteRay);
@@ -2814,11 +2826,9 @@ export function updateRobotPathFromControllers() {
         (!palettePanelPick?.hit || paletteMenuPick.distance <= palettePanelPick.distance + 0.001) &&
         handInteraction.grabPaletteMarcher(handedness, getHandMenuHit(paletteMenuPick),
           paletteMenuPick.pickedPoint, "controller", paletteMenuPick.distance, facingYaw)) return;
-      const nearPad = getFloatingPanelNear(gripNode.getAbsolutePosition(), 0.06);
-      const pick = nearPad ? null : pickFloatingPanel(getControllerRay(controller));
-      if (nearPad || pick?.hit) {
-        beginFloatingPanelGrab(handedness, gripNode.computeWorldMatrix(true),
-          nearPad ? null : pick?.pickedMesh, nearPad ? gripNode.getAbsolutePosition() : pick?.pickedPoint ?? undefined, 0.06, true);
+      const pick = pickFloatingPanel(paletteRay);
+      if (pick?.hit && beginFloatingPanelGrab(handedness, gripNode.computeWorldMatrix(true),
+        pick.pickedMesh, pick.pickedPoint ?? undefined, 0.06, true)) {
         padGrabButtons.set(handedness, "grip");
         return;
       }

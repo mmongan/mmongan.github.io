@@ -24,6 +24,7 @@ import { enterVRButton, enterARButton, xrEntryStatus } from '../ui/dom';
 import { connectMarcherPOVXR, isMarcherPOVActive, setMarcherPOVEnabled } from '../camera/marcherPOV';
 import { setTableHeightForPosture } from '../menu/settings';
 import { summonXRSettingsPanel } from '../menu/xrSettingsPanel';
+import { placeAutomaticFloatingPanels } from '../menu/floatingPanel';
 import { xrModeInputs, getSelectedXRMode, floorCalibrationToggle, fullScaleVRButton, tabletopScaleButton, giantModeButton, roomWidthInput, roomLengthInput, sittingModeToggle } from '../ui/dom';
 import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS } from '../field/constants';
 import { enterARTabletopMode, exitARTabletopMode, getARPosition, getARScale, getARScaleRange, setARPosition, setARScale, setFieldHeightMode, getFieldHeightMode, setARSurfaceHeight, placeTabletopInFrontOfCamera, setImmersiveFieldScaling } from './ar';
@@ -751,7 +752,10 @@ export function initXR(teleportGrid: Mesh) {
             exitARTabletopMode();
             if (giantModeActive) applyRoomScale();
           }
-          if (state === WebXRState.IN_XR) summonXRSettingsPanel();
+          if (state === WebXRState.IN_XR) {
+            placeAutomaticFloatingPanels();
+            summonXRSettingsPanel();
+          }
           updateTeleportationAvailability();
           return;
         }
