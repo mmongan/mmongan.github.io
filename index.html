@@ -8,7 +8,7 @@
       content="Babylon.js WebXR VR and AR demo for Meta Quest 3"
     />
     <title>OpenChartxr</title>
-    <script type="module" crossorigin src="/assets/index-BvHaqzTV.js"></script>
+    <script type="module" crossorigin src="/assets/index-C9VK6cxq.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/rolldown-runtime-B0Z9INg1.js">
     <link rel="modulepreload" crossorigin href="/assets/engineStore-Bn2tApal.js">
     <link rel="modulepreload" crossorigin href="/assets/internalTexture-B3djGrls.js">
@@ -110,17 +110,17 @@
         </div>
 
         <div class="settings-group">
-          <label class="settings-label">Controller roles</label>
+          <label class="settings-label">Tracked-thumb media hand</label>
           <label class="radio-option">
             <input id="swapControllerRolesToggle" type="checkbox" />
-            <span>Right-hand navigation / left-hand media jogging</span>
+            <span>Use left hand for thumb media jogging (default: right)</span>
           </label>
-          <p>Unchecked: left-hand navigation / right-hand media jogging. Jog with the media thumbstick while the media watch (left controller Y) is open.</p>
+          <p>Both controller thumbsticks navigate unless positioning a held marcher or panel. This assignment selects the hand used for optional tracked-thumb timeline jogging.</p>
           <label class="radio-option">
             <input id="handThumbJogToggle" type="checkbox" />
             <span>Hand-tracked thumb media jogging</span>
           </label>
-          <p>When no media controller thumbstick is available, enable this option to jog with tracked hands. With the palm-up menu open, curl the media hand's fingers and raise its thumb. Hold still briefly for neutral, then move the thumb sideways to jog. Open the hand or lower the thumb to stop.</p>
+          <p>With no controllers connected, enable this option to jog with tracked hands. Curl the selected hand's fingers and raise its thumb. Hold still briefly for neutral, then move the thumb sideways to jog. Open the hand or lower the thumb to stop. No hand menu is required.</p>
         </div>
 
         <div class="settings-group">
@@ -306,7 +306,7 @@
           <button id="duplicateDrillButton" class="xr-button secondary" type="button">Duplicate drill side by side (2x marchers)</button>
           <output id="duplicateDrillStatus" class="settings-status" aria-live="polite"></output>
           <output id="marcherPOVStatus" class="settings-status" aria-live="polite">Select a marcher, then enable POV.</output>
-          <p>Browser: mouse or arrow keys look around. VR: headset look and room-scale motion remain natural; marching moves your viewpoint. Use the palm-menu POV button to exit. Artificial VR movement may cause discomfort; pause the drill or leave POV if needed. POV is not available in AR.</p>
+          <p>Browser: mouse or arrow keys look around. VR: headset look and room-scale motion remain natural; marching moves your viewpoint. Use Marcher POV on the floating settings panel to exit. Artificial VR movement may cause discomfort; pause the drill or leave POV if needed. POV is not available in AR.</p>
           <label class="radio-option">
             <input id="lowPolygonMarchersToggle" type="checkbox" checked />
             <span>Low-polygon marcher bodies (full-detail instruments)</span>
@@ -342,6 +342,11 @@
             <input type="checkbox" id="drillChartPadToggle" />
             <span>Drill chart pad (floating, grabbable)</span>
           </label>
+          <button id="recallPanelsButton" type="button">Bring panels back</button>
+          <label class="radio-option"><input id="chartGhostModeToggle" type="checkbox" /><span>Chart ghost mode: before (cyan), current marchers, after (pink)</span></label>
+          <label class="radio-option"><input id="xrSettingsPanelToggle" type="checkbox" /><span>Show floating XR settings panel</span></label>
+          <button id="xrSettingsPanelButton" type="button">Bring XR settings panel here</button>
+          <p>Grab panel frames to position them. Hidden panels keep your placement when reopened. Bring panels back resets floating panels beside you. Controller Y opens settings, A/X opens instruments, and B opens precision tools. No hand or wrist menus.</p>
           <label class="settings-label" for="chartBeatsPerPage">Beats per chart page</label>
           <input id="chartBeatsPerPage" type="number" min="1" max="64" step="1" value="8" />
           <p>Authored formations keep their counts. Intermediate pages sample the transition at this interval; editing an intermediate page makes it an authored formation. Guides remain attached to their original counts when the interval changes.</p>
@@ -426,7 +431,7 @@
             <button id="fieldProjectorClearButton" type="button">Remove tracing image</button>
           </div>
           <output id="fieldProjectorStatus" aria-live="polite">Choose a local image to project and trace.</output>
-          <p>Upload a PNG, JPEG, or WebP (up to 16 MB) before entering XR. Images stay in this browser session and are resized to the device texture limit (at most 4096 pixels per side). The image is clipped to the field, keeps its aspect ratio, and does not intercept drawing. At zero rotation the image top points toward +Z. Trace it with pencil, ruler, spline, or other drawing tools, then Create formation/path as usual. The grabbable Project control on the palm menu provides alignment, scale, rotation, fade, and on/off buttons. Moving the projector body only repositions its controls; use those buttons to align the image. Put away hides the device but keeps the projection. Calibration temporarily hides the image. Reload/Remove clears only the image; no image or projection settings are saved in drafting workspaces/camera photos, and no automatic image-to-route conversion occurs.</p>
+          <p>Upload a PNG, JPEG, or WebP (up to 16 MB) before entering XR. Images stay in this browser session and are resized to the device texture limit (at most 4096 pixels per side). The image is clipped to the field, keeps its aspect ratio, and does not intercept drawing. At zero rotation the image top points toward +Z. Trace it with drawing tools, then Create formation/path as usual. Projector on the floating settings panel opens alignment, scale, rotation, fade, and on/off controls. Moving the projector body only repositions its controls. Put away hides the device but keeps the projection. Calibration temporarily hides the image. Reload/Remove clears only the image; no image or projection settings are saved in drafting workspaces/camera photos, and no automatic image-to-route conversion occurs.</p>
           <label class="settings-label" for="draftingSpacing">Divider spacing / parallel offset (yards)</label>
           <input id="draftingSpacing" type="number" min="0.05" max="20" step="any" value="1.25" />
           <label class="settings-label" for="draftingAngle">Set square angle</label>
@@ -518,7 +523,7 @@
           <input id="marcherPaintColor" type="color" value="#1e88e5" />
           <button id="marcherPaintSelectedButton" type="button">Paint selected marcher</button>
           <output id="marcherPaintStatus" class="settings-status" aria-live="polite"></output>
-          <p>Open the grabbable palette here or with Paint on the palm menu. Choose a swatch (or custom color above), then click, trigger, or pinch a marcher to recolor only their uniform. Paint selected applies to the current selection. Done paint or the checkbox exits paint mode. Painting replaces movement/selection gestures while active; placement, erase, drawing, and selection editing turn it off. Uniforms, matching route colors, and top-down markers update; instruments/guard equipment are unchanged. Colors are session-only, with no paint undo or show export.</p>
+          <p>Open the grabbable palette here or with Paint on the floating settings panel. Choose a swatch (or custom color above), then click, trigger, or pinch a marcher to recolor only their uniform. Paint selected applies to the current selection. Done paint or the checkbox exits paint mode. Painting replaces movement/selection gestures while active; placement, erase, drawing, and selection editing turn it off. Uniforms, matching route colors, and top-down markers update; instruments/guard equipment are unchanged. Colors are session-only, with no paint undo or show export.</p>
           <label class="settings-label" for="marcherCount">Marchers to add</label>
           <div class="radio-row">
             <input id="marcherCount" type="range" min="1" max="100" step="1" value="8" />
@@ -540,7 +545,7 @@
           <label class="settings-label" for="ghostBandTimeline">Ghost-band timeline</label>
           <input id="ghostBandTimeline" type="range" min="0" max="1" step="0.1" value="0" disabled />
           <output id="ghostBandStatus" class="settings-status" aria-live="polite"></output>
-          <p>Freeze the real band at the current count and move a cyan ghost band along the timeline. Thumbstick jogging automatically enters this mode. The slider, watch, score, and controller timeline controls move the ghosts. Trigger a ghost (or click it on desktop) to jump the real band to the preview count, paused. Turning this mode off instead returns to the frozen count, paused. Ghosts preview positions and facings using the captured body pose; they do not edit the drill.</p>
+          <p>Freeze the real band at the current count and move a cyan ghost band along the timeline. Optional tracked-thumb jogging automatically enters this mode. The slider and chart/score media controls move the ghosts. Trigger a ghost (or click it on desktop) to jump the real band to the preview count, paused. Turning this mode off instead returns to the frozen count, paused. Ghosts preview positions and facings using the captured body pose; they do not edit the drill. This is separate from the chart's before/after Ghosts toggle.</p>
           <label class="settings-label" for="midiFile">Drill music (.mid / .midi)</label>
           <input id="midiFile" type="file" accept=".mid,.midi,audio/midi,audio/x-midi" />
           <label class="settings-label" for="midiUrl">MIDI URL</label>
