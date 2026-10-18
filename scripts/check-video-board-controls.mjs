@@ -25,9 +25,7 @@ const context = vm.createContext({
   DynamicTexture: class { update() {} dispose() {} },
 });
 const menu = read('../src/menu/handMenu.ts');
-vm.runInContext(`const buttonActions = new Map(); const progressBar = null;
-  ${transform(menu.slice(menu.indexOf('export function registerMenuButton'),
-    menu.indexOf('export function isHandMenuVisible')))}`, context);
+vm.runInContext(transform(menu).replace(/^import .*?;\r?$/gm, ''), context);
 const board = read('../src/field/videoBoard.ts');
 vm.runInContext(transform(board.slice(board.indexOf('function roundedRect('),
   board.indexOf('export interface VideoBoardResult'))), context);
@@ -87,6 +85,7 @@ try {
     getFloatingPanelNear: () => null, getFloatingPanelButtonNearPoint: () => null,
     getHandMenuHit: pick => vm.runInContext('buttonActions', context).get(pick.pickedMesh),
     activateChartButton: action => activated.push(action),
+    formationPull: null, marcherGrabs: new Map(), grabPaletteMarcher: () => false, getHandFacingYaw: () => 0,
     beginFloatingPanelGrab: () => assert.fail('Distant controls must not start a panel grab'),
   });
   const hand = read('../src/interaction/handInteraction.ts');

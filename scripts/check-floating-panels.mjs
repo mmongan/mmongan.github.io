@@ -19,7 +19,7 @@ const context = vm.createContext({ scene, Matrix, Quaternion, Vector3, Plane });
 const source = readFileSync(new URL('../src/menu/floatingPanel.ts', import.meta.url), 'utf8');
 vm.runInContext(`${stripTypeScriptTypes(source, { mode: 'transform' })
   .replace(/^import .*?;\r?$/gm, '').replace(/export /g, '')}
-globalThis.api = { FloatingPanel, DetachableFloatingPanel, getFloatingPanelButtonNearPoint, beginFloatingPanelGrab, updateFloatingPanelGrab,
+globalThis.api = { FloatingPanel, DetachableFloatingPanel, recallFloatingPanels, getFloatingPanelButtonNearPoint, beginFloatingPanelGrab, updateFloatingPanelGrab,
 endFloatingPanelGrab, isFloatingPanelGrabbed, getFloatingPanelNear,
 pickFloatingPanel, beginFloatingPanelPointerDrag, updateFloatingPanelPointerDrag,
 nudgeFloatingPanelDistance };`, context);
@@ -79,9 +79,43 @@ try {
     new Vector3(0.35, 0.3, 0.02), new Map([[button, hit]]));
   button.computeWorldMatrix(true);
   assert.equal(api.getFloatingPanelButtonNearPoint(button.getAbsolutePosition()), hit);
+  button.setEnabled(false);
+  assert.equal(api.getFloatingPanelButtonNearPoint(button.getAbsolutePosition()), null, 'Disabled controls cannot activate');
+  button.setEnabled(true);
   buttonRoot.setEnabled(false);
   assert.equal(api.getFloatingPanelButtonNearPoint(button.getAbsolutePosition()), null);
   buttonRoot.dispose();
+  const scaled = create('scaled', 4);
+  scaled.root.scaling.setAll(0.25);
+  scaled.root.computeWorldMatrix(true);
+  const edge = Vector3.TransformCoordinates(new Vector3(0.35, 0, 0), scaled.desk.computeWorldMatrix(true));
+  assert.ok(scaled.panel.near(edge.add(new Vector3(0.025, 0, 0))), 'Small panels retain a 3 cm world contact margin');
+  assert.equal(scaled.panel.near(edge.add(new Vector3(0.035, 0, 0))), false);
+  scaled.root.scaling.setAll(4);
+  scaled.root.computeWorldMatrix(true);
+  const largeEdge = Vector3.TransformCoordinates(new Vector3(0.35, 0, 0), scaled.desk.computeWorldMatrix(true));
+  assert.equal(scaled.panel.near(largeEdge.add(new Vector3(0.04, 0, 0))), false,
+    'Large panels do not inflate contact tolerance');
+  scaled.root.setEnabled(false);
+  assert.equal(api.beginFloatingPanelGrab('left', Matrix.Identity(), scaled.mesh), false, 'Hidden panels reject direct mesh grabs');
+  scaled.root.dispose();
+  const parented = create('parented', 0);
+  const parent = new TransformNode('panelParent', scene);
+  parent.position.set(3, 1, 2);
+  parent.rotation.set(0.2, 0.6, -0.1);
+  parent.scaling.setAll(0.7);
+  parented.root.parent = parent;
+  const originalWorld = parented.root.computeWorldMatrix(true).clone();
+  parented.panel.begin('left', Matrix.Identity());
+  parented.panel.update('left', Matrix.Translation(0.2, -0.1, 0.3));
+  const movedWorld = parented.root.computeWorldMatrix(true);
+  assert.ok(Vector3.Distance(movedWorld.getTranslation(),
+    originalWorld.getTranslation().add(new Vector3(0.2, -0.1, 0.3))) < 1e-5,
+    'Parented panels convert grab world coordinates back to parent space');
+  assert.ok(movedWorld.asArray().slice(0, 12).every((value, index) =>
+    Math.abs(value - originalWorld.asArray()[index]) < 1e-5), 'Parented grab preserves scale and orientation');
+  parented.panel.end('left');
+  parent.dispose();
   const ray = new Ray(Vector3.Zero(), Vector3.Forward(), 3);
   assert.equal(api.pickFloatingPanel(ray).pickedMesh, score.mesh);
   assert.ok(api.pickFloatingPanel(ray).pickedPoint, 'Panel ray pick must have a grab point');
@@ -205,6 +239,25 @@ try {
     desktop: { distance: 0.75, height: -0.08 },
     xr: { distance: 0.55, height: -0.22 }, side: -0.35,
   };
+  score.panel.placeForViewer(placement);
+  score.panel.begin('left', Matrix.Identity());
+  score.panel.update('left', Matrix.Translation(2, 1, -1));
+  score.panel.end('left');
+  const retainedPose = score.root.computeWorldMatrix(true).clone();
+  score.root.setEnabled(false);
+  camera.position.set(10, 2, 3);
+  score.root.setEnabled(true);
+  score.panel.showForViewer(placement);
+  assert.ok(score.root.computeWorldMatrix(true).asArray().every((value, index) =>
+    Math.abs(value - retainedPose.asArray()[index]) < 1e-6),
+    'Reopening retains exact manually placed position, rotation and scale even far from viewer');
+  score.root.setEnabled(false);
+  api.recallFloatingPanels();
+  assert.equal(score.root.isEnabled(), false, 'Recall does not reveal hidden panels');
+  assert.equal(score.panel.userPlaced, false);
+  assert.ok(Vector3.Distance(score.root.position, camera.globalPosition) < 2, 'Recall brings a lost panel beside the viewer');
+  score.root.setEnabled(true);
+  camera.position.setAll(0);
   score.panel.placeForViewer(placement);
   score.panel.begin('left', Matrix.Identity());
   const beforeLostRelease = score.root.position.clone();

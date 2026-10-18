@@ -55,4 +55,5 @@ export function addInstrumentButtonModel(button: Mesh, instrument: MarcherInstru
   material.specularColor = new Color3(0.15, 0.15, 0.15);
   model.material = material;
   model.onDisposeObservable.addOnce(() => material.dispose());
+  return { root: pivot, meshes: [model] };
 }

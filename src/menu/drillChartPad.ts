@@ -16,6 +16,7 @@ import {
   getChartTransitionLabels,
   getDrillLastCountIndex,
   getGlobalCountIndex,
+  getDrillTransportState,
   getRobotPositionsAtCount,
   getRobotPositionAtCount,
   insertBlankChartPage,
@@ -29,6 +30,8 @@ import { PanelTransparencySlider } from './panelTransparencySlider';
 import { drawPanelButton, PANEL_FRAME_COLOR, PANEL_PAPER_COLOR } from './panelStyle';
 import { getMarcherPOVRobot, getMarcherPOVLabel } from '../camera/marcherPOV';
 import { getChartPageCounts, getChartPageTimeline, isAuthoredChartPage } from '../robot/chartPageTimeline';
+import { isChartGhostModeEnabled } from '../robot/chartPageGhostMode';
+import { isDraftingTableMode } from '../interaction/fieldDrawingTools';
 
 export const DRILL_CHART_COUNTS_PER_SET = 8;
 
@@ -57,13 +60,12 @@ interface Pad {
   texture: DynamicTexture;
   ctx: CanvasRenderingContext2D;
   interaction: FloatingPanel;
+  modeButtons: { texture: DynamicTexture; ctx: CanvasRenderingContext2D; mode: 'ghost' | 'drafting' | 'play' }[];
 }
 
 let pad: Pad | null = null;
 let visible = false;
-// Once the user positions the pad it stays put across hide/show, unless the
-// viewer has since moved too far away to reach or read it.
-const USER_PLACEMENT_MAX_DISTANCE = 2.5;
+// Manual placement survives hide/show; explicit summons bring the pad back.
 const POINTER_SOURCE = "pointer";
 let lastSignature = "";
 let framesUntilRedraw = 0;
@@ -134,7 +136,7 @@ function createButtonTexture(label: string) {
   texture.hasAlpha = true;
   texture.getAlphaFromRGB = false;
   texture.update(true);
-  return texture;
+  return { texture, ctx };
 }
 
 function createPad(): Pad {
@@ -144,6 +146,7 @@ function createPad(): Pad {
   root.rotationQuaternion = Quaternion.Identity();
   const meshes = new Set<AbstractMesh>();
   const buttons = new Map<AbstractMesh, HandMenuHit>();
+  const modeButtons: Pad['modeButtons'] = [];
 
   const backingMaterial = new StandardMaterial("drillChartBackingMaterial", scene);
   backingMaterial.diffuseColor = Color3.FromHexString(PANEL_FRAME_COLOR);
@@ -151,10 +154,10 @@ function createPad(): Pad {
   backingMaterial.alpha = 0.08;
   backingMaterial.disableDepthWrite = true;
   const backing = MeshBuilder.CreateBox("drillChartBacking", {
-    width: PAD_WIDTH + 0.02, height: PAD_HEIGHT + 0.04, depth: BACKING_DEPTH,
+    width: PAD_WIDTH + 0.02, height: PAD_HEIGHT + 0.084, depth: BACKING_DEPTH,
   }, scene);
   backing.material = backingMaterial;
-  backing.position.set(0, 0.01, BACKING_DEPTH / 2 + 0.004);
+  backing.position.set(0, -0.012, BACKING_DEPTH / 2 + 0.004);
 
   const stackMaterial = new StandardMaterial("drillChartStackMaterial", scene);
   stackMaterial.diffuseColor = new Color3(0.94, 0.93, 0.88);
@@ -212,10 +215,24 @@ function createPad(): Pad {
       hit: { action: "drillChartTransition", kind: "pace" } },
     { label: "Apply", name: "applyTransition", x: transitionX(3), y: transitionY,
       hit: { action: "drillChartApplyTransition" } },
+    { label: "Ghosts off", name: "ghostMode", x: -0.12, y: PAD_HEIGHT / 2 + 0.01,
+      hit: { action: "chartGhostMode" } },
+    { label: "Draft off", name: "draftingMode", x: -0.025, y: PAD_HEIGHT / 2 + 0.01,
+      hit: { action: "chartDraftingMode" } },
+    ...([
+      ["Rewind", "rewind"], ["Step -", "stepBack"], ["Play", "playPause"],
+      ["Step +", "stepForward"], ["FFwd", "fastForward"],
+    ] as const).map(([label, action], index) => ({
+      label, name: action, x: bottomX(index), y: bottomY - 0.052, hit: { action },
+    })),
   ];
   for (const { label, name, x, y, hit } of buttonDefinitions) {
     const buttonMaterial = new StandardMaterial(`drillChartButtonMaterial-${name}`, scene);
-    const buttonTexture = createButtonTexture(label);
+    const { texture: buttonTexture, ctx: buttonContext } = createButtonTexture(label);
+    if (name === "ghostMode" || name === "draftingMode" || name === "playPause") {
+      modeButtons.push({ texture: buttonTexture, ctx: buttonContext,
+        mode: name === "ghostMode" ? 'ghost' : name === "draftingMode" ? 'drafting' : 'play' });
+    }
     buttonMaterial.diffuseTexture = buttonTexture;
     buttonMaterial.opacityTexture = buttonTexture;
     buttonMaterial.emissiveColor = Color3.White();
@@ -226,6 +243,7 @@ function createPad(): Pad {
     }, scene);
     button.material = buttonMaterial;
     button.position.set(x, y, -0.002);
+    if (name === "ghostMode" || name === "draftingMode") button.position.z = -0.008;
     if (isClose) button.position.set(PAD_WIDTH / 2 - BUTTON_HEIGHT / 2, PAD_HEIGHT / 2 + 0.01, -0.008);
     registerMenuButton(button, hit);
     buttons.set(button, hit);
@@ -245,8 +263,8 @@ function createPad(): Pad {
       stackMaterial.alpha = opacity * 0.06 / 0.65;
     });
   meshes.add(slider.mesh);
-  const interaction = new FloatingPanel(root, meshes, root, new Vector3(PAD_WIDTH / 2 + 0.012, PAD_HEIGHT / 2 + 0.03, BACKING_DEPTH), buttons, undefined, slider);
-  return { root, meshes, buttons, texture, ctx, interaction };
+  const interaction = new FloatingPanel(root, meshes, root, new Vector3(PAD_WIDTH / 2 + 0.012, PAD_HEIGHT / 2 + 0.06, BACKING_DEPTH), buttons, undefined, slider);
+  return { root, meshes, buttons, texture, ctx, interaction, modeButtons };
 }
 
 function fieldPoint(position: Vector3) {
@@ -445,9 +463,17 @@ function refreshPage(force = false) {
   if (!pad) return;
   const setCounts = getDrillChartSetCounts();
   const page = getCurrentPage(setCounts);
-  const signature = getPageSignature(setCounts, page);
+  const playing = getDrillTransportState().playing;
+  const signature = `${getPageSignature(setCounts, page)}:${isChartGhostModeEnabled()}:${isDraftingTableMode()}:${playing}`;
   if (!force && signature === lastSignature) return;
   lastSignature = signature;
+  for (const button of pad.modeButtons) {
+    const active = button.mode === 'ghost' ? isChartGhostModeEnabled() : button.mode === 'drafting' ? isDraftingTableMode() : playing;
+    drawPanelButton(button.ctx, 192, 80,
+      button.mode === 'play' ? active ? 'Pause' : 'Play' :
+        `${button.mode === 'ghost' ? 'Ghosts' : 'Draft'} ${active ? 'on' : 'off'}`, active);
+    button.texture.update();
+  }
   drawPage(pad, setCounts, page);
 }
 
@@ -477,9 +503,7 @@ export function onDrillChartPadVisibilityChange(listener: (visible: boolean) => 
 export function setDrillChartPadVisible(show: boolean) {
   if (show) {
     pad ??= createPad();
-    const eye = scene.activeCamera?.globalPosition;
-    if (!pad.interaction.userPlaced || !eye || Vector3.Distance(eye, pad.root.position) > USER_PLACEMENT_MAX_DISTANCE) {
-      pad.interaction.userPlaced = false;
+    if (!pad.interaction.userPlaced) {
       placeInFrontOfViewer();
     }
     refreshPage(true);

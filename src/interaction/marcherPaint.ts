@@ -211,7 +211,7 @@ function createMarcherPaint(deps: PaintDependencies) {
   root.setEnabled(false);
   function show() {
     root.setEnabled(true);
-    panel.placeForViewer({ desktop: { distance: 0.85, height: -0.1 }, xr: { distance: 0.45, height: -0.1 }, side: -0.25 });
+    panel.showForViewer({ desktop: { distance: 0.85, height: -0.1 }, xr: { distance: 0.45, height: -0.1 }, side: -0.25 });
   }
   function action(hit: Extract<HandMenuHit, { action: 'marcherPaint' | 'marcherPaintColor' }>) {
     if (hit.action === 'marcherPaintColor') {

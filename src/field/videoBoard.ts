@@ -14,6 +14,7 @@ import { attachToARTransform } from '../xr/ar';
 import { registerMenuButton } from '../menu/handMenu';
 import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS, HASH_OFFSETS_YARDS } from './constants';
 import { TOP_DOWN_MARKER_LAYER_MASK } from '../robot/robot';
+import { createVideoBoardSettings } from './videoBoardSettings';
 
 declare const __BUILD_TIME__: string | undefined;
 declare const __APP_VERSION__: string;
@@ -340,6 +341,7 @@ export function createVideoBoard(
   }
 
   createVideoBoardButtons(boardY - boardHeight / 2 - 2.8, boardZ - 0.6);
+  createVideoBoardSettings(boardY + boardHeight / 2 + 0.4, boardZ - 0.6);
 
   const boardRoot = new TransformNode("videoBoardRoot", scene);
   boardRoot.position.set(0, -0.5, boardZ);
@@ -369,9 +371,7 @@ export function createVideoBoard(
   };
 }
 
-// A row of large, easy-to-see-from-a-distance media buttons mounted on a
-// backing panel just below the screen, controlling the same selected-robot
-// playback as the palm-up hand menu (tagged via registerMenuButton).
+// Field-wide media controls share the same transport as the floating panels.
 function createVideoBoardButtons(y: number, z: number) {
   const buttonMaterial = new StandardMaterial("videoBoardButtonMaterial", scene);
   buttonMaterial.diffuseColor = new Color3(0.15, 0.16, 0.18);

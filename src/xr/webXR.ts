@@ -14,14 +14,14 @@ import { WebXRDefaultExperience } from '@babylonjs/core/XR/webXRDefaultExperienc
 import { WebXRFeatureName } from '@babylonjs/core/XR/webXRFeaturesManager';
 import { WebXRState } from '@babylonjs/core/XR/webXRTypes';
 import type { IWebXRTeleportationOptions, WebXRMotionControllerTeleportation } from '@babylonjs/core/XR/features/WebXRControllerTeleportation';
-import { getNavigationControllerHand, swapControllerRolesToggle } from '../ui/dom';
+import { swapControllerRolesToggle } from '../ui/dom';
 import '@babylonjs/loaders/glTF';
 import { RegisterWebXROculusTouchMotionController } from '@babylonjs/core/XR/motionController/webXROculusTouchMotionController.pure';
 import { scene } from '../scene/engine';
 import { connectMidiXRSession } from '../audio/midiPlayback';
 import { connectMarcherPOVXR, isMarcherPOVActive, setMarcherPOVEnabled } from '../camera/marcherPOV';
 import { setTableHeightForPosture } from '../menu/settings';
-import { isHandMenuVisible } from '../menu/handMenu';
+import { summonXRSettingsPanel } from '../menu/xrSettingsPanel';
 import { xrModeInputs, getSelectedXRMode, floorCalibrationToggle, fullScaleVRButton, tabletopScaleButton, giantModeButton, roomWidthInput, roomLengthInput, sittingModeToggle } from '../ui/dom';
 import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS } from '../field/constants';
 import { enterARTabletopMode, exitARTabletopMode, getARPosition, getARScale, getARScaleRange, setARPosition, setARScale, setFieldHeightMode, getFieldHeightMode, setARSurfaceHeight, placeTabletopInFrontOfCamera } from './ar';
@@ -134,15 +134,11 @@ export function initXR(teleportGrid: Mesh) {
   // otherwise "AR" still launches an opaque immersive-vr session (black background).
   let xrExperience: WebXRDefaultExperience | undefined;
   let navigationOptions: IWebXRTeleportationOptions | undefined;
-  // Every controller thumbstick navigates the world unless the media watch is
-  // visible (the media hand's thumbstick then jogs the timeline) or the
-  // controller is holding a marcher (its thumbstick telescopes the marcher).
+  // Held marchers and panels consume their controller's thumbstick for positioning.
   type NavigationHands = "left" | "right" | "both" | "none";
   function getNavigationHands(): NavigationHands {
-    const mediaVisible = isHandMenuVisible();
-    const mediaHand = getNavigationControllerHand() === "left" ? "right" : "left";
     const hands = (["left", "right"] as const).filter(hand =>
-      !(mediaVisible && hand === mediaHand) && !isControllerGrabbing(hand));
+      !isControllerGrabbing(hand));
     return hands.length === 2 ? "both" : hands[0] ?? "none";
   }
   let navigationHands: NavigationHands = "both";
@@ -692,6 +688,7 @@ export function initXR(teleportGrid: Mesh) {
             exitARTabletopMode();
             if (giantModeActive) applyRoomScale();
           }
+          if (state === WebXRState.IN_XR) summonXRSettingsPanel();
           updateTeleportationAvailability();
           return;
         }

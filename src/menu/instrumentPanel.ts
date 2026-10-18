@@ -49,7 +49,10 @@ export function hideInstrumentPanel() {
 }
 
 function updatePanelVisibility() {
-  if (instrumentPanelToggle?.checked) summonInstrumentPanel();
+  if (instrumentPanelToggle?.checked) {
+    root?.setEnabled(true);
+    if (!panel?.userPlaced) placePanel();
+  }
   else hideInstrumentPanel();
 }
 
@@ -116,7 +119,7 @@ export function initInstrumentPanel() {
   instrumentPanelToggle?.addEventListener('change', updatePanelVisibility);
   if (instrumentPanelToggle?.checked) summonInstrumentPanel();
   const observer = scene.onBeforeRenderObservable.add(() => {
-    if (root?.isEnabled() && placedCamera !== scene.activeCamera) placePanel();
+    if (root?.isEnabled() && !panel?.userPlaced && placedCamera !== scene.activeCamera) placePanel();
   });
   scene.onDisposeObservable.addOnce(() => {
     scene.onBeforeRenderObservable.remove(observer);

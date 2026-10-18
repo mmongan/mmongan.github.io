@@ -38,7 +38,7 @@ const context = vm.createContext({
   drawPanelButton() {},
   registerMenuButton: (mesh, hit) => registered.set(mesh, hit),
   FloatingPanel: class {
-    placeForViewer() { placements++; }
+    showForViewer() { placements++; }
     release() { releases++; }
   },
 });

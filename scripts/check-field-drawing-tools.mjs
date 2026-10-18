@@ -142,6 +142,29 @@ try {
   assert.equal(scene.getTransformNodeByName('fieldStencilTray').isEnabled(), true);
   act('cutters');
   assert.equal(scene.getTransformNodeByName('fieldCookieCutterTray').isEnabled(), true);
+  for (const [command, name, backingName] of [
+    ['show', 'drawingToolTray', 'drawingToolTrayBacking'],
+    ['stencils', 'fieldStencilTray', 'stencilTrayBacking'],
+    ['cutters', 'fieldCookieCutterTray', 'cookieCutterTrayBacking'],
+    ['drafting', 'advancedDraftingTray', 'advancedDraftingTrayBacking'],
+  ]) {
+    act(command);
+    const panelRoot = scene.getTransformNodeByName(name);
+    const backing = scene.getMeshByName(backingName);
+    assert.ok(panelRoot && backing, `${command} panel has a grabbable backing`);
+    assert.ok(context.beginFloatingPanelGrab('left', Matrix.Identity(), backing, undefined, 0.03, true));
+    context.updateFloatingPanelGrab('left', Matrix.Translation(0.2, 0.1, 0.3));
+    context.endFloatingPanelGrab('left');
+    const pose = panelRoot.computeWorldMatrix(true).clone();
+    act('hide');
+    act(command);
+    assert.ok(panelRoot.computeWorldMatrix(true).asArray().every((value, index) =>
+      Math.abs(value - pose.asArray()[index]) < 1e-6), `${command} keeps manual placement when reopened`);
+  }
+  context.recallFloatingPanels();
+  act('show');
+  act('stencils');
+  act('cutters');
   const kinds = ['pencil', 'eraser', 'ruler', 'protractor', 'compass',
     'circleStencil', 'squareStencil', 'triangleStencil', 'pentagonStencil', 'hexagonStencil', 'starStencil'];
   assert.ok(kinds.every(kind => scene.getTransformNodeByName(`fieldTool-${kind}`)),

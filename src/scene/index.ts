@@ -10,7 +10,6 @@ import {
   updateRobotPathFromControllers,
   updateTabletopHands,
   updateHandPathDrawing,
-  getActiveControllers,
   getSelectedRobotProgress,
   getSelectedMarcher,
   getSelectableMarchers,
@@ -19,12 +18,12 @@ import {
 } from '../interaction/pathInteraction';
 import { captureContentRootMeshes, attachToARTransform } from '../xr/ar';
 import { createTeleportGrid, initXR } from '../xr/webXR';
-import { updateHandMenu } from '../menu/handMenu';
 import '../menu/settings';
 import { initMidiPlayback, isMidiPlaybackReady } from '../audio/midiPlayback';
 import { getDrillTransportState, playAll } from '../robot/robot';
 import { initMusicStand } from '../menu/musicStand';
 import { initInstrumentPanel } from '../menu/instrumentPanel';
+import { initXRSettingsPanel } from '../menu/xrSettingsPanel';
 import { initGhostBandControls } from '../menu/ghostBandControls';
 import { setDrillChartPadVisible } from '../menu/drillChartPad';
 import { initMarcherPOV } from '../camera/marcherPOV';
@@ -50,6 +49,7 @@ initInteraction();
 initDrillSpacingChecker(getSelectableMarchers, selectRobot);
 initMusicStand();
 initInstrumentPanel();
+initXRSettingsPanel();
 initGhostBandControls();
 initMidiPlayback();
 initMarcherPOV(getSelectedMarcher, getSelectableMarchers, selectRobot, refreshPathLineAppearance);
@@ -82,7 +82,6 @@ function renderFrame() {
   updateHandPathDrawing();
   updateRobotPathFromControllers();
   const progress = getSelectedRobotProgress();
-  updateHandMenu(getActiveControllers(), progress);
   footballField.updateVideoBoardProgress(progress);
   scene.render();
 }

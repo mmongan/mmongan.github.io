@@ -149,7 +149,7 @@ function createFieldImageProjector(fieldRoot: TransformNode, notify: (message: s
   function action(command: FieldProjectorCommand) {
     if (command === 'show') {
       root.setEnabled(true);
-      panel.placeForViewer({ desktop: { distance: 0.9, height: 0.02 }, xr: { distance: 0.5, height: 0 }, side: 0.35 });
+      panel.showForViewer({ desktop: { distance: 0.9, height: 0.02 }, xr: { distance: 0.5, height: 0 }, side: 0.35 });
       if (!texture) status('Upload a local PNG, JPEG, or WebP in Settings, then trace its projection with drawing tools.');
       return;
     }

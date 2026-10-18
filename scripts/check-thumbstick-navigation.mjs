@@ -8,15 +8,11 @@ const start = source.indexOf('  type NavigationHands =');
 const end = source.indexOf('  scene.onBeforeRenderObservable.add(syncNavigationHandedness);', start);
 assert.ok(start >= 0 && end > start, 'Thumbstick navigation routing exists');
 
-let watchVisible = false;
-let navigationHand = 'left';
 const grabbing = new Set();
 let detaches = 0;
 let availabilityUpdates = 0;
 const teleportation = { attached: true, detach() { this.attached = false; detaches++; } };
 const context = vm.createContext({
-  isHandMenuVisible: () => watchVisible,
-  getNavigationControllerHand: () => navigationHand,
   isControllerGrabbing: hand => grabbing.has(hand),
   navigationOptions: { forceHandedness: undefined },
   xrExperience: { teleportation },
@@ -28,17 +24,18 @@ vm.runInContext(stripTypeScriptTypes(source.slice(start, end), { mode: 'transfor
   context);
 
 context.sync();
-assert.deepEqual([...context.state()], ['both', undefined], 'Both thumbsticks navigate while the media watch is hidden');
+assert.deepEqual([...context.state()], ['both', undefined], 'Both thumbsticks navigate without hand menus');
 assert.equal(detaches, 0, 'No reattach without a change');
 
-watchVisible = true;
+grabbing.add('right');
 context.sync();
-assert.deepEqual([...context.state()], ['left', 'left'], 'Visible media watch reserves the media thumbstick for jogging');
+assert.deepEqual([...context.state()], ['left', 'left'], 'Only the free controller navigates');
 assert.equal(detaches, 1, 'Teleportation reattaches with the new handedness');
 
-navigationHand = 'right';
+grabbing.delete('right');
+grabbing.add('left');
 context.sync();
-assert.deepEqual([...context.state()], ['right', 'right'], 'Swapped controller roles move navigation to the other hand');
+assert.deepEqual([...context.state()], ['right', 'right'], 'Either free hand can navigate');
 
 grabbing.add('right');
 context.sync();
@@ -46,18 +43,17 @@ assert.deepEqual([...context.state()], ['none', undefined], 'Grabbing with the o
 assert.ok(source.includes('isTeleportationEnabled() && navigationHands !== "none"'),
   'Teleportation stays detached when no thumbstick is free');
 
-watchVisible = false;
+grabbing.delete('left');
 context.sync();
 assert.deepEqual([...context.state()], ['left', 'left'], 'The free hand navigates while the other positions a grabbed marcher or panel');
 
 grabbing.clear();
 context.sync();
-assert.deepEqual([...context.state()], ['both', undefined], 'Hiding the watch returns both thumbsticks to navigation');
+assert.deepEqual([...context.state()], ['both', undefined], 'Releasing objects restores both thumbsticks');
 const updates = availabilityUpdates;
 context.sync();
 assert.equal(availabilityUpdates, updates, 'Steady state does not churn teleportation');
 
 const interaction = readFileSync(new URL('../src/interaction/pathInteraction.ts', import.meta.url), 'utf8');
-assert.ok(interaction.includes('if (!isHandMenuVisible() || floorCalibrationToggle?.checked)'),
-  'Media thumbstick only jogs while the watch is visible');
-console.log('Thumbstick navigation checks passed: both sticks navigate by default, media watch reserves the jog stick, role swap, marcher-grab exclusion, and no steady-state churn.');
+assert.ok(!interaction.includes('isHandMenuVisible'), 'No media-watch navigation override remains');
+console.log('Thumbstick navigation checks passed: both sticks navigate, held-object exclusion on either hand, both-held disable, and no steady-state churn.');

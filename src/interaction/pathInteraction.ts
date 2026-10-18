@@ -40,6 +40,8 @@ import {
 import { getMediaControllerHand, swapControllerRolesToggle, handThumbJogToggle } from '../ui/dom';
 import { resetThumbJog, updateThumbJog } from './thumbJogGesture';
 import { hideInstrumentPanel, summonInstrumentPanel } from '../menu/instrumentPanel';
+import { executeXRSetting, setXRSettingsPanelVisible, summonXRSettingsPanel } from '../menu/xrSettingsPanel';
+import { initChartPageGhostMode, isChartGhostModeEnabled, setChartGhostModeEnabled } from '../robot/chartPageGhostMode';
 import {
   executeDrawingToolAction, handleDrawingPointer, initFieldDrawingTools,
   isDrawingPointerActive, isFieldDrawingToolActive, isDraftingTableMode, selectDrawingGuideNear, snapToSelectedDrawingGuide,
@@ -134,7 +136,7 @@ import { clearDrillLabels, getDrillLabel, setDrillLabels, setDrillLabelsVisible 
 import { clearShowInfo, setShowInfo } from '../menu/showInfoPanel';
 import { cycleMusicStandStaff, setMusicStandVisible, summonMusicStand } from '../menu/musicStand';
 import { isMarcherPOVActive, setMarcherPOVEnabled } from '../camera/marcherPOV';
-import { getHandMenuHit, getHandMenuHitNearPoint, pickMenuControl, setMenuHandTracking, setFormationCommitAvailable, setFormationLibraryOpen, setFormationLibraryPage, setFormationLibraryAnchorAvailable, setEraseModeActive, setEraseHistoryAvailable, setDrillChartPadActive, setInstrumentMenuActive, isHandMenuVisible, isMenuControl, toggleControllerHandMenu } from '../menu/handMenu';
+import { getHandMenuHit, getHandMenuHitNearPoint, pickMenuControl, isMenuControl } from '../menu/handMenu';
 import {
   flipDrillChartPage,
   getDrillChartPageIndex,
@@ -150,7 +152,7 @@ import {
   beginFloatingPanelGrab, beginFloatingPanelPointerDrag, endFloatingPanelGrab,
   getFloatingPanelButtonNearPoint, getFloatingPanelNear, isFloatingPanelGrabbed, isFloatingPanelMesh,
   nudgeFloatingPanelDistance, pickFloatingPanel, updateFloatingPanelGrab, telescopeFloatingPanelGrab,
-  updateFloatingPanelPointerDrag,
+  updateFloatingPanelPointerDrag, recallFloatingPanels,
 } from '../menu/floatingPanel';
 import type { FormationLetter } from '../menu/handMenu';
 import { createHandInteraction } from './handInteraction';
@@ -304,7 +306,6 @@ const storedPaths: Vector3[][] = loadStoredPaths();
 const eraseHistory = new EditHistory(() => {
   if (undoEraseButton) undoEraseButton.disabled = !eraseHistory.canUndo;
   if (redoEraseButton) redoEraseButton.disabled = !eraseHistory.canRedo;
-  setEraseHistoryAvailable(eraseHistory.canUndo, eraseHistory.canRedo);
 });
 
 
@@ -446,8 +447,7 @@ showAllPathsToggle?.addEventListener("change", () => {
 
 const instrumentPaletteButtonHeld = new Map<string, boolean>();
 
-// Left controller X toggles the instrument hand menu; right controller A
-// summons the floating instrument panel.
+// A/X summon the standalone instrument palette.
 function updateInstrumentPaletteFromControllers() {
   controllerRegistry.forEach((controller, handedness) => {
     if (controller.inputSource.hand) return;
@@ -459,11 +459,7 @@ function updateInstrumentPaletteFromControllers() {
     instrumentPaletteButtonHeld.set(handedness, isPressed);
 
     if (isPressed && !wasPressed) {
-      if (xButton || (!aButton && controller.inputSource.handedness === "left")) {
-        toggleControllerHandMenu("instruments", controller.inputSource.handedness);
-      } else {
-        summonInstrumentPanel();
-      }
+      summonInstrumentPanel();
     }
   });
 }
@@ -493,14 +489,12 @@ function setEraseMode(enabled: boolean) {
   }
   eraseMode = enabled;
   if (eraseModeToggle) eraseModeToggle.checked = enabled;
-  setEraseModeActive(enabled);
 }
 
 eraseModeToggle?.addEventListener("change", () => setEraseMode(!!eraseModeToggle?.checked));
 
 onDrillChartPadVisibilityChange((visible) => {
   if (drillChartPadToggle) drillChartPadToggle.checked = visible;
-  setDrillChartPadActive(visible);
 });
 drillChartPadToggle?.addEventListener("change", () => setDrillChartPadVisible(!!drillChartPadToggle?.checked));
 
@@ -743,7 +737,6 @@ function chooseInstrument(instrument: MarcherInstrument) {
   setSelectedInstrument(instrument);
   if (selectedRobot) setMarcherInstrument(selectedRobot, instrument);
   marcherInstrumentRadios.forEach((radio) => (radio.checked = radio.value === instrument));
-  setInstrumentMenuActive(instrument);
 }
 
 marcherInstrumentRadios.forEach((radio) => radio.addEventListener("change", () => {
@@ -868,7 +861,7 @@ const PALM_SWEEP_DOWN_DOT = 0.6;
 // Fingertips this many palm lengths from the wrist count as extended.
 const PALM_SWEEP_OPEN_RATIO = 1.6;
 
-// Left controller Y toggles the media watch; right controller B opens the drafting tools.
+// Y summons standalone settings; B opens precision drafting tools.
 function updateDraftingToolsFromControllers() {
   controllerRegistry.forEach((controller, handedness) => {
     if (controller.inputSource.hand) return;
@@ -881,7 +874,7 @@ function updateDraftingToolsFromControllers() {
 
     if (isPressed && !wasPressed) {
       if (yButton || (!bButton && controller.inputSource.handedness === "left")) {
-        toggleControllerHandMenu("media", controller.inputSource.handedness);
+        summonXRSettingsPanel();
       } else {
         executeDrawingToolAction({ action: 'drawingTool', tool: 'drafting' });
       }
@@ -889,9 +882,7 @@ function updateDraftingToolsFromControllers() {
   });
 }
 
-// Deflecting the media controller's thumbstick left/right scrubs the shared
-// timeline continuously — a small deadzone avoids drift from stick noise,
-// and the scrub rate is proportional to how far the stick is pushed.
+// Deadzone shared by held-object positioning and optional tracked-thumb jogging.
 const SCRUB_DEADZONE = 0.2;
 const GRAB_DEPTH_BASE_SPEED = 6;
 const GRAB_DEPTH_TELESCOPE_RATE = 2.5;
@@ -950,30 +941,20 @@ function getHandThumbJogAxis(deltaSeconds: number): number {
   return updateThumbJog(thumbJogState, curled && raised && notPinching, position, deltaSeconds);
 }
 
-function updateScrubFromControllers(deltaSeconds: number) {
-  if (!isHandMenuVisible() || floorCalibrationToggle?.checked) {
+function updateHandThumbJog(deltaSeconds: number) {
+  if (floorCalibrationToggle?.checked) {
     scrubRemainder = 0;
     resetThumbJog(thumbJogState);
     return;
   }
 
-  let axisValue = 0;
-  let hasMediaThumbstick = false;
-  const mediaHand = getMediaControllerHand();
-  controllerRegistry.forEach((controller) => {
-    if (controller.inputSource.handedness !== mediaHand) return;
-    const thumbstick = controller.motionController?.getComponentOfType("thumbstick");
-    if (!thumbstick) return;
-    hasMediaThumbstick = true;
-    if (marcherGrabs.get(mediaHand)?.source === "controller") return;
-    const x = thumbstick.axes.x ?? 0;
-    if (Math.abs(x) > Math.abs(axisValue)) axisValue = x;
-  });
-  if (hasMediaThumbstick || marcherGrabs.get(mediaHand)?.source === "controller") {
+  if ([...controllerRegistry.values()].some(controller => !controller.inputSource.hand) ||
+    marcherGrabs.has(getMediaControllerHand())) {
     resetThumbJog(thumbJogState);
-  } else {
-    axisValue = getHandThumbJogAxis(deltaSeconds);
+    scrubRemainder = 0;
+    return;
   }
+  const axisValue = getHandThumbJogAxis(deltaSeconds);
 
   if (Math.abs(axisValue) <= SCRUB_DEADZONE) {
     scrubRemainder = 0;
@@ -2404,7 +2385,7 @@ let tempoPointerDragging = false;
 // Which controller button holds each floating panel grab, so releasing that
 // button (grip or trigger) lets go.
 const padGrabButtons = new Map<string, "grip" | "trigger">();
-// True while a controller's trigger-down landed on the hand menu, so the rest
+// True while a controller's trigger-down landed on a panel control, so the rest
 // of the hold/release is treated as a menu tap instead of drawing a path.
 const menuInteractionHeld = new Map<string, boolean>();
 
@@ -2434,6 +2415,26 @@ function executeMenuAction(hit: NonNullable<ReturnType<typeof getHandMenuHit>>) 
       break;
     case "drillChartPad":
       summonDrillChartPad();
+      break;
+    case "recallPanels":
+      recallFloatingPanels();
+      break;
+    case "xrSettings":
+      summonXRSettingsPanel();
+      break;
+    case "xrSettingsHide":
+      setXRSettingsPanelVisible(false);
+      break;
+    case "xrSetting":
+      executeXRSetting(hit.setting);
+      break;
+    case "chartGhostMode":
+      setChartGhostModeEnabled(!isChartGhostModeEnabled());
+      redrawDrillChartPad();
+      break;
+    case "chartDraftingMode":
+      executeDrawingToolAction({ action: 'drawingTool', tool: isDraftingTableMode() ? 'tableExit' : 'table' });
+      redrawDrillChartPad();
       break;
     case "musicStandSummon":
       summonMusicStand();
@@ -2488,20 +2489,7 @@ function executeMenuAction(hit: NonNullable<ReturnType<typeof getHandMenuHit>>) 
     case "commitFormation":
       handInteraction.commitFormation();
       break;
-    case "formationLibrary":
-      setFormationLibraryOpen(true);
-      break;
-    case "formationLibraryBack":
-      setFormationLibraryPage("shapes");
-      break;
-    case "formationLibraryClose":
-      setFormationLibraryOpen(false);
-      break;
-    case "lettersLibrary":
-      setFormationLibraryPage("letters");
-      break;
     case "formationPreset":
-      setFormationLibraryOpen(false);
       createFormationPreset(hit.preset);
       break;
     case "formationGridSnap":
@@ -2520,7 +2508,6 @@ function executeMenuAction(hit: NonNullable<ReturnType<typeof getHandMenuHit>>) 
       transformEditorFormation({ x: 0, z: 0, rotation: 0, scale: hit.factor });
       break;
     case "formationLetter":
-      setFormationLibraryOpen(false);
       createLetterFormation(hit.letter);
       break;
     case "playPause":
@@ -2650,7 +2637,6 @@ export function setHandTracking(tracking: WebXRHandTracking | null) {
   resetThumbJog(thumbJogState);
   scrubRemainder = 0;
   handInteraction.setHandTracking(tracking);
-  setMenuHandTracking(tracking);
 }
 
 export function isHandMarcherInteraction(handedness: string, point: Vector3) {
@@ -2678,10 +2664,6 @@ function finishMarcherGrab(handedness: string, commit: boolean) {
 
 export function updateTabletopHands() {
   handInteraction.updateTabletopHands();
-  setFormationCommitAvailable(handInteraction.hasPendingFormation());
-  setFormationLibraryAnchorAvailable(
-    selectedRobot !== null || [...handInteraction.marcherGrabs.values()].some((grab) => !grab.robot.isDisposed())
-  );
 }
 
 function finishFingerPath(commit: boolean) {
@@ -2756,7 +2738,7 @@ export function updateRobotPathFromControllers() {
   updateInstrumentPaletteFromControllers();
   updateDraftingToolsFromControllers();
   updateAdjacentMarcherGestures();
-  updateScrubFromControllers(scene.getEngine().getDeltaTime() / 1000);
+  updateHandThumbJog(scene.getEngine().getDeltaTime() / 1000);
 
   // Formation connections only need to catch up every few frames, not every
   // single one, since they're just sliding to follow already-moving robots.
@@ -3428,6 +3410,7 @@ async function openMarchFromUrl(url: string, autoPlay = true): Promise<boolean> 
 }
 
 export function initInteraction() {
+  initChartPageGhostMode(pathRoot, getSelectableMarchers);
   initFieldImageProjector(pathRoot, showPlacementNotice);
   initMarcherPaint({
     getSelected: () => selectedRobot,
@@ -3585,6 +3568,23 @@ export function initInteraction() {
   // Desktop/browser testing has no VR trigger, so a plain mouse click is
   // wired to the same collision-marker preview and robot selection the VR
   // trigger dispatches to.
+  let panelPointer: number | null = null;
+  const releasePanelPointer = () => {
+    endFloatingPanelGrab("pointer");
+    const pointer = panelPointer;
+    panelPointer = null;
+    if (pointer !== null && canvas.hasPointerCapture(pointer)) canvas.releasePointerCapture(pointer);
+    canvas.style.cursor = "";
+  };
+  canvas.addEventListener("pointercancel", releasePanelPointer);
+  canvas.addEventListener("lostpointercapture", releasePanelPointer);
+  window.addEventListener("blur", releasePanelPointer);
+  scene.onDisposeObservable.addOnce(() => {
+    releasePanelPointer();
+    canvas.removeEventListener("pointercancel", releasePanelPointer);
+    canvas.removeEventListener("lostpointercapture", releasePanelPointer);
+    window.removeEventListener("blur", releasePanelPointer);
+  });
   scene.onPointerObservable.add((pointerInfo, eventState) => {
     if ("pointerType" in pointerInfo.event && pointerInfo.event.pointerType === "xr") return;
     // Dragging or wheeling over a floating panel moves it; skipping later
@@ -3593,7 +3593,7 @@ export function initInteraction() {
     if (isFloatingPanelGrabbed("pointer")) {
       if (pointerInfo.type === PointerEventTypes.POINTERMOVE) updateFloatingPanelPointerDrag(getPointerRay());
       if (pointerInfo.type === PointerEventTypes.POINTERUP) {
-        endFloatingPanelGrab("pointer");
+        releasePanelPointer();
         canvas.style.cursor = "grab";
       }
       eventState.skipNextObservers = true;
@@ -3620,6 +3620,10 @@ export function initInteraction() {
       const panelPick = pickFloatingPanel(getPointerRay());
       const buttonInFront = menuPick?.hit && (!panelPick?.hit || menuPick.distance <= panelPick.distance + 0.001);
       if (!buttonInFront && beginFloatingPanelPointerDrag(getPointerRay())) {
+        if ("pointerId" in pointerInfo.event && typeof pointerInfo.event.pointerId === "number") {
+          panelPointer = pointerInfo.event.pointerId;
+          canvas.setPointerCapture(panelPointer);
+        }
         canvas.style.cursor = "grabbing";
         eventState.skipNextObservers = true;
         return;
@@ -3653,11 +3657,9 @@ export function initInteraction() {
       return;
     }
     if (pointerInfo.type === PointerEventTypes.POINTERDOUBLETAP && !isMarcherPainting()) {
-      const pick = pointerInfo.pickInfo;
-      if (pick?.pickedMesh?.name.startsWith("musicStandButton-")) {
-        const hit = getHandMenuHit(pick);
-        if (hit) executeMenuAction(hit);
-      }
+      const pick = scene.pick(scene.pointerX, scene.pointerY, isMenuControl);
+      const hit = pick?.hit ? getHandMenuHit(pick) : null;
+      if (hit) executeMenuAction(hit);
       return;
     }
     if (pointerInfo.type !== PointerEventTypes.POINTERTAP &&

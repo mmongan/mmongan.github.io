@@ -7,7 +7,6 @@ import { scene } from '../scene/engine';
 import { camera as desktopCamera, setDesktopMarcherPOV } from './desktopCamera';
 import { MarcherPOVCamera } from './marcherPOVCamera';
 import { getMarcherEyePose } from '../robot/robot';
-import { setMarcherPOVMenuActive } from '../menu/handMenu';
 import { marcherPOVSelect, marcherPOVStatus, marcherPOVExitButton, marcherPOVModeButton } from '../ui/dom';
 
 const follower = new MarcherPOVCamera(getMarcherEyePose);
@@ -61,7 +60,6 @@ function publish(message: string) {
   marcherPOVModeButton?.setAttribute('aria-pressed', String(follower.active));
   if (marcherPOVExitButton) marcherPOVExitButton.hidden = !follower.active;
   if (marcherPOVStatus) marcherPOVStatus.textContent = message;
-  setMarcherPOVMenuActive(follower.active);
   refreshPaths();
 }
 

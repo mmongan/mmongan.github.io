@@ -29,6 +29,7 @@ export class FloatingPanel {
   private dragPlane: Plane | null = null;
   private dragOffset = new Vector3();
   private sliderDrag: { source: string; origin: Vector3; point: Vector3 } | null = null;
+  private viewerPlacement: ViewerPlacement | null = null;
   userPlaced = false;
   get canGrab() { return true; }
 
@@ -50,10 +51,18 @@ export class FloatingPanel {
 
   near(point: Vector3, tolerance = 0.03) {
     if (!this.canGrab || !this.root.isEnabled()) return false;
-    const local = Vector3.TransformCoordinates(point, this.surface.computeWorldMatrix(true).clone().invert());
-    return Math.abs(local.x) <= this.halfSize.x + tolerance &&
-      Math.abs(local.y) <= this.halfSize.y + tolerance &&
-      Math.abs(local.z) <= this.halfSize.z + tolerance;
+    const inverse = this.surface.computeWorldMatrix(true).clone().invert();
+    const local = Vector3.TransformCoordinates(point, inverse);
+    const margin = this.localMargin(inverse, tolerance);
+    return Math.abs(local.x) <= this.halfSize.x + margin.x &&
+      Math.abs(local.y) <= this.halfSize.y + margin.y &&
+      Math.abs(local.z) <= this.halfSize.z + margin.z;
+  }
+
+  private localMargin(inverse: Matrix, distance: number) {
+    const m = inverse.m;
+    return new Vector3(Math.hypot(m[0], m[4], m[8]),
+      Math.hypot(m[1], m[5], m[9]), Math.hypot(m[2], m[6], m[10])).scale(distance);
   }
 
   pick(ray: Ray) {
@@ -65,17 +74,31 @@ export class FloatingPanel {
 
   buttonNear(point: Vector3): HandMenuHit | null {
     if (!this.root.isEnabled()) return null;
+    let nearest: HandMenuHit | null = null;
+    let nearestDistance = Infinity;
     for (const [mesh, action] of this.buttons) {
-      const local = Vector3.TransformCoordinates(point, mesh.computeWorldMatrix(true).clone().invert());
+      if (!mesh.isEnabled() || !mesh.isVisible) continue;
+      const inverse = mesh.computeWorldMatrix(true).clone().invert();
+      const local = Vector3.TransformCoordinates(point, inverse);
+      const margin = this.localMargin(inverse, 0.01);
+      const depth = this.localMargin(inverse, 0.04).z;
       const size = mesh.getBoundingInfo().boundingBox.extendSize;
-      if (Math.abs(local.x) <= size.x + 0.01 && Math.abs(local.y) <= size.y + 0.01 && Math.abs(local.z) <= 0.04) return action;
+      if (Math.abs(local.x) <= size.x + margin.x && Math.abs(local.y) <= size.y + margin.y &&
+        Math.abs(local.z) <= size.z + depth) {
+        const distance = Vector3.DistanceSquared(point, mesh.getBoundingInfo().boundingBox.centerWorld);
+        if (distance < nearestDistance) {
+          nearest = action;
+          nearestDistance = distance;
+        }
+      }
     }
-    return null;
+    return nearest;
   }
 
   begin(source: string, world: Matrix) {
-    if (!this.root.isEnabled()) return;
+    if (!this.canGrab || !this.root.isEnabled()) return;
     if (this.grabWorlds.has(source)) return;
+    this.root.computeWorldMatrix(true);
     for (const panel of panels) {
       if (panel !== this) panel.end(source);
     }
@@ -87,7 +110,7 @@ export class FloatingPanel {
       this.stretch = {
         distance: Math.max(0.03, Vector3.Distance(points[0], points[1])),
         scale: this.resize.getScale(),
-        offset: this.root.position.subtract(midpoint),
+        offset: this.root.getAbsolutePosition().subtract(midpoint),
       };
       return;
     }
@@ -110,12 +133,14 @@ export class FloatingPanel {
       const ratio = Vector3.Distance(points[0], points[1]) / this.stretch.distance;
       this.resize.setScale(this.stretch.scale * ratio);
       const actualRatio = this.resize.getScale() / this.stretch.scale;
-      this.root.position.copyFrom(points[0].add(points[1]).scale(0.5)
+      this.root.setAbsolutePosition(points[0].add(points[1]).scale(0.5)
         .add(this.stretch.offset.scale(actualRatio)));
       return;
     }
     if (this.source !== source) return;
-    this.offset.multiply(world).decompose(new Vector3(), this.root.rotationQuaternion!, this.root.position);
+    let pose = this.offset.multiply(world);
+    if (this.root.parent) pose = pose.multiply(this.root.parent.computeWorldMatrix(true).clone().invert());
+    pose.decompose(new Vector3(), this.root.rotationQuaternion!, this.root.position);
   }
 
   end(source: string) {
@@ -158,7 +183,17 @@ export class FloatingPanel {
     return true;
   }
 
-  placeForViewer(placement: ViewerPlacement) {
+  showForViewer(placement: ViewerPlacement) {
+    this.viewerPlacement = placement;
+    return this.userPlaced || this.placeForViewer(placement);
+  }
+
+  recall() {
+    if (this.viewerPlacement) this.placeForViewer(this.viewerPlacement);
+  }
+
+  placeForViewer(placement: ViewerPlacement, recallable = true) {
+    if (recallable) this.viewerPlacement = placement;
     const camera = scene.activeCamera;
     if (!camera) return false;
     camera.getViewMatrix(true);
@@ -172,6 +207,7 @@ export class FloatingPanel {
     right.normalize();
     const pose = inXR ? placement.xr : placement.desktop;
     this.release();
+    this.root.setParent(null);
     this.root.position.copyFrom(camera.globalPosition.add(forward.scale(pose.distance))
       .add(right.scale(!inXR ? placement.desktop.side ?? placement.side : placement.side)));
     this.root.position.y += pose.height;
@@ -193,9 +229,10 @@ export class FloatingPanel {
     if (!pick?.pickedPoint || this.grabbed()) return false;
     if (!this.beginSlider('pointer', Matrix.Identity(), pick.pickedMesh, pick.pickedPoint)) {
       this.begin('pointer', Matrix.Identity());
+      this.root.setParent(null);
     }
     this.dragPlane = Plane.FromPositionAndNormal(pick.pickedPoint, ray.direction.scale(-1));
-    this.root.position.subtractToRef(pick.pickedPoint, this.dragOffset);
+    this.root.getAbsolutePosition().subtractToRef(pick.pickedPoint, this.dragOffset);
     return true;
   }
 
@@ -207,7 +244,7 @@ export class FloatingPanel {
       this.transparencySlider.setFromWorld(ray.origin.add(ray.direction.scale(distance)));
       return;
     }
-    ray.origin.add(ray.direction.scale(distance)).addToRef(this.dragOffset, this.root.position);
+    this.root.setAbsolutePosition(ray.origin.add(ray.direction.scale(distance)).add(this.dragOffset));
     this.face(ray.origin);
   }
 
@@ -223,11 +260,12 @@ export class FloatingPanel {
 
   nudge(ray: Ray, delta: number) {
     if (!this.pick(ray) || this.grabbed()) return false;
-    const offset = this.root.position.subtract(ray.origin);
+    const offset = this.root.getAbsolutePosition().subtract(ray.origin);
     const distance = offset.length();
     if (distance < 1e-6) return false;
     const next = Math.min(3, Math.max(0.3, distance * Math.exp(delta * 0.001)));
-    ray.origin.addToRef(offset.scale(next / distance), this.root.position);
+    this.root.setParent(null);
+    this.root.position.copyFrom(ray.origin.add(offset.scale(next / distance)));
     this.face(ray.origin);
     this.userPlaced = true;
     return true;
@@ -242,13 +280,18 @@ export class DetachableFloatingPanel extends FloatingPanel {
   }
 }
 
+export function recallFloatingPanels() {
+  panels.forEach(panel => panel.recall());
+}
+
 export function isFloatingPanelMesh(mesh: AbstractMesh) {
   return [...panels].some(panel => panel.canGrab && panel.root.isEnabled() && panel.meshes.has(mesh));
 }
 
 export function getFloatingPanelNear(point: Vector3, tolerance = 0.03) {
   return [...panels].filter(panel => panel.near(point, tolerance))
-    .sort((a, b) => Vector3.DistanceSquared(point, a.root.position) - Vector3.DistanceSquared(point, b.root.position))[0];
+    .sort((a, b) => Vector3.DistanceSquared(point, a.root.getAbsolutePosition()) -
+      Vector3.DistanceSquared(point, b.root.getAbsolutePosition()))[0];
 }
 
 export function pickFloatingPanel(ray: Ray) {
@@ -268,7 +311,7 @@ export function getFloatingPanelButtonNearPoint(point: Vector3): HandMenuHit | n
 
 export function beginFloatingPanelGrab(source: string, world: Matrix, mesh?: AbstractMesh | null, point?: Vector3,
   tolerance = 0.03, moveOnly = false) {
-  const panel = mesh ? [...panels].find(panel => panel.canGrab && panel.meshes.has(mesh))
+  const panel = mesh ? [...panels].find(panel => panel.canGrab && panel.root.isEnabled() && panel.meshes.has(mesh))
     : point ? getFloatingPanelNear(point, tolerance) : undefined;
   if (panel && (moveOnly || !panel.beginSlider(source, world, mesh, point))) panel.begin(source, world);
   return !!panel;

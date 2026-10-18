@@ -74,8 +74,8 @@ export function createDraftingTablePanel() {
     show() {
       root.setEnabled(true);
       const xr = scene.activeCamera?.getClassName() === 'WebXRCamera';
-      root.scaling.setAll(xr ? 0.5 : 1);
-      panel.placeForViewer({ desktop: { distance: 1.6, height: 0, side: -1.45 },
+      if (!panel.userPlaced) root.scaling.setAll(xr ? 0.5 : 1);
+      panel.showForViewer({ desktop: { distance: 1.6, height: 0, side: -1.45 },
         xr: { distance: 0.65, height: -0.1 }, side: xr ? -0.6 : -1.45, uprightInXR: true });
     },
     hide() { panel.release(); root.setEnabled(false); },

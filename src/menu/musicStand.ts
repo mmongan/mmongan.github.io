@@ -345,7 +345,7 @@ export function initMusicStand() {
   updateVisibility = visible => {
     enabled = visible;
     if (!enabled) interaction.release();
-    else if (!root.isEnabled()) place();
+    else if (!root.isEnabled() && !interaction.userPlaced) place();
     root.setEnabled(enabled && placed);
     setMidiScoreStandVisible(enabled);
   };
@@ -359,7 +359,7 @@ export function initMusicStand() {
     }
   });
   const frameObserver = scene.onBeforeRenderObservable.add(() => {
-    if (enabled && (!placed || placedCamera !== scene.activeCamera)) place();
+    if (enabled && (!placed || (!interaction.userPlaced && placedCamera !== scene.activeCamera))) place();
   });
   scene.onDisposeObservable.addOnce(() => {
     generation++;

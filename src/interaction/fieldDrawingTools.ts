@@ -170,7 +170,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
   function placeHeldTool(panel: DetachableFloatingPanel, root: TransformNode) {
     const factor = fieldToolScale();
     panel.placeForViewer({ desktop: { distance: 0.6, height: -0.08, side: 0.3 },
-      xr: { distance: 0.35 * factor, height: -0.15 * Math.min(1, factor) }, side: 0.25 * factor, uprightInXR: true });
+      xr: { distance: 0.35 * factor, height: -0.15 * Math.min(1, factor) }, side: 0.25 * factor, uprightInXR: true }, false);
     if (factor <= 1) return;
     const surfaceY = Vector3.TransformCoordinates(new Vector3(0, FIELD_SURFACE_Y, 0), deps.root.computeWorldMatrix(true)).y;
     root.position.y = Math.max(root.position.y, surfaceY + 0.16 * root.scaling.y);
@@ -387,9 +387,9 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
         if (root !== active) { panel.release(); root.setEnabled(false); }
       }
     }
-    active.scaling.setAll(xrTable ? 0.65 : 1);
+    if (!activePanel.userPlaced) active.scaling.setAll(xrTable ? 0.65 : 1);
     active.setEnabled(true);
-    activePanel.placeForViewer({ desktop: { distance, height: 0, side: 0 },
+    activePanel.showForViewer({ desktop: { distance, height: 0, side: 0 },
       xr: { distance: xrTable ? 0.65 : xrDistance, height: -0.12 },
       side: xrTable ? 0.4 : side, uprightInXR: true });
   }
