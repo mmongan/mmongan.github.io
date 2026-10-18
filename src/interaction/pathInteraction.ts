@@ -2778,7 +2778,7 @@ export function updateRobotPathFromControllers() {
       }
       return;
     }
-    if (!marcherGrab && gripPressed && !wasGripPressed && !menuInteractionHeld.get(handedness)) {
+    if (!marcherGrab && gripPressed && !wasGripPressed) {
       const gripNode = getControllerPosition(controller);
       // Gripping an instrument button pulls a new marcher of that instrument into the grab.
       const gripPoint = gripNode.getAbsolutePosition();

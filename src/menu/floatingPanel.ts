@@ -3,6 +3,9 @@ import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector.p
 import { Plane } from '@babylonjs/core/Maths/math.plane';
 import type { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.pure';
 import type { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
+import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
+import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
+import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
 import { scene } from '../scene/engine';
 import type { HandMenuHit } from './handMenu';
 import type { PanelTransparencySlider } from './panelTransparencySlider';
@@ -43,6 +46,30 @@ export class FloatingPanel {
     private transparencySlider?: PanelTransparencySlider,
   ) {
     root.rotationQuaternion ??= Quaternion.FromEulerVector(root.rotation);
+    const shortSide = Math.min(halfSize.x, halfSize.y);
+    if (meshes.size && shortSide >= 0.1 && halfSize.z <= shortSide * 0.16) {
+      const rim = Math.max(0.018, shortSide * 0.06);
+      const depth = Math.max(0.055, shortSide * 0.16, halfSize.z * 2);
+      const material = new StandardMaterial(`${root.name}GrabRimMaterial`, scene);
+      material.diffuseColor = new Color3(0.12, 0.32, 0.44);
+      material.emissiveColor = new Color3(0.03, 0.1, 0.14);
+      material.specularColor = new Color3(0.35, 0.45, 0.5);
+      const rails = [
+        { x: -halfSize.x - rim / 2, y: 0, width: rim, height: halfSize.y * 2 + rim * 2 },
+        { x: halfSize.x + rim / 2, y: 0, width: rim, height: halfSize.y * 2 + rim * 2 },
+        { x: 0, y: -halfSize.y - rim / 2, width: halfSize.x * 2, height: rim },
+        { x: 0, y: halfSize.y + rim / 2, width: halfSize.x * 2, height: rim },
+      ];
+      rails.forEach(({ x, y, width, height }, index) => {
+        const rail = MeshBuilder.CreateBox(`${root.name}GrabRim-${index}`, { width, height, depth }, scene);
+        rail.parent = surface;
+        rail.position.set(x, y, halfSize.z / 2);
+        rail.material = material;
+        meshes.add(rail);
+      });
+      this.halfSize = new Vector3(halfSize.x + rim, halfSize.y + rim, depth / 2 + halfSize.z / 2);
+      root.onDisposeObservable.addOnce(() => material.dispose());
+    }
     panels.add(this);
     root.onDisposeObservable.addOnce(() => {
       panels.delete(this);

@@ -15,7 +15,7 @@ import { Color3 } from '@babylonjs/core/Maths/math.color.js';
 
 const engine = new NullEngine();
 const scene = new Scene(engine);
-const context = vm.createContext({ scene, Matrix, Quaternion, Vector3, Plane });
+const context = vm.createContext({ scene, Matrix, Quaternion, Vector3, Plane, MeshBuilder, StandardMaterial, Color3 });
 const source = readFileSync(new URL('../src/menu/floatingPanel.ts', import.meta.url), 'utf8');
 vm.runInContext(`${stripTypeScriptTypes(source, { mode: 'transform' })
   .replace(/^import .*?;\r?$/gm, '').replace(/export /g, '')}
@@ -88,12 +88,12 @@ try {
   const scaled = create('scaled', 4);
   scaled.root.scaling.setAll(0.25);
   scaled.root.computeWorldMatrix(true);
-  const edge = Vector3.TransformCoordinates(new Vector3(0.35, 0, 0), scaled.desk.computeWorldMatrix(true));
+  const edge = Vector3.TransformCoordinates(new Vector3(0.368, 0, 0), scaled.desk.computeWorldMatrix(true));
   assert.ok(scaled.panel.near(edge.add(new Vector3(0.025, 0, 0))), 'Small panels retain a 3 cm world contact margin');
   assert.equal(scaled.panel.near(edge.add(new Vector3(0.035, 0, 0))), false);
   scaled.root.scaling.setAll(4);
   scaled.root.computeWorldMatrix(true);
-  const largeEdge = Vector3.TransformCoordinates(new Vector3(0.35, 0, 0), scaled.desk.computeWorldMatrix(true));
+  const largeEdge = Vector3.TransformCoordinates(new Vector3(0.368, 0, 0), scaled.desk.computeWorldMatrix(true));
   assert.equal(scaled.panel.near(largeEdge.add(new Vector3(0.04, 0, 0))), false,
     'Large panels do not inflate contact tolerance');
   scaled.root.setEnabled(false);
@@ -225,6 +225,23 @@ try {
   scene.onBeforeCameraRenderObservable.notifyObservers(camera);
   assert.ok(score.root.position.equals(heldPose), 'Released panel does not chase viewer translation');
   score.root.setEnabled(false);
+  const rimPanel = create('rimCoverage', 8);
+  const rails = rimPanel.desk.getChildMeshes().filter(mesh => mesh.name.includes('GrabRim-'));
+  assert.equal(rails.length, 4, 'Rectangular panels have four solid grab rails');
+  for (const rail of rails) {
+    const size = rail.getBoundingInfo().boundingBox.extendSize.scale(2);
+    assert.ok(size.z >= .055 && Math.min(size.x, size.y) >= .018 - 1e-6,
+      'Rails provide at least 5.5 cm depth and 1.8 cm edge width');
+    assert.ok(rimPanel.panel.meshes.has(rail));
+    const world = rail.computeWorldMatrix(true);
+    assert.ok(rimPanel.panel.near(world.getTranslation()), 'Contact bounds include the physical rail');
+    assert.ok(api.beginFloatingPanelGrab('right', Matrix.Identity(), rail, undefined, .03, true));
+    api.endFloatingPanelGrab('right');
+  }
+  const rimMaterial = rails[0].material;
+  rimPanel.root.dispose();
+  assert.ok(rails.every(rail => rail.isDisposed()) && !scene.materials.includes(rimMaterial),
+    'Disposing a panel releases its rails and shared rim material');
   const hiddenPose = score.root.position.clone();
   camera.position.x = 10;
   scene.onBeforeCameraRenderObservable.notifyObservers(camera);

@@ -7,6 +7,15 @@ import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure.js';
 const source = readFileSync(new URL('../src/interaction/pathInteraction.ts', import.meta.url), 'utf8');
 const handSource = readFileSync(new URL('../src/interaction/handInteraction.ts', import.meta.url), 'utf8');
 const transform = text => stripTypeScriptTypes(text, { mode: 'transform' });
+const gripSource = source.slice(source.indexOf('function isGripPressed('), source.indexOf('\nfunction getControllerPosition('));
+const gripContext = vm.createContext({});
+vm.runInContext(transform(gripSource), gripContext);
+assert.equal(gripContext.isGripPressed({ motionController: { getComponentOfType: () => ({ pressed: true }) },
+  inputSource: {} }), true, 'Motion-controller squeeze activates grip');
+assert.equal(gripContext.isGripPressed({ inputSource: { gamepad: { buttons: [{ pressed: false }, { pressed: true }] } } }),
+  true, 'Raw gamepad grip works without a motion-controller profile');
+assert.equal(gripContext.isGripPressed({ inputSource: { gamepad: { buttons: [{ pressed: true }, { pressed: false }] } } }),
+  false, 'Trigger alone is not a grip');
 const nearStart = handSource.indexOf('  function findMarcherNearHand(');
 const nearEnd = handSource.indexOf('  function getFormationFieldPoint(', nearStart);
 const robot = {};
@@ -147,6 +156,36 @@ const axesStart = source.indexOf('function getThumbstickAxes(');
 const axesSource = source.slice(axesStart);
 const axesEnd = axesSource.match(/\r?\n}\r?\n/);
 vm.runInContext(transform(axesSource.slice(0, axesEnd.index + axesEnd[0].length)), context);
+let panelHeld = false, panelUpdates = 0, panelEnds = 0;
+let panelNear = true;
+const panelMesh = {};
+Object.assign(context, {
+  isFloatingPanelGrabbed: () => panelHeld,
+  getFloatingPanelNear: () => panelNear ? {} : null,
+  pickFloatingPanel: () => panelNear ? null : { hit: true, pickedMesh: panelMesh, pickedPoint: gripPoint },
+  beginFloatingPanelGrab(...args) {
+    assert.equal(args[5], true, 'Grip moves panels instead of activating sliders');
+    panelHeld = true;
+  },
+  updateFloatingPanelGrab() { panelUpdates++; },
+  endFloatingPanelGrab() { panelHeld = false; panelEnds++; },
+  telescopeFloatingPanelGrab() {},
+  PANEL_GRAB_DEPTH_SPEED: 1,
+});
+context.menuInteractionHeld.set('left', true);
+context.update();
+assert.ok(panelHeld, 'Grip starts a panel grab even after a menu trigger action');
+assert.equal(context.padGrabButtons.get('left'), 'grip');
+context.update(); assert.equal(panelUpdates, 1, 'Holding grip updates the panel');
+grip = false; context.update(); assert.equal(panelEnds, 1, 'Releasing grip drops the panel');
+panelNear = false; grip = true; context.update();
+assert.ok(panelHeld, 'Pointing and gripping also grabs the panel');
+grip = false; context.update();
+context.menuInteractionHeld.clear();
+Object.assign(context, {
+  isFloatingPanelGrabbed: () => false, getFloatingPanelNear: () => null, pickFloatingPanel: () => null,
+});
+grip = true; context.gripHeld.clear();
 nearPaletteHit = { action: 'createMarcher', instrument: 'trumpet' };
 context.update();
 assert.equal(begun, undefined, 'Gripping an instrument button does not grab a nearby marcher');
