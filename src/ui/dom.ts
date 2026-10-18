@@ -1,5 +1,8 @@
 // Shared DOM references for the canvas and application controls.
 export const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
+export const enterVRButton = document.getElementById("enterVRButton") as HTMLButtonElement | null;
+export const enterARButton = document.getElementById("enterARButton") as HTMLButtonElement | null;
+export const xrEntryStatus = document.getElementById("xrEntryStatus") as HTMLOutputElement | null;
 export const ghostBandToggle = document.getElementById("ghostBandToggle") as HTMLInputElement | null;
 export const ghostBandTimeline = document.getElementById("ghostBandTimeline") as HTMLInputElement | null;
 export const ghostBandStatus = document.getElementById("ghostBandStatus") as HTMLOutputElement | null;

@@ -7,11 +7,14 @@ import { Scene } from '@babylonjs/core/scene.js';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.js';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 import { Ray } from '@babylonjs/core/Culling/ray.js';
+import { Observable } from '@babylonjs/core/Misc/observable.js';
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
 const engine = new NullEngine(), scene = new Scene(engine);
-const context = vm.createContext({ scene, Vector3, Ray });
+const context = vm.createContext({ scene, Vector3, Ray, Observable });
 try {
+  vm.runInContext(stripTypeScriptTypes(read('../src/interaction/editingMode.ts'), { mode: 'transform' })
+    .replace(/^import .*?;\r?$/gm, '').replace(/export /g, ''), context);
   const source = read('../src/menu/handMenu.ts');
   vm.runInContext(stripTypeScriptTypes(source, { mode: 'transform' })
     .replace(/^import .*?;\r?$/gm, '').replace(/export /g, ''), context);

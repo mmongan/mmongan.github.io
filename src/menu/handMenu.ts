@@ -4,6 +4,7 @@ import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
 import type { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.pure';
 import { scene } from '../scene/engine';
 import type { MarcherInstrument } from '../robot/robot';
+import { isMenuActionAvailable, onEditingModeChangedObservable } from '../interaction/editingMode';
 
 export type FormationLetter =
   | "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" | "K" | "L" | "M"
@@ -41,7 +42,13 @@ const buttonActions = new Map<AbstractMesh, HandMenuHit>();
 
 export function registerMenuButton(mesh: AbstractMesh, action: HandMenuHit) {
   buttonActions.set(mesh, action);
-  mesh.onDisposeObservable.addOnce(() => buttonActions.delete(mesh));
+  const updateAvailability = () => { mesh.visibility = isMenuActionAvailable(action) ? 1 : 0.25; };
+  updateAvailability();
+  const observer = onEditingModeChangedObservable.add(updateAvailability);
+  mesh.onDisposeObservable.addOnce(() => {
+    buttonActions.delete(mesh);
+    onEditingModeChangedObservable.remove(observer);
+  });
 }
 
 export function isMenuControl(mesh: AbstractMesh) {

@@ -146,31 +146,10 @@ assert.equal(audio.state, 'running', 'A later trusted interaction recovers after
 assert.ok(stopped > 0 && resets > 0);
 assert.ok(!source.includes('midiStartButton'), 'Music must not require a separate start button');
 const sceneSource = readFileSync(new URL('../src/scene/index.ts', import.meta.url), 'utf8');
-const startupSource = sceneSource.match(/const startupPlaybackObserver = scene\.onBeforeRenderObservable\.add\(\(\) => \{[\s\S]*?\n\}\);/)[0];
-let startupTick;
-let ready = false;
-let lastBeat = 0;
-let starts = 0;
-let removedStartup = false;
-const startupContext = vm.createContext({
-  scene: { onBeforeRenderObservable: {
-    add(callback) { startupTick = callback; return 1; },
-    remove() { removedStartup = true; },
-  } },
-  getDrillTransportState: () => ({ lastBeat, playing: false }),
-  isMidiPlaybackReady: () => ready,
-  playAll: () => { starts++; },
-});
-vm.runInContext(startupSource, startupContext);
-startupTick();
-assert.equal(starts, 0);
-lastBeat = 256;
-startupTick();
-assert.equal(starts, 0, 'Drill must wait for loaded instruments and audio permission');
-ready = true;
-startupTick();
-assert.equal(starts, 1, 'Ready music and drill start together from the opening count');
-assert.ok(removedStartup, 'Automatic startup runs only once');
+assert.doesNotMatch(sceneSource, /\bplayAll\b|\bstartupPlaybackObserver\b/,
+  'Application startup never starts music or drill playback');
+assert.doesNotMatch(setupSource + enableSource, /\bplayAll\b|\btoggleAllPlayback\b/,
+  'Audio permission and XR connection must not start playback');
 const readinessSource = source.slice(source.indexOf('export function isMidiPlaybackReady()'), source.indexOf('function updatePlaybackHint('));
 const readiness = vm.createContext({ audioEnabled: true, midiLoading: true, timeline: null, context: null, synth: null });
 vm.runInContext(stripTypeScriptTypes(readinessSource).replace(/export /g, ''), readiness);
@@ -204,7 +183,7 @@ hintContext.status('Sampled General MIDI ready.');
 assert.equal(hintContext.midiPlaybackHint.hidden, true);
 hintContext.context.state = 'suspended';
 hintContext.status('Waiting for audio.');
-assert.match(hintContext.midiPlaybackHint.textContent, /Interact with the field/);
+assert.match(hintContext.midiPlaybackHint.textContent, /Press Play/);
 assert.equal(hintContext.midiPlaybackHint.hidden, false);
 let disposed = 0;
 const disposalContext = vm.createContext({

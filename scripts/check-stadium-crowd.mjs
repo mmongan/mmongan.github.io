@@ -1,0 +1,110 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { stripTypeScriptTypes } from 'node:module';
+import vm from 'node:vm';
+import { NullEngine } from '@babylonjs/core/Engines/nullEngine.js';
+import { Scene } from '@babylonjs/core/scene.js';
+import { FreeCamera } from '@babylonjs/core/Cameras/freeCamera.js';
+import { Mesh } from '@babylonjs/core/Meshes/mesh.js';
+import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.js';
+import { TransformNode } from '@babylonjs/core/Meshes/transformNode.js';
+import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
+import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector.js';
+import { Plane } from '@babylonjs/core/Maths/math.plane.js';
+import { Color3 } from '@babylonjs/core/Maths/math.color.js';
+import { Ray } from '@babylonjs/core/Culling/ray.js';
+import { Observable } from '@babylonjs/core/Misc/observable.js';
+
+const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
+const compile = text => stripTypeScriptTypes(text, { mode: 'transform' })
+  .replace(/^import[\s\S]*?;\r?$/gm, '').replace(/export /g, '');
+const engine = new NullEngine(), scene = new Scene(engine);
+let playing = false;
+const textures = [];
+const transport = new Observable();
+const context = vm.createContext({
+  scene, Mesh, MeshBuilder, TransformNode, StandardMaterial, Matrix, Quaternion, Vector3, Plane, Color3, Ray, Observable,
+  Texture: { TRILINEAR_SAMPLINGMODE: 3 },
+  document: { createElement: () => {
+    const ctx = { labels: [], fillText(label) { this.labels.push(label); } };
+    return { getContext: () => ctx };
+  } },
+  DynamicTexture: class {
+    constructor(name, canvas) { this.name = name; this.ctx = canvas.getContext('2d'); textures.push(this); }
+    update() { this.updates = (this.updates ?? 0) + 1; }
+    dispose() {}
+  },
+  drawPanelButton() {},
+  getDrillTransportState: () => ({ playing }),
+  onDrillTransportChangedObservable: transport,
+});
+try {
+  scene.activeCamera = new FreeCamera('viewer', Vector3.Zero(), scene);
+  for (const file of ['interaction/editingMode', 'menu/handMenu', 'menu/floatingPanel',
+    'field/constants', 'field/meshMerging', 'field/stadiumCrowd', 'field/stands']) {
+    vm.runInContext(compile(read(`../src/${file}.ts`)), context);
+  }
+  const { updateStands } = context.createStands();
+  const faces = () => scene.meshes.filter(mesh => mesh.name.startsWith('stadiumMediaSignFace-'));
+  const crowd = () => scene.meshes.filter(mesh => mesh.name.startsWith('stadiumCrowd_'));
+  let previousFace;
+  const counts = [];
+  for (const level of ['highschool', 'college', 'nfl', 'highschool']) {
+    updateStands(level);
+    if (previousFace) {
+      assert.ok(previousFace.isDisposed(), 'Changing stadium level removes old signs');
+      assert.equal(context.getHandMenuHit({ pickedMesh: previousFace }), null, 'Rebuild unregisters old actions');
+    }
+    assert.equal(faces().length, 30, 'Both sidelines have five media signs and ten XR panel signs');
+    for (const side of [-1, 1]) {
+      const ordered = ['rewind', 'stepBack', 'playPause', 'stepForward', 'fastForward']
+        .map(action => scene.getMeshByName(`stadiumMediaSignFace-${side}-${action}`));
+      const screenRightPositions = ordered.map(face => {
+        face.computeWorldMatrix(true);
+        return -side * face.getAbsolutePosition().z;
+      });
+      assert.ok(screenRightPositions.every((position, index) => index === 0 || position > screenRightPositions[index - 1]),
+        'Both sidelines read Rewind to Fast-forward from left to right when viewed from the field');
+    }
+    assert.ok(crowd().length > 0 && crowd().length <= 10, 'Static crowd uses at most ten material batches');
+    assert.ok(crowd().every(mesh => !mesh.isPickable), 'Spectators do not steal control or field picks');
+    counts.push(crowd().reduce((total, mesh) => total + mesh.getTotalVertices(), 0));
+    assert.ok(scene.meshes.length < 260, 'Merged crowd keeps a bounded mesh count');
+    for (const face of faces()) {
+      const immersive = face.name.includes('-panel-');
+      assert.equal(face.isEnabled(), !immersive, 'Panel-launch signs are hidden outside immersive sessions');
+    }
+    context.setDrillEditingEnabled(true);
+    for (const face of faces()) {
+      assert.equal(face.isEnabled(), true, 'All sign controls become visible in VR/AR');
+      face.computeWorldMatrix(true);
+      const normal = Vector3.TransformNormal(new Vector3(0, 0, -1), face.getWorldMatrix()).normalize();
+      const center = face.getAbsolutePosition();
+      assert.ok(normal.x * center.x < 0, 'Readable face points toward the field on both sidelines');
+      const ray = new Ray(center.add(normal.scale(2)), normal.negate(), 5);
+      const pick = context.pickMenuControl(ray);
+      assert.ok(pick?.hit, `Sign is clickable: ${face.name}`);
+      assert.deepEqual(context.getHandMenuHit(pick), context.getHandMenuHit({ pickedMesh: face }),
+        'Sign face and backing share the registered action');
+    }
+    context.setDrillEditingEnabled(false);
+    assert.ok(faces().filter(face => face.name.includes('-panel-')).every(face => !face.isEnabled()));
+    previousFace = faces()[0];
+  }
+  assert.ok(counts[1] > counts[0] && counts[2] > counts[1], 'College and NFL stands have larger crowds and upper decks');
+  assert.equal(counts[3], counts[0], 'Stadium rebuilds are deterministic');
+  const playTexture = textures[2];
+  const initialUpdates = playTexture.updates;
+  playing = true; transport.notifyObservers({ playing });
+  assert.equal(playTexture.ctx.labels.at(-1), 'PAUSE', 'Play sign follows shared transport');
+  transport.notifyObservers({ playing });
+  assert.equal(playTexture.updates, initialUpdates + 1, 'Steady playback does not redraw the texture every frame');
+  playing = false; transport.notifyObservers({ playing });
+  assert.equal(playTexture.ctx.labels.at(-1), 'PLAY');
+  console.log('Stadium crowd checks passed: tier population, ten static batches, 30 clickable signs, field-facing text, XR-only panel launchers, live Play/Pause, deterministic rebuild, and action cleanup.');
+} finally {
+  scene.dispose();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(transport.observers.length, 0, 'Disposal removes the sign transport observer');
+  engine.dispose();
+}

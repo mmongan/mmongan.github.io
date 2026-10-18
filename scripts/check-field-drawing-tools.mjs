@@ -754,11 +754,12 @@ try {
   gridInterval.value = '1';
   draftSpacingInput.value = '1.25'; draftAngleInput.value = '90';
   const modePose = root.computeWorldMatrix(true).clone();
+  testARScale = 1;
   act('table');
   assert.equal(context.isDraftingTableMode(), true);
   assert.equal(gridToggle.checked, true, 'Drafting mode enables the existing grid');
   assert.equal(scene.getTransformNodeByName('draftingTableWorkspace').isEnabled(), true);
-  assert.equal(testARScale, 1 / 120, 'Drafting mode requests tabletop scale');
+  assert.equal(testARScale, 1, 'Desktop drafting keeps full 1:1 scale');
   assert.ok(root.computeWorldMatrix(true).equals(modePose), 'Stubbed AR pose helpers leave the isolated guide root unchanged');
   act('drafting');
   assert.equal(scene.getTransformNodeByName('drawingToolTray').isEnabled(), false, 'Only one tool category is open');

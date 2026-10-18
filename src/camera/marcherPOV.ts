@@ -15,7 +15,6 @@ let getMarchers: () => TransformNode[] = () => [];
 let selectMarcher: (robot: TransformNode | null, revealPaths?: boolean) => void = () => {};
 let availableVR: () => boolean = () => false;
 let listSignature = '';
-let startupPOVPending = true;
 let refreshPaths: () => void = () => {};
 
 export function isMarcherPOVActive() { return follower.active; }
@@ -29,7 +28,6 @@ export function getMarcherPOVLabel() {
 }
 
 export function setMarcherPOVEnabled(enabled: boolean) {
-  startupPOVPending = false;
   if (!enabled) {
     follower.stop();
     setDesktopMarcherPOV(false);
@@ -74,10 +72,6 @@ function updateFollower() {
 
 function refreshMarcherList() {
   const marchers = getMarchers().filter(robot => !robot.isDisposed() && robot.isEnabled());
-  if (startupPOVPending && marchers.length > 0) {
-    selectMarcher(marchers[0], false);
-    setMarcherPOVEnabled(true);
-  }
   const signature = JSON.stringify(marchers.map(robot => [robot.uniqueId, getObjectName(robot)]));
   if (marcherPOVSelect && signature !== listSignature) {
     listSignature = signature;

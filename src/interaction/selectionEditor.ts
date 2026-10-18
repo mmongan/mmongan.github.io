@@ -4,6 +4,7 @@ import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
 import type { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.pure';
 import type { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
 import { engine, scene } from '../scene/engine';
+import { isDrillEditingEnabled } from './editingMode';
 import {
   canvas, drillSelectionMode, drillSetEditMode, drillEditSet, drillSelectionStatus,
   selectionEditor, drillShapeInputs, drillShapeKind, formationMoveX, formationMoveZ,
@@ -79,7 +80,7 @@ export function createSelectionEditor(deps: EditorDependencies) {
   overlay.append(outline);
   document.body.append(overlay);
 
-  const enabled = () => drillSelectionMode.checked;
+  const enabled = () => isDrillEditingEnabled() && drillSelectionMode.checked;
   const setIndex = () => drillSetEditMode.checked ? Number(drillEditSet.value) : -1;
   const activeSet = () => sets[setIndex()];
   const contextCount = () => activeSet()?.count ?? null;

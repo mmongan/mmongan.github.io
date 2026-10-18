@@ -12,13 +12,14 @@ import { Axis } from '@babylonjs/core/Maths/math.axis.js';
 import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 import { Plane } from '@babylonjs/core/Maths/math.plane.js';
 import { Ray } from '@babylonjs/core/Culling/ray.js';
+import { Observable } from '@babylonjs/core/Misc/observable.js';
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
 const transform = source => stripTypeScriptTypes(source, { mode: 'transform' }).replace(/export /g, '');
 const engine = new NullEngine();
 const scene = new Scene(engine);
 const context = vm.createContext({
-  scene, MeshBuilder, TransformNode, StandardMaterial, Color3, Axis, Vector3, Ray, Matrix, Quaternion, Plane,
+  scene, MeshBuilder, TransformNode, StandardMaterial, Color3, Axis, Vector3, Ray, Matrix, Quaternion, Plane, Observable,
   __APP_VERSION__: 'test',
   document: { createElement: () => ({ getContext: () => ({
     beginPath() {}, moveTo() {}, arcTo() {}, closePath() {}, fill() {}, fillText() {},
@@ -26,6 +27,7 @@ const context = vm.createContext({
   DynamicTexture: class { update() {} dispose() {} },
 });
 const menu = read('../src/menu/handMenu.ts');
+vm.runInContext(transform(read('../src/interaction/editingMode.ts')).replace(/^import .*?;\r?$/gm, ''), context);
 vm.runInContext(transform(menu).replace(/^import .*?;\r?$/gm, ''), context);
 vm.runInContext(transform(read('../src/menu/floatingPanel.ts')).replace(/^import .*?;\r?$/gm, ''), context);
 const board = read('../src/field/videoBoard.ts');

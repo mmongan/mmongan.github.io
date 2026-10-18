@@ -30,6 +30,7 @@ const toggle = {
   removeEventListener: event => toggleListeners.delete(event),
 };
 const context = vm.createContext({
+  isMenuActionAvailable: () => true,
   scene, MeshBuilder, TransformNode, StandardMaterial, Vector3, Color3,
   instrumentPanelButton: null,
   instrumentPanelToggle: toggle,

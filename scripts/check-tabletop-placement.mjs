@@ -39,6 +39,10 @@ const context = vm.createContext({
   tabletopScaleButton: { addEventListener: (event, handler) => { click = handler; } },
 });
 vm.runInContext(transformed, context);
+assert.equal(context.setARScale(1 / 120), 1, 'Desktop always stays at 1:1');
+context.enterARTabletopMode();
+assert.equal(context.isARTabletopModeActive(), false, 'Desktop cannot enter AR tabletop transforms');
+context.setImmersiveFieldScaling(true);
 vm.runInContext(stripTypeScriptTypes(buttonHandler, { mode: 'transform' }), context);
 const near = (actual, expected, label) => assert.ok(
   Vector3.Distance(actual, expected) < 1e-6, `${label}: ${actual.toString()} vs ${expected.toString()}`
@@ -88,8 +92,8 @@ try {
   near(context.getARPosition(), placed, 'Table does not follow subsequent head movement');
   inXR = false;
   click();
-  assert.ok(Vector3.Distance(context.getARPosition(), placed) > 4.9,
-    'Desktop table entry also uses the current camera');
+  near(context.getARPosition(), placed, 'Table button cannot change desktop field placement');
+  inXR = true;
   context.enterARTabletopMode();
   const arPosition = context.getARPosition();
   camera.position.z += 4;
@@ -133,6 +137,20 @@ try {
     }
   }
   context.setFieldHeightSetting('floor', 0);
+  for (const mode of ['vr', 'ar']) {
+    context.setImmersiveFieldScaling(true);
+    if (mode === 'ar') context.enterARTabletopMode();
+    context.setARScale(.03);
+    context.setARPosition(new Vector3(4, 2, 9));
+    context.setARRotation(.7);
+    context.setImmersiveFieldScaling(false);
+    assert.equal(context.getARScale(), 1, `Exiting ${mode} restores desktop 1:1`);
+    assert.equal(context.getFieldHeightMode(), 'floor');
+    assert.equal(context.getARRotation(), 0);
+    assert.equal(context.getARPosition().x, 0);
+    assert.equal(context.getARPosition().z, 0);
+    assert.equal(context.setARScale(.2), 1, 'Later desktop scaling requests cannot shrink the field');
+  }
   for (const scale of [0.002, 1 / 240, 1 / 120]) {
     assert.equal(context.getScaleAwareSurfaceHeight(1.2, scale), 1.2, 'Tabletop scales keep the gesture height');
   }

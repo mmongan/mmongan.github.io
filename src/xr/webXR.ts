@@ -19,12 +19,14 @@ import '@babylonjs/loaders/glTF';
 import { RegisterWebXROculusTouchMotionController } from '@babylonjs/core/XR/motionController/webXROculusTouchMotionController.pure';
 import { scene } from '../scene/engine';
 import { connectMidiXRSession } from '../audio/midiPlayback';
+import { setDrillEditingEnabled } from '../interaction/editingMode';
+import { enterVRButton, enterARButton, xrEntryStatus } from '../ui/dom';
 import { connectMarcherPOVXR, isMarcherPOVActive, setMarcherPOVEnabled } from '../camera/marcherPOV';
 import { setTableHeightForPosture } from '../menu/settings';
 import { summonXRSettingsPanel } from '../menu/xrSettingsPanel';
 import { xrModeInputs, getSelectedXRMode, floorCalibrationToggle, fullScaleVRButton, tabletopScaleButton, giantModeButton, roomWidthInput, roomLengthInput, sittingModeToggle } from '../ui/dom';
 import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS } from '../field/constants';
-import { enterARTabletopMode, exitARTabletopMode, getARPosition, getARScale, getARScaleRange, setARPosition, setARScale, setFieldHeightMode, getFieldHeightMode, setARSurfaceHeight, placeTabletopInFrontOfCamera } from './ar';
+import { enterARTabletopMode, exitARTabletopMode, getARPosition, getARScale, getARScaleRange, setARPosition, setARScale, setFieldHeightMode, getFieldHeightMode, setARSurfaceHeight, placeTabletopInFrontOfCamera, setImmersiveFieldScaling } from './ar';
 import { getGloveHandTrackingOptions } from './gloveMeshes';
 import { setActiveController, removeActiveController, setHandTracking, getActiveControllers, consumeFloorCalibrationGesture, setHandFloorContact, isControllerGrabbing } from '../interaction/pathInteraction';
 
@@ -127,12 +129,22 @@ function getFieldFloorMeshes(): AbstractMesh[] {
 }
 
 export function initXR(teleportGrid: Mesh) {
+  function updateScaleControls(immersive: boolean) {
+    for (const control of [tabletopScaleButton, giantModeButton, roomWidthInput, roomLengthInput]) {
+      if (!control) continue;
+      control.disabled = !immersive;
+      control.title = immersive ? '' : 'Desktop stays at 1:1 scale. Enter VR or AR to change field scale.';
+    }
+  }
+  updateScaleControls(false);
   // Keep the active XR mode in sync with the radio UI while the app runs.
   let preferredMode: XRSessionMode = getSelectedXRMode();
   // The default XR experience bakes its Enter button to whatever sessionMode
   // was passed in at creation time, so switching the radio has to rebuild it —
   // otherwise "AR" still launches an opaque immersive-vr session (black background).
   let xrExperience: WebXRDefaultExperience | undefined;
+  let preparingXR: Promise<void> | null = null;
+  const sessionSupport = new Map<XRSessionMode, boolean>();
   let navigationOptions: IWebXRTeleportationOptions | undefined;
   // Held marchers and panels consume their controller's thumbstick for positioning.
   type NavigationHands = "left" | "right" | "both" | "none";
@@ -173,6 +185,21 @@ export function initXR(teleportGrid: Mesh) {
   let detectedSitting: boolean | null = null;
   let pendingSitting: boolean | null = null;
   let pendingPostureSince = 0;
+  function entryStatus(message: string) {
+    if (!xrEntryStatus) return;
+    xrEntryStatus.textContent = message;
+    xrEntryStatus.hidden = !message;
+  }
+  function updateEntryButtons() {
+    const active = !!xrExperience && xrExperience.baseExperience.state !== WebXRState.NOT_IN_XR;
+    for (const [mode, button] of [['immersive-vr', enterVRButton], ['immersive-ar', enterARButton]] as const) {
+      if (!button) continue;
+      const supported = sessionSupport.get(mode);
+      button.disabled = switchingToFullScaleVR || active || supported === false;
+      button.title = supported === false ? `${mode === 'immersive-vr' ? 'VR' : 'AR'} is not supported by this browser or device.`
+        : 'Open an immersive session to use editing tools.';
+    }
+  }
 
   function getCameraSittingPosture(camera: WebXRCamera): boolean | null {
     const worldScale = xrExperience?.baseExperience.sessionManager.worldScalingFactor ?? 1;
@@ -301,40 +328,53 @@ export function initXR(teleportGrid: Mesh) {
     floorResetNoticeTimeout = setTimeout(hideFloorResetNotice, 8000);
   }
 
-  async function enterFullScaleVR() {
+  async function enterXRMode(mode: XRSessionMode, fullScale = false) {
     if (switchingToFullScaleVR) return;
-    if (isMarcherPOVActive()) setMarcherPOVEnabled(false);
     switchingToFullScaleVR = true;
+    updateEntryButtons();
+    entryStatus(`Opening ${mode === 'immersive-vr' ? 'VR' : 'AR'}...`);
     try {
-      giantModeActive = false;
-      setARScale(getARScaleRange().max);
-      setFieldHeightMode("floor");
-      if (xrExperience?.baseExperience.state === WebXRState.IN_XR) {
-        applyPostureHeight(xrExperience.baseExperience.camera);
+      if (fullScale) {
+        if (isMarcherPOVActive()) setMarcherPOVEnabled(false);
+        giantModeActive = false;
+        setARScale(getARScaleRange().max);
+        setFieldHeightMode("floor");
+        if (xrExperience?.baseExperience.state === WebXRState.IN_XR) {
+          applyPostureHeight(xrExperience.baseExperience.camera);
+        }
       }
-      if (preferredMode !== "immersive-vr") {
+      if (preferredMode !== mode) {
         if (xrExperience && xrExperience.baseExperience.state !== WebXRState.NOT_IN_XR) {
           await xrExperience.baseExperience.exitXRAsync();
         }
-        xrExperience?.dispose();
-        xrExperience = undefined;
-        preferredMode = "immersive-vr";
-        xrModeInputs.forEach((input) => { input.checked = input.value === preferredMode; });
       }
-      if (!xrExperience) await setupDefaultXRExperience();
-      if (xrExperience?.baseExperience.state === WebXRState.NOT_IN_XR) {
-        await xrExperience.baseExperience.enterXRAsync("immersive-vr", "local-floor");
+      await setupDefaultXRExperience(mode);
+      if (!xrExperience) throw new Error('This immersive mode is not supported by this browser or device.');
+      xrModeInputs.forEach(input => { input.checked = input.value === mode; });
+      if (xrExperience.baseExperience.state === WebXRState.NOT_IN_XR) {
+        await xrExperience.baseExperience.enterXRAsync(mode, "local-floor");
       }
+      entryStatus('');
     } catch (error) {
-      console.error("Failed to enter full-scale VR:", error);
+      if (!xrExperience || xrExperience.baseExperience.state !== WebXRState.IN_XR) {
+        setDrillEditingEnabled(false);
+        setImmersiveFieldScaling(false);
+        updateScaleControls(false);
+      }
+      const message = `Could not open ${mode === 'immersive-vr' ? 'VR' : 'AR'}: ${error instanceof Error ? error.message : String(error)}`;
+      entryStatus(message);
+      console.error(message, error);
     } finally {
       switchingToFullScaleVR = false;
+      updateEntryButtons();
     }
   }
 
-  fullScaleVRButton?.addEventListener("click", () => { void enterFullScaleVR(); });
+  fullScaleVRButton?.addEventListener("click", () => { void enterXRMode('immersive-vr', true); });
+  enterVRButton?.addEventListener("click", () => { void enterXRMode('immersive-vr'); });
+  enterARButton?.addEventListener("click", () => { void enterXRMode('immersive-ar'); });
   tabletopScaleButton?.addEventListener("click", () => {
-    if (switchingToFullScaleVR) return;
+    if (switchingToFullScaleVR || xrExperience?.baseExperience.state !== WebXRState.IN_XR) return;
     if (isMarcherPOVActive()) setMarcherPOVEnabled(false);
     giantModeActive = false;
     setARScale(getARScaleRange().default);
@@ -351,6 +391,7 @@ export function initXR(teleportGrid: Mesh) {
   });
 
   function applyRoomScale() {
+    if (xrExperience?.baseExperience.state !== WebXRState.IN_XR) return;
     if (!roomWidthInput || !roomLengthInput) return;
     if (!roomWidthInput.reportValidity() || !roomLengthInput.reportValidity()) return;
     if (isMarcherPOVActive()) setMarcherPOVEnabled(false);
@@ -558,16 +599,33 @@ export function initXR(teleportGrid: Mesh) {
 
   xrModeInputs.forEach((input) => {
     input.addEventListener("change", () => {
-      preferredMode = getSelectedXRMode();
-      if (xrExperience && xrExperience.baseExperience.state === WebXRState.NOT_IN_XR) {
-        xrExperience.dispose();
-        xrExperience = undefined;
-        void setupDefaultXRExperience();
-      }
+      if (switchingToFullScaleVR || (xrExperience &&
+        xrExperience.baseExperience.state !== WebXRState.NOT_IN_XR)) return;
+      void setupDefaultXRExperience(getSelectedXRMode()).catch(error => {
+        entryStatus(`Could not prepare XR: ${error instanceof Error ? error.message : String(error)}`);
+      });
     });
   });
 
-  async function setupDefaultXRExperience() {
+  async function setupDefaultXRExperience(mode: XRSessionMode = preferredMode) {
+    while (preparingXR) await preparingXR;
+    if (xrExperience && preferredMode === mode) return;
+    if (xrExperience && xrExperience.baseExperience.state !== WebXRState.NOT_IN_XR) {
+      throw new Error('Exit the current immersive session before switching modes.');
+    }
+    xrExperience?.dispose();
+    xrExperience = undefined;
+    preferredMode = mode;
+    const pending = createXRExperience();
+    preparingXR = pending;
+    try {
+      await pending;
+    } finally {
+      preparingXR = null;
+    }
+  }
+
+  async function createXRExperience() {
     if (!(await checkSessionSupport(preferredMode))) {
       return;
     }
@@ -575,6 +633,7 @@ export function initXR(teleportGrid: Mesh) {
     try {
       const gloveHandTrackingOptions = await getGloveHandTrackingOptions(scene);
       xrExperience = await WebXRDefaultExperience.CreateAsync(scene, {
+        disableDefaultUI: true,
         uiOptions: {
           sessionMode: preferredMode,
           referenceSpaceType: "local-floor",
@@ -667,10 +726,14 @@ export function initXR(teleportGrid: Mesh) {
       }
 
       xrExperience.baseExperience.onStateChangedObservable.add((state) => {
+        updateEntryButtons();
         if (state === WebXRState.IN_XR && sessionManager.isFixedFoveationSupported) {
           sessionManager.fixedFoveation = 0.5;
         }
         if (state === WebXRState.ENTERING_XR || state === WebXRState.IN_XR) {
+          setDrillEditingEnabled(state === WebXRState.IN_XR);
+          setImmersiveFieldScaling(true);
+          updateScaleControls(true);
           if (state === WebXRState.ENTERING_XR) {
             setHandTracking(handTracking);
           }
@@ -694,6 +757,7 @@ export function initXR(teleportGrid: Mesh) {
         }
 
         if (state === WebXRState.NOT_IN_XR) {
+          setDrillEditingEnabled(false);
           detectedSitting = null;
           pendingSitting = null;
           fullScaleNoticeShown = false;
@@ -706,6 +770,9 @@ export function initXR(teleportGrid: Mesh) {
           scene.clearColor = new Color4(0.03, 0.05, 0.09, 1);
           teleportGrid.setEnabled(false);
           exitARTabletopMode();
+          giantModeActive = false;
+          setImmersiveFieldScaling(false);
+          updateScaleControls(false);
         }
       });
 
@@ -757,11 +824,27 @@ export function initXR(teleportGrid: Mesh) {
         });
       });
     } catch (error) {
+      xrExperience?.dispose();
+      xrExperience = undefined;
       console.error(`Failed to prepare ${preferredMode}:`, error);
+      throw error;
     }
   }
 
-  void setupDefaultXRExperience();
+  void setupDefaultXRExperience().catch(error => {
+    entryStatus(`Could not prepare XR: ${error instanceof Error ? error.message : String(error)}`);
+  });
+  void Promise.all((['immersive-vr', 'immersive-ar'] as const).map(async mode => {
+    try {
+      sessionSupport.set(mode, await checkSessionSupport(mode));
+    } catch (error) {
+      sessionSupport.set(mode, false);
+      entryStatus(`Could not check XR support: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    updateEntryButtons();
+  })).then(() => {
+    if (![...sessionSupport.values()].some(Boolean)) entryStatus('VR/AR requires a compatible browser and headset. Desktop playback is available.');
+  });
 
   // Keep teleportation in sync with the field's current scale.
   scene.onBeforeAnimationsObservable.add(() => {

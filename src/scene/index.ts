@@ -1,6 +1,6 @@
 import { engine, scene } from './engine';
 import '../camera/desktopCamera';
-import { drillChartPadToggle, drillSelectionMode, fieldChartModeToggle, fieldLevelInputs, getSelectedFieldLevel } from '../ui/dom';
+import { drillChartPadToggle, fieldLevelInputs, getSelectedFieldLevel } from '../ui/dom';
 import { createSky } from '../environment/sky';
 import { createHorizonGround } from '../environment/ground';
 import { createFootballField } from '../field/footballField';
@@ -19,8 +19,7 @@ import {
 import { captureContentRootMeshes, attachToARTransform } from '../xr/ar';
 import { createTeleportGrid, initXR } from '../xr/webXR';
 import '../menu/settings';
-import { initMidiPlayback, isMidiPlaybackReady } from '../audio/midiPlayback';
-import { getDrillTransportState, playAll } from '../robot/robot';
+import { initMidiPlayback } from '../audio/midiPlayback';
 import { initMusicStand } from '../menu/musicStand';
 import { initInstrumentPanel } from '../menu/instrumentPanel';
 import { initXRSettingsPanel } from '../menu/xrSettingsPanel';
@@ -29,6 +28,7 @@ import { setDrillChartPadVisible } from '../menu/drillChartPad';
 import { initMarcherPOV } from '../camera/marcherPOV';
 import { initMarcherFootprints } from '../robot/marcherFootprints';
 import { initDrillSpacingChecker } from '../menu/drillSpacingChecker';
+import { initPlaybackModeControls } from '../ui/playbackMode';
 
 // Build static content before wiring up input and the WebXR experience.
 createSky();
@@ -44,6 +44,7 @@ fieldLevelInputs.forEach((input) => {
 });
 
 updateFieldLevel();
+initPlaybackModeControls();
 
 initInteraction();
 initDrillSpacingChecker(getSelectableMarchers, selectRobot);
@@ -58,13 +59,6 @@ initMarcherFootprints(getSelectedMarcher);
 const startupChartObserver = scene.onBeforeRenderObservable.add(() => {
   scene.onBeforeRenderObservable.remove(startupChartObserver);
   if (drillChartPadToggle?.checked) setDrillChartPadVisible(true);
-});
-
-const startupPlaybackObserver = scene.onBeforeRenderObservable.add(() => {
-  const transport = getDrillTransportState();
-  if (transport.lastBeat <= 0 || !isMidiPlaybackReady()) return;
-  scene.onBeforeRenderObservable.remove(startupPlaybackObserver);
-  if (!transport.playing && !drillSelectionMode.checked && !fieldChartModeToggle?.checked) playAll();
 });
 
 // Snapshot of top-level meshes for AR tabletop mode — must be taken after all

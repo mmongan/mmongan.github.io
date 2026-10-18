@@ -15,9 +15,12 @@
 
     <div class="hud">
       <div class="button-row">
-        <button id="settingsButton" class="icon-button" aria-label="Settings" title="Settings">⚙</button>
+        <button id="settingsButton" class="icon-button" aria-label="Settings" title="Settings" data-xr-editing hidden>⚙</button>
+        <button id="enterVRButton" class="xr-button" type="button">Enter VR</button>
+        <button id="enterARButton" class="xr-button secondary" type="button">Enter AR</button>
         <button id="marcherPOVExitButton" class="xr-button" type="button" hidden>Exit POV</button>
       </div>
+      <output id="xrEntryStatus" class="status-panel" aria-live="polite" hidden></output>
       <output id="midiPlaybackHint" class="status-panel" aria-live="polite" hidden></output>
     </div>
 
@@ -86,6 +89,7 @@
           <button id="fullScaleVRButton" class="xr-button secondary">Full scale VR</button>
           <button id="tabletopScaleButton" class="xr-button secondary">Tabletop scale</button>
           <button id="giantModeButton" class="xr-button secondary">Giant mode (fit room)</button>
+          <p>Desktop always uses full 1:1 field scale, including drafting. Tabletop and Giant scaling are available only in immersive VR/AR.</p>
           <button id="marcherPOVModeButton" class="xr-button secondary" type="button" aria-pressed="false">Marcher POV (eye-level camera follow)</button>
           <label class="settings-label" for="marcherPOVSelect">POV marcher</label>
           <select id="marcherPOVSelect" aria-label="POV marcher"><option value="">Select a marcher</option></select>
@@ -131,7 +135,8 @@
           </div>
         </div>
 
-        <form id="formationEditor" class="settings-group">
+        <p id="playbackModeNotice" class="settings-status" role="status">Desktop is playback-only at 1:1. Enter immersive VR/AR to edit the drill.</p>
+        <form id="formationEditor" class="settings-group" data-xr-editing hidden>
           <h3>Drill form editor</h3>
           <p>Create standing forms without replacing the show. Select a form here or select one of its marchers. Moves, rotations, and scaling apply to the whole form; collision checks reject overlapping edits. To move a selected form together, draw a destination guide and choose Route selected form in the drawing tray; every marcher receives the same count schedule with automatic route avoidance.</p>
           <label class="radio-option"><input id="gridSnapToggle" type="checkbox" /><span>Snap editing to field grid</span></label>
@@ -192,7 +197,7 @@
           <output id="formationEditorStatus" class="settings-status" aria-live="polite">No standing form selected. Imported routes are not edited by these controls.</output>
         </form>
 
-        <form id="selectionEditor" class="settings-group">
+        <form id="selectionEditor" class="settings-group" data-xr-editing hidden>
           <h3>Selection, shapes, and sets</h3>
           <label class="radio-option"><input id="drillSelectionMode" type="checkbox" /><span>Enable multi-marcher editing (pauses playback)</span></label>
           <p>Close Settings to select on the field. Drag a rectangle, Shift-drag a lasso, Ctrl/Cmd-click to toggle a marcher, or Ctrl/Cmd+A to select all eligible marchers. Cyan circles show selection; orange and green handles rotate and scale it. Drag selected marchers to move the selection. Desktop selection gestures replace camera dragging only while enabled.</p>
@@ -257,7 +262,7 @@
 
         <div class="settings-group">
           <label class="settings-label">Robot paths</label>
-          <button id="duplicateDrillButton" class="xr-button secondary" type="button">Duplicate drill side by side (2x marchers)</button>
+          <button id="duplicateDrillButton" class="xr-button secondary" type="button" data-xr-editing hidden>Duplicate drill side by side (2x marchers)</button>
           <output id="duplicateDrillStatus" class="settings-status" aria-live="polite"></output>
           <output id="marcherPOVStatus" class="settings-status" aria-live="polite">Select a marcher, then enable POV.</output>
           <p>Browser: mouse or arrow keys look around. VR: headset look and room-scale motion remain natural; marching moves your viewpoint. Use Marcher POV on the floating settings panel to exit. Artificial VR movement may cause discomfort; pause the drill or leave POV if needed. POV is not available in AR.</p>
@@ -280,6 +285,7 @@
             <output id="drillSpacingSummary" class="settings-status" aria-live="polite">No spacing check run yet.</output>
             <div id="drillSpacingResults" class="spacing-results" aria-live="polite"></div>
           </div>
+          <div data-xr-editing hidden>
           <label class="radio-option">
             <input type="checkbox" id="placementModeToggle" />
             <span>Placement mode (trigger places a standing robot)</span>
@@ -292,6 +298,7 @@
             <button id="undoEraseButton" disabled>Undo edit</button>
             <button id="redoEraseButton" disabled>Redo edit</button>
           </div>
+          </div>
           <label class="radio-option">
             <input type="checkbox" id="drillChartPadToggle" />
             <span>Drill chart pad (floating, grabbable)</span>
@@ -301,6 +308,7 @@
           <label class="radio-option"><input id="xrSettingsPanelToggle" type="checkbox" /><span>Show floating XR settings panel</span></label>
           <button id="xrSettingsPanelButton" type="button">Bring XR settings panel here</button>
           <p>Grab panel frames to position them. Hidden panels keep your placement when reopened. Bring panels back resets floating panels beside you. Controller Y opens settings, A/X opens instruments, and B opens precision tools. No hand or wrist menus.</p>
+          <div data-xr-editing hidden>
           <label class="settings-label" for="chartBeatsPerPage">Beats per chart page</label>
           <input id="chartBeatsPerPage" type="number" min="1" max="64" step="1" value="8" />
           <p>Authored formations keep their counts. Intermediate pages sample the transition at this interval; editing an intermediate page makes it an authored formation. Guides remain attached to their original counts when the interval changes.</p>
@@ -315,7 +323,7 @@
           <button id="instrumentPanelButton" type="button">Open instrument panel to create marchers</button>
           <h3>Drafting table</h3>
           <label class="radio-option"><input id="draftingModeToggle" type="checkbox" /><span>Use field as a drafting table</span></label>
-          <p>Draft on a tabletop-sized field placed in front of you. Toggle Full-size view for a live, view-only field in the distance, including marchers and guides; editing stays on the table. Exiting restores the previous field placement. No pins. Endpoint and line snaps take priority over nearby grid points.</p>
+          <p>Drafting is available in immersive VR/AR on a tabletop-sized field placed in front of you; exiting restores the previous XR field placement. Desktop is a playback-only 1:1 viewer. Toggle Full-size view for a live, view-only field in the distance, including marchers and guides. No pins. Endpoint and line snaps take priority over nearby grid points.</p>
           <div id="draftingTableControls" hidden>
             <div class="radio-row">
               <button type="button" data-drafting-action="show">Drawing tools</button>
@@ -485,6 +493,7 @@
           </div>
           <button id="addRandomRobotsButton" class="xr-button secondary">Add marchers</button>
           <button id="generateDrillButton" class="xr-button secondary">Generate marching band drill</button>
+          </div>
           <label class="settings-label" for="openMarchUrl">Open OpenMarch show (.dots URL)</label>
           <form id="openMarchForm" class="url-row">
             <input id="openMarchUrl" type="url" placeholder="https://example.com/show.dots" autocomplete="url" spellcheck="false" required />

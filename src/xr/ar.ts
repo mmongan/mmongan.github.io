@@ -37,6 +37,7 @@ const arPivot = new TransformNode("arPivot", scene);
 const arRoot = new TransformNode("arRoot", scene);
 const globalScaleRoot = new TransformNode("globalScaleRoot", scene);
 let arTabletopModeActive = false;
+let immersiveFieldScaling = false;
 let fieldHeightMode: "floor" | "table" = "floor";
 const fieldHeights = { floor: 0, table: AR_TABLE_HEIGHT };
 let contentRootMeshes: AbstractMesh[] = [];
@@ -98,13 +99,24 @@ export function isARTabletopModeActive() {
 }
 
 export function setARScale(scale: number) {
-  const clampedScale = clampScale(scale);
+  const clampedScale = immersiveFieldScaling ? clampScale(scale) : AR_SCALE_MAX;
   arRoot.scaling.setAll(clampedScale);
   globalScaleRoot.scaling.setAll(clampedScale);
   updateGroundFootprint(clampedScale);
   updateHiddenMeshVisibility(clampedScale);
   onARScaleChangedObservable.notifyObservers(clampedScale);
   return clampedScale;
+}
+
+export function setImmersiveFieldScaling(enabled: boolean) {
+  immersiveFieldScaling = enabled;
+  if (!enabled) {
+    exitARTabletopMode();
+    setARScale(AR_SCALE_MAX);
+    setARRotation(0);
+    setARPosition(Vector3.Zero());
+    setFieldHeightMode('floor');
+  }
 }
 
 // True in Giant and tabletop modes, where the field is shrunk below full scale.
@@ -213,7 +225,7 @@ export function captureContentRootMeshes() {
 }
 
 export function enterARTabletopMode() {
-  if (arTabletopModeActive) return;
+  if (!immersiveFieldScaling || arTabletopModeActive) return;
   arTabletopModeActive = true;
   contentRootMeshes.forEach((mesh) => {
     if (!AR_HIDDEN_MESH_NAMES.has(mesh.name)) {

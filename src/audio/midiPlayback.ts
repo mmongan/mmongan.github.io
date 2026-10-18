@@ -43,7 +43,7 @@ function updatePlaybackHint(message = midiStatus?.textContent ?? "") {
   if (midiPlaybackHint) {
     midiPlaybackHint.hidden = !statusIsError && isMidiPlaybackReady();
     midiPlaybackHint.textContent = !statusIsError && context?.state === "suspended" && !synthLoading
-      ? "Interact with the field or trigger/pinch in XR to start drill and music."
+      ? "Press Play to start drill and music. Browser audio permission may require a click, trigger, or pinch."
       : message;
   }
 }
@@ -81,7 +81,7 @@ function initializeAudioContext() {
     } else {
       stopVoices();
       timeline?.reset();
-      status("Music is waiting for browser permission. Interact with the field or squeeze/pinch in XR to start drill and music.");
+      status("Music is waiting for browser permission. Press Play to start; a click, trigger, or pinch can enable audio permission without starting playback.");
     }
   });
 }

@@ -12,6 +12,7 @@ import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector.j
 import { Plane } from '@babylonjs/core/Maths/math.plane.js';
 import { Color3 } from '@babylonjs/core/Maths/math.color.js';
 import { Ray } from '@babylonjs/core/Culling/ray.js';
+import { Observable } from '@babylonjs/core/Misc/observable.js';
 
 const load = path => stripTypeScriptTypes(readFileSync(new URL(path, import.meta.url), 'utf8'), { mode: 'transform' })
   .replace(/^import[\s\S]*?;\r?$/gm, '').replace(/export /g, '');
@@ -25,7 +26,7 @@ const controls = Object.fromEntries(['xrSettingsPanelButton', 'xrSettingsPanelTo
 const engine = new NullEngine(), scene = new Scene(engine);
 const labels = [];
 const context = vm.createContext({
-  scene, MeshBuilder, TransformNode, StandardMaterial, Matrix, Quaternion, Vector3, Plane, Color3, Ray, ...controls,
+  scene, MeshBuilder, TransformNode, StandardMaterial, Matrix, Quaternion, Vector3, Plane, Color3, Ray, Observable, ...controls,
   document: { createElement: () => ({ getContext: () => ({ fillText: label => labels.push(label) }) }) },
   DynamicTexture: class { update() {} dispose() {} },
   Texture: { TRILINEAR_SAMPLINGMODE: 3 },
@@ -39,6 +40,8 @@ const context = vm.createContext({
   },
 });
 try {
+  vm.runInContext(load('../src/interaction/editingMode.ts'), context);
+  context.setDrillEditingEnabled(true);
   scene.activeCamera = new FreeCamera('settingsCamera', Vector3.Zero(), scene);
   vm.runInContext(load('../src/menu/handMenu.ts'), context);
   vm.runInContext(load('../src/menu/floatingPanel.ts'), context);

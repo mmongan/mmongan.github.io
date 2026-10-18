@@ -6,6 +6,7 @@ import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
 import { scene } from '../scene/engine';
 import { mergeMeshesByMaterial } from './meshMerging';
 import { FIELD_WIDTH_YARDS, STAND_CONFIGS } from './constants';
+import { createStadiumCrowd } from './stadiumCrowd';
 
 const ROW_HEIGHT = 0.35;
 const ROW_DEPTH = 0.65;
@@ -26,6 +27,7 @@ export function createStands(): { updateStands: (level: string) => void } {
   supportMat.specularColor = new Color3(0.1, 0.1, 0.1);
 
   const standsGroup = new Mesh("stands", scene);
+  const crowd = createStadiumCrowd(standsGroup);
 
   // Builds one terraced tier as a hollow staircase profile (riser face + tread),
   // not a solid filled wedge, so it reads as bleacher steps instead of a building.
@@ -82,6 +84,8 @@ export function createStands(): { updateStands: (level: string) => void } {
     );
     backWall.material = supportMat;
     parts.push(backWall);
+    crowd.addTier(side, rows, standLength, baseOffset, startY,
+      ROW_HEIGHT, ROW_DEPTH, STAND_GROUND_Y, startY === 0);
 
     return tierTopY;
   }
@@ -134,6 +138,7 @@ export function createStands(): { updateStands: (level: string) => void } {
     // Every row is a separate box while building; merge them into one mesh per
     // material so both stands cost three draw calls instead of dozens.
     mergeMeshesByMaterial(parts, "stands", standsGroup);
+    crowd.finish();
   }
 
   return { updateStands };

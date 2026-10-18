@@ -198,6 +198,22 @@ globalThis.drawPage = drawPage;globalThis.signature = getPageSignature;`, chartC
   calls.length = 0;
   chartContext.drawPage(target, [0, 8], 1);
   assert.ok(!calls.some(c => c.method === 'fillText' && c.args[0] === 'ME'), 'No POV highlight when off');
+  let autoSelections = 0;
+  const startupContext = vm.createContext({
+    scene, TargetCamera, MarcherPOVCamera: context.Follower, getMarcherEyePose: eyePose,
+    desktopCamera: camera, setDesktopMarcherPOV() {},
+    getObjectName: () => undefined,
+    marcherPOVSelect: null, marcherPOVStatus: null, marcherPOVExitButton: null, marcherPOVModeButton: null,
+    window: { addEventListener() {} },
+  });
+  vm.runInContext(compile(povSource), startupContext);
+  const spectatorPosition = camera.position.clone();
+  startupContext.initMarcherPOV(() => null, () => [second], () => { autoSelections++; }, () => {});
+  scene.onBeforeRenderObservable.notifyObservers(scene);
+  scene.onBeforeCameraRenderObservable.notifyObservers(camera);
+  assert.equal(startupContext.isMarcherPOVActive(), false, 'Loaded marchers do not auto-enable POV');
+  assert.equal(autoSelections, 0, 'Startup does not auto-select the first marcher');
+  near(camera.position, spectatorPosition, 'Startup preserves spectator camera position');
   console.log('Marcher POV checks passed: transformed eye anchor, follow/seek/pause/reverse, look, restoration, selection/disposal, natural VR head motion, own-body hiding, and live chart highlight.');
 } finally {
   scene.dispose();

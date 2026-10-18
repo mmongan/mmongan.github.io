@@ -420,20 +420,19 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     if (enabled !== tableMode) {
       if (enabled) {
         deps.prepare();
-        previousFieldPose = { position: getARPosition(), scale: getARScale(),
-          yaw: getARRotation(), heightMode: getFieldHeightMode() };
         setMarcherPOVEnabled(false);
-        tabletopScaleButton?.click();
-        setARScale(getARScaleRange().default);
-        setFieldHeightMode('table');
         const camera = scene.activeCamera;
-        if (camera) {
+        const immersive = camera?.getClassName() === 'WebXRCamera';
+        previousFieldPose = immersive ? { position: getARPosition(), scale: getARScale(),
+          yaw: getARRotation(), heightMode: getFieldHeightMode() } : null;
+        if (immersive && camera) {
+          tabletopScaleButton?.click();
+          setARScale(getARScaleRange().default);
+          setFieldHeightMode('table');
           camera.computeWorldMatrix();
           placeTabletopInFrontOfCamera(camera);
-          const surface = camera.getClassName() === 'WebXRCamera'
-            ? Math.max(getFieldHeightSetting('floor'),
-              Math.min(getFieldHeightSetting('table'), camera.globalPosition.y - 0.45))
-            : camera.globalPosition.y - 0.45;
+          const surface = Math.max(getFieldHeightSetting('floor'),
+            Math.min(getFieldHeightSetting('table'), camera.globalPosition.y - 0.45));
           setARSurfaceHeight(surface);
         }
         previousGridVisible = fieldGridToggle?.checked ?? false;
@@ -449,13 +448,13 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
       action('stop');
       if (!enabled) {
         fieldPreview.setEnabled(false);
-        if (previousFieldPose) {
+        if (previousFieldPose && scene.activeCamera?.getClassName() === 'WebXRCamera') {
           setFieldHeightMode(previousFieldPose.heightMode);
           setARScale(previousFieldPose.scale);
           setARRotation(previousFieldPose.yaw);
           setARPosition(previousFieldPose.position);
-          previousFieldPose = null;
         }
+        previousFieldPose = null;
       } else if (fullSizePreview) showFullSizePreview();
     }
     if (draftingModeToggle) draftingModeToggle.checked = tableMode;
@@ -463,7 +462,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     if (enabled) { tablePanel.show(); show(); }
     else { tablePanel.hide(); action('hide'); }
     updateTableStatus();
-    deps.notify(enabled ? 'Drafting table ready. Select a tool or select a guide to edit it without pins.'
+    deps.notify(enabled ? `Drafting ${scene.activeCamera?.getClassName() === 'WebXRCamera' ? 'table' : 'field at 1:1'} ready. Select a tool or select a guide to edit it without pins.`
       : 'Drafting mode closed. Guides are preserved and the previous field placement is restored.');
   }
   function showFullSizePreview() {

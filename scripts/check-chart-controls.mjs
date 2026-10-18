@@ -13,6 +13,7 @@ import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector.j
 import { Plane } from '@babylonjs/core/Maths/math.plane.js';
 import { Color3 } from '@babylonjs/core/Maths/math.color.js';
 import { Ray } from '@babylonjs/core/Culling/ray.js';
+import { Observable } from '@babylonjs/core/Misc/observable.js';
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
 const load = text => stripTypeScriptTypes(text, { mode: 'transform' })
@@ -21,7 +22,7 @@ const engine = new NullEngine(), scene = new Scene(engine);
 let ghosts = false, drafting = false, playing = false, count = 8;
 const steps = [], modes = [], seeks = [];
 const context = vm.createContext({
-  scene, Mesh, MeshBuilder, TransformNode, StandardMaterial, Matrix, Quaternion, Vector3, Plane, Color3, Ray,
+  scene, Mesh, MeshBuilder, TransformNode, StandardMaterial, Matrix, Quaternion, Vector3, Plane, Color3, Ray, Observable,
   document: { createElement: () => {
     const ctx = new Proxy({}, { get: (target, key) => target[key] ?? (() => {}), set: (target, key, value) => { target[key] = value; return true; } });
     return { getContext: () => ctx };
@@ -51,6 +52,8 @@ const context = vm.createContext({
   stepAll: direction => steps.push(direction),
 });
 try {
+  vm.runInContext(load(read('../src/interaction/editingMode.ts')), context);
+  context.setDrillEditingEnabled(true);
   scene.activeCamera = new FreeCamera('chartCamera', Vector3.Zero(), scene);
   for (const file of ['menu/handMenu', 'menu/floatingPanel', 'menu/panelTransparencySlider', 'menu/drillChartPad']) {
     vm.runInContext(load(read(`../src/${file}.ts`)), context);

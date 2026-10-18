@@ -12,6 +12,10 @@
   box-sizing: border-box;
 }
 
+[data-xr-editing][hidden] {
+  display: none !important;
+}
+
 html, body {
   margin: 0;
   width: 100%;
@@ -405,6 +409,13 @@ body {
 .xr-button.secondary {
   background: linear-gradient(135deg, #7f8dd5, #5263d9);
   box-shadow: 0 12px 28px rgba(82, 99, 217, 0.34);
+}
+
+.xr-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
 }
 
 .xr-button:hover {

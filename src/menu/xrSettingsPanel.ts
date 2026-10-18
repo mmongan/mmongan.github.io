@@ -33,6 +33,10 @@ export function executeXRSetting(setting: XRSetting) {
     seated: sittingModeToggle, grid: fieldGridToggle, snap: gridSnapToggle,
   }[setting];
   if (!control) throw new Error(`The ${setting} settings control is unavailable.`);
+  if (control.disabled) {
+    console.warn(control.title || `The ${setting} setting is unavailable in this mode.`);
+    return;
+  }
   control.click();
 }
 

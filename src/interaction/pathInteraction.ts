@@ -24,6 +24,9 @@ import {
 } from '../xr/ar';
 import { scene } from '../scene/engine';
 import { createSelectionEditor } from './selectionEditor';
+import {
+  DESKTOP_PLAYBACK_NOTICE, isDrillEditingEnabled, isMenuActionAvailable, onEditingModeChangedObservable,
+} from './editingMode';
 import { sampleGuideMarchers } from './guideMarcherLayout';
 import { getChartPageTimeline, setChartPageTimeline, getChartPageCounts } from '../robot/chartPageTimeline';
 import { parseDraftingWorkspace } from './draftingWorkspace';
@@ -2390,6 +2393,10 @@ const padGrabButtons = new Map<string, "grip" | "trigger">();
 const menuInteractionHeld = new Map<string, boolean>();
 
 function executeMenuAction(hit: NonNullable<ReturnType<typeof getHandMenuHit>>) {
+  if (!isMenuActionAvailable(hit)) {
+    showPlacementNotice(DESKTOP_PLAYBACK_NOTICE);
+    return;
+  }
   switch (hit.action) {
     case "fieldProjector":
       executeFieldProjectorAction(hit.command);
@@ -2671,6 +2678,7 @@ function finishFingerPath(commit: boolean) {
 }
 
 export function updateHandPathDrawing() {
+  if (!isDrillEditingEnabled()) return;
   handInteraction.updateHandPathDrawing();
 }
 
@@ -2728,6 +2736,7 @@ function selectDrawingGuideFromRay(ray: Ray) {
 // Controller triggers select/edit existing content or place standing marchers
 // when placement mode is enabled. They never draw or extend marching paths.
 export function updateRobotPathFromControllers() {
+  if (!isDrillEditingEnabled()) return;
   padGrabButtons.forEach((_, source) => {
     if (floorCalibrationToggle?.checked || !controllerRegistry.get(source)) {
       endFloatingPanelGrab(source);
@@ -3325,6 +3334,7 @@ function spawnMarchingDrill() {
   });
   setSelectedInstrument(pickerInstrument);
 
+  seekToCount(0);
   refreshCollisionMarkers(scene);
   const last = Math.max(0, ...paths.map(path => path.length - 1));
   setChartPageTimeline({ beatsPerPage: getChartPageTimeline().beatsPerPage, authoredCounts: [0, last] });
@@ -3332,8 +3342,8 @@ function spawnMarchingDrill() {
 }
 
 // Replaces the field with an OpenMarch show, each marcher holding the
-// instrument for its section and playing from the opening set.
-function spawnOpenMarchDrill(drill: OpenMarchImportedDrill, showName: string, autoPlay = true): number {
+// instrument for its section, paused at the opening set by default.
+function spawnOpenMarchDrill(drill: OpenMarchImportedDrill, showName: string, autoPlay = false): number {
   clearAllRobots();
   forgetOtherChartPageGuides();
   const pickerInstrument = getSelectedInstrument();
@@ -3380,7 +3390,7 @@ function getOpenMarchShowName(url: string): string {
 
 let openMarchRequest = 0;
 
-async function openMarchFromUrl(url: string, autoPlay = true): Promise<boolean> {
+async function openMarchFromUrl(url: string, autoPlay = false): Promise<boolean> {
   const request = ++openMarchRequest;
   const setStatus = (message: string, error = false) => {
     if (!openMarchStatus) return;
@@ -3500,10 +3510,24 @@ export function initInteraction() {
     snapAngle,
     constrain: constrainFormationMovement,
   });
+  const editingObserver = onEditingModeChangedObservable.add(enabled => {
+    if (enabled) return;
+    selectionTools?.disable();
+    setEraseMode(false);
+    setPlacementMode(false);
+    stopMarcherPainting();
+    hideInstrumentPanel();
+    executeDrawingToolAction({ action: 'drawingTool', tool: 'tableExit' });
+    executeDrawingToolAction({ action: 'drawingTool', tool: 'hide' });
+    clearStepHandles();
+    segments.forEach(updateSegmentHandleVisibility);
+  });
+  scene.onDisposeObservable.addOnce(() => onEditingModeChangedObservable.remove(editingObserver));
   setEraseMode(!!eraseModeToggle?.checked);
   undoEraseButton?.addEventListener("click", () => executeMenuAction({ action: "undoErase" }));
   redoEraseButton?.addEventListener("click", () => executeMenuAction({ action: "redoErase" }));
   window.addEventListener("keydown", (event) => {
+    if (!isDrillEditingEnabled()) return;
     bypassDrillSnap = event.shiftKey;
     const target = event.target;
     if (target instanceof HTMLElement && (
@@ -3553,7 +3577,7 @@ export function initInteraction() {
     if (url) void openMarchFromUrl(url);
   });
   openMarchExampleButton?.addEventListener("click", () => void openMarchFromUrl(OPEN_MARCH_EXAMPLE));
-  // Open on the bundled example show, already marching, rather than an empty
+  // Open on the bundled example show, paused, rather than an empty
   // field; `?openmarch=<url>` opens that show instead. If the show cannot be
   // opened (and nothing else replaced it meanwhile), a generated drill is used.
   const sharedShowUrl = new URLSearchParams(window.location.search).get(OPEN_MARCH_URL_PARAM)?.trim();
@@ -3602,7 +3626,7 @@ export function initInteraction() {
     const drawingType = pointerInfo.type === PointerEventTypes.POINTERDOWN ? "down" :
       pointerInfo.type === PointerEventTypes.POINTERMOVE ? "move" :
       pointerInfo.type === PointerEventTypes.POINTERUP ? "up" : null;
-    if (drawingType && (!("button" in pointerInfo.event) || pointerInfo.event.button <= 0) &&
+    if (isDrillEditingEnabled() && drawingType && (!("button" in pointerInfo.event) || pointerInfo.event.button <= 0) &&
       (isDrawingPointerActive() || !pickFloatingPanel(getPointerRay())?.hit) &&
       handleDrawingPointer(drawingType, getFieldPointFromRay(getPointerRay()))) {
       eventState.skipNextObservers = true;
@@ -3680,6 +3704,18 @@ export function initInteraction() {
       return;
     }
     if (pickFloatingPanel(getPointerRay())?.hit) return;
+    if (!isDrillEditingEnabled()) {
+      const ghostPick = scene.pickWithRay(getPointerRay(), isGhostBandMesh);
+      if (ghostPick?.hit && ghostPick.pickedMesh && jumpToGhostBandTime(ghostPick.pickedMesh)) return;
+      const pickedMesh = pointerInfo.pickInfo?.pickedMesh;
+      if (pickedMesh && seekToCollisionMarker(pickedMesh)) return;
+      const robot = findRobotRoot(pickedMesh ?? null);
+      if (robot) {
+        selectRobot(robot);
+        if (!isMarcherPOVActive()) setMarcherPOVEnabled(true);
+      }
+      return;
+    }
     if (isMarcherPainting()) {
       const pick = scene.pick(scene.pointerX, scene.pointerY, mesh => findRobotRoot(mesh) !== null);
       tryPaintMarcher(pick?.hit ? findRobotRoot(pick.pickedMesh) : null);

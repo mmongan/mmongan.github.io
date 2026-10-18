@@ -83,23 +83,26 @@ try {
   context.mode.setTableMode(true);
   assert.equal(context.povDisabled, true, 'Drafting entry stops marcher POV');
   assert.equal(context.mode.active(), true);
-  assert.equal(context.getARScale(), 1 / 120, 'Drafting entry makes a one-meter-long field');
-  assert.ok(Math.abs(context.getARSurfaceHeight() - (camera.globalPosition.y - 0.45)) < 1e-6,
-    'Desktop table is placed below the viewer, even from an elevated spectator position');
-  assert.equal(context.getFieldHeightMode(), 'table');
+  assert.equal(context.getARScale(), 1, 'Desktop drafting keeps 1:1 field scale');
+  near(context.getARPosition(), originalPosition, 'Desktop drafting leaves field placement unchanged');
+  assert.equal(context.getFieldHeightMode(), 'floor');
   context.mode.setTableMode(false);
   near(context.getARPosition(), originalPosition, 'Exit restores the previous field position');
-  assert.equal(context.getARScale(), 0.37, 'Exit restores the previous field scale');
+  assert.equal(context.getARScale(), 1, 'Desktop drafting exit remains 1:1');
   assert.equal(context.getARRotation(), 0.6, 'Exit restores the previous field rotation');
   assert.equal(context.getFieldHeightMode(), 'floor');
   assert.equal(context.mode.grid.checked, false);
   const cameraClassName = camera.getClassName;
   camera.getClassName = () => 'WebXRCamera';
+  context.setImmersiveFieldScaling(true);
+  context.setARScale(.37);
   camera.position.y = 1.1;
   context.mode.setTableMode(true);
+  assert.equal(context.getARScale(), 1 / 120, 'Immersive drafting still uses tabletop scale');
   assert.ok(context.getARSurfaceHeight() <= 0.65 + 1e-6,
     'Seated XR table stays at least 45 cm below eye level');
   context.mode.setTableMode(false);
+  assert.equal(context.getARScale(), .37, 'XR drafting exit restores the prior XR scale');
   camera.getClassName = cameraClassName;
   camera.position.y = 1.7;
   context.setARScale(1 / 120); context.setARRotation(0.7);
