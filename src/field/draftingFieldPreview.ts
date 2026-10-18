@@ -12,7 +12,7 @@ export function isDraftingPreviewSource(mesh: AbstractMesh) {
     if (node.name.startsWith(PREVIEW_PREFIX)) return false;
     if (node.name === 'pathRobot') return true;
   }
-  return /^(field|fieldLines|hashMarks|leftEndZone|rightEndZone|goalLineNorth|goalLineSouth|leftSideline|rightSideline|drawingGuide|draftingGuideLabel|draftingStickyNote)$/.test(mesh.name) ||
+  return /^(field|midfieldLogo|fieldLines|hashMarks|leftEndZone|rightEndZone|goalLineNorth|goalLineSouth|leftSideline|rightSideline|drawingGuide|draftingGuideLabel|draftingStickyNote)$/.test(mesh.name) ||
     /^(turfStripe|yardLine|hashMark|yardNumber|topDownHashMarks|drawingGuideDivisionMark-)/.test(mesh.name);
 }
 
