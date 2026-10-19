@@ -3,6 +3,7 @@ import { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
 import type { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.pure';
 import type { LinesMesh } from '@babylonjs/core/Meshes/linesMesh.pure';
 import type { Camera } from '@babylonjs/core/Cameras/camera.pure';
+import type { Ray } from '@babylonjs/core/Culling/ray';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
 import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.pure';
 import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
@@ -68,6 +69,9 @@ interface Tool {
   dock: TransformNode;
   dockPosition: Vector3;
   dockRotation: Quaternion;
+  dockIndex: number;
+  compassAnchor?: Vector3;
+  fieldPose?: Matrix;
 }
 
 let drawing: ReturnType<typeof createFieldDrawingTools> | null = null;
@@ -145,9 +149,12 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
   let selectedGuide: Guide | null = null;
   const activeGuide = () => selectedGuide ?? guides[guides.length - 1];
   const tools: Tool[] = [];
+  let activeTool: Tool | null = null;
+  let activeWire: TransformNode | null = null;
   let selected: FieldDrawingTool | null = null;
   let pointerStroke: Vector3[] | null = null;
   let pointerAnchor: Vector3 | null = null;
+  let pointerCompassRadius = 0;
   let pointerCamera: Camera | null = null;
   let preview: LinesMesh | null = null;
   let previewPoints: Vector3[] = [];
@@ -418,8 +425,8 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     if (draftingTableStatus) draftingTableStatus.value = message;
   }
   function setTableMode(enabled: boolean) {
-    if (guidesBusy() || tools.some(tool => tool.panel.grabbed()) || memoryWire.panel.grabbed() ||
-      memoryWire.handles.some(handle => handle.grabbed())) {
+    if (guidesBusy() || tools.some(tool => tool.panel.grabbed()) ||
+      memoryWire.instances().some(wire => wire.panel.grabbed() || wire.handles.some(handle => handle.grabbed()))) {
       deps.notify('Finish the stroke and release drafting tools before changing drafting mode.');
       if (draftingModeToggle) draftingModeToggle.checked = tableMode;
       return;
@@ -872,6 +879,9 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
   function toolInstructions(kind: FieldDrawingTool) {
     const instructions: Partial<Record<FieldDrawingTool, string>> = {
       pencil: 'Pencil: draw freehand or along a ruler. Start within 0.25 yards of a straight guide endpoint and draw outward to extend that guide along its original direction.',
+      ruler: 'Ruler: slide and rotate the flat straightedge on the field. Draw along its edge with a pencil. Desktop field drags still create straight guides.',
+      protractor: 'Protractor: slide and rotate it flat on the field. Desktop field drags still create semicircular guides.',
+      compass: 'Compass: set the radius with Span -/+, then touch the needle to the field. The needle stays pinned while the pencil rotates around it. Release to finish the circle. Desktop: drag to rotate about the starting point at the preset radius.',
       tSquare: 'T-square: drag or touch its edge to draw field-axis lines. Parallel ref switches to the newest guide direction.',
       setSquare: `Set square: drag or touch its edge to draw at multiples of ${getDraftAngle()} degrees. Angle cycles 30/45/60/90.`,
       dividers: 'Dividers: drag or touch/lift to mark equal intervals along the newest guide (or the drawn segment). Spacing +/- sets yards.',
@@ -884,7 +894,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     };
     return instructions[kind];
   }
-  function makeTool(kind: FieldDrawingTool, dock: TransformNode, index: number) {
+  function makeTool(kind: FieldDrawingTool, dock: TransformNode, index: number, label = true): Tool {
     const root = new TransformNode(`fieldTool-${kind}`, scene);
     const parts = new Set<AbstractMesh>();
     const tip = new Vector3(0, -0.12, 0);
@@ -1046,6 +1056,25 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     }
     class PhysicalDrawingTool extends DetachableFloatingPanel {
       override get hasPanelChrome() { return false; }
+      override beginPointer(ray: Ray) {
+        if (floorCalibrationToggle?.checked || takingPhoto) return false;
+        return super.beginPointer(ray);
+      }
+      override update(source: string, world: Matrix) {
+        super.update(source, world);
+        if (isSlidingTool(kind) && root.parent === null) flattenTool(tool);
+        if (kind === 'compass') constrainCompass(tool);
+      }
+      override updatePointer(ray: Ray) {
+        super.updatePointer(ray);
+        if (isSlidingTool(kind) && root.parent === null) flattenTool(tool);
+        if (kind === 'compass') constrainCompass(tool);
+      }
+      override end(source: string) {
+        super.end(source);
+        if (!this.grabbed()) tool.compassAnchor = undefined;
+        if (isSlidingTool(kind) && root.parent === null) flattenTool(tool);
+      }
       override begin(source: string, world: Matrix) {
         if (floorCalibrationToggle?.checked || takingPhoto) {
           deps.notify('Finish floor calibration before using drawing tools.');
@@ -1056,13 +1085,17 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
         desktopLaserAim = false;
         displayLaser([]);
         selected = kind;
+        activeTool = tool;
         updateTableStatus();
         if (root.parent === dock) {
+          makeTool(kind, dock, index, false);
           span = root.scaling.x;
           root.setParent(null);
           sizeHeld(root, span);
         } else span = heldSpan(root);
         super.begin(source, world);
+        if (isSlidingTool(kind)) flattenTool(tool);
+        if (kind === 'compass') constrainCompass(tool);
         deps.notify(toolInstructions(kind) ?? (kind === 'laser'
           ? 'Laser: rotate the held level to project a green line across the field. Use Save laser line on the Tools tray to save a guide. Desktop: drag on the field to aim.'
           : `${kind}: touch the working edge to the field, then lift. Desktop: drag on the field after picking up the tool.`));
@@ -1079,27 +1112,69 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     root.position.copyFrom(dockPosition);
     root.rotationQuaternion!.copyFrom(dockRotation);
     root.scaling.setAll(0.65);
-    const canvas = document.createElement('canvas');
-    canvas.width = 512; canvas.height = 96;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('Physical tool labels require a 2D canvas context.');
-    ctx.fillStyle = '#e2e8f0'; ctx.font = 'bold 36px Arial';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    const label = kind === 'tSquare' ? 'T-square' : kind === 'setSquare' ? 'Set square' :
-      kind === 'spline' ? 'French curve' : kind.replace(/Stencil$/, ' stencil').replace(/Cutter$/, ' cutter');
-    ctx.fillText(label, 256, 48, 500);
-    const texture = new DynamicTexture(`physicalToolLabel-${kind}`, canvas, scene, false);
-    texture.hasAlpha = true; texture.update();
-    const material = new StandardMaterial(`physicalToolLabel-${kind}Material`, scene);
-    material.diffuseTexture = texture; material.opacityTexture = texture;
-    material.disableLighting = true; material.emissiveColor = Color3.White();
-    const plaque = MeshBuilder.CreatePlane(`physicalToolLabel-${kind}`, { width: 0.26, height: 0.035 }, scene);
-    plaque.parent = dock; plaque.position.set(dockPosition.x, dockPosition.y - 0.1, -0.026);
-    plaque.material = material; plaque.isPickable = false;
-    plaque.onDisposeObservable.addOnce(() => material.dispose(false, true));
-    const tool: Tool = { kind, root, panel, tip, edge, stroke: null, dock, dockPosition, dockRotation };
+    if (label) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 512; canvas.height = 96;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Physical tool labels require a 2D canvas context.');
+      ctx.fillStyle = '#e2e8f0'; ctx.font = 'bold 36px Arial';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      const label = kind === 'tSquare' ? 'T-square' : kind === 'setSquare' ? 'Set square' :
+        kind === 'spline' ? 'French curve' : kind.replace(/Stencil$/, ' stencil').replace(/Cutter$/, ' cutter');
+      ctx.fillText(label, 256, 48, 500);
+      const texture = new DynamicTexture(`physicalToolLabel-${kind}`, canvas, scene, false);
+      texture.hasAlpha = true; texture.update();
+      const material = new StandardMaterial(`physicalToolLabel-${kind}Material`, scene);
+      material.diffuseTexture = texture; material.opacityTexture = texture;
+      material.disableLighting = true; material.emissiveColor = Color3.White();
+      const plaque = MeshBuilder.CreatePlane(`physicalToolLabel-${kind}`, { width: 0.26, height: 0.035 }, scene);
+      plaque.parent = dock; plaque.position.set(dockPosition.x, dockPosition.y - 0.1, -0.026);
+      plaque.material = material; plaque.isPickable = false;
+      plaque.onDisposeObservable.addOnce(() => material.dispose(false, true));
+    }
+    const tool: Tool = { kind, root, panel, tip, edge, stroke: null, dock, dockPosition, dockRotation, dockIndex: index };
+    if (!label) {
+      for (const node of [root, ...root.getDescendants()]) node.name += `-copy-${root.uniqueId}`;
+    }
     tools.push(tool);
     return tool;
+  }
+  function isSlidingTool(kind: FieldDrawingTool) {
+    return kind === 'ruler' || kind === 'protractor';
+  }
+  function constrainCompass(tool: Tool) {
+    if (!tool.panel.grabbed()) return;
+    if (!tool.compassAnchor) {
+      const tip = local(Vector3.TransformCoordinates(tool.tip, tool.root.computeWorldMatrix(true)));
+      if (!isGuideOnField([tip, tip])) return;
+      const scale = Vector3.TransformNormal(Vector3.Up(), deps.root.computeWorldMatrix(true)).length();
+      if (Math.abs(tip.y - FIELD_SURFACE_Y) * scale > 0.025 * fieldToolScale()) return;
+      tool.compassAnchor = tip.clone();
+    }
+    flattenTool(tool);
+  }
+  function flattenTool(tool: Tool) {
+    const field = deps.root.computeWorldMatrix(true);
+    const inverse = field.clone().invert();
+    const world = tool.root.computeWorldMatrix(true);
+    const tip = Vector3.TransformCoordinates(Vector3.TransformCoordinates(tool.tip, world), inverse);
+    const edge = Vector3.TransformCoordinates(Vector3.TransformCoordinates(tool.edge, world), inverse);
+    const yaw = -Math.atan2(edge.z - tip.z, edge.x - tip.x);
+    if (tool.kind === 'compass' && tool.compassAnchor) {
+      tip.x = tool.compassAnchor.x;
+      tip.z = tool.compassAnchor.z;
+    }
+    const fieldRotation = Quaternion.Identity();
+    field.decompose(new Vector3(), fieldRotation, new Vector3());
+    tool.root.rotationQuaternion!.copyFrom(fieldRotation.multiply(Quaternion.RotationAxis(Vector3.Up(), yaw)));
+    tool.root.computeWorldMatrix(true);
+    const offset = Vector3.TransformNormal(tool.tip, tool.root.getWorldMatrix());
+    tip.y = FIELD_SURFACE_Y + (tool.kind === 'compass' ? 0 : 0.008);
+    tool.root.position.copyFrom(Vector3.TransformCoordinates(tip, field).subtract(offset));
+    tool.root.computeWorldMatrix(true);
+    if (isSlidingTool(tool.kind) && !tool.panel.grabbed()) {
+      tool.fieldPose = tool.root.getWorldMatrix().multiply(inverse);
+    }
   }
   (['pencil', 'eraser', 'ruler', 'protractor', 'compass', 'laser', 'camera'] as const).forEach((kind, index) =>
     makeTool(kind, trayRoot, index));
@@ -1124,14 +1199,15 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
       deps.prepare();
       return true;
     },
-    selected: (fromGrip: boolean) => {
+    selected: (fromGrip: boolean, wireRoot: TransformNode) => {
       selected = 'wire';
-      if (memoryWire.root.parent === null) span = heldSpan(memoryWire.root);
+      activeWire = wireRoot;
+      if (wireRoot.parent === null) span = heldSpan(wireRoot);
       else {
-        span = memoryWire.root.scaling.x;
+        span = wireRoot.scaling.x;
         if (fromGrip) {
-          memoryWire.root.setParent(null);
-          sizeHeld(memoryWire.root, span);
+          wireRoot.setParent(null);
+          sizeHeld(wireRoot, span);
         }
       }
       deps.notify('Memory wire: hold the copper grip to move it; pull cyan beads to bend. Press flat onto turf and lift to stamp. Desktop: drag on the field to stamp the remembered shape.');
@@ -1372,8 +1448,12 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     }
     if (value === 'smaller' || value === 'larger') {
       span = Math.max(0.5, Math.min(3, span * (value === 'larger' ? 1.25 : 0.8)));
-      tools.filter(tool => tool.kind === selected).forEach(tool => { tool.stroke = null; sizeHeld(tool.root, span); });
-      if (selected === 'wire') sizeHeld(memoryWire.root, span);
+      if (activeTool?.kind === selected && activeTool.root.parent === null) {
+        activeTool.stroke = null;
+        activeTool.fieldPose = undefined;
+        sizeHeld(activeTool.root, span);
+      }
+      if (selected === 'wire' && activeWire?.parent === null) sizeHeld(activeWire, span);
       display([]);
       deps.notify(`Tool span: ${Math.round(span * 100)}%.`);
       return;
@@ -1381,8 +1461,23 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     pointerStroke = null; pointerAnchor = null; releasePointerCamera(); display([]);
     desktopLaserAim = false; displayLaser([]);
     if (value === 'stop') {
+      activeTool = null;
+      activeWire = null;
       memoryWire.returnToDock();
+      const retained = new Set<FieldDrawingTool>();
+      for (let index = 0; index < tools.length;) {
+        const tool = tools[index];
+        if (retained.has(tool.kind)) {
+          tool.panel.release();
+          tool.root.dispose();
+          tools.splice(index, 1);
+        } else {
+          retained.add(tool.kind);
+          index++;
+        }
+      }
       tools.forEach(tool => {
+        tool.fieldPose = undefined;
         tool.stroke = null; tool.panel.release();
         tool.root.parent = tool.dock;
         tool.root.position.copyFrom(tool.dockPosition);
@@ -1394,19 +1489,27 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     deps.prepare();
     if (value === 'wire') {
       selected = 'wire';
-      memoryWire.root.setParent(null);
-      sizeHeld(memoryWire.root, span);
-      placeHeldTool(memoryWire.panel, memoryWire.root);
+      const wire = memoryWire.withdraw();
+      activeWire = wire.root;
+      wire.root.setParent(null);
+      sizeHeld(wire.root, span);
+      placeHeldTool(wire.panel, wire.root);
       return;
     }
-    const tool = tools.find(tool => tool.kind === value);
+    const tool = tools.find(tool => tool.kind === value && tool.root.parent === tool.dock) ??
+      tools.find(tool => tool.kind === value);
     if (!tool) throw new Error(`Unknown physical drawing tool: ${value}`);
     selected = tool.kind;
+    activeTool = tool;
     tool.panel.release();
+    if (tool.root.parent === tool.dock) {
+      makeTool(tool.kind, tool.dock, tool.dockIndex, false);
+    }
     tool.root.setParent(null);
     sizeHeld(tool.root, span);
     tool.root.setEnabled(true);
     placeHeldTool(tool.panel, tool.root);
+    if (isSlidingTool(tool.kind)) flattenTool(tool);
     deps.notify(toolInstructions(tool.kind) ?? (value === 'laser'
       ? 'Laser: drag on the field to aim a live line, then use Save laser line on the Tools tray. In XR, hold and rotate the level; release turns the beam off.'
       : value.endsWith('Cutter')
@@ -1428,6 +1531,12 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
       if (!point) return false;
       pointerStroke = selected === 'pencil' ? beginPencilStroke(point) : [point.clone()];
       pointerAnchor = point.clone();
+      if (selected === 'compass' && activeTool?.kind === 'compass') {
+        const world = activeTool.root.computeWorldMatrix(true);
+        pointerCompassRadius = Vector3.Distance(
+          local(Vector3.TransformCoordinates(activeTool.tip, world)),
+          local(Vector3.TransformCoordinates(activeTool.edge, world)));
+      }
       if (!pointerCamera) {
         pointerCamera = scene.activeCamera;
         pointerCamera?.detachControl();
@@ -1438,8 +1547,16 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
       if (selected === 'eraser') erase(previous, point, 0.5);
       if (selected === 'pencil') updatePencilStroke(pointerStroke, point);
       else if (selected === 'eraser') append(pointerStroke, point);
-      else if (pointerAnchor) pointerStroke = selected === 'wire'
-        ? memoryWire.shapeAt(pointerAnchor, point) : makeStroke(selected, pointerAnchor, point);
+      else if (pointerAnchor) {
+        if (selected === 'compass') {
+          const direction = point.subtract(pointerAnchor);
+          direction.y = 0;
+          if (direction.lengthSquared() < 1e-10) direction.set(1, 0, 0);
+          point = pointerAnchor.add(direction.normalize().scale(pointerCompassRadius));
+        }
+        pointerStroke = selected === 'wire'
+          ? memoryWire.shapeAt(pointerAnchor, point) : makeStroke(selected, pointerAnchor, point);
+      }
       if (selected === 'laser') {
         desktopLaserAim = true;
         displayLaser(pointerStroke);
@@ -1488,7 +1605,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
   async function takePhoto() {
     if (floorCalibrationToggle?.checked || pointerStroke ||
       tools.some(tool => tool.kind !== 'camera' && (tool.panel.grabbed() || tool.stroke !== null)) ||
-      memoryWire.panel.grabbed() || memoryWire.handles.some(handle => handle.grabbed())) {
+      memoryWire.instances().some(wire => wire.panel.grabbed() || wire.handles.some(handle => handle.grabbed()))) {
       workspaceMessage('Finish floor calibration and release drawing tools before taking a snapshot.');
       return;
     }
@@ -1514,8 +1631,8 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
       workspaceMessage('Finish floor calibration before saving or restoring drafting.');
       return;
     }
-    if (pointerStroke || tools.some(tool => tool.panel.grabbed()) || memoryWire.panel.grabbed() ||
-      memoryWire.handles.some(handle => handle.grabbed())) {
+    if (pointerStroke || tools.some(tool => tool.panel.grabbed()) ||
+      memoryWire.instances().some(wire => wire.panel.grabbed() || wire.handles.some(handle => handle.grabbed()))) {
       workspaceMessage('Release drafting tools before saving or restoring.');
       return;
     }
@@ -1609,6 +1726,8 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
   window.addEventListener('blur', cancelPointer);
   const observer = scene.onBeforeRenderObservable.add(() => {
     if (takingPhoto) return;
+    if (!desktopLaserAim && !tools.some(tool =>
+      tool.kind === 'laser' && tool.root.isEnabled() && tool.panel.grabbed())) displayLaser([]);
     for (const tool of tools) {
       if (tool.kind === 'camera') continue;
       if (tool.kind === 'laser') {
@@ -1622,7 +1741,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
           const direction = end.subtract(start);
           displayLaser(Math.hypot(direction.x, direction.z) >= direction.length() * 0.1
             ? buildLaserGuide(start, direction) : []);
-        } else if (!desktopLaserAim) displayLaser([]);
+        }
         continue;
       }
       if (!tool.root.isEnabled()) continue;
@@ -1630,7 +1749,17 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
         tool.stroke = null; cancelPointer();
         continue;
       }
+      if (isSlidingTool(tool.kind) && tool.root.parent === null) {
+        if (!tool.panel.grabbed() && tool.fieldPose) {
+          tool.fieldPose.multiply(deps.root.computeWorldMatrix(true)).decompose(
+            tool.root.scaling, tool.root.rotationQuaternion!, tool.root.position);
+        }
+        flattenTool(tool);
+        tool.stroke = null;
+        continue;
+      }
       if (!tool.panel.grabbed()) { finishTool(tool); continue; }
+      if (tool.kind === 'compass') constrainCompass(tool);
       const world = tool.root.computeWorldMatrix(true);
       if (tool.kind !== 'pencil' && tool.kind !== 'eraser') {
         const toolUp = Vector3.TransformNormal(Vector3.Up(), world).normalize();
@@ -1643,10 +1772,12 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
       const contact = 0.025 * fieldToolScale();
       if (Math.abs(tip.y - FIELD_SURFACE_Y) * scaleY > contact) { finishTool(tool); continue; }
       tip.y = FIELD_SURFACE_Y + 0.025;
-      if (tool.kind !== 'eraser') tip = snapForDrafting(tip);
+      if (tool.kind !== 'eraser' && tool.kind !== 'compass') tip = snapForDrafting(tip);
       if (tool.kind === 'pencil') {
-        const ruler = tools.find(candidate => candidate.kind === 'ruler' && candidate.root.parent === null);
-        if (ruler?.root.isEnabled()) {
+        let nearest = Infinity;
+        const pencilTip = tip.clone();
+        for (const ruler of tools) {
+          if (ruler.kind !== 'ruler' || ruler.root.parent !== null || !ruler.root.isEnabled()) continue;
           const rulerWorld = ruler.root.computeWorldMatrix(true);
           const a = local(Vector3.TransformCoordinates(ruler.tip, rulerWorld));
           const b = local(Vector3.TransformCoordinates(ruler.edge, rulerWorld));
@@ -1654,9 +1785,11 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
           const length = direction.lengthSquared();
           if (length > 0 && Math.abs(a.y - FIELD_SURFACE_Y) * scaleY <= contact &&
             Math.abs(b.y - FIELD_SURFACE_Y) * scaleY <= contact) {
-            const t = Math.max(0, Math.min(1, Vector3.Dot(tip.subtract(a), direction) / length));
+            const t = Math.max(0, Math.min(1, Vector3.Dot(pencilTip.subtract(a), direction) / length));
             const projected = a.add(direction.scale(t));
-            if (Vector3.Distance(projected, tip) * scaleY <= contact * 1.4) {
+            const distance = Vector3.Distance(projected, pencilTip) * scaleY;
+            if (distance <= contact * 1.4 && distance < nearest) {
+              nearest = distance;
               projected.y = tip.y;
               tip = projected;
             }
@@ -1672,14 +1805,15 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
         updatePencilStroke(tool.stroke, tip);
         display(tool.stroke);
       } else {
-        const edge = snapForDrafting(local(Vector3.TransformCoordinates(tool.edge, world)));
+        const rawEdge = local(Vector3.TransformCoordinates(tool.edge, world));
+        const edge = tool.kind === 'compass' ? rawEdge : snapForDrafting(rawEdge);
         tool.stroke = makeStroke(tool.kind, tip, edge);
         display(tool.stroke);
       }
     }
   });
   const scaleObserver = onARScaleChangedObservable.add(() => {
-    for (const root of [...tools.map(tool => tool.root), memoryWire.root]) {
+    for (const root of [...tools.map(tool => tool.root), ...memoryWire.instances().map(wire => wire.root)]) {
       const base = heldSpans.get(root);
       if (base !== undefined && root.parent === null) root.scaling.setAll(base * fieldToolScale());
     }

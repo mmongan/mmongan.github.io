@@ -309,13 +309,17 @@ try {
   }
   act('clear');
   stroke('compass', point(0, 0), point(3, 0));
+  act('path');
+  const fixedCompassRadius = conversions.at(-1)[1][0].x;
+  act('larger');
   context.handleDrawingPointer('down', point(0, 0));
   context.handleDrawingPointer('move', point(2, 0));
   context.handleDrawingPointer('move', point(4, 0));
   context.handleDrawingPointer('up', point(4, 0));
   act('path');
-  assert.ok(Math.abs(conversions.at(-1)[1][0].x - 4) < 1e-9,
-    'Circle resize keeps the original center rather than drifting to its circumference');
+  assert.ok(Math.abs(conversions.at(-1)[1][0].x - fixedCompassRadius * 1.25) < 1e-7,
+    'Span sets the compass radius, and dragging preserves that radius and original center');
+  act('smaller');
   act('undo');
   assert.equal(guideCount(), 1);
   stroke('eraser', point(-5, 0), point(5, 0));
@@ -456,7 +460,9 @@ try {
     const base = ruler.scaling.x / 120;
     assert.ok(base >= 0.5 && base <= 3, 'Full-size field tools keep the chosen span, multiplied by the field scale');
     const fieldSurfaceY = Vector3.TransformCoordinates(new Vector3(0, -0.48, 0), root.computeWorldMatrix(true)).y;
-    assert.ok(ruler.position.y >= fieldSurfaceY + 0.16 * ruler.scaling.y - 1e-6, 'Giant tools are placed above the field surface');
+    const rulerTip = Vector3.TransformCoordinates(new Vector3(-.12, -.12, 0), ruler.computeWorldMatrix(true));
+    assert.ok(Math.abs(rulerTip.y - fieldSurfaceY - .008 * root.scaling.y) < 1e-5,
+      'Rulers are laid directly on the field rather than floating above it');
     testARScale = 1 / 60;
     arScaleChanged.notifyObservers(testARScale);
     assert.ok(Math.abs(ruler.scaling.x - base * 2) < 1e-9, 'Held tools resize with the field scale');
@@ -909,6 +915,77 @@ try {
   assert.equal(context.isDraftingTableMode(), false, 'Calibration blocks entry');
   calibration.checked = false;
   act('clear');
+  act('stop');
+  act('show');
+  for (const kind of ['ruler', 'protractor', 'compass']) {
+    act(kind);
+    const implement = scene.getTransformNodeByName(`fieldTool-${kind}`);
+    const trayCopy = scene.transformNodes.find(node => node.name.startsWith(`fieldTool-${kind}-copy-`) &&
+      node.parent === scene.getTransformNodeByName('drawingToolTray'));
+    assert.ok(trayCopy, `${kind} leaves a reusable copy in the tray`);
+    const trayPose = trayCopy.computeWorldMatrix(true).clone();
+    const fieldWorld = root.computeWorldMatrix(true);
+    const fieldInverse = fieldWorld.clone().invert();
+    const fieldRotation = Quaternion.Identity();
+    fieldWorld.decompose(new Vector3(), fieldRotation, new Vector3());
+    implement.rotationQuaternion.copyFrom(fieldRotation);
+    implement.scaling.setAll(1);
+    const tip = new Vector3(kind === 'ruler' ? -.12 : 0, -.12, 0);
+    implement.position.copyFrom(Vector3.TransformCoordinates(new Vector3(0, -.48, 0), fieldWorld)
+      .subtract(Vector3.TransformNormal(tip, implement.computeWorldMatrix(true))));
+    const body = implement.getChildMeshes().find(mesh => mesh.isPickable);
+    context.beginFloatingPanelGrab('right', Matrix.Identity(), body, undefined, .03, true);
+    const needleBefore = Vector3.TransformCoordinates(tip, implement.computeWorldMatrix(true));
+    context.updateFloatingPanelGrab('right',
+      Matrix.Compose(Vector3.One(), Quaternion.FromEulerAngles(.4, .8, -.3), new Vector3(.8, 1.2, -.6)));
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    const toolWorld = implement.computeWorldMatrix(true);
+    const needle = Vector3.TransformCoordinates(tip, toolWorld);
+    const needleLocal = Vector3.TransformCoordinates(needle, fieldInverse);
+    assert.ok(Math.abs(needleLocal.y - (-.48 + (kind === 'compass' ? 0 : .008))) < 1e-5,
+      `${kind} working surface stays on the field`);
+    const fieldUp = Vector3.TransformNormal(Vector3.Up(), fieldWorld).normalize();
+    const toolUp = Vector3.TransformNormal(Vector3.Up(), toolWorld).normalize();
+    assert.ok(Vector3.Dot(fieldUp, toolUp) > .99999, `${kind} rejects controller pitch and roll`);
+    if (kind === 'compass') {
+      assert.ok(needle.equalsWithEpsilon(needleBefore, 1e-5), 'Compass pivot does not slide during rotation');
+      const pencilTip = Vector3.TransformCoordinates(new Vector3(.12, -.12, 0), toolWorld);
+      assert.ok(Math.abs(Vector3.Distance(needle, pencilTip) - .12) < 1e-5,
+        'Compass pencil rotates at the fixed radius');
+    }
+    assert.ok(trayCopy.computeWorldMatrix(true).equals(trayPose), 'Tray original is unaffected by moving a copy');
+    context.endFloatingPanelGrab('right');
+    if (kind !== 'compass') {
+      const relative = implement.computeWorldMatrix(true).multiply(fieldInverse);
+      const previousPosition = root.position.clone();
+      root.position.x += .7;
+      root.position.z -= .4;
+      scene.onBeforeRenderObservable.notifyObservers(scene);
+      const expected = relative.multiply(root.computeWorldMatrix(true)).asArray();
+      assert.ok(implement.computeWorldMatrix(true).asArray().every((value, index) =>
+        Math.abs(value - expected[index]) < 1e-5), 'Released flat tools follow later field transforms');
+      root.position.copyFrom(previousPosition);
+      scene.onBeforeRenderObservable.notifyObservers(scene);
+    }
+    context.beginFloatingPanelGrab('left', Matrix.Identity(), trayCopy.getChildMeshes().find(mesh => mesh.isPickable),
+      undefined, .03, true);
+    assert.equal(trayCopy.parent, null, 'A second pickup is independent of the first');
+    assert.equal(implement.parent, null);
+    assert.ok(scene.transformNodes.some(node => node !== trayCopy && node.name.startsWith(`fieldTool-${kind}`) &&
+      node.parent === scene.getTransformNodeByName('drawingToolTray')), 'Repeated pickup replenishes the tray');
+    context.endFloatingPanelGrab('left');
+    act('stop');
+    act('show');
+  }
+  act('wire');
+  act('wire');
+  const wireCopies = scene.transformNodes.filter(node => node.name === 'fieldTool-wire');
+  assert.equal(wireCopies.filter(node => node.parent === null).length, 2, 'Wire launchers also supply independent copies');
+  assert.equal(wireCopies.filter(node => node.parent?.name === 'drawingToolTray').length, 1,
+    'Memory-wire tray remains reusable');
+  act('stop');
+  assert.equal(scene.transformNodes.filter(node => node.name === 'fieldTool-wire').length, 1,
+    'Storing tools cleans up extra wire copies');
   console.log('Drafting checks passed: physical tools, laser, advanced geometry, pin-free drafting-table lifecycle, shared snapping, selected-guide edits, bounds, persistence, camera, cleanup, tabletop transforms, and calibration gating.');
 } finally {
   scene.dispose();

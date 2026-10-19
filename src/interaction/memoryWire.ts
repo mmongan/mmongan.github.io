@@ -13,12 +13,13 @@ interface MemoryWireDependencies {
   field: TransformNode;
   prepare(): boolean;
   allowed(): boolean;
-  selected(fromGrip: boolean): void;
+  selected(fromGrip: boolean, root: TransformNode): void;
   commit(points: Vector3[]): void;
   contactScale(): number;
 }
 
 export function createMemoryWire(deps: MemoryWireDependencies) {
+  const replacements: ReturnType<typeof createMemoryWire>[] = [];
   const root = new TransformNode('fieldTool-wire', scene);
   root.rotationQuaternion = Quaternion.Identity();
   const material = new StandardMaterial('memoryWireCopper', scene);
@@ -37,11 +38,15 @@ export function createMemoryWire(deps: MemoryWireDependencies) {
   let wire = MeshBuilder.CreateTube('memoryWireBody', { path: points, radius: 0.004, tessellation: 8, updatable: true }, scene);
   wire.parent = root; wire.material = material; wire.isPickable = false;
   let pending: Vector3[] | null = null;
+  function takeFromDock() {
+    if (root.parent === deps.dock) replacements.push(createMemoryWire(deps));
+  }
 
   class WireGrip extends DetachableFloatingPanel {
     override begin(source: string, world: Matrix) {
       if (!deps.prepare()) return;
-      deps.selected(true);
+      takeFromDock();
+      deps.selected(true, root);
       super.begin(source, world);
     }
   }
@@ -49,7 +54,8 @@ export function createMemoryWire(deps: MemoryWireDependencies) {
   class BendHandle extends DetachableFloatingPanel {
     override begin(source: string, world: Matrix) {
       if (!deps.prepare()) return;
-      deps.selected(false);
+      takeFromDock();
+      deps.selected(false, root);
       root.setParent(null);
       super.begin(source, world);
     }
@@ -67,6 +73,7 @@ export function createMemoryWire(deps: MemoryWireDependencies) {
     return new BendHandle(node, new Set([bead]), node, new Vector3(0.01, 0.01, 0.01));
   });
   function returnToDock() {
+    replacements.splice(0).forEach(wire => wire.dispose());
     panel.release();
     handles.forEach(handle => {
       handle.release();
@@ -136,9 +143,18 @@ export function createMemoryWire(deps: MemoryWireDependencies) {
     }
   });
   const dispose = () => {
+    replacements.splice(0).forEach(wire => wire.dispose());
     scene.onBeforeRenderObservable.remove(observer);
     handles.forEach(handle => handle.root.dispose());
     root.dispose(); material.dispose(); beadMaterial.dispose();
   };
-  return { root, panel, handles, returnToDock, reset, shapeAt, dispose };
+  function instances(): { root: TransformNode; panel: DetachableFloatingPanel; handles: DetachableFloatingPanel[] }[] {
+    return [{ root, panel, handles }, ...replacements.flatMap(wire => wire.instances())];
+  }
+  function withdraw(): { root: TransformNode; panel: DetachableFloatingPanel } {
+    if (root.parent !== deps.dock && replacements.length) return replacements[replacements.length - 1].withdraw();
+    takeFromDock();
+    return { root, panel };
+  }
+  return { root, panel, handles, returnToDock, reset, shapeAt, dispose, instances, withdraw };
 }
