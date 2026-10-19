@@ -6,6 +6,7 @@ import { NullEngine } from '@babylonjs/core/Engines/nullEngine.js';
 import { Scene } from '@babylonjs/core/scene.js';
 import { FreeCamera } from '@babylonjs/core/Cameras/freeCamera.js';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.js';
+import { Mesh } from '@babylonjs/core/Meshes/mesh.js';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.js';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
 import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector.js';
@@ -26,7 +27,7 @@ const controls = Object.fromEntries(['xrSettingsPanelButton', 'xrSettingsPanelTo
 const engine = new NullEngine(), scene = new Scene(engine);
 const labels = [];
 const context = vm.createContext({
-  scene, MeshBuilder, TransformNode, StandardMaterial, Matrix, Quaternion, Vector3, Plane, Color3, Ray, Observable, ...controls,
+  scene, Mesh, MeshBuilder, TransformNode, StandardMaterial, Matrix, Quaternion, Vector3, Plane, Color3, Ray, Observable, ...controls,
   document: { createElement: () => ({ getContext: () => ({ fillText: label => labels.push(label) }) }) },
   DynamicTexture: class { update() {} dispose() {} },
   Texture: { TRILINEAR_SAMPLINGMODE: 3 },
@@ -45,8 +46,8 @@ try {
   context.setDraftingToolsEnabled(true);
   scene.activeCamera = new FreeCamera('settingsCamera', Vector3.Zero(), scene);
   vm.runInContext(load('../src/menu/handMenu.ts'), context);
-  vm.runInContext(load('../src/menu/floatingPanel.ts'), context);
   vm.runInContext(load('../src/menu/settingsButtonIcons.ts'), context);
+  vm.runInContext(load('../src/menu/floatingPanel.ts'), context);
   vm.runInContext(load('../src/menu/settingsPanelControls.ts'), context);
   vm.runInContext(load('../src/menu/xrSettingsPanel.ts'), context);
   context.initXRSettingsPanel();
@@ -57,6 +58,11 @@ try {
   assert.equal(root.parent, null, 'Settings remains independent of the field and hands');
   const firstPosition = root.position.clone();
   const backing = scene.getMeshByName('xrSettingsBacking');
+  assert.equal(backing.material.alpha, .45, 'Settings background is semi-transparent');
+  assert.equal(backing.material.disableDepthWrite, true);
+  for (const mesh of root.getChildMeshes().filter(mesh => mesh.name.startsWith('xrSettingsButton-'))) {
+    assert.equal(mesh.material.alpha, 1, 'Settings labels and buttons remain opaque');
+  }
   assert.ok(context.beginFloatingPanelGrab('left', Matrix.Identity(), backing, undefined, .03, true));
   context.updateFloatingPanelGrab('left', Matrix.Translation(.3, .1, .2));
   context.endFloatingPanelGrab('left');

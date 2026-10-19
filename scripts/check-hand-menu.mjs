@@ -40,6 +40,17 @@ try {
   assert.equal(context.getHandMenuHitNearPoint(new Vector3(0, 0, 1)), null, 'Hidden controls do not activate');
   buttons[1].mesh.dispose();
   assert.equal(context.isMenuControl(buttons[1].mesh), false, 'Disposal unregisters controls');
+  const sourceButton = MeshBuilder.CreatePlane('toolboxSource', {}, scene);
+  const icon = MeshBuilder.CreateBox('toolboxIcon', {}, scene);
+  const hit = { action: 'drawingTool', tool: 'show' };
+  context.registerMenuButton(sourceButton, hit, { hideOutsideDrafting: false, disabledVisibility: .65 });
+  context.registerMenuButton(icon, hit, { source: sourceButton });
+  for (const enabled of [true, false]) {
+    context.setDraftingToolsEnabled(enabled);
+    assert.equal(icon.isVisible, sourceButton.isVisible, 'Icons inherit their source visibility policy');
+    assert.equal(icon.visibility, sourceButton.visibility, 'Icons inherit disabled-state opacity');
+  }
+  sourceButton.dispose(); icon.dispose();
   console.log('Hand-menu removal checks passed: no attached menus, retained standalone picking/touch, hidden controls, and disposal.');
 } finally {
   scene.dispose(); engine.dispose();

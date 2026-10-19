@@ -169,7 +169,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
   function heldSpan(root: TransformNode) {
     return heldSpans.get(root) ?? root.scaling.x / fieldToolScale();
   }
-  function placeHeldTool(panel: DetachableFloatingPanel, root: TransformNode) {
+  function placeHeldTool(panel: FloatingPanel, root: TransformNode) {
     const factor = fieldToolScale();
     panel.placeForViewer({ desktop: { distance: 0.6, height: -0.08, side: 0.3 },
       xr: { distance: 0.35 * factor, height: -0.15 * Math.min(1, factor) }, side: 0.25 * factor, uprightInXR: true }, false);
@@ -209,6 +209,11 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
   const felt = new StandardMaterial('drawingTrayFelt', scene);
   felt.diffuseColor = new Color3(0.05, 0.08, 0.1);
   felt.specularColor = Color3.Black();
+  const trayBackground = new StandardMaterial('drawingTrayBackground', scene);
+  trayBackground.diffuseColor = felt.diffuseColor.clone();
+  trayBackground.specularColor = Color3.Black();
+  trayBackground.alpha = 0.45;
+  trayBackground.disableDepthWrite = true;
   const wood = new StandardMaterial('drawingToolWood', scene);
   wood.diffuseColor = new Color3(0.75, 0.53, 0.29);
   const graphite = new StandardMaterial('drawingToolGraphite', scene);
@@ -263,7 +268,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
   }
   function buildTray(parent: TransformNode, targets: Set<AbstractMesh>, name: string, width = 0.95, height = 0.78) {
     const backing = MeshBuilder.CreateBox(name, { width, height, depth: 0.025 }, scene);
-    backing.parent = parent; backing.material = felt; targets.add(backing);
+    backing.parent = parent; backing.material = trayBackground; targets.add(backing);
     for (const side of [-1, 1]) {
       const rim = MeshBuilder.CreateBox(`${name}Side`, { width: 0.02, height: height + 0.02, depth: 0.06 }, scene);
       rim.parent = parent; rim.position.set(side * width / 2, 0, -0.015);
@@ -1710,7 +1715,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     stencilRoot.dispose();
     cutterRoot.dispose();
     draftingRoot.dispose();
-    metal.dispose(); felt.dispose(); wood.dispose(); graphite.dispose(); plastic.dispose();
+    metal.dispose(); felt.dispose(); trayBackground.dispose(); wood.dispose(); graphite.dispose(); plastic.dispose();
     pencilMaterial.dispose(); eraserMaterial.dispose();
     yarnMaterial.dispose(); selectedYarnMaterial.dispose(); divisionMarkMaterial.dispose();
     laserMaterial.dispose();

@@ -16,6 +16,8 @@ export function createDraftingTablePanel() {
   backing.parent = root;
   const backingMaterial = new StandardMaterial('draftingTableBackingMaterial', scene);
   backingMaterial.diffuseColor = new Color3(0.05, 0.08, 0.1);
+  backingMaterial.alpha = 0.45;
+  backingMaterial.disableDepthWrite = true;
   backing.material = backingMaterial;
   const meshes = new Set([backing]);
   const buttons = new Map<import('@babylonjs/core/Meshes/abstractMesh.pure').AbstractMesh, HandMenuHit>();

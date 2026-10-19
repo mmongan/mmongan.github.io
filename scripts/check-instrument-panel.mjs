@@ -70,6 +70,8 @@ try {
   }
   vm.runInContext(transform(actionSource.slice(0, end)), context);
   context.initInstrumentPanel();
+  assert.equal(scene.getMeshByName('instrumentPanelBacking').material.alpha, .45,
+    'Instrument panel background is semi-transparent');
   const root = scene.getTransformNodeByName('instrumentPanelRoot');
   assert.equal(root.isEnabled(), false);
   assert.equal(toggle.checked, false);

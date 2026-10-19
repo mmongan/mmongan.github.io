@@ -1,5 +1,5 @@
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
-import type { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
+import type { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.pure';
 import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
 import type { MarcherInstrument } from '../robot/robot';
@@ -27,7 +27,7 @@ const templates: Record<MarcherInstrument, ModelTemplate> = {
   guardFlag: getGuardFlagTemplate, guardRifle: getGuardRifleTemplate, guardSabre: getGuardSabreTemplate,
 };
 
-export function addInstrumentButtonModel(button: Mesh, instrument: MarcherInstrument, size: number) {
+export function addInstrumentButtonModel(button: AbstractMesh, instrument: MarcherInstrument, size: number) {
   const scene = button.getScene();
   const model = templates[instrument](scene, 'low').clone(`handMenuInstrument-${instrument}`, null, true);
   if (!model) throw new Error(`Could not create hand-menu instrument: ${instrument}.`);

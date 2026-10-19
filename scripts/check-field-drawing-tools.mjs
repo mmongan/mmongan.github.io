@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import { NullEngine } from '@babylonjs/core/Engines/nullEngine.js';
 import { Scene } from '@babylonjs/core/scene.js';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.js';
+import { Mesh } from '@babylonjs/core/Meshes/mesh.js';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.js';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
 import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector.js';
@@ -61,7 +62,7 @@ const context = vm.createContext({
   setMarcherPOVEnabled() {},
   getARScale: () => testARScale, getARScaleRange: () => ({ min: 0.002, max: 1, default: 1 / 120 }),
   onARScaleChangedObservable: arScaleChanged,
-  scene, MeshBuilder, TransformNode, StandardMaterial, Matrix, Quaternion, Vector3, Color3, Plane, Ray, FreeCamera, Camera,
+  scene, Mesh, MeshBuilder, TransformNode, StandardMaterial, Matrix, Quaternion, Vector3, Color3, Plane, Ray, FreeCamera, Camera,
   CreateScreenshotUsingRenderTarget: (...args) => {
     if (captureFailure) throw new Error('Image capture failed');
     if (captureTimeout) { args[15](); return; }
@@ -111,6 +112,7 @@ const context = vm.createContext({
 });
 vm.runInContext(transform(read('../src/interaction/editingMode.ts')), context);
 context.setDrillEditingEnabled(true);
+vm.runInContext(transform(read('../src/menu/settingsButtonIcons.ts')), context);
 vm.runInContext(transform(read('../src/menu/floatingPanel.ts')), context);
 vm.runInContext(transform(read('../src/interaction/draftingToolbox.ts')), context);
 vm.runInContext(transform(read('../src/interaction/draftingTablePanel.ts')), context);
@@ -143,6 +145,14 @@ try {
     createPath: points => { conversions.push(['path', points]); return true; },
   });
   const toolbox = scene.getTransformNodeByName('draftingToolbox');
+  for (const name of ['drawingToolTrayBacking', 'stencilTrayBacking', 'cookieCutterTrayBacking',
+    'draftingTableBacking', 'draftingToolboxBody']) {
+    const background = scene.getMeshByName(name);
+    assert.equal(background.material.alpha, .45, `${name} is semi-transparent`);
+    assert.equal(background.material.disableDepthWrite, true, `${name} does not hide content behind it`);
+  }
+  assert.equal(scene.getMaterialByName('drawingTrayFelt').alpha, 1, 'Physical tool felt remains opaque');
+  assert.equal(scene.getMaterialByName('draftingToolboxMetal').alpha, 1, 'Grab handles remain opaque');
   assert.ok(toolbox?.isEnabled(), 'Toolbox appears for immersive editing');
   for (const name of ['drawingToolTray', 'advancedDraftingTray', 'fieldStencilTray', 'fieldCookieCutterTray']) {
     assert.equal(scene.getTransformNodeByName(name).parent, toolbox, 'Tool drawers begin inside the box');

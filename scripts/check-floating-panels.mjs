@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import { NullEngine } from '@babylonjs/core/Engines/nullEngine.js';
 import { Scene } from '@babylonjs/core/scene.js';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.js';
+import { Mesh } from '@babylonjs/core/Meshes/mesh.js';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.js';
 import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 import { Plane } from '@babylonjs/core/Maths/math.plane.js';
@@ -16,10 +17,12 @@ import { Color3 } from '@babylonjs/core/Maths/math.color.js';
 const engine = new NullEngine();
 const scene = new Scene(engine);
 const registered = new Map();
-const context = vm.createContext({ scene, Matrix, Quaternion, Vector3, Plane, MeshBuilder, StandardMaterial, Color3,
+const context = vm.createContext({ scene, Matrix, Quaternion, Vector3, Plane, Mesh, MeshBuilder, TransformNode, StandardMaterial, Color3,
   isARTabletopModeActive: () => false,
   registerMenuButton(mesh, action) { registered.set(mesh, action); } });
 const source = readFileSync(new URL('../src/menu/floatingPanel.ts', import.meta.url), 'utf8');
+vm.runInContext(stripTypeScriptTypes(readFileSync(new URL('../src/menu/settingsButtonIcons.ts', import.meta.url), 'utf8'),
+  { mode: 'transform' }).replace(/^import .*?;\r?$/gm, '').replace(/export /g, ''), context);
 vm.runInContext(`${stripTypeScriptTypes(source, { mode: 'transform' })
   .replace(/^import .*?;\r?$/gm, '').replace(/export /g, '')}
 globalThis.api = { FloatingPanel, DetachableFloatingPanel, recallFloatingPanels, getFloatingPanelButtonNearPoint, beginFloatingPanelGrab, updateFloatingPanelGrab,
@@ -27,6 +30,22 @@ endFloatingPanelGrab, isFloatingPanelGrabbed, getFloatingPanelNear,
 pickFloatingPanel, beginFloatingPanelPointerDrag, updateFloatingPanelPointerDrag,
 nudgeFloatingPanelDistance };`, context);
 const api = context.api;
+const resetListeners = new Map();
+const settingsSource = readFileSync(new URL('../src/menu/settings.ts', import.meta.url), 'utf8');
+let resets = 0;
+const resetContext = vm.createContext({
+  recallPanelsButton: { addEventListener: (event, handler) => resetListeners.set(`settings:${event}`, handler) },
+  resetPanelsButton: { addEventListener: (event, handler) => resetListeners.set(`toolbar:${event}`, handler) },
+  recallFloatingPanels: () => { resets++; api.recallFloatingPanels(); },
+});
+vm.runInContext(stripTypeScriptTypes(settingsSource.slice(0, settingsSource.indexOf('const settingsButton')),
+  { mode: 'transform' }).replace(/^import .*?;\r?$/gm, ''), resetContext);
+assert.equal(resetListeners.size, 2, 'Toolbar and Settings both expose panel reset');
+resetListeners.get('settings:click')();
+resetListeners.get('toolbar:click')();
+assert.equal(resets, 2, 'Both reset buttons use the shared recall action');
+const html = readFileSync(new URL('../src/index.html', import.meta.url), 'utf8');
+assert.match(html, /id="resetPanelsButton"[^>]*type="button"[\s\S]*?>Reset panels &amp; signs<\/button>/);
 function create(name, z) {
   const root = new TransformNode(name, scene);
   root.position.z = z;
@@ -245,12 +264,26 @@ try {
   const rimMaterial = rails[0].material;
   const controls = ['smaller', 'larger', 'close'].map(command =>
     scene.getMeshByName(`rimCoveragePanel-${command}`));
+  const header = scene.getMeshByName('rimCoveragePanelHeader');
   for (const control of controls) {
     assert.ok(control && rimPanel.panel.meshes.has(control), 'Shared header includes owned control buttons');
+    assert.equal(control.parent, header, 'Size and close buttons are attached directly to the frame header');
+    const headerSize = header.getBoundingInfo().boundingBox.extendSize;
+    const controlSize = control.getBoundingInfo().boundingBox.extendSize;
+    assert.ok(Math.abs(control.position.x) + controlSize.x <= headerSize.x &&
+      Math.abs(control.position.y) + controlSize.y <= headerSize.y,
+    'Button faces fit on the frame');
+    assert.ok(control.position.z - controlSize.z < -headerSize.z &&
+      control.position.z + controlSize.z > -headerSize.z,
+    'Raised buttons intersect the frame face instead of floating in front of it');
     assert.equal(registered.get(control).action, 'panelControl');
     assert.equal(registered.get(control).panelId, rimPanel.root.uniqueId);
     control.computeWorldMatrix(true);
     assert.ok(rimPanel.panel.near(control.getAbsolutePosition()), 'Header controls fit inside contact bounds');
+    for (const glyph of control.getChildMeshes()) {
+      assert.equal(registered.get(glyph).panelId, rimPanel.root.uniqueId,
+        'Attached button glyphs retain their panel actions');
+    }
   }
   rimPanel.root.scaling.setAll(.5);
   rimPanel.panel.control('larger');

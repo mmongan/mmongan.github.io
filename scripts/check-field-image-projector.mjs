@@ -84,6 +84,10 @@ try {
   assert.throws(() => build({ x: NaN, z: 0, width: 1, rotation: 0 }, 1), /finite/);
   vm.runInContext(transform(read('../src/interaction/fieldImageProjector.ts')), context);
   context.initFieldImageProjector(root, message => notices.push(message));
+  assert.equal(scene.getMeshByName('fieldProjectorControls').material.alpha, .45,
+    'Projector controls have a semi-transparent background');
+  assert.equal(scene.getMeshByName('fieldProjectorControls').material.disableDepthWrite, true);
+  assert.equal(scene.getMaterialByName('fieldProjectorCasing').alpha, 1, 'Projector body remains solid');
   const device = scene.getTransformNodeByName('fieldImageProjector');
   assert.equal(device.isEnabled(), false);
   action('show');

@@ -16,5 +16,5 @@ export function drawPanelButton(
   ctx.font = `bold ${Math.round(height * 0.4)}px Arial`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(label, width / 2, height / 2, width - 12);
+  ctx.fillText(label, width * 0.59, height / 2, width * 0.72 - 12);
 }

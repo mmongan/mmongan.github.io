@@ -130,6 +130,8 @@ function createMarcherPaint(deps: PaintDependencies) {
   const wood = new StandardMaterial('marcherPaintPaletteWood', scene);
   wood.diffuseTexture = grainTexture;
   wood.diffuseColor = new Color3(0.88, 0.88, 0.88);
+  wood.alpha = 0.45;
+  wood.disableDepthWrite = true;
   wood.specularColor = new Color3(0.18, 0.18, 0.18); wood.specularPower = 96;
   backing.material = wood;
   const meshes = new Set<AbstractMesh>([backing]);

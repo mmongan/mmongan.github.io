@@ -56,7 +56,7 @@ try {
   context.setDrillEditingEnabled(true);
   context.setDraftingToolsEnabled(true);
   scene.activeCamera = new FreeCamera('chartCamera', Vector3.Zero(), scene);
-  for (const file of ['menu/handMenu', 'menu/floatingPanel', 'menu/panelTransparencySlider', 'menu/drillChartPad']) {
+  for (const file of ['menu/handMenu', 'menu/settingsButtonIcons', 'menu/floatingPanel', 'menu/panelTransparencySlider', 'menu/drillChartPad']) {
     vm.runInContext(load(read(`../src/${file}.ts`)), context);
   }
   const interaction = read('../src/interaction/pathInteraction.ts');
@@ -114,6 +114,24 @@ try {
   const backing = scene.getMeshByName('drillChartBacking');
   const half = backing.getBoundingInfo().boundingBox.extendSize;
   for (const mesh of controls) {
+    const icons = mesh.getChildMeshes();
+    assert.ok(icons.length > 0, `${mesh.name} has a raised 3D action icon`);
+    const inverse = mesh.computeWorldMatrix(true).clone().invert();
+    for (const icon of icons) {
+      assert.ok(icon.getTotalVertices() > 0 && icon.getBoundingInfo().boundingBox.extendSize.z > 0,
+        'Icons are solid geometry, not image planes');
+      assert.equal(JSON.stringify(context.getHandMenuHit({ pickedMesh: icon })),
+        JSON.stringify(context.getHandMenuHit({ pickedMesh: mesh })), 'Icon dispatches the button action');
+      icon.computeWorldMatrix(true);
+      assert.ok(icon.getBoundingInfo().boundingBox.vectorsWorld.every(point => {
+        const local = Vector3.TransformCoordinates(point, inverse);
+        const size = mesh.getBoundingInfo().boundingBox.extendSize;
+        return Math.abs(local.x) <= size.x && Math.abs(local.y) <= size.y && local.z < 0;
+      }), 'Icon stays within the button face and in front of it');
+      assert.ok(context.isFloatingPanelMesh(icon), 'Gripping the icon moves the entire panel');
+      assert.equal(JSON.stringify(context.getFloatingPanelButtonNearPoint(icon.getBoundingInfo().boundingBox.centerWorld)),
+        JSON.stringify(context.getHandMenuHit({ pickedMesh: mesh })), 'Direct icon contact resolves the same action');
+    }
     const material = mesh.material;
     assert.equal(material.transparencyMode, StandardMaterial.MATERIAL_ALPHATEST,
       `${mesh.name} uses cutout transparency, not angle-dependent blending over the chart`);
@@ -156,6 +174,13 @@ try {
   assert.equal(root.isEnabled(), false, 'Leaving drafting restores prior chart visibility');
   assert.ok(root.computeWorldMatrix(true).asArray().every((value, index) =>
     Math.abs(value - previousPose.asArray()[index]) < 1e-6), 'Leaving drafting restores the original chart pose and size');
+  const iconMeshes = controls.flatMap(mesh => mesh.getChildMeshes());
+  const iconMaterials = iconMeshes.map(mesh => mesh.material);
+  root.dispose();
+  assert.ok(iconMeshes.every(mesh => mesh.isDisposed() && !context.isMenuControl(mesh)),
+    'Disposing the panel unregisters and removes all action icons');
+  assert.ok(iconMaterials.every(material => !scene.multiMaterials.includes(material)),
+    'Merged icon material containers are disposed with their panel');
   console.log('Chart controls passed: ghost/drafting toggles, shared transport, common resize/close and reopen, state labels, and nonoverlapping controls.');
 } finally {
   scene.dispose(); engine.dispose();

@@ -17,6 +17,8 @@ export function createDraftingToolbox(drawers: readonly { root: TransformNode; p
   const buttons = new Map<AbstractMesh, HandMenuHit>();
   const material = new StandardMaterial('draftingToolboxMaterial', scene);
   material.diffuseColor = Color3.FromHexString(PANEL_FRAME_COLOR);
+  material.alpha = 0.45;
+  material.disableDepthWrite = true;
   const metal = new StandardMaterial('draftingToolboxMetal', scene);
   metal.diffuseColor = Color3.FromHexString('#38bdf8');
   function box(name: string, x: number, y: number, z: number, width: number, height: number, depth: number) {

@@ -18,6 +18,8 @@
         <button id="settingsButton" class="icon-button" aria-label="Settings" title="Settings" data-xr-editing hidden>⚙</button>
         <button id="enterVRButton" class="xr-button" type="button">Enter VR</button>
         <button id="enterARButton" class="xr-button secondary" type="button">Enter AR</button>
+        <button id="resetPanelsButton" class="xr-button secondary" type="button"
+          title="Return panels beside you and signs to their stadium mounts">Reset panels &amp; signs</button>
         <button id="marcherPOVExitButton" class="xr-button" type="button" hidden>Exit POV</button>
       </div>
       <output id="xrEntryStatus" class="status-panel" aria-live="polite" hidden></output>
@@ -303,11 +305,11 @@
             <input type="checkbox" id="drillChartPadToggle" />
             <span>Drill chart pad (floating, grabbable)</span>
           </label>
-          <button id="recallPanelsButton" type="button">Bring panels back</button>
+          <button id="recallPanelsButton" type="button">Reset panel positions</button>
           <label class="radio-option"><input id="chartGhostModeToggle" type="checkbox" /><span>Chart ghost mode: before (cyan), current marchers, after (pink)</span></label>
           <label class="radio-option"><input id="xrSettingsPanelToggle" type="checkbox" /><span>Show floating XR settings panel</span></label>
           <button id="xrSettingsPanelButton" type="button">Bring XR settings panel here</button>
-          <p>Grab panel frames to position them. Hidden panels keep your placement when reopened. Bring panels back resets floating panels beside you. Controller Y opens settings, A/X opens instruments, and B opens precision tools. No hand or wrist menus.</p>
+          <p>Grab panel frames to position them. Hidden panels keep your placement when reopened. Reset panels restores the default layout beside your current position without changing panel size or transparency. The same reset is always available in the browser toolbar. Controller Y opens settings, A/X opens instruments, and B opens precision tools. No hand or wrist menus.</p>
           <div data-xr-editing hidden>
           <label class="settings-label" for="chartBeatsPerPage">Beats per chart page</label>
           <input id="chartBeatsPerPage" type="number" min="1" max="64" step="1" value="8" />

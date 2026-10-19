@@ -44,7 +44,12 @@ function createFieldImageProjector(fieldRoot: TransformNode, notify: (message: s
   const glass = new StandardMaterial('fieldProjectorGlass', scene);
   glass.diffuseColor = new Color3(0.06, 0.18, 0.22); lens.material = glass;
   const controls = MeshBuilder.CreateBox('fieldProjectorControls', { width: 0.44, height: 0.21, depth: 0.018 }, scene);
-  controls.parent = root; controls.position.set(0, -0.17, -0.09); controls.material = casing;
+  controls.parent = root; controls.position.set(0, -0.17, -0.09);
+  const controlsMaterial = new StandardMaterial('fieldProjectorControlsMaterial', scene);
+  controlsMaterial.diffuseColor = casing.diffuseColor.clone();
+  controlsMaterial.alpha = 0.45;
+  controlsMaterial.disableDepthWrite = true;
+  controls.material = controlsMaterial;
   const meshes = new Set<AbstractMesh>([body, lens, controls]), buttons = new Map<AbstractMesh, HandMenuHit>();
   const labels: ReadonlyArray<readonly [string, FieldProjectorCommand]> = [
     ['Left', 'left'], ['Right', 'right'], ['Upfield', 'up'], ['Downfield', 'down'],
@@ -227,7 +232,7 @@ function createFieldImageProjector(fieldRoot: TransformNode, notify: (message: s
     scene.onBeforeRenderObservable.remove(observer);
     bindings.forEach(([element, event, handler]) => element?.removeEventListener(event, handler));
     projection?.dispose(); texture?.dispose(); material.dispose();
-    root.dispose(); casing.dispose(); glass.dispose(); projector = null;
+    root.dispose(); casing.dispose(); controlsMaterial.dispose(); glass.dispose(); projector = null;
   });
   sync();
   return { action };

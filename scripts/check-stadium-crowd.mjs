@@ -40,7 +40,7 @@ const context = vm.createContext({
 });
 try {
   scene.activeCamera = new FreeCamera('viewer', Vector3.Zero(), scene);
-  for (const file of ['interaction/editingMode', 'menu/handMenu', 'menu/floatingPanel',
+  for (const file of ['interaction/editingMode', 'menu/handMenu', 'menu/settingsButtonIcons', 'menu/floatingPanel',
     'field/constants', 'field/meshMerging', 'field/stadiumCrowd', 'field/stands']) {
     vm.runInContext(compile(read(`../src/${file}.ts`)), context);
   }
@@ -56,6 +56,18 @@ try {
       assert.equal(context.getHandMenuHit({ pickedMesh: previousFace }), null, 'Rebuild unregisters old actions');
     }
     assert.equal(faces().length, 30, 'Both sidelines have five media signs and ten XR panel signs');
+    const signFace = faces().find(face => !face.name.includes('-panel-'));
+    const sign = signFace.parent;
+    const signParent = sign.parent;
+    const signPose = Matrix.Compose(sign.scaling, sign.rotationQuaternion, sign.position);
+    assert.ok(context.beginFloatingPanelGrab('left', Matrix.Identity(), signFace, undefined, .03, true));
+    context.updateFloatingPanelGrab('left', Matrix.Translation(2, 1, -3));
+    assert.equal(sign.parent, null, 'Gripped sign detaches from its stadium mount');
+    context.recallFloatingPanels();
+    assert.equal(sign.parent, signParent, 'Reset reattaches a sideline sign to its original mount');
+    assert.ok(Matrix.Compose(sign.scaling, sign.rotationQuaternion, sign.position).equalsWithEpsilon(signPose, 1e-5),
+      'Reset restores a sideline sign to its original local pose and size');
+    assert.equal(context.isFloatingPanelGrabbed('left'), false, 'Reset releases held signs');
     for (const side of [-1, 1]) {
       const ordered = ['rewind', 'stepBack', 'playPause', 'stepForward', 'fastForward']
         .map(action => scene.getMeshByName(`stadiumMediaSignFace-${side}-${action}`));

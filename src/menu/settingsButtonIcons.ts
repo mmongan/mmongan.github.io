@@ -1,16 +1,18 @@
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
-import type { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
+import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
+import type { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.pure';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
 import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
 import type { HandMenuHit } from './handMenu';
 import { addInstrumentButtonModel } from './instrumentButtonModel';
 
-export function createSettingsButtonIcon(button: Mesh, action: HandMenuHit, width: number,
-  layout: 'inline' | 'stacked' = 'inline') {
+export function createSettingsButtonIcon(button: AbstractMesh, action: HandMenuHit, width: number,
+  layout: 'inline' | 'stacked' | 'compact' = 'inline', buttonHeight = 0.075) {
   const scene = button.getScene();
-  const scale = layout === 'stacked' ? width / 0.1 : 1;
-  const offset = layout === 'stacked' ? 0 : width > 0.1 ? -width / 2 + 0.034 : 0;
+  const scale = layout === 'compact' ? Math.min(buttonHeight * 0.65, width * 0.18) / 0.045
+    : layout === 'stacked' ? width / 0.1 : 1;
+  const offset = layout === 'compact' ? -width * 0.36 : layout === 'stacked' ? 0 : width > 0.1 ? -width / 2 + 0.034 : 0;
   const height = layout === 'stacked' ? width * 0.14 : 0;
   if (action.action === 'instrumentPanelSummon' && layout === 'inline') {
     const icon = addInstrumentButtonModel(button, 'trumpet', 0.055 * scale);
@@ -82,7 +84,11 @@ export function createSettingsButtonIcon(button: Mesh, action: HandMenuHit, widt
     bar(0.25, 0.12, 0.47, 0.36, 2, 0.14);
     bar(0.25, 0.12, 0.47, -0.12, 2, 0.14);
     box(0.12, 0.6, 0.49, 0.12, 2);
-  } else if (action.action === 'xrSettingsHide') {
+  } else if (action.action === 'xrSettingsHide' || action.action === 'drillChartHide' ||
+    action.action === 'musicStandHide' || action.action === 'instrumentPanelHide' ||
+    (action.action === 'drawingTool' && ['hide', 'tableExit', 'stop', 'toolboxStore'].includes(action.tool)) ||
+    (action.action === 'marcherPaint' && action.command === 'done') ||
+    (action.action === 'fieldProjector' && action.command === 'hide')) {
     bar(-0.32, -0.32, 0.32, 0.32, 1, 0.13);
     bar(-0.32, 0.32, 0.32, -0.32, 1, 0.13);
   } else if (action.action === 'xrSettings') {
@@ -112,6 +118,41 @@ export function createSettingsButtonIcon(button: Mesh, action: HandMenuHit, widt
     dot(-0.22, -0.25, 0.22, 2); dot(0.25, -0.1, 0.22, 2);
     bar(-0.12, -0.2, -0.12, 0.4, 2); bar(0.35, -0.1, 0.35, 0.4, 2);
     bar(-0.12, 0.4, 0.35, 0.4, 2, 0.12);
+  } else if (action.action === 'playPause') {
+    bar(-0.28, -0.35, -0.28, 0.35, 1, 0.14);
+    bar(-0.28, 0.35, 0.32, 0, 1, 0.14);
+    bar(0.32, 0, -0.28, -0.35, 1, 0.14);
+  } else if (action.action === 'rewind' || action.action === 'fastForward' ||
+    action.action === 'stepBack' || action.action === 'stepForward' || action.action === 'drillChartPage') {
+    const direction = action.action === 'drillChartPage' ? action.direction
+      : action.action === 'rewind' || action.action === 'stepBack' ? -1 : 1;
+    bar(-direction * 0.3, 0.33, direction * 0.2, 0, 1);
+    bar(direction * 0.2, 0, -direction * 0.3, -0.33, 1);
+    box(0.1, 0.75, direction * 0.4, 0, 2);
+  } else if (action.action === 'drillChartSaveDraft' || action.action === 'drillChartResumeDraft') {
+    box(0.85, 0.85, 0, 0, 0);
+    box(0.5, 0.25, 0, 0.24, 1, 0.08, -0.11);
+    box(0.5, 0.3, 0, -0.22, 2, 0.08, -0.11);
+  } else if (action.action === 'chartGhostMode' || action.action === 'chartDraftingMode') {
+    field(action.action === 'chartDraftingMode', false);
+    if (action.action === 'chartGhostMode') for (const x of [-0.25, 0, 0.25]) dot(x, 0.1, 0.2, 3);
+  } else if (action.action === 'drillChartInsertPage') {
+    sheet();
+    bar(-0.2, 0, 0.2, 0, 2); bar(0, -0.2, 0, 0.2, 2);
+  } else if (action.action === 'drillChartTransition') {
+    if (action.kind === 'pace') {
+      ring(0.85);
+      bar(0, 0, 0, 0.3, 1); bar(0, 0, 0.22, -0.12, 2);
+    } else if (action.kind === 'shape') {
+      bar(-0.4, -0.3, -0.1, 0.3); bar(-0.1, 0.3, 0.4, -0.2);
+      dot(-0.4, -0.3); dot(0.4, -0.2);
+    } else {
+      dot(-0.18, -0.22, 0.26, 2); bar(-0.06, -0.2, -0.06, 0.38, 1);
+      bar(-0.06, 0.38, 0.35, 0.17, 1);
+    }
+  } else if (action.action === 'musicStandStaffToggle') {
+    for (let row = 0; row < 5; row++) box(0.85, 0.04, 0, (row - 2) * 0.15, 1);
+    dot(0.1, -0.08, 0.26, 2);
   } else if (action.action === 'drawingTool') {
     if (action.tool === 'table') field(true, false);
     else if (action.tool === 'drafting') {
@@ -148,7 +189,8 @@ export function createSettingsButtonIcon(button: Mesh, action: HandMenuHit, widt
     box(0.65, 0.47, 0.12, -0.1, 0, 0.12, -0.16);
     bar(0.3, -0.43, -0.28, -0.43, 2);
     bar(-0.28, -0.43, -0.1, -0.24, 2);
-  } else if (action.action === 'commitFormation') {
+  } else if (action.action === 'commitFormation' || action.action === 'drillChartApplyTransition' ||
+    action.action === 'finishMarcherPlacement') {
     box(0.85, 0.7, 0, 0, 1);
     bar(-0.27, 0, -0.07, -0.22, 0, 0.13);
     bar(-0.07, -0.22, 0.3, 0.25, 0, 0.13);
@@ -158,6 +200,17 @@ export function createSettingsButtonIcon(button: Mesh, action: HandMenuHit, widt
     bar(0, 0.35, direction * 0.42, 0.35, 2, 0.13);
     bar(direction * 0.42, 0.35, direction * 0.18, 0.55, 2, 0.13);
     bar(direction * 0.42, 0.35, direction * 0.18, 0.15, 2, 0.13);
+  } else {
+    sheet();
+  }
+  if (layout === 'compact' && meshes.length) {
+    root.computeWorldMatrix(true);
+    const merged = Mesh.MergeMeshes(meshes, true, true, undefined, false, true);
+    if (!merged) throw new Error(`Could not create the action icon for ${button.name}.`);
+    merged.name = `${root.name}-action`;
+    merged.setParent(root);
+    merged.onDisposeObservable.addOnce(() => merged.material?.dispose());
+    return [merged];
   }
   return meshes;
 }

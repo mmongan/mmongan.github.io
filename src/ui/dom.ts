@@ -50,6 +50,7 @@ export const musicStandToggle = document.getElementById("musicStandToggle") as H
 export const instrumentPanelButton = document.getElementById("instrumentPanelButton") as HTMLButtonElement | null;
 export const instrumentPanelToggle = document.getElementById("instrumentPanelToggle") as HTMLInputElement | null;
 export const recallPanelsButton = document.getElementById("recallPanelsButton") as HTMLButtonElement | null;
+export const resetPanelsButton = document.getElementById("resetPanelsButton") as HTMLButtonElement | null;
 export const xrSettingsPanelButton = document.getElementById("xrSettingsPanelButton") as HTMLButtonElement | null;
 export const xrSettingsPanelToggle = document.getElementById("xrSettingsPanelToggle") as HTMLInputElement | null;
 export const chartGhostModeToggle = document.getElementById("chartGhostModeToggle") as HTMLInputElement | null;

@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import { NullEngine } from '@babylonjs/core/Engines/nullEngine.js';
 import { Scene } from '@babylonjs/core/scene.js';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.js';
+import { Mesh } from '@babylonjs/core/Meshes/mesh.js';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.js';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
 import { Color3 } from '@babylonjs/core/Maths/math.color.js';
@@ -19,7 +20,7 @@ const transform = source => stripTypeScriptTypes(source, { mode: 'transform' }).
 const engine = new NullEngine();
 const scene = new Scene(engine);
 const context = vm.createContext({
-  scene, MeshBuilder, TransformNode, StandardMaterial, Color3, Axis, Vector3, Ray, Matrix, Quaternion, Plane, Observable,
+  scene, Mesh, MeshBuilder, TransformNode, StandardMaterial, Color3, Axis, Vector3, Ray, Matrix, Quaternion, Plane, Observable,
   __APP_VERSION__: 'test',
   document: { createElement: () => ({ getContext: () => ({
     beginPath() {}, moveTo() {}, arcTo() {}, closePath() {}, fill() {}, fillText() {},
@@ -29,6 +30,7 @@ const context = vm.createContext({
 const menu = read('../src/menu/handMenu.ts');
 vm.runInContext(transform(read('../src/interaction/editingMode.ts')).replace(/^import .*?;\r?$/gm, ''), context);
 vm.runInContext(transform(menu).replace(/^import .*?;\r?$/gm, ''), context);
+vm.runInContext(transform(read('../src/menu/settingsButtonIcons.ts')).replace(/^import .*?;\r?$/gm, ''), context);
 vm.runInContext(transform(read('../src/menu/floatingPanel.ts')).replace(/^import .*?;\r?$/gm, ''), context);
 const board = read('../src/field/videoBoard.ts');
 vm.runInContext(transform(board.slice(board.indexOf('function roundedRect('),
@@ -58,7 +60,8 @@ try {
           const target = button.getAbsolutePosition();
           const ray = new Ray(origin, target.subtract(origin).normalize(), 3);
           const pick = context.pickMenuControl(ray);
-          assert.equal(pick.pickedMesh, button, `${action}: reachable from (${x}, ${z}) at ${size * 100}% size`);
+          assert.equal(context.getHandMenuHit(pick)?.action, action,
+            `${action}: button or raised icon reachable from (${x}, ${z}) at ${size * 100}% size`);
           assert.equal(context.isMenuControl(button), true);
           assert.equal(vm.runInContext('buttonActions', context).get(pick.pickedMesh).action, action);
           assert.ok(2 * Math.atan2(3.6 * size / 2, Vector3.Distance(origin, target)) >

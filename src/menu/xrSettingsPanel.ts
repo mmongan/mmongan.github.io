@@ -64,6 +64,8 @@ export function initXRSettingsPanel() {
   backing.position.y = -0.08;
   const backingMaterial = new StandardMaterial('xrSettingsBackingMaterial', scene);
   backingMaterial.diffuseColor = Color3.FromHexString(PANEL_FRAME_COLOR);
+  backingMaterial.alpha = 0.45;
+  backingMaterial.disableDepthWrite = true;
   backing.material = backingMaterial;
   meshes.add(backing);
   function draw(ctx: CanvasRenderingContext2D, label: string, active = false, close = false) {

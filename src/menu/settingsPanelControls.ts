@@ -20,7 +20,7 @@ export const SETTINGS_PANEL_ROWS: SettingsPanelControl[][] = [
     ['Paint', { action: 'marcherPaint', command: 'show' }]],
   [['Projector', { action: 'fieldProjector', command: 'show' }],
     ['Marcher POV', { action: 'marcherPOV' }],
-    ['Bring panels', { action: 'recallPanels' }]],
+    ['Reset panels/signs', { action: 'recallPanels' }]],
   [['Commit form', { action: 'commitFormation' }],
     ['Undo edit', { action: 'undoErase' }], ['Redo edit', { action: 'redoErase' }]],
 ];

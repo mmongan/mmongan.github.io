@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import { NullEngine } from '@babylonjs/core/Engines/nullEngine.js';
 import { Scene } from '@babylonjs/core/scene.js';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.js';
+import { Mesh } from '@babylonjs/core/Meshes/mesh.js';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.js';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
 import { Color3 } from '@babylonjs/core/Maths/math.color.js';
@@ -20,7 +21,7 @@ const engine = new NullEngine(), scene = new Scene(engine);
 const stadium = new TransformNode('stadium', scene);
 let tempo = 120, gaitChanges = [], hornChanges = 0;
 const context = vm.createContext({
-  scene, engine, MeshBuilder, TransformNode, StandardMaterial, Color3, Matrix, Quaternion, Vector3, Plane, Ray, Observable,
+  scene, engine, Mesh, MeshBuilder, TransformNode, StandardMaterial, Color3, Matrix, Quaternion, Vector3, Plane, Ray, Observable,
   __APP_VERSION__: 'test', performance,
   document: { createElement: () => ({ getContext: () => new Proxy({}, {
     get: (target, key) => target[key] ?? (() => {}),
@@ -37,7 +38,7 @@ const context = vm.createContext({
   getInstrumentCarryPose: () => false, toggleInstrumentCarryPose: () => { hornChanges++; },
 });
 try {
-  for (const file of ['interaction/editingMode', 'menu/handMenu', 'menu/floatingPanel', 'field/scoreboard']) {
+  for (const file of ['interaction/editingMode', 'menu/handMenu', 'menu/settingsButtonIcons', 'menu/floatingPanel', 'field/scoreboard']) {
     vm.runInContext(load(read(`../src/${file}.ts`)), context);
   }
   const board = read('../src/field/videoBoard.ts');
@@ -47,6 +48,12 @@ try {
   vm.runInContext(load(board.slice(board.indexOf('export function createVideoBoard('))), context);
   const video = context.createVideoBoard();
   context.createScoreboard();
+  const mounts = new Map();
+  for (const name of ['videoBoardFrame', 'videoBoardButtonPanel', 'scoreboardFrame']) {
+    const panel = scene.getMeshByName(name);
+    mounts.set(panel, { parent: panel.parent, pose: Matrix.Compose(panel.scaling,
+      panel.rotationQuaternion, panel.position) });
+  }
   const mediaPanel = scene.getMeshByName('videoBoardButtonPanel');
   const pointerTarget = mediaPanel.computeWorldMatrix(true).getTranslation().add(new Vector3(0, 2, -.15));
   const pointerOrigin = new Vector3(0, pointerTarget.y, 0);
@@ -83,6 +90,17 @@ try {
   const media = scene.getMeshByName('videoBoardButton-playPause');
   assert.equal(context.getFloatingPanelButtonNearPoint(media.computeWorldMatrix(true).getTranslation()).action, 'playPause',
     'Near hand button actions are not converted into grabs');
+  context.recallFloatingPanels();
+  for (const [panel, mount] of mounts) {
+    assert.equal(panel.parent, mount.parent, 'Reset reattaches stadium signs/displays to their original mount');
+    assert.ok(Matrix.Compose(panel.scaling, panel.rotationQuaternion, panel.position)
+      .equalsWithEpsilon(mount.pose, 1e-5), 'Reset restores original local position, rotation, and scale');
+    assert.equal(context.isFloatingPanelGrabbed('right'), false);
+  }
+  const mountedMedia = media.computeWorldMatrix(true).getTranslation();
+  stadium.position.x += .7;
+  assert.ok(media.computeWorldMatrix(true).getTranslation().equalsWithEpsilon(
+    mountedMedia.add(new Vector3(.7, 0, 0)), 1e-5), 'Reset signs follow subsequent stadium movement');
   const screen = scene.getMeshByName('scoreboardScreen');
   const pickAt = (x, y) => ({ pickedMesh: screen,
     pickedPoint: Vector3.TransformCoordinates(new Vector3(-x, y - 12, 0), screen.computeWorldMatrix(true)) });

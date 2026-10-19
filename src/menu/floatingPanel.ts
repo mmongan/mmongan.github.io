@@ -3,6 +3,7 @@ import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector.p
 import { Plane } from '@babylonjs/core/Maths/math.plane';
 import type { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.pure';
 import type { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
+import type { Node } from '@babylonjs/core/node';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
 import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
@@ -11,6 +12,7 @@ import { FIELD_LENGTH_YARDS, FIELD_WIDTH_YARDS } from '../field/constants';
 import { getARPosition, getARRotation, getARScale, isARTabletopModeActive } from '../xr/ar';
 import { registerMenuButton, type HandMenuHit } from './handMenu';
 import type { PanelTransparencySlider } from './panelTransparencySlider';
+import { createSettingsButtonIcon } from './settingsButtonIcons';
 
 const panels = new Set<FloatingPanel>();
 
@@ -34,7 +36,7 @@ export class FloatingPanel {
   private dragPlane: Plane | null = null;
   private dragOffset = new Vector3();
   private sliderDrag: { source: string; origin: Vector3; point: Vector3 } | null = null;
-  private viewerPlacement: ViewerPlacement | null = null;
+  protected viewerPlacement: ViewerPlacement | null = null;
   private placedCamera = scene.activeCamera;
   private closed = false;
   userPlaced = false;
@@ -51,6 +53,20 @@ export class FloatingPanel {
     private transparencySlider?: PanelTransparencySlider,
   ) {
     root.rotationQuaternion ??= Quaternion.FromEulerVector(root.rotation);
+    for (const [button, action] of [...buttons]) {
+      if (action.action === 'panelControl' ||
+        button.getBoundingInfo().boundingBox.extendSize.z > 1e-6) continue;
+      const size = button.getBoundingInfo().boundingBox.extendSize.scale(2);
+      const existing = button.getChildMeshes();
+      const icons = existing.length ? existing : createSettingsButtonIcon(button, action, size.x, 'compact', size.y);
+      for (const icon of icons) {
+        if (buttons.has(icon)) continue;
+        icon.isPickable = true;
+        meshes.add(icon);
+        buttons.set(icon, action);
+        registerMenuButton(icon, action, { source: button });
+      }
+    }
     const shortSide = Math.min(halfSize.x, halfSize.y);
     if (meshes.size && shortSide >= 0.1 && this.hasPanelChrome) {
       if (!this.resize) {
@@ -89,7 +105,7 @@ export class FloatingPanel {
       });
       const size = Math.max(0.035, shortSide * 0.24);
       const y = halfSize.y + rim + size / 2;
-      const front = -Math.max(halfSize.z, depth / 2) - rim;
+      const front = halfSize.z / 2 - depth / 2 - rim / 4;
       const header = MeshBuilder.CreateBox(`${root.name}PanelHeader`,
         { width: halfSize.x * 2 + rim * 2, height: size + rim, depth }, scene);
       header.parent = surface;
@@ -107,8 +123,8 @@ export class FloatingPanel {
         const x = halfSize.x - size / 2 - (2 - index) * size * 1.25;
         const button = MeshBuilder.CreateBox(`${root.name}Panel-${command}`,
           { width: size, height: size, depth: rim }, scene);
-        button.parent = surface;
-        button.position.set(x, y, front);
+        button.parent = header;
+        button.position.set(x, 0, front - header.position.z);
         button.material = controlMaterial;
         const action: HandMenuHit = { action: 'panelControl', panelId: root.uniqueId, command };
         const own = (mesh: AbstractMesh) => {
@@ -448,10 +464,43 @@ export class FloatingPanel {
 }
 
 export class DetachableFloatingPanel extends FloatingPanel {
+  private mount: { parent: Node | null; pose: Matrix } | null = null;
+
+  private captureMount() {
+    if (this.mount) return;
+    this.mount = {
+      parent: this.root.parent,
+      pose: Matrix.Compose(this.root.scaling, this.root.rotationQuaternion!, this.root.position),
+    };
+  }
+
+  override recall() {
+    if (this.viewerPlacement || !this.mount) {
+      super.recall();
+      return;
+    }
+    if (this.mount.parent?.isDisposed()) {
+      console.warn(`Cannot reset ${this.root.name}: its original mount has been disposed.`);
+      return;
+    }
+    super.recall();
+    this.release();
+    this.root.parent = this.mount.parent;
+    this.mount.pose.decompose(this.root.scaling, this.root.rotationQuaternion!, this.root.position);
+    this.userPlaced = false;
+  }
+
   override begin(source: string, world: Matrix) {
     if (!this.root.isEnabled()) return;
+    this.captureMount();
     this.root.setParent(null);
     super.begin(source, world);
+  }
+
+  override nudge(ray: Ray, delta: number) {
+    if (!this.pick(ray) || this.grabbed()) return false;
+    this.captureMount();
+    return super.nudge(ray, delta);
   }
 }
 

@@ -437,7 +437,7 @@ function createVideoBoardButtons(y: number, z: number) {
     ctx.font = "bold 88px 'Segoe UI', Arial";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(label.text, 128, 136);
+    ctx.fillText(label.text, 151, 136, 172);
 
     const texture = new DynamicTexture(`videoBoardButtonTexture-${label.action}`, canvas, scene, false);
     texture.hasAlpha = true;

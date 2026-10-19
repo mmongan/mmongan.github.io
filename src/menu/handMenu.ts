@@ -43,9 +43,14 @@ export type HandMenuHit =
 const buttonActions = new Map<AbstractMesh, HandMenuHit>();
 
 export function registerMenuButton(mesh: AbstractMesh, action: HandMenuHit,
-  options: { hideOutsideDrafting?: boolean; disabledVisibility?: number } = {}) {
+  options: { hideOutsideDrafting?: boolean; disabledVisibility?: number; source?: AbstractMesh } = {}) {
   buttonActions.set(mesh, action);
   const updateAvailability = () => {
+    if (options.source) {
+      mesh.isVisible = options.source.isVisible;
+      mesh.visibility = options.source.visibility;
+      return;
+    }
     mesh.isVisible = options.hideOutsideDrafting === false || !isDraftingToolAction(action) || isDraftingToolsEnabled();
     mesh.visibility = isMenuActionAvailable(action) ? 1 : options.disabledVisibility ?? 0.25;
   };

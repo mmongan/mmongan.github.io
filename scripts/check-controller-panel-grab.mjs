@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import { NullEngine } from '@babylonjs/core/Engines/nullEngine.js';
 import { Scene } from '@babylonjs/core/scene.js';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.js';
+import { Mesh } from '@babylonjs/core/Meshes/mesh.js';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.js';
 import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 import { Plane } from '@babylonjs/core/Maths/math.plane.js';
@@ -23,7 +24,7 @@ let grip = false, trigger = false, stick = 0, remotePalette = false, paletteGrab
 const controller = { inputSource: { gamepad: { buttons: [{}, { get pressed() { return grip; } }] } },
   grip: gripNode };
 const context = vm.createContext({
-  scene, Matrix, Quaternion, Vector3, Plane, MeshBuilder, StandardMaterial, Color3,
+  scene, Matrix, Quaternion, Vector3, Plane, Mesh, MeshBuilder, TransformNode, StandardMaterial, Color3,
   isARTabletopModeActive: () => false,
   controller, handedness: 'left',
   registerMenuButton() {},
@@ -45,6 +46,7 @@ const context = vm.createContext({
   SCRUB_DEADZONE: 0.2,
 });
 try {
+  vm.runInContext(transform(read('../src/menu/settingsButtonIcons.ts')), context);
   vm.runInContext(`${transform(read('../src/menu/floatingPanel.ts'))}
     globalThis.FloatingPanel = FloatingPanel;`, context);
   const source = read('../src/interaction/pathInteraction.ts');

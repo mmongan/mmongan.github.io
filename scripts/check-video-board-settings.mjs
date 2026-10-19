@@ -5,12 +5,14 @@ import vm from 'node:vm';
 import { NullEngine } from '@babylonjs/core/Engines/nullEngine.js';
 import { Scene } from '@babylonjs/core/scene.js';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.js';
+import { Mesh } from '@babylonjs/core/Meshes/mesh.js';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.js';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
 import { Color3 } from '@babylonjs/core/Maths/math.color.js';
 import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 import { Plane } from '@babylonjs/core/Maths/math.plane.js';
 import { Ray } from '@babylonjs/core/Culling/ray.js';
+import { Observable } from '@babylonjs/core/Misc/observable.js';
 
 const load = path => stripTypeScriptTypes(readFileSync(new URL(path, import.meta.url), 'utf8'), { mode: 'transform' })
   .replace(/^import[\s\S]*?;\r?$/gm, '').replace(/export /g, '');
@@ -18,7 +20,7 @@ const engine = new NullEngine(), scene = new Scene(engine);
 const controls = Object.fromEntries(['sittingModeToggle', 'fieldGridToggle', 'gridSnapToggle']
   .map(name => [name, { checked: false }]));
 const context = vm.createContext({
-  scene, MeshBuilder, TransformNode, StandardMaterial, Color3, Vector3, Ray, Matrix, Quaternion, Plane, ...controls,
+  scene, Mesh, MeshBuilder, TransformNode, StandardMaterial, Color3, Vector3, Ray, Matrix, Quaternion, Plane, Observable, ...controls,
   Texture: { TRILINEAR_SAMPLINGMODE: 3 },
   document: { createElement() {
     const ctx = new Proxy({ labels: [], textDraws: [] }, {
@@ -45,8 +47,8 @@ const context = vm.createContext({
   },
 });
 try {
-  for (const file of ['menu/handMenu', 'menu/floatingPanel', 'menu/panelStyle', 'menu/settingsPanelControls',
-    'menu/settingsButtonIcons', 'field/videoBoardSettings']) {
+  for (const file of ['interaction/editingMode', 'menu/handMenu', 'menu/settingsButtonIcons', 'menu/floatingPanel', 'menu/panelStyle', 'menu/settingsPanelControls',
+    'field/videoBoardSettings']) {
     vm.runInContext(load(`../src/${file}.ts`), context);
   }
   context.createVideoBoardSettings(20.9, 67.4);

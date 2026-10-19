@@ -67,6 +67,8 @@ export function initInstrumentPanel() {
   const backingMaterial = new StandardMaterial('instrumentPanelBackingMaterial', scene);
   backingMaterial.diffuseColor = Color3.FromHexString(PANEL_FRAME_COLOR);
   backingMaterial.specularColor = Color3.Black();
+  backingMaterial.alpha = 0.45;
+  backingMaterial.disableDepthWrite = true;
   backing.material = backingMaterial;
   meshes.add(backing);
 
