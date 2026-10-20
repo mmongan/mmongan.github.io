@@ -8,7 +8,7 @@
       content="Babylon.js WebXR VR and AR demo for Meta Quest 3"
     />
     <title>OpenChartxr</title>
-    <script type="module" crossorigin src="/assets/index-CnqJYbb1.js"></script>
+    <script type="module" crossorigin src="/assets/index-DK89Tan3.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/rolldown-runtime-B0Z9INg1.js">
     <link rel="modulepreload" crossorigin href="/assets/engineStore-Bn2tApal.js">
     <link rel="modulepreload" crossorigin href="/assets/internalTexture-B3djGrls.js">
@@ -64,8 +64,6 @@
         <button id="settingsButton" class="icon-button" aria-label="Settings" title="Settings" data-xr-editing hidden>⚙</button>
         <button id="enterVRButton" class="xr-button" type="button">Enter VR</button>
         <button id="enterARButton" class="xr-button secondary" type="button">Enter AR</button>
-        <button id="resetPanelsButton" class="xr-button secondary" type="button"
-          title="Return panels beside you and signs to their stadium mounts">Reset panels &amp; signs</button>
         <button id="marcherPOVExitButton" class="xr-button" type="button" hidden>Exit POV</button>
       </div>
       <output id="xrEntryStatus" class="status-panel" aria-live="polite" hidden></output>
@@ -351,11 +349,10 @@
             <input type="checkbox" id="drillChartPadToggle" />
             <span>Drill chart pad (floating, grabbable)</span>
           </label>
-          <button id="recallPanelsButton" type="button">Reset panel positions</button>
           <label class="radio-option"><input id="chartGhostModeToggle" type="checkbox" /><span>Chart ghost mode: before (cyan), current marchers, after (pink)</span></label>
           <label class="radio-option"><input id="xrSettingsPanelToggle" type="checkbox" /><span>Show floating XR settings panel</span></label>
           <button id="xrSettingsPanelButton" type="button">Bring XR settings panel here</button>
-          <p>Grab panel frames to position them. Hidden panels keep your placement when reopened. Reset panels restores the default layout beside your current position without changing panel size or transparency. The same reset is always available in the browser toolbar. Any controller X/Y/A/B button opens Settings / panels. With hand tracking, hold an open, flat palm facing up briefly to open the same menu, then choose a panel. The menu floats independently rather than attaching to your hand.</p>
+          <p>Grab panel frames to position them. Hidden panels keep your placement when reopened. Reset panels/signs in the floating Settings / panels menu restores the default layout beside your current position without changing panel size or transparency. Any controller X/Y/A/B button opens Settings / panels. With hand tracking, hold an open, flat palm facing up briefly to open the same menu, then choose a panel. The menu floats independently rather than attaching to your hand.</p>
           <div data-xr-editing hidden>
           <label class="settings-label" for="chartBeatsPerPage">Beats per chart page</label>
           <input id="chartBeatsPerPage" type="number" min="1" max="64" step="1" value="8" />
