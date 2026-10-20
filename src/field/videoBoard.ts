@@ -14,8 +14,7 @@ import { attachToARTransform } from '../xr/ar';
 import { registerMenuButton } from '../menu/handMenu';
 import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS, HASH_OFFSETS_YARDS } from './constants';
 import { TOP_DOWN_MARKER_LAYER_MASK } from '../robot/robot';
-import { createVideoBoardSettings } from './videoBoardSettings';
-import { DetachableFloatingPanel } from '../menu/floatingPanel';
+import { FieldMountedPanel } from '../menu/floatingPanel';
 
 declare const __BUILD_TIME__: string | undefined;
 declare const __APP_VERSION__: string;
@@ -351,7 +350,6 @@ export function createVideoBoard(
   }
 
   createVideoBoardButtons(boardY - boardHeight / 2 - 2.8, boardZ - 0.6);
-  createVideoBoardSettings(boardY + boardHeight / 2 + 0.4, boardZ - 0.6);
 
   const boardRoot = new TransformNode("videoBoardRoot", scene);
   boardRoot.position.set(0, -0.5, boardZ);
@@ -361,7 +359,7 @@ export function createVideoBoard(
   attachToARTransform(boardRoot);
   screen.setParent(frame);
   hud.setParent(frame);
-  new DetachableFloatingPanel(frame, new Set([frame, screen, hud]), frame,
+  new FieldMountedPanel(frame, new Set([frame, screen, hud]), frame,
     new Vector3((boardWidth + 0.8) / 2, (boardHeight + 0.8) / 2, 0.5));
 
   let lastHudProgress = 0;
@@ -464,7 +462,7 @@ function createVideoBoardButtons(y: number, z: number) {
 
   const banner = createTitleBanner(y - panelHeight / 2, z + panelDepth / 2, panelWidth);
   banner.setParent(panel);
-  new DetachableFloatingPanel(panel, new Set([panel, ...panel.getChildMeshes()]), panel,
+  new FieldMountedPanel(panel, new Set([panel, ...panel.getChildMeshes()]), panel,
     new Vector3(panelWidth / 2, panelHeight / 2, panelDepth / 2), buttons);
 }
 

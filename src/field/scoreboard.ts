@@ -9,7 +9,7 @@ import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
 import { scene } from '../scene/engine';
 import { attachToARTransform } from '../xr/ar';
-import { DetachableFloatingPanel } from '../menu/floatingPanel';
+import { FieldMountedPanel } from '../menu/floatingPanel';
 import {
   cycleMarchingGait,
   getMarchTempo,
@@ -145,7 +145,7 @@ export function createScoreboard(): void {
   const root = new TransformNode('scoreboardRoot', scene);
   frame.setParent(root);
   attachToARTransform(root);
-  new DetachableFloatingPanel(frame, new Set([frame, screen]), frame,
+  new FieldMountedPanel(frame, new Set([frame, screen]), frame,
     new Vector3((boardWidth + 0.6) / 2, (boardHeight + 0.6) / 2, 0.5));
 
   function drawTempoSlider() {

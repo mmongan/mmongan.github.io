@@ -145,6 +145,16 @@ try {
     createPath: points => { conversions.push(['path', points]); return true; },
   });
   const toolbox = scene.getTransformNodeByName('draftingToolbox');
+  const toolboxBody = scene.getMeshByName('draftingToolboxBody');
+  const toolboxBounds = toolboxBody.getBoundingInfo().boundingBox;
+  assert.ok(Math.abs(toolboxBounds.extendSize.z * 2 - .08) < 1e-7,
+    'Toolbox body is eight centimeters deep rather than thirty-two');
+  const toolboxFront = toolboxBody.position.z + toolboxBounds.minimum.z;
+  assert.ok(Math.abs(toolboxFront + .08) < 1e-7, 'Thinning the toolbox preserves its front face');
+  assert.ok(scene.getMeshByName('toolboxDrawer-0').position.z < toolboxFront,
+    'Toolbox buttons remain in front of the thinner body');
+  assert.equal(scene.getMeshByName('draftingToolboxCarryHandle').position.z, toolboxBody.position.z,
+    'Carry handle stays aligned with the thinner body');
   for (const name of ['drawingToolTrayBacking', 'stencilTrayBacking', 'cookieCutterTrayBacking',
     'draftingTableBacking', 'draftingToolboxBody']) {
     const background = scene.getMeshByName(name);
@@ -153,7 +163,7 @@ try {
   }
   assert.equal(scene.getMaterialByName('drawingTrayFelt').alpha, 1, 'Physical tool felt remains opaque');
   assert.equal(scene.getMaterialByName('draftingToolboxMetal').alpha, 1, 'Grab handles remain opaque');
-  assert.ok(toolbox?.isEnabled(), 'Toolbox appears for immersive editing');
+  assert.equal(toolbox?.isEnabled(), false, 'Toolbox defaults closed even in immersive editing');
   for (const name of ['drawingToolTray', 'advancedDraftingTray', 'fieldStencilTray', 'fieldCookieCutterTray']) {
     assert.equal(scene.getTransformNodeByName(name).parent, toolbox, 'Tool drawers begin inside the box');
     assert.equal(scene.getTransformNodeByName(name).isEnabled(), false, 'Stored drawers stay closed');

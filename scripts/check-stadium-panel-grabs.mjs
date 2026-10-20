@@ -31,7 +31,7 @@ const context = vm.createContext({
   Texture: { TRILINEAR_SAMPLINGMODE: 3 },
   attachToARTransform: node => node.setParent(stadium),
   createVideoField: () => ({ mesh: MeshBuilder.CreateGround('videoField', {}, scene), updateFieldLevel() {} }),
-  createTopDownFieldTexture: () => null, createVideoBoardSettings() {},
+  createTopDownFieldTexture: () => null,
   MIN_MARCH_TEMPO_BPM: 40, MAX_MARCH_TEMPO_BPM: 240,
   getMarchTempo: () => tempo, setMarchTempo: value => { tempo = value; },
   cycleMarchingGait: direction => gaitChanges.push(direction), getMarchingGaitLabel: () => 'March',
@@ -47,6 +47,8 @@ try {
   context.formatBuildStamp = () => 'test';
   vm.runInContext(load(board.slice(board.indexOf('export function createVideoBoard('))), context);
   const video = context.createVideoBoard();
+  assert.equal(scene.meshes.some(mesh => mesh.name.startsWith('videoBoardSettings')), false,
+    'The video board has no side-mounted tool/settings banks');
   context.createScoreboard();
   const mounts = new Map();
   for (const name of ['videoBoardFrame', 'videoBoardButtonPanel', 'scoreboardFrame']) {
@@ -57,11 +59,11 @@ try {
   const mediaPanel = scene.getMeshByName('videoBoardButtonPanel');
   const pointerTarget = mediaPanel.computeWorldMatrix(true).getTranslation().add(new Vector3(0, 2, -.15));
   const pointerOrigin = new Vector3(0, pointerTarget.y, 0);
-  assert.ok(context.beginFloatingPanelPointerDrag(new Ray(pointerOrigin, Vector3.Forward(), 100)));
+  assert.equal(context.beginFloatingPanelPointerDrag(new Ray(pointerOrigin, Vector3.Forward(), 100)), false);
   context.updateFloatingPanelPointerDrag(new Ray(pointerOrigin.add(new Vector3(2, 0, 0)), Vector3.Forward(), 100));
   context.endFloatingPanelGrab('pointer');
-  assert.ok(Math.abs(mediaPanel.position.x - 2) < 1e-5, 'Desktop dragging works at stadium distance, beyond six meters');
-  mediaPanel.setParent(scene.getTransformNodeByName('videoBoardRoot'));
+  assert.ok(Math.abs(mediaPanel.position.x) < 1e-5, 'Desktop dragging cannot move mounted media controls');
+  assert.equal(context.nudgeFloatingPanelDistance(new Ray(pointerOrigin, Vector3.Forward(), 100), 100), false);
   stadium.position.set(1, .8, -2); stadium.rotation.y = .7; stadium.scaling.setAll(.02);
   const cases = [
     ['videoBoardFrame', 'videoBoardScreen'],
@@ -70,26 +72,38 @@ try {
   ];
   for (const [name, faceName] of cases) {
     const panel = scene.getMeshByName(name), face = scene.getMeshByName(faceName);
-    assert.ok(context.isFloatingPanelMesh(panel) && context.isFloatingPanelMesh(face), `${name} and its face are grabbable`);
+    assert.equal(context.isFloatingPanelMesh(panel), false, `${name} is not grabbable`);
+    assert.equal(context.isFloatingPanelMesh(face), false, `${faceName} is not grabbable`);
+    const parent = panel.parent;
     const before = panel.computeWorldMatrix(true).clone();
     const faceBefore = face.computeWorldMatrix(true).getTranslation();
-    assert.ok(context.beginFloatingPanelGrab('left', Matrix.Identity(), face, undefined, .03, true));
-    assert.equal(panel.parent, null);
-    assert.ok(panel.computeWorldMatrix(true).equalsWithEpsilon(before, 1e-5), 'No pickup jump or scale change');
+    assert.equal(context.beginFloatingPanelGrab('left', Matrix.Identity(), face, undefined, .03, true), false);
+    assert.equal(context.beginFloatingPanelGrab('hand-left', Matrix.Identity(), undefined,
+      panel.computeWorldMatrix(true).getTranslation(), .03, true), false, 'Near-hand pinches cannot detach mounted boards');
+    assert.equal(panel.parent, parent);
+    assert.ok(panel.computeWorldMatrix(true).equalsWithEpsilon(before, 1e-5), 'Grab attempts preserve world pose and scale');
     const delta = new Vector3(.2, .1, -.3);
     context.updateFloatingPanelGrab('left', Matrix.Translation(delta.x, delta.y, delta.z));
     context.endFloatingPanelGrab('left');
-    assert.ok(face.computeWorldMatrix(true).getTranslation().equalsWithEpsilon(faceBefore.add(delta), 1e-5),
-      'All child faces follow the complete panel');
-    const released = panel.computeWorldMatrix(true).clone();
-    stadium.position.x += 1; video.setScreenSize(.5);
-    assert.ok(panel.computeWorldMatrix(true).equalsWithEpsilon(released, 1e-5), 'Released panels stay world-fixed');
-    assert.ok(context.beginFloatingPanelGrab('right', Matrix.Identity(), panel));
+    assert.ok(face.computeWorldMatrix(true).getTranslation().equalsWithEpsilon(faceBefore, 1e-5),
+      'Controller motion cannot move mounted faces');
+    stadium.position.x += 1;
+    assert.ok(face.computeWorldMatrix(true).getTranslation().equalsWithEpsilon(faceBefore.add(new Vector3(1, 0, 0)), 1e-5),
+      'Mounted boards follow field translation');
+    const localPose = Matrix.Compose(panel.scaling, panel.rotationQuaternion, panel.position);
+    stadium.rotation.y += .3;
+    stadium.scaling.scaleInPlace(1.5);
+    assert.ok(panel.computeWorldMatrix(true).equalsWithEpsilon(
+      localPose.multiply(parent.computeWorldMatrix(true)), 1e-5), 'Mounted boards inherit field rotation and scale');
+    assert.equal(context.beginFloatingPanelGrab('right', Matrix.Identity(), panel), false);
     context.endFloatingPanelGrab('right');
+    assert.equal(scene.getMeshByName(`${name}-close`), null, 'Mounted boards have no close/resize chrome');
   }
   const media = scene.getMeshByName('videoBoardButton-playPause');
   assert.equal(context.getFloatingPanelButtonNearPoint(media.computeWorldMatrix(true).getTranslation()).action, 'playPause',
     'Near hand button actions are not converted into grabs');
+  video.setScreenSize(.5);
+  video.setScreenSize(1);
   context.recallFloatingPanels();
   for (const [panel, mount] of mounts) {
     assert.equal(panel.parent, mount.parent, 'Reset reattaches stadium signs/displays to their original mount');
@@ -119,7 +133,7 @@ try {
   frame.dispose();
   assert.equal(context.isFloatingPanelMesh(screen), false);
   assert.equal(context.isScoreboardTempoScreen(screen), false, 'Disposal unregisters scoreboard controls');
-  console.log('Stadium panel grabs passed: live screen, media panel, scoreboard, scaled/rotated parents, no pickup jumps, independent release, regrabbing, hand actions and transformed tempo/gait/horn controls.');
+  console.log('Stadium panel locks passed: live screen, media panel, scoreboard, controller/hand/mouse rejection, inherited field transforms, hand actions and transformed tempo/gait/horn controls.');
 } finally {
   scene.dispose(); engine.dispose();
 }

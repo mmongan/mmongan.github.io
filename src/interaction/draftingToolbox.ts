@@ -27,11 +27,13 @@ export function createDraftingToolbox(drawers: readonly { root: TransformNode; p
     meshes.add(mesh);
     return mesh;
   }
-  const body = box('draftingToolboxBody', 0, 0, 0.08, 0.9, 0.9, 0.32);
+  const bodyDepth = 0.08;
+  const bodyZ = -0.08 + bodyDepth / 2;
+  box('draftingToolboxBody', 0, 0, bodyZ, 0.9, 0.9, bodyDepth);
   for (const x of [-0.16, 0.16]) {
-    box('draftingToolboxHandlePost', x, 0.52, 0.08, 0.035, 0.12, 0.035).material = metal;
+    box('draftingToolboxHandlePost', x, 0.52, bodyZ, 0.035, 0.12, 0.035).material = metal;
   }
-  box('draftingToolboxCarryHandle', 0, 0.58, 0.08, 0.355, 0.035, 0.035).material = metal;
+  box('draftingToolboxCarryHandle', 0, 0.58, bodyZ, 0.355, 0.035, 0.035).material = metal;
   const labels: [string, HandMenuHit][] = [
     ['Open drafting', { action: 'drawingTool', tool: 'table' }],
     ['Drawing drawer', { action: 'drawingTool', tool: 'show' }],
@@ -66,14 +68,14 @@ export function createDraftingToolbox(drawers: readonly { root: TransformNode; p
       if (isDrillEditingEnabled()) super.recall();
     }
   }
-  const panel = new ToolboxPanel(root, meshes, root, new Vector3(0.45, 0.45, 0.24), buttons);
+  const panel = new ToolboxPanel(root, meshes, root, new Vector3(0.45, 0.45, 0.09), buttons);
   root.setEnabled(false);
   function store() {
     drawers.forEach(({ root: drawer, panel: drawerPanel }, index) => {
       drawerPanel.release();
       drawerPanel.userPlaced = false;
       drawer.parent = root;
-      drawer.position.set(0, 0.12 - index * 0.08, 0.08);
+      drawer.position.set(0, 0.12 - index * 0.08, bodyZ);
       drawer.scaling.setAll(0.3);
       drawer.rotation.setAll(0);
       drawer.rotationQuaternion?.set(0, 0, 0, 1);
@@ -86,10 +88,8 @@ export function createDraftingToolbox(drawers: readonly { root: TransformNode; p
       side: 0.65, uprightInXR: true });
   }
   const observer = onEditingModeChangedObservable.add(enabled => {
-    if (enabled) show();
-    else { store(); panel.release(); root.setEnabled(false); }
+    if (!enabled) { store(); panel.release(); root.setEnabled(false); }
   });
-  if (isDrillEditingEnabled()) show();
   store();
   scene.onDisposeObservable.addOnce(() => {
     onEditingModeChangedObservable.remove(observer);

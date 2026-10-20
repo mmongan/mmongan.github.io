@@ -7,7 +7,7 @@ import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
 import { scene } from '../scene/engine';
 import { registerMenuButton, type HandMenuHit } from '../menu/handMenu';
-import { DetachableFloatingPanel } from '../menu/floatingPanel';
+import { FieldMountedPanel } from '../menu/floatingPanel';
 import { drawPanelButton } from '../menu/panelStyle';
 import { getDrillTransportState, onDrillTransportChangedObservable } from '../robot/robot';
 import { FIELD_WIDTH_YARDS } from './constants';
@@ -163,7 +163,7 @@ export function createStadiumCrowd(parent: Mesh) {
           const action = sign.action;
           registerMenuButton(frame, action);
           registerMenuButton(face, action);
-          new DetachableFloatingPanel(frame, new Set([frame, face]), frame,
+          new FieldMountedPanel(frame, new Set([frame, face]), frame,
             new Vector3(1.5, 0.9, 0.08), new Map([[frame, action], [face, action]]));
           if (sign.immersive) {
             immersiveSigns.set(frame, action);

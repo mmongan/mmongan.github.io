@@ -91,6 +91,24 @@ try {
   wrist.dispose();
   const score = create('score', 1);
   const chart = create('chart', 2);
+  const wideRoot = new TransformNode('widePanel', scene);
+  const wideFace = MeshBuilder.CreatePlane('widePanelFace', { width: 1.4, height: 1.6 }, scene);
+  wideFace.parent = wideRoot;
+  new api.FloatingPanel(wideRoot, new Set([wideFace]), wideRoot, new Vector3(.7, .8, .17));
+  for (const suffix of ['GrabRim-0', 'PanelHeader', 'Panel-larger', 'Panel-close']) {
+    const small = scene.getMeshByName(`score${suffix}`);
+    const large = scene.getMeshByName(`widePanel${suffix}`);
+    const a = small.getBoundingInfo().boundingBox.extendSize;
+    const b = large.getBoundingInfo().boundingBox.extendSize;
+    assert.ok(Math.abs(a.z - b.z) < 1e-7, 'All workspace frames have the same shallow depth');
+    if (suffix.startsWith('Panel-')) {
+      assert.ok(a.equalsWithEpsilon(b, 1e-7), 'Frame controls have matching dimensions across panel sizes');
+    } else if (suffix === 'GrabRim-0') {
+      assert.ok(Math.abs(a.x - b.x) < 1e-7, 'Frame rails have matching thickness across panel sizes');
+    }
+    assert.ok(small.material.diffuseColor.equals(large.material.diffuseColor), 'Frame colors match');
+  }
+  wideRoot.dispose();
   const buttonRoot = new TransformNode('buttonPanelRoot', scene);
   const button = MeshBuilder.CreatePlane('mediaButton', { width: 0.115, height: 0.0575 }, scene);
   button.parent = buttonRoot;
@@ -110,12 +128,12 @@ try {
   const scaled = create('scaled', 4);
   scaled.root.scaling.setAll(0.25);
   scaled.root.computeWorldMatrix(true);
-  const edge = Vector3.TransformCoordinates(new Vector3(0.368, 0, 0), scaled.desk.computeWorldMatrix(true));
+  const edge = Vector3.TransformCoordinates(new Vector3(0.374, 0, 0), scaled.desk.computeWorldMatrix(true));
   assert.ok(scaled.panel.near(edge.add(new Vector3(0.025, 0, 0))), 'Small panels retain a 3 cm world contact margin');
   assert.equal(scaled.panel.near(edge.add(new Vector3(0.035, 0, 0))), false);
   scaled.root.scaling.setAll(4);
   scaled.root.computeWorldMatrix(true);
-  const largeEdge = Vector3.TransformCoordinates(new Vector3(0.368, 0, 0), scaled.desk.computeWorldMatrix(true));
+  const largeEdge = Vector3.TransformCoordinates(new Vector3(0.374, 0, 0), scaled.desk.computeWorldMatrix(true));
   assert.equal(scaled.panel.near(largeEdge.add(new Vector3(0.04, 0, 0))), false,
     'Large panels do not inflate contact tolerance');
   scaled.root.setEnabled(false);

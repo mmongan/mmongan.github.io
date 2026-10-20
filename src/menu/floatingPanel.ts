@@ -84,8 +84,9 @@ export class FloatingPanel {
           },
         };
       }
-      const rim = Math.max(0.018, shortSide * 0.06);
-      const depth = Math.max(0.055, shortSide * 0.16, halfSize.z * 2);
+      const rim = 0.024;
+      const depth = 0.06;
+      const frameZ = -halfSize.z + depth / 2;
       const material = new StandardMaterial(`${root.name}GrabRimMaterial`, scene);
       material.diffuseColor = Color3.FromHexString('#18263b');
       material.emissiveColor = new Color3(0.03, 0.1, 0.14);
@@ -99,17 +100,17 @@ export class FloatingPanel {
       rails.forEach(({ x, y, width, height }, index) => {
         const rail = MeshBuilder.CreateBox(`${root.name}GrabRim-${index}`, { width, height, depth }, scene);
         rail.parent = surface;
-        rail.position.set(x, y, halfSize.z / 2);
+        rail.position.set(x, y, frameZ);
         rail.material = material;
         meshes.add(rail);
       });
-      const size = Math.max(0.035, shortSide * 0.24);
+      const size = 0.09;
       const y = halfSize.y + rim + size / 2;
-      const front = halfSize.z / 2 - depth / 2 - rim / 4;
+      const front = frameZ - depth / 2 - rim / 4;
       const header = MeshBuilder.CreateBox(`${root.name}PanelHeader`,
         { width: halfSize.x * 2 + rim * 2, height: size + rim, depth }, scene);
       header.parent = surface;
-      header.position.set(0, y, halfSize.z / 2);
+      header.position.set(0, y, frameZ);
       header.material = material;
       meshes.add(header);
       const controlMaterial = new StandardMaterial(`${root.name}PanelControlMaterial`, scene);
@@ -142,7 +143,7 @@ export class FloatingPanel {
         }
       });
       this.halfSize = new Vector3(halfSize.x + rim, halfSize.y + rim * 1.5 + size,
-        Math.max(depth / 2 + halfSize.z / 2, -front + rim));
+        Math.max(halfSize.z, Math.abs(frameZ) + depth / 2, -front + rim));
       root.onDisposeObservable.addOnce(() => material.dispose());
       root.onDisposeObservable.addOnce(() => { controlMaterial.dispose(); glyphMaterial.dispose(); });
     }
@@ -461,6 +462,13 @@ export class FloatingPanel {
     this.userPlaced = true;
     return true;
   }
+}
+
+export class FieldMountedPanel extends FloatingPanel {
+  override get canGrab() { return false; }
+  override get hasPanelChrome() { return false; }
+  override beginPointer(_ray: Ray) { return false; }
+  override nudge(_ray: Ray, _delta: number) { return false; }
 }
 
 export class DetachableFloatingPanel extends FloatingPanel {

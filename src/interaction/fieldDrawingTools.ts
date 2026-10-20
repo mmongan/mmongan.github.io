@@ -479,7 +479,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     }
     if (draftingModeToggle) draftingModeToggle.checked = tableMode;
     if (draftingTableControls) draftingTableControls.hidden = !tableMode;
-    if (enabled) { tablePanel.show(); show(); }
+    if (enabled) { toolbox.show(); tablePanel.show(); show(); }
     else { tablePanel.hide(); action('hide'); toolbox.store(); }
     updateTableStatus();
     deps.notify(enabled ? `Drafting ${scene.activeCamera?.getClassName() === 'WebXRCamera' ? 'table' : 'field at 1:1'} ready. Select a tool or select a guide to edit it without pins.`

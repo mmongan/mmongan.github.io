@@ -23,7 +23,6 @@ import { setDrillEditingEnabled } from '../interaction/editingMode';
 import { enterVRButton, enterARButton, xrEntryStatus } from '../ui/dom';
 import { connectMarcherPOVXR, isMarcherPOVActive, setMarcherPOVEnabled } from '../camera/marcherPOV';
 import { setTableHeightForPosture } from '../menu/settings';
-import { summonXRSettingsPanel } from '../menu/xrSettingsPanel';
 import { placeAutomaticFloatingPanels } from '../menu/floatingPanel';
 import { xrModeInputs, getSelectedXRMode, floorCalibrationToggle, fullScaleVRButton, tabletopScaleButton, giantModeButton, roomWidthInput, roomLengthInput, sittingModeToggle } from '../ui/dom';
 import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS } from '../field/constants';
@@ -754,7 +753,6 @@ export function initXR(teleportGrid: Mesh) {
           }
           if (state === WebXRState.IN_XR) {
             placeAutomaticFloatingPanels();
-            summonXRSettingsPanel();
           }
           updateTeleportationAvailability();
           return;

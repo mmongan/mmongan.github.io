@@ -132,6 +132,8 @@ import { duplicateDrillButton, duplicateDrillStatus } from '../ui/dom';
 import { MAX_MARCHING_STRIDE_YARDS } from '../robot/gaitSelection';
 import { getTrackedHandMenuPose } from '../menu/handMenuPose';
 import { createPalmSweepState, updatePalmSweep, type PalmSweepState } from './palmSweepGesture';
+import { createPanelMenuGestureState, isOpenFlatPalm, updatePanelMenuGesture,
+  type PanelMenuGestureState } from './panelMenuGesture';
 import { onManualPlacementBlocked, tryManualMarcherPose, tryManualMarcherPoses } from '../robot/manualPlacement';
 import type { MarcherInstrument } from '../robot/robot';
 import { getOpenMarchSectionInstrument, loadOpenMarchFromUrl, OPEN_MARCH_EXAMPLE, OPEN_MARCH_URL_PARAM } from '../robot/openMarchUrl';
@@ -258,8 +260,8 @@ export function removeActiveController(controller: WebXRInputSource) {
     placementDrafts.delete(handedness);
     triggerHeld.delete(handedness);
     gripHeld.delete(handedness);
-    instrumentPaletteButtonHeld.delete(handedness);
-    draftingToolsButtonHeld.delete(handedness);
+    panelMenuButtonHeld.delete(handedness);
+    panelMenuGestureStates.delete(handedness);
     stopRotationHandleDrag(handedness);
   });
 }
@@ -449,21 +451,21 @@ showAllPathsToggle?.addEventListener("change", () => {
   refreshPathLineAppearance();
 });
 
-const instrumentPaletteButtonHeld = new Map<string, boolean>();
+const panelMenuButtonHeld = new Map<string, boolean>();
 
-// A/X summon the standalone instrument palette.
-function updateInstrumentPaletteFromControllers() {
+// Every controller face button opens the same panel launcher.
+function updatePanelMenuFromControllers() {
   controllerRegistry.forEach((controller, handedness) => {
     if (controller.inputSource.hand) return;
-    const xButton = controller.motionController?.getComponent('x-button');
-    const aButton = controller.motionController?.getComponent('a-button');
-    const isPressed = !!xButton?.pressed || !!aButton?.pressed ||
-      !!controller.inputSource.gamepad?.buttons?.[4]?.pressed;
-    const wasPressed = instrumentPaletteButtonHeld.get(handedness) ?? false;
-    instrumentPaletteButtonHeld.set(handedness, isPressed);
+    const isPressed = ['x-button', 'y-button', 'a-button', 'b-button']
+      .some(id => controller.motionController?.getComponent(id)?.pressed) ||
+      !!controller.inputSource.gamepad?.buttons?.[4]?.pressed ||
+      !!controller.inputSource.gamepad?.buttons?.[5]?.pressed;
+    const wasPressed = panelMenuButtonHeld.get(handedness) ?? false;
+    panelMenuButtonHeld.set(handedness, isPressed);
 
     if (isPressed && !wasPressed) {
-      summonInstrumentPanel();
+      summonXRSettingsPanel();
     }
   });
 }
@@ -801,7 +803,6 @@ function setPlacementMode(enabled: boolean) {
   if (placementModeToggle) placementModeToggle.checked = placementMode;
 }
 
-const draftingToolsButtonHeld = new Map<string, boolean>();
 
 // Right after placing a marcher on a blank chart page, a thumbstick click or
 // an open palm-down sweep of a free tracked hand sends its previous-page
@@ -865,25 +866,29 @@ const PALM_SWEEP_DOWN_DOT = 0.6;
 // Fingertips this many palm lengths from the wrist count as extended.
 const PALM_SWEEP_OPEN_RATIO = 1.6;
 
-// Y summons standalone settings; B opens precision drafting tools.
-function updateDraftingToolsFromControllers() {
-  controllerRegistry.forEach((controller, handedness) => {
-    if (controller.inputSource.hand) return;
-    const yButton = controller.motionController?.getComponent('y-button');
-    const bButton = controller.motionController?.getComponent('b-button');
-    const isPressed = !!yButton?.pressed || !!bButton?.pressed ||
-      !!controller.inputSource.gamepad?.buttons?.[5]?.pressed;
-    const wasPressed = draftingToolsButtonHeld.get(handedness) ?? false;
-    draftingToolsButtonHeld.set(handedness, isPressed);
+const panelMenuGestureStates = new Map<string, PanelMenuGestureState>();
 
-    if (isPressed && !wasPressed) {
-      if (yButton || (!bButton && controller.inputSource.handedness === "left")) {
-        summonXRSettingsPanel();
-      } else {
-        executeDrawingToolAction({ action: 'drawingTool', tool: 'drafting' });
-      }
+function updatePanelMenuFromHands() {
+  const time = performance.now() / 1000;
+  for (const handedness of ['left', 'right'] as const) {
+    const state = panelMenuGestureStates.get(handedness) ?? createPanelMenuGestureState();
+    panelMenuGestureStates.set(handedness, state);
+    const hand = mediaHandTracking?.getHandByHandedness(handedness);
+    let open = false;
+    if (hand && !floorCalibrationToggle?.checked && !marcherGrabs.has(handedness) &&
+      !isFloatingPanelGrabbed(handedness)) {
+      const joint = (name: WebXRHandJoint) => hand.getJointMesh(name).getAbsolutePosition();
+      const wrist = joint(WebXRHandJoint.WRIST);
+      const middle = joint(WebXRHandJoint.MIDDLE_FINGER_PHALANX_PROXIMAL);
+      const pose = getTrackedHandMenuPose(wrist, joint(WebXRHandJoint.INDEX_FINGER_PHALANX_PROXIMAL), middle,
+        joint(WebXRHandJoint.PINKY_FINGER_PHALANX_PROXIMAL), handedness, scene.useRightHandedSystem);
+      const tips = [WebXRHandJoint.INDEX_FINGER_TIP, WebXRHandJoint.MIDDLE_FINGER_TIP,
+        WebXRHandJoint.RING_FINGER_TIP, WebXRHandJoint.PINKY_FINGER_TIP].map(joint);
+      open = !!pose && isOpenFlatPalm(wrist, middle, pose.normal, tips) &&
+        Vector3.Distance(joint(WebXRHandJoint.THUMB_TIP), tips[0]) > Vector3.Distance(wrist, middle) * 0.5;
     }
-  });
+    if (updatePanelMenuGesture(state, time, open)) summonXRSettingsPanel();
+  }
 }
 
 // Deadzone shared by held-object positioning and optional tracked-thumb jogging.
@@ -2651,6 +2656,7 @@ const handInteraction = createHandInteraction({
 const { marcherGrabs } = handInteraction;
 
 export function setHandTracking(tracking: WebXRHandTracking | null) {
+  if (mediaHandTracking !== tracking) panelMenuGestureStates.clear();
   mediaHandTracking = tracking;
   resetThumbJog(thumbJogState);
   scrubRemainder = 0;
@@ -2682,6 +2688,7 @@ function finishMarcherGrab(handedness: string, commit: boolean) {
 
 export function updateTabletopHands() {
   handInteraction.updateTabletopHands();
+  updatePanelMenuFromHands();
 }
 
 function finishFingerPath(commit: boolean) {
@@ -2755,8 +2762,7 @@ export function updateRobotPathFromControllers() {
     }
   });
   if (floorCalibrationToggle?.checked) return;
-  updateInstrumentPaletteFromControllers();
-  updateDraftingToolsFromControllers();
+  updatePanelMenuFromControllers();
   updateAdjacentMarcherGestures();
   updateHandThumbJog(scene.getEngine().getDeltaTime() / 1000);
 
