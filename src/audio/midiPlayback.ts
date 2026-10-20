@@ -41,10 +41,8 @@ export function isMidiPlaybackReady() {
 
 function updatePlaybackHint(message = midiStatus?.textContent ?? "") {
   if (midiPlaybackHint) {
-    midiPlaybackHint.hidden = !statusIsError && isMidiPlaybackReady();
-    midiPlaybackHint.textContent = !statusIsError && context?.state === "suspended" && !synthLoading
-      ? "Press Play to start drill and music. Browser audio permission may require a click, trigger, or pinch."
-      : message;
+    midiPlaybackHint.hidden = !statusIsError;
+    midiPlaybackHint.textContent = statusIsError ? message : "";
   }
 }
 

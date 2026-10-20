@@ -30,22 +30,12 @@ endFloatingPanelGrab, isFloatingPanelGrabbed, getFloatingPanelNear,
 pickFloatingPanel, beginFloatingPanelPointerDrag, updateFloatingPanelPointerDrag,
 nudgeFloatingPanelDistance };`, context);
 const api = context.api;
-const resetListeners = new Map();
-const settingsSource = readFileSync(new URL('../src/menu/settings.ts', import.meta.url), 'utf8');
-let resets = 0;
-const resetContext = vm.createContext({
-  recallPanelsButton: { addEventListener: (event, handler) => resetListeners.set(`settings:${event}`, handler) },
-  resetPanelsButton: { addEventListener: (event, handler) => resetListeners.set(`toolbar:${event}`, handler) },
-  recallFloatingPanels: () => { resets++; api.recallFloatingPanels(); },
-});
-vm.runInContext(stripTypeScriptTypes(settingsSource.slice(0, settingsSource.indexOf('const settingsButton')),
-  { mode: 'transform' }).replace(/^import .*?;\r?$/gm, ''), resetContext);
-assert.equal(resetListeners.size, 2, 'Toolbar and Settings both expose panel reset');
-resetListeners.get('settings:click')();
-resetListeners.get('toolbar:click')();
-assert.equal(resets, 2, 'Both reset buttons use the shared recall action');
 const html = readFileSync(new URL('../src/index.html', import.meta.url), 'utf8');
-assert.match(html, /id="resetPanelsButton"[^>]*type="button"[\s\S]*?>Reset panels &amp; signs<\/button>/);
+assert.doesNotMatch(html, /id="(?:resetPanelsButton|recallPanelsButton)"/,
+  'Browser toolbar and Settings do not expose reset buttons');
+const panelControls = readFileSync(new URL('../src/menu/settingsPanelControls.ts', import.meta.url), 'utf8');
+assert.match(panelControls, /\['Reset panels\/signs', \{ action: 'recallPanels' \}\]/,
+  'Reset remains available in the floating panel menu');
 function create(name, z) {
   const root = new TransformNode(name, scene);
   root.position.z = z;

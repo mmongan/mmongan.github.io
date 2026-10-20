@@ -120,7 +120,7 @@ export function createStadiumCrowd(parent: Mesh) {
     head.isPickable = false;
     parts.push(head);
     for (const offset of [-0.15, 0.15]) {
-      box('spectatorThigh', x - side * 0.13, seatY + 0.07, z + offset, 0.4, 0.15, 0.14, trousers);
+      box('spectatorThigh', x - side * 0.13, seatY + 0.07, z + offset, 0.4, 0.15, 0.12, trousers);
       box('spectatorShin', x - side * 0.29, seatY - 0.12, z + offset, 0.14, 0.36, 0.14, trousers);
       box('spectatorArm', x - side * 0.06, seatY + (raised ? 0.98 : 0.35), z + offset * 1.7,
         0.13, raised ? 0.9 : 0.4, 0.13, raised ? complexion : shirt);

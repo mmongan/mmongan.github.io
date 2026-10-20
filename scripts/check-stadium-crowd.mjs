@@ -21,9 +21,14 @@ const compile = text => stripTypeScriptTypes(text, { mode: 'transform' })
 const engine = new NullEngine(), scene = new Scene(engine);
 let playing = false;
 const textures = [];
+const spectatorBoxes = [];
 const transport = new Observable();
 const context = vm.createContext({
-  scene, Mesh, MeshBuilder, TransformNode, StandardMaterial, Matrix, Quaternion, Vector3, Plane, Color3, Ray, Observable,
+  scene, Mesh, MeshBuilder: { ...MeshBuilder, CreateBox(name, options, scene) {
+    const mesh = MeshBuilder.CreateBox(name, options, scene);
+    if (name === 'spectatorTorso' || name === 'spectatorThigh') spectatorBoxes.push({ mesh, options });
+    return mesh;
+  } }, TransformNode, StandardMaterial, Matrix, Quaternion, Vector3, Plane, Color3, Ray, Observable,
   Texture: { TRILINEAR_SAMPLINGMODE: 3 },
   document: { createElement: () => {
     const ctx = { labels: [], fillText(label) { this.labels.push(label); } };
@@ -50,7 +55,25 @@ try {
   let previousFace;
   const counts = [];
   for (const level of ['highschool', 'college', 'nfl', 'highschool']) {
+    spectatorBoxes.length = 0;
     updateStands(level);
+    assert.ok(spectatorBoxes.length > 0, 'Crowd geometry is checked before material batching');
+    for (let index = 0; index < spectatorBoxes.length; index += 3) {
+      const torso = spectatorBoxes[index];
+      assert.equal(torso.mesh.name, 'spectatorTorso');
+      for (const thigh of spectatorBoxes.slice(index + 1, index + 3)) {
+        assert.equal(thigh.mesh.name, 'spectatorThigh');
+        const sideClearance = torso.options.depth / 2 -
+          (Math.abs(thigh.mesh.position.z - torso.mesh.position.z) + thigh.options.depth / 2);
+        assert.ok(sideClearance >= .0099, 'Thigh side faces are inset at least 1 cm from the torso');
+        const verticalOverlap = torso.options.height / 2 + thigh.options.height / 2 -
+          Math.abs(torso.mesh.position.y - thigh.mesh.position.y);
+        const horizontalOverlap = torso.options.width / 2 + thigh.options.width / 2 -
+          Math.abs(torso.mesh.position.x - thigh.mesh.position.x);
+        assert.ok(verticalOverlap > .08 && horizontalOverlap > .2,
+          'Inset thighs still join the torso without an open waist seam on either sideline');
+      }
+    }
     if (previousFace) {
       assert.ok(previousFace.isDisposed(), 'Changing stadium level removes old signs');
       assert.equal(context.getHandMenuHit({ pickedMesh: previousFace }), null, 'Rebuild unregisters old actions');

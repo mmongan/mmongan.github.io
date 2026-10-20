@@ -1,9 +1,5 @@
-import { floorHeightInput, floorHeightValue, tableHeightInput, tableHeightValue, sittingModeToggle, recallPanelsButton, resetPanelsButton } from '../ui/dom';
+import { floorHeightInput, floorHeightValue, tableHeightInput, tableHeightValue, sittingModeToggle } from '../ui/dom';
 import { setFieldHeightSetting } from '../xr/ar';
-import { recallFloatingPanels } from './floatingPanel';
-
-recallPanelsButton?.addEventListener("click", recallFloatingPanels);
-resetPanelsButton?.addEventListener("click", recallFloatingPanels);
 
 const settingsButton = document.getElementById("settingsButton");
 const settingsOverlay = document.getElementById("settingsOverlay");

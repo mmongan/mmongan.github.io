@@ -183,8 +183,12 @@ hintContext.status('Sampled General MIDI ready.');
 assert.equal(hintContext.midiPlaybackHint.hidden, true);
 hintContext.context.state = 'suspended';
 hintContext.status('Waiting for audio.');
-assert.match(hintContext.midiPlaybackHint.textContent, /Press Play/);
-assert.equal(hintContext.midiPlaybackHint.hidden, false);
+assert.equal(hintContext.midiPlaybackHint.textContent, '');
+assert.equal(hintContext.midiPlaybackHint.hidden, true, 'Startup audio prompts do not appear in the top-right HUD');
+assert.equal(hintContext.midiStatus.textContent, 'Waiting for audio.', 'Detailed status remains in browser Settings');
+hintContext.status('Could not enable audio.', true);
+assert.equal(hintContext.midiPlaybackHint.hidden, false, 'Audio errors remain visible even when audio is suspended');
+assert.equal(hintContext.midiPlaybackHint.textContent, 'Could not enable audio.');
 let disposed = 0;
 const disposalContext = vm.createContext({
   synthRequest: 1, synthLoading: true, synth: { dispose() { disposed++; } },
