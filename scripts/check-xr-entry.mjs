@@ -4,6 +4,9 @@ import { stripTypeScriptTypes } from 'node:module';
 import vm from 'node:vm';
 
 const source = readFileSync(new URL('../src/xr/webXR.ts', import.meta.url), 'utf8');
+const styles = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+assert.match(styles, /\.hud\s*>\s*\.button-row:not\(:has\(>\s*:not\(\[hidden\]\)\)\)\s*\{\s*display:\s*none;/,
+  'The HUD button-row background hides when all its controls are hidden');
 const slice = (from, to) => {
   const start = source.indexOf(from), end = source.indexOf(to, start);
   assert.ok(start >= 0 && end > start);

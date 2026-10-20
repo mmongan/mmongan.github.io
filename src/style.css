@@ -105,6 +105,10 @@ body {
   padding: 12px;
 }
 
+.hud > .button-row:not(:has(> :not([hidden]))) {
+  display: none;
+}
+
 .settings-group {
   display: flex;
   flex-direction: column;

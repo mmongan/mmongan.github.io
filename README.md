@@ -6,7 +6,7 @@ Desktop is a **playback-only, full 1:1 viewer**: load shows and music, use media
 
 Startup audio prompts are not shown in the top-right HUD. Detailed music status remains in browser Settings; music and XR entry errors remain visible in the HUD.
 
-The desktop HUD initially has **Enter VR** and **Enter AR** buttons; these and the compatibility message hide after 10 seconds. New XR status/error messages appear for another 10 seconds. The setup gear is hidden outside immersive sessions. Each entry button selects its own session mode, uses the existing XR scene, and reports unsupported hardware or launch errors without starting playback. Tabletop/Giant scale controls remain unavailable until XR is active.
+The desktop HUD initially has **Enter VR** and **Enter AR** buttons; these and the compatibility message hide after 10 seconds. The button-row background also hides when no controls are visible. New XR status/error messages appear for another 10 seconds. The setup gear is hidden outside immersive sessions. Each entry button selects its own session mode, uses the existing XR scene, and reports unsupported hardware or launch errors without starting playback. Tabletop/Giant scale controls remain unavailable until XR is active.
 
 An **OpenChartxr** midfield badge sits on the fifty-yard line, using the stadium's navy, cyan, white, and gold branding. It is drawn on top of the marchers for five seconds at startup, then fades away over 0.8 seconds and stays hidden, including on the live video board. The timer is independent of playback and pause. It follows field scaling in VR/AR, appears in drafting previews/photos while visible, and does not intercept picking or marcher placement. Check with `node scripts/check-midfield-logo.mjs`.
 
