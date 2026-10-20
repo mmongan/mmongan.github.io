@@ -185,10 +185,25 @@ export function initXR(teleportGrid: Mesh) {
   let detectedSitting: boolean | null = null;
   let pendingSitting: boolean | null = null;
   let pendingPostureSince = 0;
+  let entryHideTimeout: ReturnType<typeof setTimeout> | undefined;
+  function scheduleEntryHide() {
+    if (entryHideTimeout !== undefined) clearTimeout(entryHideTimeout);
+    entryHideTimeout = setTimeout(() => {
+      entryHideTimeout = undefined;
+      if (enterVRButton) enterVRButton.hidden = true;
+      if (enterARButton) enterARButton.hidden = true;
+      if (xrEntryStatus) xrEntryStatus.hidden = true;
+    }, 10000);
+  }
+  scheduleEntryHide();
+  scene.onDisposeObservable.addOnce(() => {
+    if (entryHideTimeout !== undefined) clearTimeout(entryHideTimeout);
+  });
   function entryStatus(message: string) {
     if (!xrEntryStatus) return;
     xrEntryStatus.textContent = message;
     xrEntryStatus.hidden = !message;
+    if (message) scheduleEntryHide();
   }
   function updateEntryButtons() {
     const active = !!xrExperience && xrExperience.baseExperience.state !== WebXRState.NOT_IN_XR;

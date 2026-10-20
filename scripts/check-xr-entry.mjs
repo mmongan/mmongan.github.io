@@ -17,9 +17,15 @@ const supported = new Set(['immersive-vr', 'immersive-ar']);
 let disposed = 0;
 let prepareHook = async () => {};
 let failEntry = false;
+const timers = new Map();
+let timerId = 0;
+let disposeTimer;
 const state = { NOT_IN_XR: 0, IN_XR: 2 };
 const context = vm.createContext({
   Error,
+  setTimeout: (callback, delay) => { timers.set(++timerId, { callback, delay }); return timerId; },
+  clearTimeout: id => timers.delete(id),
+  scene: { onDisposeObservable: { addOnce: callback => { disposeTimer = callback; } } },
   enterVRButton, enterARButton, fullScaleVRButton, WebXRState: state,
   xrEntryStatus: { hidden: true, textContent: '' },
   xrModeInputs: [{ value: 'immersive-vr' }, { value: 'immersive-ar' }],
@@ -49,7 +55,7 @@ const code = `
 let xrExperience, preparingXR = null, preferredMode = 'immersive-vr';
 let switchingToFullScaleVR = false, giantModeActive = false;
 const sessionSupport = new Map();
-${slice('  function entryStatus(', '  function getCameraSittingPosture(')}
+${slice('  let entryHideTimeout:', '  function getCameraSittingPosture(')}
 ${slice('  async function setupDefaultXRExperience(', '  async function createXRExperience(')}
 async function createXRExperience() {
   await prepare(preferredMode);
@@ -100,6 +106,20 @@ await context.enterXRMode('immersive-ar');
 assert.match(context.xrEntryStatus.textContent, /Could not open AR: Permission denied/);
 assert.equal(context.xrEntryStatus.hidden, false);
 assert.equal(context.busy(), false);
+assert.equal(timers.size, 1, 'Status changes replace rather than accumulate hide timers');
+const timer = [...timers.values()][0];
+assert.equal(timer.delay, 10000, 'XR entry UI hides after ten seconds');
+timers.clear();
+timer.callback();
+assert.equal(enterVRButton.hidden, true);
+assert.equal(enterARButton.hidden, true);
+assert.equal(context.xrEntryStatus.hidden, true, 'Compatibility/status message hides with the buttons');
+context.updateEntryButtons();
+assert.equal(enterVRButton.hidden, true, 'Support updates do not restore timed-out buttons');
+context.entryStatus('Could not open VR: retry required.');
+assert.equal(context.xrEntryStatus.hidden, false, 'New errors are visible after the startup timeout');
+disposeTimer();
+assert.equal(timers.size, 0, 'Disposal clears the newly scheduled timer');
 assert.equal(enterARButton.disabled, false, 'Rejected session entry can be retried');
 failEntry = false;
 fullScaleVRButton.handlers.click();
