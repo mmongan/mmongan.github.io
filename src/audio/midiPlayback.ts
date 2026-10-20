@@ -251,7 +251,7 @@ async function loadMidi(name: string, read: () => Promise<ArrayBuffer>, failureH
     midiNotes = notes;
     timeline = new MidiTimeline(notes);
     const beats = notes.reduce((last, n) => Math.max(last, n.beat + n.duration), 0);
-    setPlaybackTempoMap(tempoMap);
+    setPlaybackTempoMap(tempoMap, midi.header.ppq);
     setPlaybackBeatUnits(beatUnits);
     setPlaybackSongLength(beats);
     loadedDescription = `${name}: ${musicTracks.length} parts, ${notes.length} notes, ${Math.ceil(beats)} beats`;

@@ -123,6 +123,8 @@ try {
     applyGlobalCount: () => applied++, recalculateCollisionMarkers: () => {},
   });
   const robotSource = readFileSync(new URL('../src/robot/robot.ts', import.meta.url), 'utf8');
+  vm.runInContext(stripTypeScriptTypes(robotSource.slice(robotSource.indexOf('function clearBakedCountGaits('),
+    robotSource.indexOf('function getGaitStepPhaseOffsets('))), context);
   const invalidateStart = robotSource.indexOf('function invalidateLegBake(');
   vm.runInContext(stripTypeScriptTypes(robotSource.slice(invalidateStart,
     robotSource.indexOf('\n}', invalidateStart) + 2)), context);

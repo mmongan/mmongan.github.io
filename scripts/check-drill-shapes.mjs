@@ -52,6 +52,8 @@ assert.equal(selectionWasDragged(rectangle[0], rectangle[0], rectangle), true,
 assert.equal(selectionWasDragged({ x: 1, y: 1 }, { x: 2, y: 2 }, []), false);
 
 const source = readFileSync(new URL('../src/robot/robot.ts', import.meta.url), 'utf8');
+vm.runInContext(compile(source.slice(source.indexOf('function clearBakedCountGaits('),
+  source.indexOf('function getGaitStepPhaseOffsets('))), context);
 const start = source.indexOf('export function setRobotSetPoses(');
 const end = source.indexOf('\n}', start);
 assert.ok(start >= 0 && end > start);
@@ -69,6 +71,8 @@ const snapshots = () => JSON.stringify([...players.values()].map(state => state.
 let blocked = false, checks = 0, refreshed = 0;
 Object.assign(context, {
   players, allRobots: new Set(robots),
+  getChartPageTimeline: () => ({ authoredCounts: [] }), authorChartPage() {},
+  invalidateLegBake() {},
   tryManualMarcherPoses(poses, sweep) {
     checks++;
     assert.equal(sweep, false);

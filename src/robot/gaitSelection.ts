@@ -1,7 +1,6 @@
 // Picks the marching gait a marcher should use for one count from how its body
-// faces, which way it travels, and how far it moves in that count. Drill files
-// (and OpenMarch) store only positions and facings, so gait is derived, the
-// same way a drill writer reads it off a chart.
+// faces, which way it travels, and how far it moves in that count. Used for
+// imported routes and editing; baked OpenChart schedules retain the result.
 
 export type AutoGaitStyle = "Field March" | "High Step" | "Parade" | "Knee-Ankle March";
 

@@ -2,6 +2,8 @@
 export const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
 export const enterVRButton = document.getElementById("enterVRButton") as HTMLButtonElement | null;
 export const enterARButton = document.getElementById("enterARButton") as HTMLButtonElement | null;
+export const openChartFileInput = document.getElementById("openChartFile") as HTMLInputElement | null;
+export const saveOpenChartButton = document.getElementById("saveOpenChartButton") as HTMLButtonElement | null;
 export const xrEntryStatus = document.getElementById("xrEntryStatus") as HTMLOutputElement | null;
 export const ghostBandToggle = document.getElementById("ghostBandToggle") as HTMLInputElement | null;
 export const ghostBandTimeline = document.getElementById("ghostBandTimeline") as HTMLInputElement | null;

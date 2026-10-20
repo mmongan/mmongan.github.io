@@ -6,6 +6,7 @@
 import { writeFileSync } from "node:fs";
 import initSqlJs from "sql.js";
 import { readOpenMarchDatabase, writeOpenMarchDatabase, type FieldPoint } from "../src/robot/openMarchFormat.ts";
+import { convertToOpenChart, encodeOpenChart } from "../src/robot/openChartFormat.ts";
 
 const OUTPUT = new URL("../src/assets/openmarch/example-show.dots", import.meta.url);
 const FILES = 8;
@@ -122,4 +123,7 @@ if (reopened.tracks.some(track => track.some(point => !Number.isFinite(point.x +
   throw new Error("Generated example contains non-finite field coordinates");
 }
 writeFileSync(OUTPUT, bytes);
+const native = await encodeOpenChart(convertToOpenChart(reopened, "Example show", 53.333));
+writeFileSync(new URL("../src/assets/openmarch/example-show.openchart", import.meta.url), native);
 console.log(`Wrote ${bytes.length} bytes, ${tracks.length} marchers, ${sets.length} sets, ${lastCount} counts to ${OUTPUT.pathname}`);
+console.log(`Wrote native OpenChart startup show (${native.length} bytes).`);

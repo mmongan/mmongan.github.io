@@ -116,6 +116,9 @@ import {
   registerRobotCounts,
   onMarcherStrideLimited,
   captureMarcherSchedules,
+  captureBakedMarcherSchedules,
+  captureDrillMidiTiming,
+  restoreDrillMidiTiming,
   captureBlankChartPage,
   restoreMarcherSchedule,
   resumeBlankChartPage,
@@ -136,8 +139,10 @@ import { createPanelMenuGestureState, isOpenFlatPalm, updatePanelMenuGesture,
   type PanelMenuGestureState } from './panelMenuGesture';
 import { onManualPlacementBlocked, tryManualMarcherPose, tryManualMarcherPoses } from '../robot/manualPlacement';
 import type { MarcherInstrument } from '../robot/robot';
-import { getOpenMarchSectionInstrument, loadOpenMarchFromUrl, OPEN_MARCH_EXAMPLE, OPEN_MARCH_URL_PARAM } from '../robot/openMarchUrl';
-import type { OpenMarchImportedDrill } from '../robot/openMarchFormat';
+import { decodeDrillFile, getOpenMarchSectionInstrument, loadDrillFromUrl, OPEN_MARCH_EXAMPLE, OPEN_MARCH_URL_PARAM } from '../robot/openMarchUrl';
+import { encodeOpenChart, getOpenChartLastCount, getOpenChartTiming, OPEN_CHART_EXTENSION, validateOpenChartShow, type OpenChartMarcher, type OpenChartShow } from '../robot/openChartFormat';
+import { packOpenChartPerformance, unpackOpenChartPerformance } from '../robot/openChartPerformance';
+import { openChartFileInput, saveOpenChartButton } from '../ui/dom';
 import { clearDrillLabels, getDrillLabel, setDrillLabels, setDrillLabelsVisible } from '../robot/drillLabels';
 import { clearShowInfo, setShowInfo } from '../menu/showInfoPanel';
 import { cycleMusicStandStaff, setMusicStandVisible, summonMusicStand } from '../menu/musicStand';
@@ -525,10 +530,12 @@ function addBlankChartPage() {
     return;
   }
   const afterCounts = getDrillChartSetCounts();
-  const shiftedNames = [...chartPageNames].map(([previous, name]): [number, string] =>
-    [previous > at ? previous + getChartPageTimeline().beatsPerPage : previous, name]);
-  chartPageNames.clear();
-  shiftedNames.forEach(([count, name]) => chartPageNames.set(count, name));
+  for (const entries of [chartPageNames, chartPageNotes]) {
+    const shifted = [...entries].map(([previous, value]): [number, string] =>
+      [previous > at ? previous + getChartPageTimeline().beatsPerPage : previous, value]);
+    entries.clear();
+    shifted.forEach(([count, value]) => entries.set(count, value));
+  }
   remapChartPageGuides(beforeCounts, afterCounts,
     previous => previous > at ? previous + getChartPageTimeline().beatsPerPage : previous);
   showChartPageGuides(afterCounts.indexOf(count));
@@ -540,6 +547,9 @@ insertChartPageButton?.addEventListener("click", addBlankChartPage);
 
 const chartBeatsPerPage = document.getElementById('chartBeatsPerPage') as HTMLInputElement | null;
 const chartPageNames = new Map<number, string>();
+const chartPageNotes = new Map<number, string>();
+const showMarcherInfo = new WeakMap<TransformNode, Pick<OpenChartMarcher, "name" | "section" | "notes">>();
+let currentShowName = "OpenChart show";
 function refreshChartEditorPages() {
   const counts = getDrillChartSetCounts();
   selectionTools?.setPages(counts.map((count, index) => ({
@@ -3263,7 +3273,9 @@ function spawnRandomRobots(count: number) {
 // lines, segments/handles, formation connections) so a fresh drill starts on
 // an empty field instead of piling onto whatever was already there.
 function clearAllRobots() {
+  currentShowName = "OpenChart show";
   chartPageNames.clear();
+  chartPageNotes.clear();
   setChartPageTimeline({ beatsPerPage: getChartPageTimeline().beatsPerPage, authoredCounts: [] });
   if (duplicateDrillStatus) duplicateDrillStatus.value = '';
   selectionTools?.clear();
@@ -3376,81 +3388,150 @@ function spawnMarchingDrill() {
   refreshChartEditorPages();
 }
 
-// Replaces the field with an OpenMarch show, each marcher holding the
-// instrument for its section, paused at the opening set by default.
-function spawnOpenMarchDrill(drill: OpenMarchImportedDrill, showName: string, autoPlay = false): number {
+function spawnOpenChartDrill(drill: OpenChartShow, autoPlay = false): number {
+  validateOpenChartShow(drill);
+  if (Math.abs(drill.widthYards - FIELD_WIDTH_YARDS) > 0.001) {
+    throw new Error(`This show's ${drill.widthYards}-yard field width is not supported.`);
+  }
+  const pickerInstrument = getSelectedInstrument();
+  const instruments = drill.marchers.map(marcher => {
+    if (marcher.instrument === undefined) return getOpenMarchSectionInstrument(marcher.section, pickerInstrument);
+    const instrument = MARCHER_INSTRUMENTS.find(value => value === marcher.instrument);
+    if (!instrument) throw new Error(`Unknown OpenChart instrument: ${marcher.instrument}.`);
+    return instrument;
+  });
+  const gaitNames = MARCHING_GAITS.map(gait => gait.name);
+  const performances = drill.marchers.map(marcher => marcher.performance
+    ? unpackOpenChartPerformance(marcher.performance, gaitNames) : undefined);
   clearAllRobots();
   forgetOtherChartPageGuides();
-  const pickerInstrument = getSelectedInstrument();
-  const instruments: MarcherInstrument[] = [];
+  currentShowName = drill.name;
   const labels: { robot: TransformNode; label: string }[] = [];
-  drill.tracks.forEach((track, index) => {
-    const marcher = drill.marchers[index];
-    const instrument = getOpenMarchSectionInstrument(marcher?.section ?? "", pickerInstrument);
-    instruments.push(instrument);
-    setSelectedInstrument(instrument);
-    const path = track.map((point) => new Vector3(point.x, FIELD_SURFACE_Y, point.z));
-    const robotPrimitives = createLowPolyRobot(scene);
+  drill.marchers.forEach((marcher, index) => {
+    setSelectedInstrument(instruments[index]);
+    const path: Vector3[] = [];
+    const performance = performances[index];
+    for (let offset = 0; offset < marcher.positions.length; offset += 2) {
+      path.push(new Vector3(marcher.positions[offset],
+        performance?.counts[offset / 2].height ?? FIELD_SURFACE_Y, marcher.positions[offset + 1]));
+    }
+    const robotPrimitives = createLowPolyRobot(scene, performance?.gaitIndex);
     robotPrimitives.parent = pathRoot;
     robotPaths.set(robotPrimitives, path);
     updateRobotPathLine(robotPrimitives, path);
-    walkRobotAlongCounts(robotPrimitives, path, scene);
-    labels.push({ robot: robotPrimitives, label: marcher?.label ?? "" });
+    if (performance && marcher.performance) {
+      restoreMarcherSchedule(robotPrimitives, {
+        instrument: instruments[index], instrumentRestPose: marcher.performance.instrumentPose === "carry",
+        color: new Color3(...marcher.performance.color),
+        stepSizeYards: marcher.performance.stepSizeYards, fixedFacingY: marcher.performance.fixedFacingY,
+        counts: performance.counts.map(({ height, ...count }, countIndex) => ({
+          ...count, position: path[countIndex],
+        })),
+      }, scene);
+    } else {
+      walkRobotAlongCounts(robotPrimitives, path, scene);
+    }
+    showMarcherInfo.set(robotPrimitives, { name: marcher.name, section: marcher.section, notes: marcher.notes });
+    labels.push({ robot: robotPrimitives, label: marcher.label });
   });
   setSelectedInstrument(pickerInstrument);
-  const tempoBpm = setMarchTempo(drill.tempoBpm);
+  setMarchTempo(drill.tempoBpm);
+  restoreDrillMidiTiming(getOpenChartTiming(drill));
+  const tempoBpm = getMarchTempo();
   seekToCount(0);
   if (autoPlay) playAll();
 
   refreshCollisionMarkers(scene);
   setDrillLabels(scene, pathRoot, labels);
-  setShowInfo(showName, drill, instruments, tempoBpm);
+  setShowInfo(drill.name, drill, instruments, tempoBpm);
   setChartPageTimeline({ beatsPerPage: getChartPageTimeline().beatsPerPage,
     authoredCounts: drill.pages.map(page => page.count) });
-  drill.pages.forEach(page => chartPageNames.set(page.count, page.name));
+  drill.pages.forEach(page => {
+    chartPageNames.set(page.count, page.name);
+    chartPageNotes.set(page.count, page.notes);
+  });
   refreshChartEditorPages();
   return tempoBpm;
 }
 
-// The show's name: OpenMarch files carry no title, so the file name is used.
-function getOpenMarchShowName(url: string): string {
-  if (url.trim().toLowerCase() === OPEN_MARCH_EXAMPLE) return "Example show";
-  try {
-    const file = decodeURIComponent(new URL(url, window.location.href).pathname.split("/").pop() ?? "");
-    return file.replace(/\.dots$/i, "") || "OpenMarch show";
-  } catch {
-    return "OpenMarch show";
-  }
+function setDrillFileStatus(message: string, error = false) {
+  if (!openMarchStatus) return;
+  openMarchStatus.value = message;
+  openMarchStatus.classList.toggle("error", error);
 }
 
 let openMarchRequest = 0;
 
-async function openMarchFromUrl(url: string, autoPlay = false): Promise<boolean> {
+async function openDrill(load: () => Promise<OpenChartShow>, autoPlay = false): Promise<boolean> {
   const request = ++openMarchRequest;
-  const setStatus = (message: string, error = false) => {
-    if (!openMarchStatus) return;
-    openMarchStatus.value = message;
-    openMarchStatus.classList.toggle("error", error);
-  };
-  setStatus("Opening…");
+  setDrillFileStatus("Opening…");
   const buttons = [openMarchButton, openMarchExampleButton];
   buttons.forEach((button) => { if (button) button.disabled = true; });
   try {
-    const drill = await loadOpenMarchFromUrl(url);
+    const drill = await load();
     if (request !== openMarchRequest) return false;
-    const tempoBpm = Math.round(spawnOpenMarchDrill(drill, getOpenMarchShowName(url), autoPlay));
+    const tempoBpm = Math.round(spawnOpenChartDrill(drill, autoPlay));
     const showTempoBpm = Math.round(drill.tempoBpm);
-    const lastCount = drill.tracks[0].length - 1;
-    const opened = url.trim().toLowerCase() === OPEN_MARCH_EXAMPLE ? "Opened the example show:" : "Opened";
-    setStatus(`${opened} ${drill.tracks.length} marchers, ${drill.pages.length} pages, ${lastCount} counts at ${tempoBpm} BPM` +
+    const lastCount = getOpenChartLastCount(drill);
+    setDrillFileStatus(`Opened ${drill.name}: ${drill.marchers.length} marchers, ${drill.pages.length} pages, ${lastCount} counts at ${tempoBpm} BPM` +
       (tempoBpm === showTempoBpm ? "." : ` (the show is ${showTempoBpm} BPM).`));
     return true;
   } catch (error) {
-    if (request === openMarchRequest) setStatus(error instanceof Error ? error.message : String(error), true);
-    console.warn("Could not open OpenMarch show", error);
+    if (request === openMarchRequest) setDrillFileStatus(error instanceof Error ? error.message : String(error), true);
+    console.warn("Could not open drill show", error);
     return false;
   } finally {
-    buttons.forEach((button) => { if (button) button.disabled = false; });
+    if (request === openMarchRequest) buttons.forEach((button) => { if (button) button.disabled = false; });
+  }
+}
+
+function openMarchFromUrl(url: string, autoPlay = false): Promise<boolean> {
+  return openDrill(() => loadDrillFromUrl(url), autoPlay);
+}
+
+async function saveOpenChartRoutes() {
+  try {
+    if (marcherGrabs.size || getBlankChartPageState()) {
+      throw new Error("Finish the open blank page and release marchers before saving drill routes.");
+    }
+    const schedules = captureBakedMarcherSchedules();
+    if (!schedules.length) throw new Error("Add or load marchers before saving drill routes.");
+    const show: OpenChartShow = {
+      name: currentShowName, tempoBpm: getMarchTempo(), widthYards: FIELD_WIDTH_YARDS,
+      timing: captureDrillMidiTiming(Math.max(...schedules.map(schedule => schedule.counts.length - 1))),
+      pages: getDrillChartSetCounts().map((count, index) => ({
+        count, name: chartPageNames.get(count) ?? `Set ${index + 1}`, notes: chartPageNotes.get(count) ?? "",
+      })),
+      marchers: schedules.map(schedule => {
+        const info = showMarcherInfo.get(schedule.robot);
+        const positions = new Float64Array(schedule.counts.length * 2);
+        schedule.counts.forEach((count, index) => {
+          positions[index * 2] = count.position.x;
+          positions[index * 2 + 1] = count.position.z;
+        });
+        return {
+          label: getDrillLabel(schedule.robot) ?? "", name: info?.name ?? "", section: info?.section ?? "",
+          notes: info?.notes ?? "", instrument: schedule.instrument, positions,
+          performance: packOpenChartPerformance(schedule, MARCHING_GAITS.map(gait => gait.name)),
+        };
+      }),
+    };
+    const bytes = await encodeOpenChart(show);
+    const url = URL.createObjectURL(new Blob([bytes], { type: "application/octet-stream" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${show.name.replace(/[^a-z0-9_-]/gi, "_") || "show"}${OPEN_CHART_EXTENSION}`;
+    document.body.append(link);
+    try {
+      link.click();
+    } finally {
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+    setDrillFileStatus(`Saved ${show.marchers.length} marcher routes as OpenChart.`);
+  } catch (error) {
+    setDrillFileStatus(error instanceof Error ? error.message : String(error), true);
+    console.warn("Could not save OpenChart routes", error);
   }
 }
 
@@ -3607,6 +3688,7 @@ export function initInteraction() {
   addRandomRobotsButton?.addEventListener("click", () => spawnRandomRobots(getMarcherCount()));
   generateDrillButton?.addEventListener("click", () => {
     openMarchRequest++;
+    [openMarchButton, openMarchExampleButton].forEach(button => { if (button) button.disabled = false; });
     spawnMarchingDrill();
   });
   duplicateDrillButton?.addEventListener("click", duplicateDrillForPerformance);
@@ -3622,6 +3704,14 @@ export function initInteraction() {
     if (url) void openMarchFromUrl(url);
   });
   openMarchExampleButton?.addEventListener("click", () => void openMarchFromUrl(OPEN_MARCH_EXAMPLE));
+  openChartFileInput?.addEventListener("change", () => {
+    const file = openChartFileInput?.files?.[0];
+    if (!file) return;
+    void openDrill(async () => decodeDrillFile(new Uint8Array(await file.arrayBuffer()),
+      file.name.replace(/\.(dots|openchart)$/i, "")));
+    if (openChartFileInput) openChartFileInput.value = "";
+  });
+  saveOpenChartButton?.addEventListener("click", saveOpenChartRoutes);
   // Open on the bundled example show, paused, rather than an empty
   // field; `?openmarch=<url>` opens that show instead. If the show cannot be
   // opened (and nothing else replaced it meanwhile), a generated drill is used.

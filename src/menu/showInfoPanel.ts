@@ -1,8 +1,8 @@
-import type { OpenMarchImportedDrill } from '../robot/openMarchFormat';
+import { getOpenChartLastCount, type OpenChartShow } from '../robot/openChartFormat';
 import { getGlobalCountIndex, pauseAll, seekToCount } from '../robot/robot';
 import { marcherInstrumentRadios, showInfo, showInfoMarchers, showInfoPages, showInfoSummary } from '../ui/dom';
 
-// Settings panel summary of an opened OpenMarch show: its pages (click one to
+// Settings panel summary of an opened show: its pages (click one to
 // jump to that set) and its marchers with the instrument each one holds.
 
 let pageCounts: number[] = [];
@@ -51,13 +51,13 @@ export function clearShowInfo() {
 }
 
 // `instruments` holds the OpenChartxr instrument given to each marcher.
-export function setShowInfo(showName: string, drill: OpenMarchImportedDrill, instruments: string[], tempoBpm: number) {
+export function setShowInfo(showName: string, drill: OpenChartShow, instruments: string[], tempoBpm: number) {
   clearShowInfo();
   if (!showInfo || !showInfoPages || !showInfoMarchers) return;
   const pagesBody = showInfoPages;
   const marchersBody = showInfoMarchers;
   pageCounts = drill.pages.map((page) => page.count);
-  const lastCount = drill.tracks[0]?.length ? drill.tracks[0].length - 1 : 0;
+  const lastCount = getOpenChartLastCount(drill);
   if (showInfoSummary) {
     showInfoSummary.textContent = `${showName}: ${drill.marchers.length} marchers, ${drill.pages.length} pages, ` +
       `${lastCount} counts, ${Math.round(tempoBpm)} BPM`;

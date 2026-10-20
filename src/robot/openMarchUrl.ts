@@ -1,14 +1,14 @@
 /// <reference types="vite/client" />
 import type { SqlJsStatic } from "sql.js";
 import { FIELD_WIDTH_YARDS } from "../field/constants";
-import { readOpenMarchDatabase, type OpenMarchImportedDrill } from "./openMarchFormat";
+import { convertToOpenChart, decodeOpenChart, isOpenChartFile, type OpenChartShow } from "./openChartFormat";
 import type { MarcherInstrument } from "./robot";
-import exampleShowUrl from "../assets/openmarch/example-show.dots?url";
+import exampleShowUrl from "../assets/openmarch/example-show.openchart?url";
 
 // Query parameter that opens an OpenMarch show on startup, e.g.
 // `?openmarch=https://example.com/show.dots`.
 export const OPEN_MARCH_URL_PARAM = "openmarch";
-// Opens the bundled example show (scripts/make-openmarch-example.mts) instead
+// Opens the bundled native example show (scripts/make-openmarch-example.mts) instead
 // of a URL, e.g. `?openmarch=example`.
 export const OPEN_MARCH_EXAMPLE = "example";
 
@@ -34,7 +34,22 @@ export function resolveOpenMarchUrl(input: string, base = window.location.href):
   return url;
 }
 
-export async function loadOpenMarchFromUrl(input: string): Promise<OpenMarchImportedDrill> {
+export async function decodeDrillFile(bytes: Uint8Array, name: string): Promise<OpenChartShow> {
+  if (isOpenChartFile(bytes)) return decodeOpenChart(bytes);
+  if ("OCHART".split("").every((char, index) => bytes[index] === char.charCodeAt(0))) {
+    throw new Error("Unsupported OpenChart version. Only version 13 (.openchart, uncompressed) is supported.");
+  }
+  const sqliteHeader = "SQLite format 3\0";
+  if (!sqliteHeader.split("").every((char, index) => bytes[index] === char.charCodeAt(0))) {
+    throw new Error("This file is not a supported .openchart or OpenMarch .dots show.");
+  }
+  const [SQL, { readOpenMarchDatabase }] = await Promise.all([loadSqlJs(), import("./openMarchFormat")]);
+  const drill = readOpenMarchDatabase(SQL, bytes, FIELD_WIDTH_YARDS);
+  if (drill.tracks.length === 0) throw new Error("This OpenMarch show has no marchers with dots.");
+  return convertToOpenChart(drill, name, FIELD_WIDTH_YARDS);
+}
+
+export async function loadDrillFromUrl(input: string): Promise<OpenChartShow> {
   let url: URL;
   try {
     url = resolveOpenMarchUrl(input);
@@ -49,15 +64,9 @@ export async function loadOpenMarchFromUrl(input: string): Promise<OpenMarchImpo
     throw new Error(`Could not download ${url.href}. The server may not allow cross-origin downloads.`);
   }
   if (!response.ok) throw new Error(`Could not download ${url.href} (HTTP ${response.status}).`);
-  const [SQL, bytes] = await Promise.all([loadSqlJs(), response.arrayBuffer()]);
-  let drill: OpenMarchImportedDrill;
-  try {
-    drill = readOpenMarchDatabase(SQL, new Uint8Array(bytes), FIELD_WIDTH_YARDS);
-  } catch {
-    throw new Error(`${url.href} is not an OpenMarch .dots show.`);
-  }
-  if (drill.tracks.length === 0) throw new Error("This OpenMarch show has no marchers with dots.");
-  return drill;
+  const name = input.trim().toLowerCase() === OPEN_MARCH_EXAMPLE ? "Example show"
+    : decodeURIComponent(url.pathname.split("/").pop() ?? "").replace(/\.(dots|openchart)$/i, "") || "Imported show";
+  return decodeDrillFile(new Uint8Array(await response.arrayBuffer()), name);
 }
 
 // OpenMarch sections are free text, so the closest OpenChartxr instrument is

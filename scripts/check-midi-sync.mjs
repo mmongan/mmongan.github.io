@@ -57,7 +57,10 @@ const transportContext = vm.createContext({
   Math, globalPlayback: playback, COUNTS_PER_SECOND: 4,
   MARCHING_GAITS: [{ tempoFactor: 1 }, { tempoFactor: 2 }], selectedMarchingGait: 0,
   playbackTempoMap: null, repeatElapsed: null, getMaxCountIndex: () => 16, transportRevision: 7,
+  playbackCountTicks: [], playbackPpq: 480,
 });
+vm.runInContext(stripTypeScriptTypes(readFileSync(new URL('../src/audio/drillMidiTiming.ts', import.meta.url), 'utf8'))
+  .replace(/export /g, ''), transportContext);
 vm.runInContext(`${stripTypeScriptTypes(snapshotSource).replace(/export /g, '')}
 globalThis.snapshot = getDrillTransportState;
 globalThis.getTempoBpmAtBeat = getTempoBpmAtBeat;
@@ -101,6 +104,49 @@ assert.equal(transportContext.snapshot().beat, 0);
 playback.countIndex = 16;
 playback.speedMultiplier = 2;
 assert.equal(transportContext.snapshot().beat, 16);
+Object.assign(transportContext, {
+  players: new Map(), repeatOptions: { songLength: 0 },
+  notifyDrillTransport() {}, getMarchTempo: () => transportContext.getTempoBpmAtBeat(0),
+});
+vm.runInContext(stripTypeScriptTypes(
+  robotSource.slice(robotSource.indexOf('export function captureDrillMidiTiming('),
+    robotSource.indexOf('export function setPlaybackBeatUnits(')) +
+  robotSource.slice(robotSource.indexOf('export function setPlaybackTempoMap('),
+    robotSource.indexOf('export const onDrillTransportChangedObservable'))
+).replace(/export /g, ''), transportContext);
+transportContext.selectedMarchingGait = 0;
+playback.countIndex = 0; playback.stepAccumulatorSeconds = 0; playback.speedMultiplier = 1;
+const independentTiming = {
+  ppq: 480, countTicks: [0, 240, 960, 1200],
+  tempos: [{ tick: 0, bpm: 120 }, { tick: 360, bpm: 60 }],
+};
+transportContext.restoreDrillMidiTiming(independentTiming);
+assert.equal(transportContext.getSecondsBetweenBeats(0, 1), 0.25, 'Count one can be an eighth-note interval');
+assert.ok(Math.abs(transportContext.getSecondsBetweenBeats(0, 3) - 2.125) < 1e-12,
+  'Independent ticks integrate an off-count MIDI tempo change exactly');
+assert.ok(Math.abs(transportContext.advanceBeatBySeconds(0, 3, 2.125) - 3) < 1e-12);
+assert.ok(Math.abs(transportContext.advanceBeatBySeconds(3, 0, 2.125)) < 1e-12, 'Reverse uses the same tick boundaries');
+transportContext.setDrillBeatPosition(1.5);
+const musicState = transportContext.getMusicTransportState();
+assert.equal(musicState.beat, 1.25, 'MIDI clock follows ticks, not drill-count numbers');
+assert.equal(musicState.beatsPerSecond, 1, 'Music rate is quarter-note units per second, independent of count spacing');
+assert.deepEqual(JSON.parse(JSON.stringify(transportContext.captureDrillMidiTiming(3))), independentTiming,
+  'PPQ, independent count ticks and tempo events survive runtime restoration and capture');
+transportContext.setPlaybackTempoMap([{ beat: 0, bpm: 90 }, { beat: 0.375, bpm: 100 }], 960);
+const recapturedTiming = transportContext.captureDrillMidiTiming(3);
+assert.equal(recapturedTiming.ppq, 960);
+assert.deepEqual([...recapturedTiming.countTicks], [0, 480, 1920, 2400]);
+assert.equal(recapturedTiming.tempos[1].tick, 360, 'MIDI source PPQ and off-beat tempo tick are preserved');
+transportContext.restoreDrillMidiTiming({
+  ppq: 480, countTicks: [0, 1, 720],
+  tempos: [{ tick: 0, bpm: 120 }],
+});
+transportContext.setPlaybackTempoMap([{ beat: 0, bpm: 100 }], 100);
+const sharedGrid = transportContext.captureDrillMidiTiming(2);
+assert.equal(sharedGrid.ppq, 2400, 'Incompatible MIDI grids use a common PPQ without rounding drill anchors');
+assert.deepEqual([...sharedGrid.countTicks], [0, 5, 3600]);
+assert.equal(transportContext.drillCountToMidiBeat(1, sharedGrid.countTicks, sharedGrid.ppq), 1 / 480);
+assert.throws(() => transportContext.setPlaybackTempoMap(null, 0), /PPQ/);
 const playbackSource = readFileSync(new URL('../src/audio/midiPlayback.ts', import.meta.url), 'utf8');
 const urlReaderSource = playbackSource.slice(playbackSource.indexOf('async function readMidiUrl'),
   playbackSource.indexOf('async function loadMidi('));

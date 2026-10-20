@@ -177,7 +177,7 @@ Enable **Edit authored drill sets**, choose a **Destination set**, then select s
 
 Resuming playback or seeking away from the edit set disables multi-marcher editing. Enabling placement or erase also disables it. Desktop selection gestures are not headset controller/lasso gestures; the existing XR interaction tools remain available outside this mode.
 
-Edits and shape groups are session-local and reset when the show is replaced or the page reloads. There is no transform/set-edit undo, form persistence, or user-facing `.dots` export. Successful edits clear erase history. Keep your original OpenMarch file for full-fidelity editing and saving.
+Shape groups are session-local and reset when the show is replaced or the page reloads. Save a baked OpenChart show to preserve edited marcher schedules; shape-group associations are not included. There is no transform/set-edit undo, form persistence, or user-facing `.dots` export. Successful edits clear erase history. Keep your original OpenMarch file for full-fidelity OpenMarch editing and saving.
 
 Implementation: [selection editor](src/interaction/selectionEditor.ts), [shape geometry](src/interaction/drillShapes.ts), and [focused selection-geometry/set transaction checks](scripts/check-drill-shapes.mjs).
 
@@ -224,7 +224,7 @@ Open **Uniform paint palette** in browser Settings or **Paint** on the floating 
 - Settings also provides a custom color picker, **Paint individual marcher uniforms** toggle, and **Paint selected marcher** button.
 - The marcher's matching route and top-down marker colors update too. Colors survive normal playback and held-marcher rendering changes; other marchers keep their colors.
 - Painting takes precedence over selection, route scrubbing, marcher movement, and field-click hiding. **Done paint**, disabling the checkbox, or entering placement, erase, drafting, multi-selection editing, naming, or floor calibration exits paint mode. You can grab/move the palette without painting.
-- Paint colors are session-only: there is no paint undo, show export, or inclusion in drafting workspace/camera saves. Reloading or replacing the show creates new default-colored marchers.
+- Save a baked OpenChart show or a browser-local chart page draft to preserve uniform colors. There is no paint undo or inclusion in drafting workspace/camera saves. Unsaved colors reset when the show is replaced or the page reloads.
 
 Implementation: [marcher paint](src/interaction/marcherPaint.ts). Focused check: `node scripts/check-marcher-paint.mjs`.
 
@@ -387,9 +387,182 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 - High school, college, and NFL field-marking layouts
 - Hand and controller gestures do not draw or extend marching paths. Controller triggers select existing marchers and edit existing path or formation segments; enable Placement mode to place standing marchers with a controller trigger or fingertip touch. Sideline pinch creation and two-hand line, arc, and circle formations remain available.
 - Place standing robots, create marching formations, and generate a synchronized marching-band drill
-- The app opens with the bundled example OpenMarch show (below), paused at the opening count. Music samples preload without opening Settings, but music and marching do not start automatically. Press **Play** to start. A field click/tap/key or an XR trigger/pinch/squeeze may unlock browser audio permission without starting playback. If the example show cannot be loaded, it falls back to a generated drill, also paused, on the half of the field you are looking at. Newly opened OpenMarch shows and generated drills also wait for playback controls. The generated drill's block is arranged in band sections by rank, front to back: flutes, clarinets, saxophones (baritones on the ends, altos inside), mellophones, trumpets, trombones, low brass (euphoniums in the centre, sousaphones on either side), and a drumline (glockenspiels on the ends, bass drums inside them, then tenors, snares in the centre). Marchers turn smoothly through each count instead of snapping to a new facing. Use Settings → Generate marching band drill to regenerate it, or the eraser to clear marchers
-- Open an [OpenMarch](https://openmarch.com) show from a URL: paste a `.dots` link into Settings → Open OpenMarch show and press Open, or share a link such as `https://mmongan.github.io/?openmarch=https://example.com/show.dots` to open it on startup. GitHub file-page and Dropbox share links are converted to direct downloads; other hosts must allow cross-origin downloads (CORS). The show replaces the field and waits at its first set until playback starts: each page's dots become count positions (moves are straight lines through any midsets), marchers get the closest instrument for their OpenMarch section (unknown sections keep the selected instrument), and the tempo comes from the show's beats, limited to OpenChartxr's 60–120 BPM range. The SQLite reader (sql.js) only downloads the first time a show opens.
-- Press Settings → Load example OpenMarch show (or share `?openmarch=example`) to reopen the bundled 40-marcher OpenMarch show that plays on startup: 17 sets of blocks, company fronts, arcs, chevrons, diagonals, and waves moving across the field before closing back into the opening block. Formation moves use 48 quarter-note counts (32 dotted-quarter pulses) so every marcher can cover the distance with bounded, upright legs through turns and cadence transitions. It runs for 768 counts at its authored 120 BPM (6 minutes 24 seconds); loaded MIDI overrides that tempo. Every band section is represented. Regenerate it with `node --experimental-strip-types scripts/make-openmarch-example.mts`; run `node scripts/check-midi-footfall-position.mjs` to check all 40 routes across the complete example for unreachable foot targets.
+- The app opens with the bundled native OpenChart example show (below), paused at the opening count, without loading SQLite. Music samples preload without opening Settings, but music and marching do not start automatically. Press **Play** to start. A field click/tap/key or an XR trigger/pinch/squeeze may unlock browser audio permission without starting playback. If the example show cannot be loaded, it falls back to a generated drill, also paused, on the half of the field you are looking at. Newly opened shows and generated drills also wait for playback controls. The generated drill's block is arranged in band sections by rank, front to back: flutes, clarinets, saxophones (baritones on the ends, altos inside), mellophones, trumpets, trombones, low brass (euphoniums in the centre, sousaphones on either side), and a drumline (glockenspiels on the ends, bass drums inside them, then tenors, snares in the centre). Marchers turn smoothly through each count instead of snapping to a new facing. Use Settings → Generate marching band drill to regenerate it, or the eraser to clear marchers
+- Open an [OpenMarch](https://openmarch.com) show from a URL: paste a `.dots` link into Settings → Open drill show and press Open, or share a link such as `https://mmongan.github.io/?openmarch=https://example.com/show.dots` to open it on startup. Native `.openchart` URLs work in the same controls and query parameter. GitHub file-page and Dropbox share links are converted to direct downloads; other hosts must allow cross-origin downloads (CORS). The show replaces the field and waits at its first set until playback starts: each page's dots become count positions (moves are straight lines through any midsets), marchers get the closest instrument for their OpenMarch section (unknown sections keep the selected instrument), and the tempo comes from the show's beats, limited to OpenChartxr's 60–120 BPM range. The OpenMarch compatibility reader and SQLite engine (sql.js) only download when a `.dots` file is imported, converting immediately to the native route model.
+- Press Settings → Load example OpenChart show (or share `?openmarch=example`) to reopen the bundled 40-marcher show loaded on startup: 17 sets of blocks, company fronts, arcs, chevrons, diagonals, and waves moving across the field before closing back into the opening block. Formation moves use 48 quarter-note counts (32 dotted-quarter pulses) so every marcher can cover the distance with bounded, upright legs through turns and cadence transitions. It runs for 768 counts at its authored 120 BPM (6 minutes 24 seconds); loaded MIDI overrides that tempo. Every band section is represented. Regenerate both the compatibility and native assets with `node --experimental-strip-types scripts/make-openmarch-example.mts`; run `node scripts/check-midi-footfall-position.mjs` to check all 40 routes across the complete example for unreachable foot targets.
+- Settings → **Open drill show** imports local `.openchart` or `.dots` files. **Save baked drill show (.openchart)** downloads complete marcher schedules: X/Y/Z positions, travel headings, facing, and resolved gait/cadence per count, plus default gait, step size, optional fixed facing, instrument and playing/carry pose, uniform color, show name, field width, page names/notes, marcher labels/names/sections/notes, and tempo. Finish any blank page and release held marchers first. Named step/pose definitions remain in the application; the file does not embed joint animation, audio, or drafting state. The transition editor's current library selection is not saved, but its authored count schedules are. Use Save chart page draft for the existing browser-local editing snapshot. OpenChart files are app-owned, not encrypted.
+- Native format v13 (`src/robot/openChartFormat.ts`): `.openchart` files are uncompressed (export MIME type `application/octet-stream`). A 16-byte header is followed by UTF-8 JSON metadata, then the raw binary payload. The header contains the 8 ASCII bytes `OCHART13`, a little-endian uint32 metadata byte length, and a little-endian uint32 payload byte length. JSON metadata uses descriptive keys and type-scoped built-in value codes; custom strings are stored inline, with no per-file string table. The loader resolves names rather than depending on the current ordering of the app's gait/instrument lists. Only v13 is supported; earlier files are rejected.
+- The complete field reference below documents every descriptive metadata key, binary offset, and flag.
+- MIDI timing is shared by all marchers in `timing`: `ppq` is ticks per quarter note (1–32767), `countTicks` stores an explicit integer tick for every whole drill count, and `tempos` stores tempo events. Count ticks start at zero and strictly increase; tempo events start at tick zero and can fall between drill counts. A quarter note is only the MIDI measurement unit, not a requirement for meter or drill cadence: at 480 PPQ, an eighth note is 240 ticks and a dotted quarter is 720 ticks. For example, `"timing":{"ppq":480,"countTicks":[0,240,960,1200],"tempos":[{"tick":0,"bpm":120}]}` independently places counts at an eighth note, a dotted-quarter interval, then another eighth note. Playback interpolates tick positions between counts and integrates tempo changes in either direction; MIDI audio uses the corresponding musical time. Loading MIDI preserves its timing resolution and tempo events; if its PPQ cannot exactly express existing count anchors, a common PPQ is used rather than rounding them (incompatible grids exceeding 32767 PPQ are rejected). Saving/reopening a show preserves the count-to-tick mapping. New/converted shows without authored MIDI timing default to 480 PPQ and 480 ticks per count at the show tempo. Tick timing does not embed MIDI notes or audio.
+- The uncompressed binary payload is ordered by marcher: first the route's float64 X/Z pairs, then its optional baked performance samples. Each count has eleven additional little-endian float64 values: height, travel heading, facing, style-palette index, resolved-gait-palette index (`-1` = explicit halt), steps per count, body yaw, leg yaw offset, flags, movement-description index, and cumulative step position. The step position's integer part determines foot parity and its fraction records step progress; loaded playback uses it instead of deriving phase from the music clock. Flags are in-place=1, sideways=2, authored style override=4, and authored facing override=8. Angles are radians; coordinates are field-local yards. A marcher's metadata includes named default gait, named instrument pose (`playing`/`carry`), RGB color (0–1), step size in yards, optional fixed facing, gait-name palette, and movement-description palette; palette entries use scoped built-in codes or inline strings. Defaults are resolved at export without losing which counts had explicit overrides. Native schedules restore directly without inferring headings, facing, or gait again. Editing routes, facing, transition style, or default gait invalidates resolved gait and phase data so the edited schedule can be baked afresh. Limb animation continues to use the named gait/pose library.
+- Serialized tempo events use descriptive keys: `"tempos":[{"tick":0,"bpm":120},{"tick":360,"bpm":96}]`, inside `timing`.
+
+### OpenChart v13 field reference
+
+Field keys are scoped to their containing object. Built-in value codes are scoped by field type, so the same number can identify different instruments, gaits, poses, and movement descriptions. Custom text, including empty and numeric-looking strings, is stored inline. There is no shared string table. All indices are zero-based.
+
+#### File header
+
+| Byte offset | Size | Meaning |
+|---:|---:|---|
+| 0 | 8 bytes | ASCII signature `OCHART13` |
+| 8 | 4 bytes | UTF-8 JSON metadata byte length, uint32 little-endian |
+| 12 | 4 bytes | Binary payload byte length, uint32 little-endian |
+
+The uncompressed file layout is `[16-byte header][UTF-8 JSON metadata][binary payload]`.
+
+#### Show
+
+| Key | Meaning | Stored value |
+|---|---|---|
+| `name` | Show name | Inline string |
+| `tempoBpm` | Default tempo | BPM |
+| `widthYards` | Field width | Yards |
+| `timing` | Shared MIDI timing | Timing record |
+| `pages` | Chart pages | Array of page records |
+| `marchers` | Marchers | Array of marcher records |
+
+#### MIDI timing (inside show `timing`)
+
+| Key | Meaning | Stored value |
+|---|---|---|
+| `ppq` | MIDI resolution | Ticks per quarter note, 1–32767 |
+| `countTicks` | Drill-count timing | Array of absolute MIDI ticks, one per whole drill count |
+| `tempos` | Tempo map | Array of tempo-event records |
+
+#### Tempo event (inside `timing.tempos`)
+
+| Key | Meaning | Stored value |
+|---|---|---|
+| `tick` | Event time | Absolute MIDI tick |
+| `bpm` | Tempo | BPM |
+
+Example: `"tempos":[{"tick":0,"bpm":120},{"tick":360,"bpm":96}]`.
+
+#### Chart page (inside show `pages`)
+
+| Key | Meaning | Stored value |
+|---|---|---|
+| `name` | Page name | Inline string |
+| `count` | Page anchor | Whole drill-count index |
+| `notes` | Notes | Inline string |
+
+#### Marcher (inside show `marchers`)
+
+| Key | Meaning | Stored value |
+|---|---|---|
+| `label` | Drill label | Inline string |
+| `name` | Marcher name | Inline string |
+| `section` | Section | Inline string |
+| `notes` | Notes | Inline string |
+| `instrument` | Instrument, optional | Instrument code or inline string |
+| `counts` | Number of count positions | Integer |
+| `performance` | Baked performance, optional | Performance record |
+
+#### Baked performance (inside marcher `performance`)
+
+| Key | Meaning | Stored value |
+|---|---|---|
+| `gait` | Default gait | Gait code or inline string |
+| `instrumentPose` | Instrument pose | Pose code or inline `"playing"` / `"carry"` |
+| `color` | Uniform color | `[red, green, blue]`, each 0–1 |
+| `stepSizeYards` | Step size | Yards |
+| `fixedFacingY` | Fixed facing, optional | Radians |
+| `gaits` | Gait dictionary | Array of gait codes or inline strings |
+| `movementDescriptions` | Movement-description palette | Array of movement-description codes or inline strings |
+
+Movement descriptions are readable text describing the resolved movement, such as `Field March`, `Halt`, or a custom cadence description. They are not marcher drill labels such as `T1`. Both the stored key and application property are `movementDescriptions`; marcher drill labels use `label`.
+
+#### Built-in value codes
+
+These are permanent wire codes, independent of runtime library ordering. The field determines which column applies. A dash means the numeric code is not assigned for that type and is rejected.
+
+| Code | Instrument (`instrument`) | Gait (`gait`, `gaits[]`) | Pose (`instrumentPose`) | Movement description (`movementDescriptions[]`) |
+|---:|---|---|---|---|
+| 0 | `trumpet` | `Field March` | `playing` | `Field March` |
+| 1 | `mellophone` | `High Step` | `carry` | `High Step` |
+| 2 | `altoSax` | `Parade` | - | `Parade` |
+| 3 | `bariSax` | `Crab Walk` | - | `Crab Walk` |
+| 4 | `trombone` | `Knee-Ankle March` | - | `Knee-Ankle March` |
+| 5 | `euphonium` | `Slide` | - | `Slide` |
+| 6 | `clarinet` | `Mark Time` | - | `Mark Time` |
+| 7 | `flute` | `High Mark Time` | - | `High Mark Time` |
+| 8 | `sousaphone` | `Double Time` | - | `Double Time` |
+| 9 | `snare` | `Half Time` | - | `Half Time` |
+| 10 | `tenors` | `Backward March` | - | `Backward March` |
+| 11 | `bassDrum` | `Backward High Step` | - | `Backward High Step` |
+| 12 | `glockenspiel` | - | - | `Halt` |
+| 13 | `cymbals` | - | - | - |
+| 14 | `guardFlag` | - | - | - |
+| 15 | `guardRifle` | - | - | - |
+| 16 | `guardSabre` | - | - | - |
+
+For example, `"instrument":0` means trumpet, `"gait":0` means Field March, and `"instrumentPose":0` means playing. A literal `"0"` remains text, never code zero. Names, sections, page notes, and drill labels always remain strings even if they match a built-in value.
+
+```json
+{
+  "label": "T1",
+  "name": "Alice",
+  "section": "Trumpet",
+  "notes": "",
+  "instrument": 0,
+  "counts": 3,
+  "performance": {
+    "gait": 0,
+    "instrumentPose": 0,
+    "color": [0.8, 0.2, 0.1],
+    "stepSizeYards": 0.625,
+    "gaits": [0, 6],
+    "movementDescriptions": [0, 6, 12, "Custom cue"]
+  }
+}
+```
+
+Binary style/gait/movement-description values still index the marcher's local `gaits` or `movementDescriptions` palette; they are not directly interpreted as built-in codes. In the example, binary gait `1` selects `gaits[1] = 6`, meaning Mark Time. Inline custom gait/instrument strings survive the codec, but scene loading requires matching definitions in the app; unknown definitions are rejected before replacing the scene.
+
+#### Binary position fields
+
+Binary data is ordered by marcher: all of one marcher's X/Z pairs, then that marcher's baked samples if `performance` exists, followed by the next marcher. All values, including indices and flags, are little-endian float64. No field names are stored in the payload.
+
+| Offset within each pair (float64 values) | Meaning |
+|---:|---|
+| 0 | X position, yards |
+| 1 | Z position, yards |
+
+#### Binary baked-count fields
+
+| Offset within each sample (float64 values) | Meaning |
+|---:|---|
+| 0 | Height / Y position, yards |
+| 1 | Travel heading, radians |
+| 2 | Facing, radians |
+| 3 | Style index into performance `gaits` |
+| 4 | Resolved gait index into performance `gaits`; `-1` = halt |
+| 5 | Steps per count |
+| 6 | Body yaw, radians |
+| 7 | Leg yaw offset, radians |
+| 8 | Flags |
+| 9 | Movement-description index into performance `movementDescriptions` |
+| 10 | Cumulative step phase: integer part determines foot parity; fractional part records progress |
+
+#### Flag bits
+
+| Value | Meaning |
+|---:|---|
+| `1` | In-place |
+| `2` | Sideways |
+| `4` | Authored style override |
+| `8` | Authored facing override |
+
+Flags combine with bitwise OR; for example, `5` means in-place plus authored style override.
+
+Route-only data occupies 16 bytes per count; baked data occupies 104 bytes per count including X/Z, plus shared metadata. Footprints are not stored.
+
+### OpenChart usage and validation
+
+- Footprints are not stored in OpenChart files. The footprint display remains available and generates sole contacts from the restored per-count schedule, named gait library, and saved step phase.
+- The bundled v13 example includes full baked schedules for all 40 marchers: 769 count positions each (30,760 total samples), 17 pages, explicit instruments, default Field March gait, playing pose, distinct uniform colors, resolved movement, and saved step phase. Newly converted route-only OpenMarch shows use app defaults until saved from the app, when complete schedules are baked into v13. No SQLite schema or OpenMarch migration data is stored in native files. Validation bounds metadata to 2 MiB, 1,000 marchers, 20,001 counts per route, and 2 million total positions. Declared lengths must match the actual file and the metadata's sample counts exactly. Packed X/Z-only data uses 16 bytes per count; full performance uses 104 bytes per count. Shared tick positions and tempo events are in the metadata, not repeated per marcher. Unsupported versions, invalid built-in codes/palette indices, unknown named steps/poses, bad MIDI timing/metadata, truncated payloads, and non-finite values are reported before replacing the scene. No compression or decompression API is required.
+- Convert an existing show offline to route-only OpenChart with `node --experimental-strip-types scripts/convert-openmarch.mts input.dots output.openchart "Show name"`. The uncompressed bundled full native show is 3,217,948 bytes; its route-only equivalent is 501,479 bytes. Full baked exports are larger because they also retain performance parameters. Regenerate the bundled full example with `node scripts/check-openchart-performance.mjs --write-example`; this uses the application's actual count registration, gait resolution, and schedule capture code with fresh-import defaults. Without that flag, the check verifies the stored example against a fresh bake without writing it. Check native round trips, compatibility, and malformed input with `node scripts/check-openchart-format.mjs` and `node scripts/check-openmarch-format.mjs`; scene loading, baked exports, and stale-request handling are covered by `node scripts/check-openchart-integration.mjs`. `node scripts/check-openchart-performance.mjs` checks actual gait resolution, named-step/pose dictionaries, list reordering, explicit halts, and invalidation when editing a loaded baked schedule. `node scripts/check-midi-sync.mjs` checks independent count ticks, PPQ preservation, off-count tempo changes, forward/reverse timing, and MIDI clock alignment.
 - An opened OpenMarch show displays its content: Settings → Show drill labels above marchers (off by default) floats each marcher's drill label (such as `T3` or `BD1`) above it, turned towards you, and Settings lists the show's pages (named as in OpenMarch, e.g. 1, 2, 2A, with their counts and notes; click a page to jump to its set, and the current page is highlighted) and its marchers (label, name, section, and the OpenChartxr instrument they were given).
 - Marchers are robots with a low-poly humanoid android head in the same smooth-shaded style as the body: a pale rounded skull with a flat face, a navy visor band with glowing cyan eyes, a mouth slit, and disc ears, under the shako and plume.
 - Marcher bodies are simplified for Meta Quest: every part comes from a shared low-poly, vertex-colored template. The pelvis, neck, head, shako, and plume are merged into one mesh, and each arm segment includes its own joint ball. A marcher (with its trumpet) is 17 meshes, down from 26. Every part is drawn with hardware instancing: each template has one hidden instance source and the team color is a per-instance color, so the whole band renders in a few dozen draw calls. Top-down video-board markers are instanced too. While a marcher is held or previewed, its parts temporarily become ordinary clones so they can render on top in a separate rendering group. They switch back to instances when released.

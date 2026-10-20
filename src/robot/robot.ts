@@ -46,6 +46,8 @@ import { boundMarcherFootTarget, boundMarcherFootLift, MARCHER_CALF_LENGTH, MARC
 import { marcherFootTarget, marcherSoleInRig } from './marcherFootTargets';
 import { marcherSoleFromLegPose } from './marcherLegPose';
 import { gaitContactBeats, type MarcherFootContact } from './marcherFootContacts';
+import { drillCountToMidiBeat, midiBeatToDrillCount, midiBeatsPerDrillCount } from '../audio/drillMidiTiming';
+import type { OpenChartTiming } from './openChartFormat';
 import { BakedLegAnimation, SharedLegBakePool, getBakedLegAnimationBytes, getStepCycleCacheStatus,
   type BakedLegPose } from './bakedLegAnimation';
 import { midiBeatAtPulse, midiPulseAtBeat, type MidiBeatUnit } from '../audio/midiBeatPulse';
@@ -735,7 +737,10 @@ export function cycleMarchingGait(direction: -1 | 1): number {
   marcherParts.forEach((parts) => {
     parts.gaitIndex = selectedMarchingGait;
   });
-  players.forEach(invalidateLegBake);
+  players.forEach(state => {
+    clearBakedCountGaits(state);
+    invalidateLegBake(state);
+  });
   return selectedMarchingGait;
 }
 
@@ -894,6 +899,8 @@ export interface RobotCount {
   // Marching style (MARCHING_GAITS index) for the move from this count to the
   // next, chosen from the transition library; absent uses the marcher's style.
   styleIndex?: number;
+  bakedGait?: ResolvedCountGait | null;
+  stepPhase?: number;
 }
 
 // Each robot keeps only its own route/table; the playback transport itself
@@ -967,6 +974,35 @@ let repeatElapsed: number | null = null;
 let repeatOptions = { drill: false, song: false, songLength: 0 };
 let playbackTempoMap: ReadonlyArray<PlaybackTempoEvent> | null = null;
 let playbackBeatUnits: ReadonlyArray<MidiBeatUnit> = [];
+let playbackPpq = 480;
+let playbackCountTicks: number[] = [];
+
+export function captureDrillMidiTiming(lastCount: number): OpenChartTiming {
+  const tempos = playbackTempoMap?.map(event => ({
+    tick: Math.round(drillCountToMidiBeat(event.beat, playbackCountTicks, playbackPpq) * playbackPpq),
+    bpm: event.bpm,
+  })) ?? [{ tick: 0, bpm: getMarchTempo() }];
+  if (tempos[0]?.tick !== 0) tempos.unshift({ tick: 0, bpm: 120 });
+  return {
+    ppq: playbackPpq, tempos,
+    countTicks: Array.from({ length: lastCount + 1 }, (_, count) =>
+      Math.round(drillCountToMidiBeat(count, playbackCountTicks, playbackPpq) * playbackPpq)),
+  };
+}
+
+export function restoreDrillMidiTiming(timing: OpenChartTiming) {
+  const songLength = drillCountToMidiBeat(repeatOptions.songLength, playbackCountTicks, playbackPpq);
+  const beat = getDrillTransportState().beat;
+  playbackPpq = timing.ppq;
+  playbackCountTicks = [...timing.countTicks];
+  playbackTempoMap = timing.tempos.map(event => ({
+    beat: midiBeatToDrillCount(event.tick / timing.ppq, playbackCountTicks, playbackPpq), bpm: event.bpm,
+  }));
+  repeatOptions.songLength = midiBeatToDrillCount(songLength, playbackCountTicks, playbackPpq);
+  players.forEach(state => { invalidateLegBake(state); state.stepCache = undefined; state.gaitPhaseCache = undefined; });
+  setDrillBeatPosition(beat);
+  notifyDrillTransport(true);
+}
 
 export function setPlaybackBeatUnits(units: ReadonlyArray<MidiBeatUnit>) {
   playbackBeatUnits = units.map(unit => ({ ...unit }));
@@ -983,26 +1019,41 @@ export function setPlaybackRepeat(drill: boolean, song: boolean) {
 }
 
 export function setPlaybackSongLength(songLength: number) {
-  repeatOptions.songLength = songLength;
+  repeatOptions.songLength = midiBeatToDrillCount(songLength, playbackCountTicks, playbackPpq);
   players.forEach(invalidateLegBake);
   repeatElapsed = repeatOptions.drill || repeatOptions.song ? getDrillTransportState().beat : null;
   notifyDrillTransport(true);
 }
 
-export function setPlaybackTempoMap(tempoMap: ReadonlyArray<PlaybackTempoEvent> | null) {
+export function setPlaybackTempoMap(tempoMap: ReadonlyArray<PlaybackTempoEvent> | null, ppq = 480) {
+  if (!Number.isInteger(ppq) || ppq < 1 || ppq > 32767) throw new Error('MIDI PPQ must be an integer between 1 and 32767.');
+  if (playbackCountTicks.some(tick => !Number.isSafeInteger(tick * ppq / playbackPpq))) {
+    let a = ppq, b = playbackPpq;
+    while (b) { const remainder = a % b; a = b; b = remainder; }
+    ppq = ppq / a * playbackPpq;
+    if (ppq > 32767) throw new Error('The MIDI and drill tick resolutions cannot be combined within the supported PPQ range.');
+  }
   const beat = getDrillTransportState().beat;
-  playbackTempoMap = tempoMap?.map((event) => ({ ...event })) ?? null;
+  const oldPpq = playbackPpq;
+  playbackPpq = ppq;
+  playbackCountTicks = playbackCountTicks.map(tick => tick * ppq / oldPpq);
+  playbackTempoMap = tempoMap?.map(event => ({
+    beat: midiBeatToDrillCount(event.beat, playbackCountTicks, playbackPpq), bpm: event.bpm,
+  })) ?? null;
   setDrillBeatPosition(beat);
   notifyDrillTransport(true);
 }
 
 export function getMusicTransportState(): DrillTransportState {
   const state = getDrillTransportState();
-  if (repeatElapsed === null) return state;
-  const frame = resolveRepeatPlayback(repeatElapsed, state.lastBeat, repeatOptions);
-  return { ...state, beat: frame.songBeat, lastBeat: frame.songEnd,
-    beatsPerSecond: globalPlayback.speedMultiplier / getCountInterval(frame.songBeat),
-    revision: state.revision + frame.songCycle };
+  const frame = repeatElapsed === null ? null : resolveRepeatPlayback(repeatElapsed, state.lastBeat, repeatOptions);
+  const count = frame?.songBeat ?? state.beat;
+  return { ...state,
+    beat: drillCountToMidiBeat(count, playbackCountTicks, playbackPpq),
+    lastBeat: drillCountToMidiBeat(frame?.songEnd ?? state.lastBeat, playbackCountTicks, playbackPpq),
+    beatsPerSecond: globalPlayback.speedMultiplier / getCountInterval(count) *
+      midiBeatsPerDrillCount(count, playbackCountTicks, playbackPpq),
+    revision: state.revision + (frame?.songCycle ?? 0) };
 }
 
 export const onDrillTransportChangedObservable = new Observable<DrillTransportState>();
@@ -1020,15 +1071,18 @@ function getTempoBpmAtBeat(beat: number): number {
 }
 
 function getCountInterval(beat: number, gaitIndex = selectedMarchingGait): number {
-  return 60 / (getTempoBpmAtBeat(Math.max(0, beat)) * MARCHING_GAITS[gaitIndex].tempoFactor);
+  return 60 * midiBeatsPerDrillCount(beat, playbackCountTicks, playbackPpq) /
+    (getTempoBpmAtBeat(Math.max(0, beat)) * MARCHING_GAITS[gaitIndex].tempoFactor);
 }
 
 const TEMPO_BOUNDARY_EPSILON = 1e-9;
 
 function nextTempoBoundary(beat: number, end: number, direction: 1 | -1): number {
-  if (!playbackTempoMap) return end;
-  let boundary = end;
-  for (const event of playbackTempoMap) {
+  let boundary = playbackCountTicks.length > 1
+    ? direction > 0 ? Math.min(end, Math.floor(beat + TEMPO_BOUNDARY_EPSILON) + 1)
+      : Math.max(end, Math.ceil(beat - TEMPO_BOUNDARY_EPSILON) - 1)
+    : end;
+  for (const event of playbackTempoMap ?? []) {
     if (direction > 0 && event.beat > beat + TEMPO_BOUNDARY_EPSILON && event.beat < boundary) {
       boundary = event.beat;
     } else if (direction < 0 && event.beat < beat - TEMPO_BOUNDARY_EPSILON && event.beat > boundary) {
@@ -1214,7 +1268,7 @@ function resamplePathIntoCounts(points: Vector3[], stepSizeYards: number): Robot
 
 const GAIT_INDEX_BY_NAME = new Map<string, number>(MARCHING_GAITS.map((gait, index) => [gait.name, index]));
 
-interface ResolvedCountGait {
+export interface ResolvedCountGait {
   gaitIndex: number;
   stepsPerCount: number;
   bodyYaw: number;
@@ -1232,6 +1286,8 @@ function resolveSegmentGait(
   segmentStart: number,
   styleIndex: number
 ): ResolvedCountGait | null {
+  const baked = state.counts[Math.min(state.counts.length - 1, Math.max(0, segmentStart))]?.bakedGait;
+  if (baked !== undefined && segmentStart >= 0 && segmentStart < state.counts.length) return baked;
   const last = state.counts.length - 1;
   const transitionStyle = segmentStart >= 0 && segmentStart < last
     ? state.counts[segmentStart].styleIndex : undefined;
@@ -1258,10 +1314,12 @@ function resolveSegmentGait(
   const dz = to.position.z - from.position.z;
   const travelYaw = dx * dx + dz * dz > 0.0001 ? Math.atan2(dx, dz) : from.rotationY;
   const bodyYaw = to.facingY ?? from.facingY ?? travelYaw;
-  const musicBeat = segmentStart + getMusicTransportState().beat - getDrillTransportState().beat;
+  const musicBeat = drillCountToMidiBeat(segmentStart, playbackCountTicks, playbackPpq) +
+    getMusicTransportState().beat - drillCountToMidiBeat(getDrillTransportState().beat, playbackCountTicks, playbackPpq);
   const pulse = midiPulseAtBeat(musicBeat, playbackBeatUnits);
   const quarterNotesPerPulse = repeatOptions.songLength > 0
-    ? midiBeatAtPulse(pulse + 1, playbackBeatUnits) - musicBeat : 1;
+    ? (midiBeatAtPulse(pulse + 1, playbackBeatUnits) - musicBeat) /
+      midiBeatsPerDrillCount(segmentStart, playbackCountTicks, playbackPpq) : 1;
   let cadenceTravelYards = Math.hypot(dx, dz);
   // A half-time footfall spans three quarter-note counts in 6/8. Include
   // neighboring travel so a cadence change cannot overreach across a set.
@@ -1293,9 +1351,19 @@ function resolveSegmentGait(
   };
 }
 
+function clearBakedCountGaits(state: PlayerState) {
+  state.counts.forEach(count => { delete count.bakedGait; delete count.stepPhase; });
+  state.gaitPhaseCache?.clear();
+  state.stepCache = undefined;
+}
+
 function getGaitStepPhaseOffsets(state: PlayerState, styleIndex: number): number[] {
   const cached = state.gaitPhaseCache?.get(styleIndex);
   if (cached?.counts === state.counts) return cached.offsets;
+  const savedOffsets = state.counts.map(count => count.stepPhase);
+  if (savedOffsets.every((phase): phase is number => phase !== undefined)) {
+    return savedOffsets;
+  }
 
   const stepsPerCount = Array.from({ length: Math.max(0, state.counts.length - 1) }, (_, index) =>
     resolveSegmentGait(state, index, styleIndex)?.stepsPerCount ?? 0);
@@ -1418,8 +1486,9 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState,
   const count = state.counts[index];
   const parts = sample?.parts ?? marcherParts.get(robot);
   if (!parts) return;
-  const clockOffset = Math.round((drillBeat - musicBeat) * 1e8) / 1e8;
-  const bakeKey = [parts.gaitIndex, clockOffset, repeatOptions.songLength, repeatOptions.drill].join(":");
+  const clockOffset = Math.round((drillCountToMidiBeat(drillBeat, playbackCountTicks, playbackPpq) - musicBeat) * 1e8) / 1e8;
+  const bakeKey = [parts.gaitIndex, clockOffset, repeatOptions.songLength, repeatOptions.drill,
+    playbackPpq, playbackCountTicks.join(",")].join(":");
   if (!sample && state.legBake &&
     (state.legBake.counts !== state.counts || state.legBake.beatUnits !== playbackBeatUnits ||
       state.legBake.key !== bakeKey)) invalidateLegBake(state);
@@ -1431,7 +1500,7 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState,
     // Exact relative-route equality only: never merge merely similar strides or turns.
     const signature = JSON.stringify([bakeKey, playbackBeatUnits,
       counts.map(count => [count.position.x, count.position.y, count.position.z, count.rotationY, count.facingY,
-        count.styleIndex])]);
+        count.styleIndex, count.bakedGait, count.stepPhase])]);
     const lease = sharedLegBakes.acquire(signature, () => {
       const sampleState: PlayerState = { ...state, counts, gaitPhaseCache: undefined,
         stepCache: undefined, legBake: undefined };
@@ -1443,16 +1512,18 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState,
         const unit = playbackBeatUnits[0]?.quarterNotesPerPulse ?? 1;
         if (unit <= 0 || unit > 2 || (playbackBeatUnits[0]?.beat ?? 0) !== 0) return undefined;
         const origin = counts[count].position;
-        const phase = midiPulseAtBeat(count - clockOffset, playbackBeatUnits);
+        const musicOrigin = drillCountToMidiBeat(count, playbackCountTicks, playbackPpq);
+        const phase = midiPulseAtBeat(musicOrigin - clockOffset, playbackBeatUnits);
         const phaseKey = ((phase % 4) + 4) % 4;
         return JSON.stringify([sampleParts.gaitIndex, unit, phaseKey,
-          counts.slice(count - 16, count + 18).map(item => [
+          counts.slice(count - 16, count + 18).map((item, index) => [
             item.position.x - origin.x, item.position.y, item.position.z - origin.z,
-            item.rotationY, item.facingY,
+            item.rotationY, item.facingY, item.bakedGait, item.stepPhase,
+            drillCountToMidiBeat(count - 16 + index, playbackCountTicks, playbackPpq) - musicOrigin,
           ])]);
       };
       const table = new BakedLegAnimation(last, beat =>
-        applyGlobalCount(robot, sampleState, { drillBeat: beat, musicBeat: beat - clockOffset,
+        applyGlobalCount(robot, sampleState, { drillBeat: beat, musicBeat: drillCountToMidiBeat(beat, playbackCountTicks, playbackPpq) - clockOffset,
           parts: sampleParts }), drillBeat, cycleKey);
       scheduleLegBake(table);
       return table;
@@ -1580,7 +1651,10 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState,
     return;
   }
   const stepsPerCount = resolved!.stepsPerCount;
-  const phase = repeatOptions.songLength > 0
+  const savedPhase = from.stepPhase;
+  const phase = savedPhase !== undefined
+    ? gaitPhaseAtBeat(savedPhase + forwardProgress * stepsPerCount, 1)
+    : repeatOptions.songLength > 0
     ? gaitPhaseAtBeat(midiPulseAtBeat(musicBeat, playbackBeatUnits), stepsPerCount)
     : gaitPhaseAtBeat(
       getGaitStepPhaseOffsets(state, parts.gaitIndex)[segmentStart] + forwardProgress * stepsPerCount,
@@ -1605,8 +1679,9 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState,
   }
   const stepCache = state.stepCache;
   const beatForStep = (step: number) => {
-    if (repeatOptions.songLength > 0) {
-      return drillBeat + midiBeatAtPulse(step / stepsPerCount, playbackBeatUnits) - musicBeat;
+    if (savedPhase === undefined && repeatOptions.songLength > 0) {
+      return midiBeatToDrillCount(midiBeatAtPulse(step / stepsPerCount, playbackBeatUnits) + clockOffset,
+        playbackCountTicks, playbackPpq);
     }
     const offsets = getGaitStepPhaseOffsets(state, parts.gaitIndex);
     let index = 0;
@@ -1782,10 +1857,12 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState,
 export function getRobotFootprintSource(robot: TransformNode) {
   const state = players.get(robot), parts = marcherParts.get(robot);
   if (!state || !parts || !state.counts.length) return null;
-  const clockOffset = Math.round((getDrillTransportState().beat - getMusicTransportState().beat) * 1e8) / 1e8;
+  const clockOffset = Math.round((drillCountToMidiBeat(getDrillTransportState().beat, playbackCountTicks, playbackPpq) -
+    getMusicTransportState().beat) * 1e8) / 1e8;
   const key = JSON.stringify([parts.gaitIndex, clockOffset, repeatOptions.songLength, repeatOptions.drill,
-    playbackBeatUnits, state.counts.map(count => [
+    playbackBeatUnits, playbackPpq, playbackCountTicks, state.counts.map(count => [
       count.position.x, count.position.y, count.position.z, count.rotationY, count.facingY, count.styleIndex,
+      count.bakedGait, count.stepPhase,
     ])]);
   return {
     key,
@@ -1795,16 +1872,17 @@ export function getRobotFootprintSource(robot: TransformNode) {
       const offsets = getGaitStepPhaseOffsets(sampleState, parts.gaitIndex);
       const cadence = (segment: number) => resolveSegmentGait(sampleState, segment, parts.gaitIndex)?.stepsPerCount ?? 1;
       const beats = gaitContactBeats(last,
-        (segment, beat) => repeatOptions.songLength > 0
-          ? midiPulseAtBeat(beat - clockOffset, playbackBeatUnits) * cadence(segment)
+        (segment, beat) => state.counts[segment].stepPhase === undefined && repeatOptions.songLength > 0
+          ? midiPulseAtBeat(drillCountToMidiBeat(beat, playbackCountTicks, playbackPpq) - clockOffset, playbackBeatUnits) * cadence(segment)
           : offsets[segment] + (beat - segment) * cadence(segment),
-        (segment, step) => repeatOptions.songLength > 0
-          ? midiBeatAtPulse(step / cadence(segment), playbackBeatUnits) + clockOffset
+        (segment, step) => state.counts[segment].stepPhase === undefined && repeatOptions.songLength > 0
+          ? midiBeatToDrillCount(midiBeatAtPulse(step / cadence(segment), playbackBeatUnits) + clockOffset,
+            playbackCountTicks, playbackPpq)
           : segment + (step - offsets[segment]) / cadence(segment));
       const contacts: MarcherFootContact[] = [];
       for (const beat of beats) {
         applyGlobalCount(robot, sampleState, {
-          drillBeat: beat, musicBeat: beat - clockOffset,
+          drillBeat: beat, musicBeat: drillCountToMidiBeat(beat, playbackCountTicks, playbackPpq) - clockOffset,
           contact(pose, position, yaw, left, progress) {
             for (const side of beat === 0 && progress < 1e-8 ? [-1, 1] : [left ? -1 : 1]) {
               const leg = pose.legs[side < 0 ? 0 : 1];
@@ -2025,6 +2103,7 @@ export function setRobotStepSize(robot: TransformNode, stepSizeYards: number, sk
   const state = players.get(robot);
   if (!state || stepSizeYards <= 0) return;
   state.stepSizeYards = stepSizeYards;
+  clearBakedCountGaits(state);
   state.counts = resamplePathIntoCounts(state.points, stepSizeYards);
   applyFixedFacing(state);
   applyGlobalCount(robot, state);
@@ -2046,6 +2125,7 @@ export function resetRobotSchedule(
   const state = players.get(robot);
   if (!state || stepSizeYards <= 0) return;
   state.stepSizeYards = stepSizeYards;
+  clearBakedCountGaits(state);
   const resampled = resamplePathIntoCounts(state.points, stepSizeYards);
   const first = resampled[0];
   const hold: RobotCount[] =
@@ -2073,6 +2153,7 @@ function applyFixedFacing(state: PlayerState) {
 export function setRobotFacing(robot: TransformNode, facingY: number | null) {
   const state = players.get(robot);
   if (!state) return;
+  clearBakedCountGaits(state);
   state.stepCache = undefined;
   invalidateLegBake(state);
   state.gaitPhaseCache?.clear();
@@ -2095,6 +2176,7 @@ export function setPlacedMarcherFacing(robot: TransformNode, facingY: number) {
   const state = players.get(robot);
   const count = state?.counts[blankChartPage?.count ?? getGlobalCountIndex()];
   if (!state || !count) return;
+  clearBakedCountGaits(state);
   count.facingY = Math.atan2(Math.sin(facingY), Math.cos(facingY));
   invalidateLegBake(state);
   state.gaitPhaseCache?.clear();
@@ -2291,6 +2373,7 @@ export function setRobotCountPosition(
     });
   }
   if (!accepted) return;
+  clearBakedCountGaits(state);
   count.position.copyFrom(position);
   count.rotationY = rotationY;
   state.gaitPhaseCache?.clear();
@@ -2369,6 +2452,7 @@ export function setRobotSetPoses(
         state.counts[count].rotationY = Math.atan2(after.x - before.x, after.z - before.z);
       }
     }
+    clearBakedCountGaits(state);
     state.points = state.counts.map(count => count.position.clone());
     state.gaitPhaseCache?.clear();
     state.stepCache = undefined;
@@ -2574,6 +2658,7 @@ export function setRobotTransition(
       }
       if (count > fromCount) counts[count].rotationY = heading;
     }
+    clearBakedCountGaits(state);
     state.points = counts.map(count => count.position.clone());
     state.gaitPhaseCache?.clear();
     state.stepCache = undefined;
@@ -2774,6 +2859,7 @@ export function insertBlankChartPage(afterCount: number, countsPerPage: number, 
   players.forEach((state) => {
     const counts = state.counts;
     if (counts.length === 0) return;
+    clearBakedCountGaits(state);
     while (counts.length - 1 < at) counts.push(copy(counts[counts.length - 1]));
     const hold = counts[at];
     counts.splice(at + 1, 0, ...Array.from({ length: countsPerPage }, () => copy(hold)));
@@ -2852,6 +2938,32 @@ export function captureMarcherSchedules(): MarcherScheduleSnapshot[] {
     });
   });
   return snapshots;
+}
+
+export function captureBakedMarcherSchedules(): MarcherScheduleSnapshot[] {
+  return captureMarcherSchedules().map(snapshot => {
+    const state = players.get(snapshot.robot);
+    const resolvedState: PlayerState = state ?? {
+      points: snapshot.counts.map(count => count.position), counts: snapshot.counts,
+      stepSizeYards: snapshot.stepSizeYards,
+    };
+    const offsets = getGaitStepPhaseOffsets(resolvedState, snapshot.gaitIndex);
+    const clockOffset = getMusicTransportState().beat -
+      drillCountToMidiBeat(getDrillTransportState().beat, playbackCountTicks, playbackPpq);
+    return {
+      ...snapshot,
+      counts: snapshot.counts.map((count, index) => {
+        const resolved = resolveSegmentGait(resolvedState, index, snapshot.gaitIndex);
+        return {
+          ...count,
+          bakedGait: resolved && { ...resolved },
+          stepPhase: count.stepPhase ?? (repeatOptions.songLength > 0
+            ? midiPulseAtBeat(drillCountToMidiBeat(index, playbackCountTicks, playbackPpq) + clockOffset, playbackBeatUnits) * (resolved?.stepsPerCount ?? 1)
+            : offsets[index]),
+        };
+      }),
+    };
+  });
 }
 
 export function captureBlankChartPage(): BlankChartPageSnapshot | null {
@@ -3111,6 +3223,7 @@ export function delayRobotStart(
   const state = players.get(robot);
   const firstCount = state?.counts[0];
   if (!state || !firstCount || holdCounts <= 0) return;
+  clearBakedCountGaits(state);
   const hold: RobotCount[] = Array.from({ length: holdCounts }, () => ({
     ...firstCount,
     position: firstCount.position.clone(),

@@ -23,6 +23,8 @@ context.setChartPageTimeline({ beatsPerPage: 8, authoredCounts: [0, 24] });
 assert.deepEqual(Array.from(context.getChartPageCounts(24)), [0, 8, 16, 24]);
 assert.equal(context.isAuthoredChartPage(8, 24), false);
 const source = read('robot');
+vm.runInContext(transform(source.slice(source.indexOf('function clearBakedCountGaits('),
+  source.indexOf('function getGaitStepPhaseOffsets('))), context);
 const start = source.indexOf('export function setRobotSetPoses(');
 const end = source.indexOf('// Transition library:', start);
 assert.ok(start >= 0 && end > start);

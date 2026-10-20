@@ -33,6 +33,7 @@ const context = vm.createContext({
   playbackTempoMap: [{ beat: 0, bpm: 120 }],
   repeatOptions: { songLength: 32 },
   playbackBeatUnits: [],
+  playbackPpq: 480, playbackCountTicks: [],
   transportRevision: 0,
   getDrillTransportState: () => ({ beat: drillBeat }),
   getMusicTransportState: () => ({ beat: musicBeat }),
@@ -49,6 +50,7 @@ const warnings = [];
 const run = source => vm.runInContext(stripTypeScriptTypes(source, { mode: 'transform' })
   .replace(/^import[\s\S]*?from .*?;\r?$/gm, '').replace(/export /g, ''), context);
 run(gaitSource);
+run(readFileSync(new URL('../src/audio/drillMidiTiming.ts', import.meta.url), 'utf8'));
 run(readFileSync(new URL('../src/audio/midiBeatPulse.ts', import.meta.url), 'utf8'));
 run(readFileSync(new URL('../src/robot/marcherLegPose.ts', import.meta.url), 'utf8'));
 run(readFileSync(new URL('../src/robot/marcherStepCycleModel.ts', import.meta.url), 'utf8'));
@@ -1073,4 +1075,84 @@ for (const track of example.tracks) {
 }
 assert.equal(exampleWarnings.length, 0,
   `Standard example must be fully marchable: ${exampleWarnings.slice(0, 5).join('; ')}`);
+context.repeatOptions = { songLength: 0, drill: false };
+context.playbackBeatUnits = [];
+for (const facing of [0, Math.PI / 2, Math.PI]) {
+  parts.gaitIndex = gaitIndex('Field March');
+  const authored = Array.from({ length: 9 }, (_, count) => ({
+    position: new Vector3(0, 0, count * 0.25), rotationY: 0, facingY: facing,
+    ...(count === 4 ? { styleIndex: gaitIndex('Mark Time') } : {}),
+  }));
+  state.counts = authored;
+  const baked = authored.map((count, index) => ({
+    ...count, bakedGait: context.resolveSegmentGait(state, index, parts.gaitIndex),
+  }));
+  for (const direction of [1, -1]) {
+    playback.speedMultiplier = direction;
+    for (let beat = 0; beat <= 8; beat += 0.125) {
+      musicBeat = drillBeat = beat;
+      state.counts = authored;
+      state.stepCache = undefined; state.gaitPhaseCache = undefined;
+      pose();
+      const expected = transformSnapshot();
+      state.counts = baked;
+      state.stepCache = undefined; state.gaitPhaseCache = undefined;
+      pose();
+      assert.equal(transformSnapshot(), expected,
+        `Named baked steps preserve limb/root transforms: facing=${facing}, direction=${direction}, beat=${beat}`);
+    }
+  }
+}
+state.counts = Array.from({ length: 9 }, (_, count) => ({
+  position: new Vector3(0, 0, count * 0.25), rotationY: 0, facingY: 0,
+}));
+parts.gaitIndex = gaitIndex('Field March');
+const phaseOffsets = context.getGaitStepPhaseOffsets(state, parts.gaitIndex);
+state.counts = state.counts.map((count, index) => ({
+  ...count, stepPhase: phaseOffsets[index] + 1.25,
+  bakedGait: context.resolveSegmentGait(state, index, parts.gaitIndex),
+}));
+state.stepCache = undefined; state.gaitPhaseCache = undefined;
+musicBeat = drillBeat = 3.375;
+pose();
+const savedPhasePose = transformSnapshot();
+context.repeatOptions = { songLength: 1000, drill: false };
+musicBeat = 70.125;
+state.stepCache = undefined; state.gaitPhaseCache = undefined;
+pose();
+assert.equal(transformSnapshot(), savedPhasePose,
+  'Saved fractional phase and foot parity do not change with the music clock');
+Object.assign(context, { Float64Array, Uint8Array, DataView, TextEncoder, TextDecoder,
+  Blob, Response, CompressionStream, DecompressionStream });
+run(readFileSync(new URL('../src/robot/openChartFormat.ts', import.meta.url), 'utf8'));
+run(readFileSync(new URL('../src/robot/openChartPerformance.ts', import.meta.url), 'utf8'));
+const sampledContacts = context.getRobotFootprintSource(robot).build();
+assert.ok(sampledContacts.length > 0 && sampledContacts.some(contact => !Number.isInteger(contact.beat)),
+  'Footfall events include sub-count contacts');
+const savedPerformance = context.packOpenChartPerformance({
+  counts: state.counts, gaitIndex: parts.gaitIndex,
+  instrumentRestPose: false, color: { r: 0.2, g: 0.4, b: 0.6 }, stepSizeYards: 0.625,
+}, vm.runInContext('MARCHING_GAITS.map(gait => gait.name)', context));
+const savedShow = {
+  name: 'Footfalls', tempoBpm: 120, widthYards: 53.333,
+  pages: [{ name: 'Opening', count: 0, notes: '' }],
+  marchers: [{ label: 'T1', name: '', section: 'Trumpet', notes: '', instrument: 'trumpet',
+    positions: Float64Array.from(state.counts.flatMap(count => [count.position.x, count.position.z])),
+    performance: savedPerformance }],
+};
+const restoredSchedule = context.unpackOpenChartPerformance(
+  (await context.decodeOpenChart(await context.encodeOpenChart(savedShow))).marchers[0].performance,
+  vm.runInContext('MARCHING_GAITS.map(gait => gait.name)', context));
+assert.equal('footfalls' in savedPerformance, false);
+assert.equal('footfalls' in restoredSchedule, false);
+state.counts = restoredSchedule.counts.map(({ height, ...count }, index) => ({
+  ...count, position: new Vector3(savedShow.marchers[0].positions[index * 2], height,
+    savedShow.marchers[0].positions[index * 2 + 1]),
+}));
+musicBeat = 200;
+const loadedContacts = context.getRobotFootprintSource(robot).build();
+assert.equal(JSON.stringify(loadedContacts), JSON.stringify(sampledContacts),
+  'Footprint display regenerates identical contacts from restored schedules, independent of the music clock');
+console.log(`Footprint regeneration passed: ${sampledContacts.length} exact contacts from restored schedules without serialized footprints.`);
+console.log('Named baked gait playback matches inferred limb/root poses: forward, sideways, backward, explicit mark-time, reverse and final halt.');
 console.log('MIDI footfall position checks passed: all cadences, left/right phase, pause/resume, drill/song loops, reverse, and fractional drill position.');

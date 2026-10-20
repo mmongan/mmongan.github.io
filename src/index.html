@@ -487,7 +487,7 @@
           <input id="marcherPaintColor" type="color" value="#1e88e5" />
           <button id="marcherPaintSelectedButton" type="button">Paint selected marcher</button>
           <output id="marcherPaintStatus" class="settings-status" aria-live="polite"></output>
-          <p>Open the grabbable palette here or with Paint on the floating settings panel. Choose a swatch (or custom color above), then click, trigger, or pinch a marcher to recolor only their uniform. Paint selected applies to the current selection. Done paint or the checkbox exits paint mode. Painting replaces movement/selection gestures while active; placement, erase, drawing, and selection editing turn it off. Uniforms, matching route colors, and top-down markers update; instruments/guard equipment are unchanged. Colors are session-only, with no paint undo or show export.</p>
+          <p>Open the grabbable palette here or with Paint on the floating settings panel. Choose a swatch (or custom color above), then click, trigger, or pinch a marcher to recolor only their uniform. Paint selected applies to the current selection. Done paint or the checkbox exits paint mode. Painting replaces movement/selection gestures while active; placement, erase, drawing, and selection editing turn it off. Uniforms, matching route colors, and top-down markers update; instruments/guard equipment are unchanged. Save the OpenChart show or a chart page draft to preserve colors. Paint has no undo.</p>
           </div>
           <label class="settings-label" for="marcherCount">Marchers to add</label>
           <div class="radio-row">
@@ -497,12 +497,16 @@
           <button id="addRandomRobotsButton" class="xr-button secondary">Add marchers</button>
           <button id="generateDrillButton" class="xr-button secondary">Generate marching band drill</button>
           </div>
-          <label class="settings-label" for="openMarchUrl">Open OpenMarch show (.dots URL)</label>
+          <label class="settings-label" for="openChartFile">Open drill show (.openchart or .dots)</label>
+          <input id="openChartFile" type="file" accept=".openchart,.dots" />
+          <button id="saveOpenChartButton" type="button" class="xr-button secondary">Save baked drill show (.openchart)</button>
+          <p>OpenChart saves complete marcher schedules: positions/heights, headings, facing, resolved named steps, cadence and cumulative step phase per count. MIDI PPQ, independent count tick positions, and tempo changes preserve musical timing without requiring quarter-note drill counts. Default gait, step size, instrument playing/carry pose, uniform color, field width, and pages are included. Files use uncompressed binary data, descriptive JSON keys, type-scoped built-in value codes, and inline custom text. Limb motion and footprint previews use the app's predefined step/pose library; footprints, joint animation, MIDI notes, audio, and drafting state are not embedded. Only OpenChart v13 is supported. OpenMarch imports remain available.</p>
+          <label class="settings-label" for="openMarchUrl">Open drill show (.openchart or .dots URL)</label>
           <form id="openMarchForm" class="url-row">
             <input id="openMarchUrl" type="url" placeholder="https://example.com/show.dots" autocomplete="url" spellcheck="false" required />
             <button id="openMarchButton" type="submit" class="xr-button secondary">Open</button>
           </form>
-          <button id="openMarchExampleButton" type="button" class="xr-button secondary">Load example OpenMarch show</button>
+          <button id="openMarchExampleButton" type="button" class="xr-button secondary">Load example OpenChart show</button>
           <output id="openMarchStatus" class="settings-status" for="openMarchUrl"></output>
           <label class="radio-option"><input id="ghostBandToggle" type="checkbox" /><span>Ghost-band timeline comparison</span></label>
           <label class="radio-option"><input id="marcherFootprintsToggle" type="checkbox" /><span>Show selected marcher's full-route footprints</span></label>
