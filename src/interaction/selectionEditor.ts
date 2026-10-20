@@ -580,7 +580,7 @@ export function createSelectionEditor(deps: EditorDependencies) {
       drillSelectionMode.checked = false;
       sets = []; drillEditSet.replaceChildren();
       fieldChart.clear();
-      status("Scene replaced; selection and shape groups cleared.");
+      drillSelectionStatus.textContent = "";
     },
   };
 }
