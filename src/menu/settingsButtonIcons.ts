@@ -4,8 +4,79 @@ import type { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.pure';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
 import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
+import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
 import type { HandMenuHit } from './handMenu';
 import { addInstrumentButtonModel } from './instrumentButtonModel';
+
+export function isMediaButtonAction(action: HandMenuHit) {
+  return ['restart', 'rewind', 'stepBack', 'playPause', 'stepForward', 'fastForward', 'goToEnd'].includes(action.action);
+}
+
+export function createMediaButtonIcon(button: AbstractMesh, action: HandMenuHit,
+  width: number, height: number, getPlaying: () => boolean) {
+  const scene = button.getScene();
+  const root = new TransformNode(`mediaIcon-${button.name}`, scene);
+  root.parent = button;
+  const size = Math.min(width, height) * 0.65;
+  root.scaling.setAll(size);
+  root.position.z = -size * 0.12 - 0.002;
+  const material = new StandardMaterial(`${root.name}Material`, scene);
+  material.diffuseColor = Color3.White();
+  material.emissiveColor = Color3.White();
+  material.disableLighting = true;
+  material.specularColor = Color3.Black();
+  const parts: Mesh[] = [];
+  function triangle(x: number, direction: number, span: number) {
+    const shape = [new Vector3(x - direction * span / 2, -.38, 0),
+      new Vector3(x + direction * span / 2, 0, 0),
+      new Vector3(x - direction * span / 2, .38, 0)];
+    shape.push(shape[0].clone());
+    parts.push(MeshBuilder.ExtrudeShape(`${root.name}Triangle`, {
+      shape, path: [Vector3.Zero(), new Vector3(0, 0, .12)], cap: Mesh.CAP_ALL,
+      sideOrientation: Mesh.DOUBLESIDE,
+    }, scene));
+  }
+  function bar(x: number) {
+    const mesh = MeshBuilder.CreateBox(`${root.name}Bar`, { width: .13, height: .76, depth: .12 }, scene);
+    mesh.position.set(x, 0, .06);
+    parts.push(mesh);
+  }
+  function merge(name: string) {
+    const mesh = Mesh.MergeMeshes(parts.splice(0), true, true);
+    if (!mesh) throw new Error(`Could not create media icon for ${button.name}.`);
+    mesh.name = `${root.name}-${name}`;
+    mesh.parent = root;
+    mesh.material = material;
+    return mesh;
+  }
+  const direction = action.action === 'restart' || action.action === 'rewind' || action.action === 'stepBack' ? -1 : 1;
+  if (action.action === 'restart' || action.action === 'goToEnd') {
+    bar(direction * .43);
+    triangle(direction * .12, direction, .3); triangle(-direction * .23, direction, .3);
+  } else if (action.action === 'rewind' || action.action === 'fastForward') {
+    triangle(-.23, direction, .4); triangle(.23, direction, .4);
+  } else {
+    triangle(0, direction, .6);
+    if (action.action === 'stepBack' || action.action === 'stepForward') bar(direction * .43);
+  }
+  const icon = merge('symbol');
+  const meshes = [icon];
+  if (action.action === 'playPause') {
+    bar(-.2); bar(.2);
+    const pause = merge('pause');
+    meshes.push(pause);
+    const update = () => {
+      const playing = getPlaying();
+      icon.setEnabled(!playing);
+      pause.setEnabled(playing);
+    };
+    update();
+    const observer = scene.onBeforeRenderObservable.add(update);
+    root.onDisposeObservable.addOnce(() => scene.onBeforeRenderObservable.remove(observer));
+  }
+  root.onDisposeObservable.addOnce(() => material.dispose());
+  return meshes;
+}
 
 export function createSettingsButtonIcon(button: AbstractMesh, action: HandMenuHit, width: number,
   layout: 'inline' | 'stacked' | 'compact' = 'inline', buttonHeight = 0.075) {

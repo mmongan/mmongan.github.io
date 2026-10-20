@@ -33,6 +33,7 @@ import { getChartPageCounts, getChartPageTimeline, isAuthoredChartPage } from '.
 import { isChartGhostModeEnabled } from '../robot/chartPageGhostMode';
 import { isDraftingTableMode } from '../interaction/fieldDrawingTools';
 import { isDraftingToolsEnabled } from '../interaction/editingMode';
+import { createMediaButtonIcon, isMediaButtonAction } from './settingsButtonIcons';
 
 export const DRILL_CHART_COUNTS_PER_SET = 8;
 
@@ -224,15 +225,15 @@ function createPad(): Pad {
     { label: "Draft off", name: "draftingMode", x: -0.025, y: PAD_HEIGHT / 2 + 0.01,
       hit: { action: "chartDraftingMode" } },
     ...([
-      ["Rewind", "rewind"], ["Step -", "stepBack"], ["Play", "playPause"],
-      ["Step +", "stepForward"], ["FFwd", "fastForward"],
+      ["Restart", "restart"], ["Rewind", "rewind"], ["Step -", "stepBack"], ["Play", "playPause"],
+      ["Step +", "stepForward"], ["FFwd", "fastForward"], ["End", "goToEnd"],
     ] as const).map(([label, action], index) => ({
-      label, name: action, x: bottomX(index), y: bottomY - 0.052, hit: { action },
+      label, name: action, x: (index - 3) * 0.056, y: bottomY - 0.052, hit: { action },
     })),
   ];
   for (const { label, name, x, y, hit } of buttonDefinitions) {
     const buttonMaterial = new StandardMaterial(`drillChartButtonMaterial-${name}`, scene);
-    const { texture: buttonTexture, ctx: buttonContext } = createButtonTexture(label);
+    const { texture: buttonTexture, ctx: buttonContext } = createButtonTexture(isMediaButtonAction(hit) ? '' : label);
     if (name === "ghostMode" || name === "draftingMode" || name === "playPause") {
       modeButtons.push({ texture: buttonTexture, ctx: buttonContext,
         mode: name === "ghostMode" ? 'ghost' : name === "draftingMode" ? 'drafting' : 'play' });
@@ -246,7 +247,7 @@ function createPad(): Pad {
     buttonMaterial.specularColor = Color3.Black();
     const isClose = name === "hide";
     const button = MeshBuilder.CreatePlane(`drillChartButton-${name}`, {
-      width: isClose ? BUTTON_HEIGHT : BUTTON_WIDTH, height: BUTTON_HEIGHT,
+      width: isClose ? BUTTON_HEIGHT : isMediaButtonAction(hit) ? 0.05 : BUTTON_WIDTH, height: BUTTON_HEIGHT,
     }, scene);
     button.material = buttonMaterial;
     button.position.set(x, y, -0.002);
@@ -255,6 +256,9 @@ function createPad(): Pad {
     registerMenuButton(button, hit);
     buttons.set(button, hit);
     button.parent = root;
+    if (isMediaButtonAction(hit)) {
+      createMediaButtonIcon(button, hit, 0.05, BUTTON_HEIGHT, () => getDrillTransportState().playing);
+    }
     meshes.add(button);
   }
 
@@ -477,7 +481,7 @@ function refreshPage(force = false) {
   for (const button of pad.modeButtons) {
     const active = button.mode === 'ghost' ? isChartGhostModeEnabled() : button.mode === 'drafting' ? isDraftingTableMode() : playing;
     drawPanelButton(button.ctx, 192, 80,
-      button.mode === 'play' ? active ? 'Pause' : 'Play' :
+      button.mode === 'play' ? '' :
         `${button.mode === 'ghost' ? 'Ghosts' : 'Draft'} ${active ? 'on' : 'off'}`, active);
     button.texture.update();
   }

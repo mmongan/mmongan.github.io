@@ -45,10 +45,11 @@ const context = vm.createContext({
   getChartTransitionLabels: () => ({ shape: 'Straight', pace: 'Linear', style: 'March' }),
   isChartGhostModeEnabled: () => ghosts, isDraftingTableMode: () => drafting,
   setChartGhostModeEnabled: value => { ghosts = value; },
-  getDrillTransportState: () => ({ playing }),
+  getDrillTransportState: () => ({ playing, lastBeat: 16 }),
   executeDrawingToolAction: action => { modes.push(action.tool); drafting = action.tool === 'table'; },
   toggleAllPlayback: () => { playing = !playing; },
   rewindAll: () => seeks.push('rewind'), fastForwardAll: () => seeks.push('fastForward'),
+  seekToCount: value => { count = value; playing = false; seeks.push(value); },
   stepAll: direction => steps.push(direction),
 });
 try {
@@ -82,10 +83,31 @@ try {
   action('ghostMode'); assert.equal(ghosts, false);
   action('draftingMode'); assert.ok(drafting); assert.equal(label('draftingMode'), 'Draft on');
   action('draftingMode'); assert.equal(drafting, false); assert.deepEqual(modes, ['table', 'tableExit']);
-  action('playPause'); context.redrawDrillChartPad(); assert.ok(playing); assert.equal(label('playPause'), 'Pause');
-  action('playPause'); context.redrawDrillChartPad(); assert.equal(playing, false); assert.equal(label('playPause'), 'Play');
+  const visibleMediaIcon = name => {
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    const icons = button(name).getChildMeshes().filter(mesh => mesh.isEnabled());
+    assert.equal(icons.length, 1, 'Each playback button displays exactly one 3D icon');
+    assert.equal(context.getHandMenuHit({ pickedMesh: icons[0] }).action, name, 'Icon activates its button action');
+    assert.equal(label(name), '', 'No duplicate text symbol is drawn under the 3D media icon');
+    return icons[0];
+  };
+  action('playPause'); context.redrawDrillChartPad(); assert.ok(playing);
+  assert.match(visibleMediaIcon('playPause').name, /-pause$/);
+  action('playPause'); context.redrawDrillChartPad(); assert.equal(playing, false);
+  assert.match(visibleMediaIcon('playPause').name, /-symbol$/);
+  for (const name of ['restart', 'rewind', 'stepBack', 'stepForward', 'fastForward', 'goToEnd']) visibleMediaIcon(name);
   action('stepBack'); action('stepForward'); assert.deepEqual(steps, [-1, 1]);
   action('rewind'); action('fastForward'); assert.deepEqual(seeks, ['rewind', 'fastForward']);
+  playing = true;
+  action('restart');
+  assert.equal(count, 0, 'Restart seeks to the opening count');
+  assert.equal(playing, false, 'Restart leaves playback paused');
+  assert.equal(seeks.at(-1), 0);
+  playing = true;
+  action('goToEnd');
+  assert.equal(count, 16, 'Go to end seeks to the final drill count');
+  assert.equal(playing, false, 'Go to end leaves playback paused');
+  assert.equal(seeks.at(-1), 16);
   const fastTapStart = interaction.indexOf('    if (pointerInfo.type === PointerEventTypes.POINTERDOUBLETAP && !isMarcherPainting()) {');
   const fastTapEnd = interaction.indexOf('\n    if (pointerInfo.type !== PointerEventTypes.POINTERTAP', fastTapStart);
   assert.ok(fastTapStart >= 0 && fastTapEnd > fastTapStart);
@@ -98,10 +120,10 @@ try {
       scene.pick = () => ({ hit: true, pickedMesh: button(name) });
       context.handleFastTap({ type: 64 });
       context.redrawDrillChartPad();
-      assert.equal(label(name), { ghostMode: 'Ghosts on', draftingMode: 'Draft on', playPause: 'Pause' }[name]);
+      assert.equal(label(name), { ghostMode: 'Ghosts on', draftingMode: 'Draft on', playPause: '' }[name]);
       context.handleFastTap({ type: 64 });
       context.redrawDrillChartPad();
-      assert.equal(label(name), { ghostMode: 'Ghosts off', draftingMode: 'Draft off', playPause: 'Play' }[name]);
+      assert.equal(label(name), { ghostMode: 'Ghosts off', draftingMode: 'Draft off', playPause: '' }[name]);
     }
   } finally {
     scene.pick = pick;
@@ -109,7 +131,7 @@ try {
   ghosts = true; drafting = true; playing = true;
   context.redrawDrillChartPad();
   assert.equal(label('ghostMode'), 'Ghosts on'); assert.equal(label('draftingMode'), 'Draft on');
-  assert.equal(label('playPause'), 'Pause', 'External state changes update chart labels');
+  assert.match(visibleMediaIcon('playPause').name, /-pause$/, 'External transport changes update the 3D icon');
   const controls = root.getChildMeshes().filter(mesh => mesh.name.startsWith('drillChartButton-'));
   const backing = scene.getMeshByName('drillChartBacking');
   const half = backing.getBoundingInfo().boundingBox.extendSize;
@@ -162,6 +184,7 @@ try {
   context.setDrillChartPadVisible(true);
   assert.equal(root.isEnabled(), true, 'Chart reopens normally after shared close');
   context.setDraftingToolsEnabled(false);
+  scene.onBeforeRenderObservable.notifyObservers(scene);
   root.position.set(1, 2, 3); root.scaling.setAll(0.75);
   const previousPose = root.computeWorldMatrix(true).clone();
   context.setDrillChartPadVisible(false);

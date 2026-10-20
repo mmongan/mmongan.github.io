@@ -45,7 +45,7 @@ export function isPlaybackMenuAction(hit: HandMenuHit) {
   switch (hit.action) {
     case 'panelControl':
       return true;
-    case 'playPause': case 'rewind': case 'fastForward': case 'stepBack': case 'stepForward': case 'seek':
+    case 'goToEnd': case 'restart': case 'playPause': case 'rewind': case 'fastForward': case 'stepBack': case 'stepForward': case 'seek':
     case 'marcherPOV': case 'drillChartPad': case 'drillChartHide': case 'drillChartPage': case 'chartGhostMode':
     case 'musicStandSummon': case 'musicStandHide': case 'musicStandStaffToggle':
     case 'recallPanels': case 'xrSettings': case 'xrSettingsHide': case 'fullScaleVR':

@@ -12,16 +12,19 @@ import { drawPanelButton } from '../menu/panelStyle';
 import { getDrillTransportState, onDrillTransportChangedObservable } from '../robot/robot';
 import { FIELD_WIDTH_YARDS } from './constants';
 import { mergeMeshesByMaterial } from './meshMerging';
+import { createMediaButtonIcon } from '../menu/settingsButtonIcons';
 import {
   isDrillEditingEnabled, onEditingModeChangedObservable, isMenuActionAvailable, onDraftingToolsChangedObservable,
 } from '../interaction/editingMode';
 
 const MEDIA_SIGNS = [
+  { label: 'RESTART', symbol: '|<<', action: 'restart' },
   { label: 'REWIND', symbol: '<<', action: 'rewind' },
   { label: 'STEP BACK', symbol: '|<', action: 'stepBack' },
   { label: 'PLAY', symbol: '>', action: 'playPause' },
   { label: 'STEP NEXT', symbol: '>|', action: 'stepForward' },
   { label: 'FAST FORWARD', symbol: '>>', action: 'fastForward' },
+  { label: 'GO TO END', symbol: '>>|', action: 'goToEnd' },
 ] as const;
 
 const PANEL_SIGNS: { label: string; symbol: string; action: HandMenuHit }[] = [
@@ -68,12 +71,14 @@ export function createStadiumCrowd(parent: Mesh) {
     mat.backFaceCulling = false;
     const draw = () => {
       const playing = sign.action.action === 'playPause' && getDrillTransportState().playing;
-      drawPanelButton(ctx, 512, 320, '');
+      drawPanelButton(ctx, 512, 320, '', playing);
       ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 150px Arial';
-      ctx.fillText(playing ? '||' : sign.symbol, 256, 124, 460);
-      ctx.font = 'bold 49px Arial';
-      ctx.fillText(playing ? 'PAUSE' : sign.label, 256, 258, 470);
+      if (sign.immersive) {
+        ctx.font = 'bold 150px Arial';
+        ctx.fillText(sign.symbol, 256, 124, 460);
+        ctx.font = 'bold 49px Arial';
+        ctx.fillText(sign.label, 256, 258, 470);
+      }
       texture.update();
     };
     draw();
@@ -83,7 +88,7 @@ export function createStadiumCrowd(parent: Mesh) {
   const observer = onDrillTransportChangedObservable.add(state => {
     if (state.playing === previousPlaying) return;
     previousPlaying = state.playing;
-    signFaces[2].draw();
+    signFaces[MEDIA_SIGNS.findIndex(sign => sign.action === 'playPause')].draw();
   });
   const materials = [...shirts, ...skin, trousers, frameMaterial, ...signFaces.map(face => face.material)];
   const immersiveSigns = new Map<Mesh, HandMenuHit>();
@@ -161,9 +166,11 @@ export function createStadiumCrowd(parent: Mesh) {
           face.position.z = -0.091;
           face.material = signFaces[index + (sign.immersive ? MEDIA_SIGNS.length : 0)].material;
           const action = sign.action;
+          if (!sign.immersive) createMediaButtonIcon(face, action, 2.86, 1.66,
+            () => getDrillTransportState().playing);
           registerMenuButton(frame, action);
           registerMenuButton(face, action);
-          new FieldMountedPanel(frame, new Set([frame, face]), frame,
+          new FieldMountedPanel(frame, new Set([frame, ...frame.getChildMeshes()]), frame,
             new Vector3(1.5, 0.9, 0.08), new Map([[frame, action], [face, action]]));
           if (sign.immersive) {
             immersiveSigns.set(frame, action);

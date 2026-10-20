@@ -20,9 +20,11 @@ const load = source => stripTypeScriptTypes(source, { mode: 'transform' })
 const engine = new NullEngine(), scene = new Scene(engine);
 const stadium = new TransformNode('stadium', scene);
 let tempo = 120, gaitChanges = [], hornChanges = 0;
+let playing = false;
 const context = vm.createContext({
   scene, engine, Mesh, MeshBuilder, TransformNode, StandardMaterial, Color3, Matrix, Quaternion, Vector3, Plane, Ray, Observable,
   __APP_VERSION__: 'test', performance,
+  getDrillTransportState: () => ({ playing }),
   document: { createElement: () => ({ getContext: () => new Proxy({}, {
     get: (target, key) => target[key] ?? (() => {}),
     set: (target, key, value) => { target[key] = value; return true; },
@@ -47,6 +49,17 @@ try {
   context.formatBuildStamp = () => 'test';
   vm.runInContext(load(board.slice(board.indexOf('export function createVideoBoard('))), context);
   const video = context.createVideoBoard();
+  for (const action of ['restart', 'rewind', 'stepBack', 'playPause', 'stepForward', 'fastForward', 'goToEnd']) {
+    const button = scene.getMeshByName(`videoBoardButton-${action}`);
+    for (const state of [false, true]) {
+      playing = state;
+      scene.onBeforeRenderObservable.notifyObservers(scene);
+      const icons = button.getChildMeshes().filter(mesh => mesh.isEnabled());
+      assert.equal(icons.length, 1, 'Video-board playback controls display a single icon');
+      assert.equal(context.getHandMenuHit({ pickedMesh: icons[0] }).action, action);
+      if (action === 'playPause') assert.ok(icons[0].name.endsWith(state ? '-pause' : '-symbol'));
+    }
+  }
   assert.equal(scene.meshes.some(mesh => mesh.name.startsWith('videoBoardSettings')), false,
     'The video board has no side-mounted tool/settings banks');
   context.createScoreboard();

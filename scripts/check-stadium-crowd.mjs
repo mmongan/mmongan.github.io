@@ -78,7 +78,7 @@ try {
       assert.ok(previousFace.isDisposed(), 'Changing stadium level removes old signs');
       assert.equal(context.getHandMenuHit({ pickedMesh: previousFace }), null, 'Rebuild unregisters old actions');
     }
-    assert.equal(faces().length, 30, 'Both sidelines have five media signs and ten XR panel signs');
+    assert.equal(faces().length, 34, 'Both sidelines have seven media signs and ten XR panel signs');
     const signFace = faces().find(face => !face.name.includes('-panel-'));
     const sign = signFace.parent;
     const signParent = sign.parent;
@@ -92,7 +92,7 @@ try {
       'Reset restores a sideline sign to its original local pose and size');
     assert.equal(context.isFloatingPanelGrabbed('left'), false, 'Reset releases held signs');
     for (const side of [-1, 1]) {
-      const ordered = ['rewind', 'stepBack', 'playPause', 'stepForward', 'fastForward']
+      const ordered = ['restart', 'rewind', 'stepBack', 'playPause', 'stepForward', 'fastForward', 'goToEnd']
         .map(action => scene.getMeshByName(`stadiumMediaSignFace-${side}-${action}`));
       const screenRightPositions = ordered.map(face => {
         face.computeWorldMatrix(true);
@@ -129,15 +129,25 @@ try {
   }
   assert.ok(counts[1] > counts[0] && counts[2] > counts[1], 'College and NFL stands have larger crowds and upper decks');
   assert.equal(counts[3], counts[0], 'Stadium rebuilds are deterministic');
-  const playTexture = textures[2];
+  const playTexture = textures[3];
   const initialUpdates = playTexture.updates;
   playing = true; transport.notifyObservers({ playing });
-  assert.equal(playTexture.ctx.labels.at(-1), 'PAUSE', 'Play sign follows shared transport');
+  scene.onBeforeRenderObservable.notifyObservers(scene);
+  const playFace = faces().find(face => face.name.endsWith('-playPause'));
+  const visibleIcon = () => {
+    const icons = playFace.getChildMeshes().filter(mesh => mesh.isEnabled());
+    assert.equal(icons.length, 1, 'Each media sign displays a single 3D symbol');
+    assert.equal(context.getHandMenuHit({ pickedMesh: icons[0] }).action, 'playPause');
+    return icons[0];
+  };
+  assert.match(visibleIcon().name, /-pause$/, 'Play sign follows shared transport');
+  assert.deepEqual(playTexture.ctx.labels, [], 'Media signs do not draw duplicate symbols or labels');
   transport.notifyObservers({ playing });
   assert.equal(playTexture.updates, initialUpdates + 1, 'Steady playback does not redraw the texture every frame');
   playing = false; transport.notifyObservers({ playing });
-  assert.equal(playTexture.ctx.labels.at(-1), 'PLAY');
-  console.log('Stadium crowd checks passed: tier population, ten static batches, 30 clickable signs, field-facing text, XR-only panel launchers, live Play/Pause, deterministic rebuild, and action cleanup.');
+  scene.onBeforeRenderObservable.notifyObservers(scene);
+  assert.match(visibleIcon().name, /-symbol$/);
+  console.log('Stadium crowd checks passed: tier population, ten static batches, 34 clickable signs including Restart/Go to end, field-facing text, XR-only panel launchers, live Play/Pause, deterministic rebuild, and action cleanup.');
 } finally {
   scene.dispose();
   await new Promise(resolve => setTimeout(resolve, 0));

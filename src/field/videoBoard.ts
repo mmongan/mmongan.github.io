@@ -13,7 +13,8 @@ import { engine, scene } from '../scene/engine';
 import { attachToARTransform } from '../xr/ar';
 import { registerMenuButton } from '../menu/handMenu';
 import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS, HASH_OFFSETS_YARDS } from './constants';
-import { TOP_DOWN_MARKER_LAYER_MASK } from '../robot/robot';
+import { TOP_DOWN_MARKER_LAYER_MASK, getDrillTransportState } from '../robot/robot';
+import { createMediaButtonIcon } from '../menu/settingsButtonIcons';
 import { FieldMountedPanel } from '../menu/floatingPanel';
 
 declare const __BUILD_TIME__: string | undefined;
@@ -390,12 +391,14 @@ function createVideoBoardButtons(y: number, z: number) {
   buttonMaterial.specularColor = new Color3(0.1, 0.1, 0.1);
   buttonMaterial.backFaceCulling = false;
 
-  const labels: { text: string; action: "rewind" | "stepBack" | "playPause" | "stepForward" | "fastForward" }[] = [
-    { text: "<<", action: "rewind" },
-    { text: "<|", action: "stepBack" },
-    { text: ">||", action: "playPause" },
-    { text: "|>", action: "stepForward" },
-    { text: ">>", action: "fastForward" },
+  const labels: { action: "restart" | "rewind" | "stepBack" | "playPause" | "stepForward" | "fastForward" | "goToEnd" }[] = [
+    { action: "restart" },
+    { action: "rewind" },
+    { action: "stepBack" },
+    { action: "playPause" },
+    { action: "stepForward" },
+    { action: "fastForward" },
+    { action: "goToEnd" },
   ];
 
   const buttonSize = 3.6;
@@ -431,11 +434,6 @@ function createVideoBoardButtons(y: number, z: number) {
     ctx.fillStyle = "#101d38";
     roundedRect(ctx, 4, 4, 248, 248, 36);
     ctx.fill();
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 88px 'Segoe UI', Arial";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(label.text, 151, 136, 172);
 
     const texture = new DynamicTexture(`videoBoardButtonTexture-${label.action}`, canvas, scene, false);
     texture.hasAlpha = true;
@@ -455,6 +453,8 @@ function createVideoBoardButtons(y: number, z: number) {
     button.material = material;
     button.parent = panel;
     button.position = new Vector3(startX + index * spacing, 0, -panelDepth / 2 - 0.02);
+    createMediaButtonIcon(button, { action: label.action }, buttonSize, buttonSize,
+      () => getDrillTransportState().playing);
 
     registerMenuButton(button, { action: label.action });
     buttons.set(button, { action: label.action });

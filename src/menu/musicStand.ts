@@ -20,6 +20,7 @@ import { registerMenuButton, type HandMenuHit } from './handMenu';
 import { getDrillTransportState, onDrillTransportChangedObservable } from '../robot/robot';
 import type { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.pure';
 import { layoutScorePage } from '../audio/scoreLayout';
+import { createMediaButtonIcon } from './settingsButtonIcons';
 
 const WIDTH = 1536;
 const HEIGHT = 1280;
@@ -124,9 +125,9 @@ export function initMusicStand() {
   sheet.material = paper;
   sheet.position.set(0, -0.035, -0.002);
   const buttons = new Map<AbstractMesh, HandMenuHit>();
-  const buttonTextures: { texture: DynamicTexture; canvas: HTMLCanvasElement; action: HandMenuHit; label: string }[] = [];
-  for (const [index, [label, action]] of ([
-    ['<<', 'rewind'], ['Back', 'stepBack'], ['Play', 'playPause'], ['Next', 'stepForward'], ['>>', 'fastForward'],
+  const buttonTextures: { texture: DynamicTexture; canvas: HTMLCanvasElement; action: HandMenuHit }[] = [];
+  for (const [index, action] of ([
+    'restart', 'rewind', 'stepBack', 'playPause', 'stepForward', 'fastForward', 'goToEnd',
   ] as const).entries()) {
     const buttonCanvas = document.createElement('canvas');
     buttonCanvas.width = 256;
@@ -139,14 +140,15 @@ export function initMusicStand() {
     material.opacityTexture = buttonTexture;
     material.emissiveColor = Color3.White();
     material.disableLighting = true;
-    const button = MeshBuilder.CreatePlane(`musicStandButton-${action}`, { width: 0.115, height: 0.0575 }, scene);
+    const button = MeshBuilder.CreatePlane(`musicStandButton-${action}`, { width: 0.08, height: 0.0575 }, scene);
     button.parent = desk;
-    button.position.set((index - 2) * 0.13, -0.37, -0.007);
+    button.position.set((index - 3) * 0.092, -0.37, -0.007);
     button.material = material;
     const hit: HandMenuHit = { action };
+    createMediaButtonIcon(button, hit, 0.08, 0.0575, () => getDrillTransportState().playing);
     registerMenuButton(button, hit);
     buttons.set(button, hit);
-    buttonTextures.push({ texture: buttonTexture, canvas: buttonCanvas, action: hit, label });
+    buttonTextures.push({ texture: buttonTexture, canvas: buttonCanvas, action: hit });
   }
 
   const topBarTextures: {
@@ -236,7 +238,7 @@ export function initMusicStand() {
       const ctx = button.canvas.getContext('2d');
       if (!ctx) throw new Error('Music media controls require a 2D canvas context.');
       const active = button.action.action === 'playPause' && transport.playing;
-      drawPanelButton(ctx, 256, 128, active ? 'Pause' : button.label, active);
+      drawPanelButton(ctx, 256, 128, '', active);
       button.texture.update(true);
     }
   }

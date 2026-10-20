@@ -17,7 +17,7 @@ export type HandMenuHit =
   | { action: "marcherPaint"; command: "show" | "done" | "paintSelected" }
   | { action: "marcherPaintColor"; color: string }
   | { action: "drawingTool"; tool: import('../interaction/fieldDrawingGeometry').DrawingToolCommand }
-  | { action: "playPause" | "rewind" | "fastForward" | "stepBack" | "stepForward" | "fullScaleVR" | "tabletopScale" | "commitFormation" | "eraseMode" | "undoErase" | "redoErase" | "musicStandStaffToggle" }
+  | { action: "goToEnd" | "restart" | "playPause" | "rewind" | "fastForward" | "stepBack" | "stepForward" | "fullScaleVR" | "tabletopScale" | "commitFormation" | "eraseMode" | "undoErase" | "redoErase" | "musicStandStaffToggle" }
   | { action: "formationGridSnap" }
   | { action: "formationSpacing"; factor: number }
   | { action: "formationRotate"; radians: number }

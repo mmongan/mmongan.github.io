@@ -2539,6 +2539,12 @@ function executeMenuAction(hit: NonNullable<ReturnType<typeof getHandMenuHit>>) 
     case "rewind":
       rewindAll();
       break;
+    case "restart":
+      seekToCount(0);
+      break;
+    case "goToEnd":
+      seekToCount(getDrillTransportState().lastBeat);
+      break;
     case "fastForward":
       fastForwardAll();
       break;
