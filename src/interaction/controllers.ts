@@ -27,12 +27,16 @@ const pinchState = {
   startYaw: 0,
   startRotation: 0,
   startSurfaceY: 0,
+  startHandHeight: 0,
 };
 let singleControllerMove: {
   handedness: string;
   movement: SingleHandFieldMovement;
 } | null = null;
 let sceneManipulationLocked = false;
+// After a two-grip resize, the grip still held must not turn into a one-handed
+// move (which would drag the field up/down) until both grips are released.
+let awaitingTwoGripRelease = false;
 
 function resetPinchState() {
   pinchState.active = false;
@@ -43,6 +47,7 @@ function resetPinchState() {
   pinchState.startYaw = 0;
   pinchState.startRotation = 0;
   pinchState.startSurfaceY = 0;
+  pinchState.startHandHeight = 0;
 }
 
 function getScaleExponentFor(scale: number): number {
@@ -71,6 +76,7 @@ export function getHorizontalHandSpan(left: Vector3, right: Vector3) {
   return {
     distance: Math.hypot(right.x - left.x, right.z - left.z),
     midpoint: new Vector3((left.x + right.x) / 2, 0, (left.z + right.z) / 2),
+    height: (left.y + right.y) / 2,
   };
 }
 
@@ -121,6 +127,8 @@ export function updateSingleHandFieldMovement(
     movement.startARPosition, movement.startHandPosition, position,
     movement.rotation - movement.startRotation,
   ));
+  // Own the hand-chosen altitude so Giant floor-following cannot undo a lift.
+  preserveARSurfaceHeight(getARSurfaceHeight());
 }
 
 function resetSingleControllerMove() {
@@ -200,8 +208,14 @@ export function updateARResizeFromControllers(grabActive: boolean) {
 
   const leftPressed = !!left && isGripPressed(left);
   const rightPressed = !!right && isGripPressed(right);
+  if (!leftPressed && !rightPressed) awaitingTwoGripRelease = false;
   if (left && right && leftPressed && rightPressed) {
     resetSingleControllerMove();
+    awaitingTwoGripRelease = true;
+  } else if (awaitingTwoGripRelease) {
+    resetPinchState();
+    resetSingleControllerMove();
+    return;
   } else if (leftPressed !== rightPressed) {
     resetPinchState();
     const handedness = leftPressed ? 'left' : 'right';
@@ -236,7 +250,7 @@ export function updateARResizeFromControllers(grabActive: boolean) {
   rightPose.computeWorldMatrix(true);
   const leftPosition = leftPose.getAbsolutePosition();
   const rightPosition = rightPose.getAbsolutePosition();
-  const { distance, midpoint } = getHorizontalHandSpan(leftPosition, rightPosition);
+  const { distance, midpoint, height } = getHorizontalHandSpan(leftPosition, rightPosition);
   if (distance <= 0.05) {
     resetPinchState();
     return;
@@ -251,6 +265,7 @@ export function updateARResizeFromControllers(grabActive: boolean) {
     pinchState.startYaw = currentYaw;
     pinchState.startRotation = getARRotation();
     pinchState.startSurfaceY = getARSurfaceHeight();
+    pinchState.startHandHeight = height;
     const worldOffsetFromPivot = midpoint.subtract(getARPosition());
     pinchState.localAnchor = rotateAroundY(worldOffsetFromPivot, -pinchState.startRotation)
       .scale(1 / pinchState.startScale);
@@ -258,10 +273,11 @@ export function updateARResizeFromControllers(grabActive: boolean) {
     return;
   }
 
-  // Resize around the horizontal midpoint without changing surface altitude.
+  // Scale and turn around the horizontal midpoint; altitude follows only the
+  // midpoint's vertical travel, never the change in scale.
   const yaw = pinchState.startRotation + (currentYaw - pinchState.startYaw);
   const scale = setARScale(getScaleFromControllerDistance(distance));
   setARPosition(getARPositionForScaleAnchor(midpoint, pinchState.localAnchor, scale, yaw));
-  preserveARSurfaceHeight(pinchState.startSurfaceY);
+  preserveARSurfaceHeight(pinchState.startSurfaceY + height - pinchState.startHandHeight);
   setARRotation(yaw);
 }

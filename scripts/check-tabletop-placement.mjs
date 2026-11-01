@@ -101,6 +101,8 @@ Object.assign(scaleContext, {
   getARRotation: () => fieldRotation,
   setARPosition: position => { fieldPosition = position.clone(); },
   setARRotation: rotation => { fieldRotation = rotation; },
+  getARSurfaceHeight: () => fieldPosition.y,
+  preserveARSurfaceHeight: () => { scaleContext.heightPreserved = true; },
   floorCalibrationToggle: { checked: false },
 });
 for (const scale of [0.01, 0.2, 1]) {
@@ -110,7 +112,10 @@ for (const scale of [0.01, 0.2, 1]) {
     const movement = scaleContext.beginSingleHandFieldMovement(handStart, 3);
     near(fieldPosition, handMoveStart, 'Starting one-hand rotation never jumps the field');
     const heldLocal = scaleContext.rotateAroundY(handStart.subtract(fieldPosition), -fieldRotation).scale(1 / scale);
+    scaleContext.heightPreserved = false;
     scaleContext.updateSingleHandFieldMovement(movement, handCurrent, -3);
+    assert.equal(scaleContext.heightPreserved, true,
+      'One-hand lifts own the altitude so Giant floor-following cannot pull the field back down');
     const delta = Math.atan2(Math.sin(-6), Math.cos(-6));
     assert.ok(Math.abs(fieldRotation - initialRotation - delta) < 1e-6,
       'Wrist yaw crosses the +/-pi boundary without a full turn');
@@ -155,7 +160,7 @@ for (const handedness of ['left', 'right']) {
   grip.dispose();
 }
 
-const handBranchStart = handInteractionSource.indexOf('    sceneGesture = null;\n    const singlePinch');
+const handBranchStart = handInteractionSource.indexOf('    if (sceneGesture) awaitingScenePinchRelease = true;\n    sceneGesture = null;\n    const singlePinch');
 const handBranchEnd = handInteractionSource.indexOf("    for (const handedness of ['left', 'right'] as const)", handBranchStart);
 assert.ok(handBranchStart >= 0 && handBranchEnd > handBranchStart);
 const handYawSource = handInteractionSource.match(/  function getHandWorldYaw[\s\S]*?\n  }/)[0];
@@ -169,7 +174,7 @@ const handContext = vm.createContext({
   isDraftingTableMode: () => false, isPointOnField: () => false,
   getSidelineDraftPosition: () => null, findMarcherNearHand: () => null,
 });
-vm.runInContext(stripTypeScriptTypes(`let singleHandFieldMove = null, sceneGesture = null;
+vm.runInContext(stripTypeScriptTypes(`let singleHandFieldMove = null, sceneGesture = null, awaitingScenePinchRelease = false;
 ${handYawSource}
 function moveHand() {
 ${handInteractionSource.slice(handBranchStart, handBranchEnd)}
@@ -331,8 +336,7 @@ try {
   });
   const twoHandStart = handInteractionSource.indexOf('    if (!isSceneManipulationLocked() && left && right && pinchesOutsideField');
   vm.runInContext(stripTypeScriptTypes(`function resizeHands() {
-${handInteractionSource.slice(twoHandStart, handBranchStart)}
-sceneGesture = null;
+${handInteractionSource.slice(twoHandStart, handBranchEnd)}
 }`, { mode: 'transform' }), handContext);
   for (const input of ['controllers', 'hands']) {
     for (const initialScale of [1, .1, .008]) {
@@ -347,7 +351,7 @@ sceneGesture = null;
         const grip = new TransformNode(`resize-${side}`, scene);
         grip.position.copyFrom(initialMidpoint.add(new Vector3(index ? .4 : -.4, 0, 0)));
         const controller = { uniqueId: side, inputSource: { handedness: side }, grip, pointer: grip,
-          motionController: { getComponentOfType: () => ({ pressed: true }) } };
+          motionController: { getComponentOfType: () => ({ pressed: controller.held !== false }) } };
         if (input === 'controllers') scaleContext.setActiveController(controller);
         else handContext[side] = grip.position;
         return { grip, controller };
@@ -371,25 +375,54 @@ sceneGesture = null;
         heldAnchor.scale(shrunkScale), context.getARRotation()));
       assert.ok(Math.hypot(resizedAnchor.x - currentMidpoint.x, resizedAnchor.z - currentMidpoint.z) < 1e-6,
         `${input}: shrinking retains the horizontal midpoint anchor`);
-      assert.ok(Math.abs(context.getARSurfaceHeight() - initialAltitude) < 1e-6,
-        `${input}: shrinking ignores vertical hand movement and preserves surface altitude`);
+      assert.ok(Math.abs(context.getARSurfaceHeight() - (initialAltitude + .15)) < 1e-6,
+        `${input}: shrinking changes altitude only by the hands' midpoint travel, not by scale`);
       const shrunkPosition = context.getARPosition();
       grips.forEach(({ grip }, index) => {
-        grip.position.y += index ? .6 : -.4;
+        grip.position.y += index ? .3 : -.3;
       });
       update();
       assert.ok(Math.abs(context.getARScale() - shrunkScale) < 1e-9,
         `${input}: vertical hand separation does not change the scale`);
-      near(context.getARPosition(), shrunkPosition, `${input}: vertical hand movement does not move the field`);
+      near(context.getARPosition(), shrunkPosition, `${input}: tilting the hands about their midpoint does not move the field`);
+      grips.forEach(({ grip }) => { grip.position.y += .1; });
+      update();
+      assert.ok(Math.abs(context.getARScale() - shrunkScale) < 1e-9,
+        `${input}: raising both hands does not change the scale`);
+      near(new Vector3(context.getARPosition().x, 0, context.getARPosition().z),
+        new Vector3(shrunkPosition.x, 0, shrunkPosition.z), `${input}: raising both hands keeps the horizontal position`);
+      const raisedAltitude = initialAltitude + .25;
+      assert.ok(Math.abs(context.getARSurfaceHeight() - raisedAltitude) < 1e-6,
+        `${input}: raising both hands raises the field by the same amount`);
       const fullSeparation = .8 * Math.pow(1 / initialScale,
         input === 'controllers' ? 1 / scaleContext.getScaleExponentFor(initialScale) : 1) * 1.01;
       grips.forEach(({ grip }, index) => grip.position.copyFrom(
-        new Vector3((index ? 1 : -1) * fullSeparation / 2, .3, 2)));
+        new Vector3((index ? 1 : -1) * fullSeparation / 2, 1.55, 2)));
       update();
       assert.equal(context.getARScale(), 1, `${input}: expansion reaches full size`);
-      assert.ok(Math.abs(context.getARSurfaceHeight() - initialAltitude) < 1e-6,
-        `${input}: expansion to 1:1 also preserves altitude rather than falling to the floor`);
+      assert.ok(Math.abs(context.getARSurfaceHeight() - raisedAltitude) < 1e-6,
+        `${input}: expansion to 1:1 at constant hand height preserves altitude rather than falling to the floor`);
       const retainedPosition = context.getARPosition();
+      if (input === 'controllers') grips[0].controller.held = false;
+      else handContext.left = null;
+      update();
+      grips[1].grip.position.addInPlace(new Vector3(.3, -.7, .2));
+      update();
+      near(context.getARPosition(), retainedPosition,
+        `${input}: the hand still held after a two-hand resize does not drag the field`);
+      if (input === 'controllers') grips[1].controller.held = false;
+      else handContext.right = null;
+      update();
+      if (input === 'controllers') grips[1].controller.held = true;
+      else handContext.right = grips[1].grip.position;
+      update();
+      grips[1].grip.position.addInPlace(new Vector3(0, .1, 0));
+      update();
+      assert.ok(Math.abs(context.getARPosition().y - retainedPosition.y - .1) < 1e-6,
+        `${input}: a fresh one-handed grab still moves the field after both hands release`);
+      context.setARPosition(retainedPosition);
+      grips[1].grip.position.addInPlace(new Vector3(0, -.1, 0));
+      if (input === 'controllers') { grips[0].controller.held = true; grips[1].controller.held = true; }
       grips.forEach(({ grip, controller }) => {
         if (input === 'controllers') scaleContext.removeActiveController(controller, () => {});
         grip.dispose();

@@ -167,6 +167,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
   const marcherPinchHands = new Set<string>();
   let sceneGesture: {
     startSurfaceY: number;
+    startHandHeight: number;
     startDistance: number;
     startYaw: number;
     startScale: number;
@@ -177,6 +178,8 @@ export function createHandInteraction(paths: HandPathDependencies) {
     handedness: string;
     movement: SingleHandFieldMovement;
   } | null = null;
+  // The pinch left over after a two-hand resize must not drag the field.
+  let awaitingScenePinchRelease = false;
   const marcherGrabs = new Map<string, MarcherGrab>();
   const fingerPushes = new Set<string>();
   const eraseContacts = new Map<string, Vector3>();
@@ -1174,7 +1177,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
         if (marcherGrabs.get(handedness)?.source === 'hand') finishMarcherGrab(handedness, false);
         handPinches.set(handedness, true);
       }
-      const { distance, midpoint } = getHorizontalHandSpan(left, right);
+      const { distance, midpoint, height } = getHorizontalHandSpan(left, right);
       if (distance < 0.05) return;
       const yaw = getControllerYaw(left, right);
       if (!sceneGesture) {
@@ -1182,7 +1185,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
         const startRotation = getARRotation();
         const offset = midpoint.subtract(getARPosition());
         sceneGesture = {
-          startSurfaceY: getARSurfaceHeight(),
+          startSurfaceY: getARSurfaceHeight(), startHandHeight: height,
           startDistance: distance, startYaw: yaw, startScale, startRotation,
           localAnchor: rotateAroundY(offset, -startRotation).scale(1 / startScale),
         };
@@ -1192,14 +1195,16 @@ export function createHandInteraction(paths: HandPathDependencies) {
         const rotation = sceneGesture.startRotation + Math.atan2(Math.sin(yawDelta), Math.cos(yawDelta));
         setARRotation(rotation);
         setARPosition(getARPositionForScaleAnchor(midpoint, sceneGesture.localAnchor, scale, rotation));
-        preserveARSurfaceHeight(sceneGesture.startSurfaceY);
+        preserveARSurfaceHeight(sceneGesture.startSurfaceY + height - sceneGesture.startHandHeight);
       }
       return;
     }
+    if (sceneGesture) awaitingScenePinchRelease = true;
     sceneGesture = null;
     const singlePinch = left
       ? { handedness: 'left' as const, point: left }
       : right ? { handedness: 'right' as const, point: right } : null;
+    if (!singlePinch) awaitingScenePinchRelease = false;
     if (singleHandFieldMove) {
       if (singlePinch?.handedness === singleHandFieldMove.handedness &&
         !isControllerSceneManipulationActive()) {
@@ -1209,7 +1214,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
       }
       singleHandFieldMove = null;
     }
-    if (singlePinch && !isSceneManipulationLocked() && !isControllerSceneManipulationActive() && !isDraftingTableMode() &&
+    if (singlePinch && !awaitingScenePinchRelease && !isSceneManipulationLocked() && !isControllerSceneManipulationActive() && !isDraftingTableMode() &&
       !marcherHandsBusy && !isPointOnField(singlePinch.point) &&
       !getSidelineDraftPosition(singlePinch.point) && !findMarcherNearHand(singlePinch.point)) {
       singleHandFieldMove = {

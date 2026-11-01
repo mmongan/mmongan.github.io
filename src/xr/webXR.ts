@@ -259,7 +259,9 @@ export function initXR(teleportGrid: Mesh) {
     if (now - pendingPostureSince >= 1000) {
       detectedSitting = sitting;
       pendingSitting = null;
-      updateTableHeightFromCamera(camera, sitting);
+      // A manually resized field keeps its altitude; posture only retargets it
+      // through explicit Table/Floor placement.
+      if (!isARSurfaceHeightPreserved()) updateTableHeightFromCamera(camera, sitting);
     }
   }
 
