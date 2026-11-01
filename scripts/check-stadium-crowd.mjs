@@ -78,8 +78,19 @@ try {
       assert.ok(previousFace.isDisposed(), 'Changing stadium level removes old signs');
       assert.equal(context.getHandMenuHit({ pickedMesh: previousFace }), null, 'Rebuild unregisters old actions');
     }
-    assert.equal(faces().length, 36, 'Both sidelines have seven media signs and eleven XR panel signs');
+    assert.equal(faces().length, 38, 'Both sidelines have media controls, XR panels, and an audience scrimmage sign');
     for (const side of [-1, 1]) {
+      const scrimmage = scene.getMeshByName(`stadiumMediaSignFace-${side}-runScrimmage`);
+      assert.ok(scrimmage?.isEnabled(), 'Audience scrimmage signs are visible on desktop too');
+      const action = context.getHandMenuHit({ pickedMesh: scrimmage });
+      assert.equal(action.action, 'football');
+      assert.equal(action.command, 'scrimmage');
+      assert.equal(context.isMenuActionAvailable(action), true, 'Scrimmage is available on desktop');
+      assert.equal(scrimmage.visibility, 1, 'Audience scrimmage sign text is fully opaque');
+      assert.equal(scrimmage.parent.visibility, 1, 'Audience scrimmage sign backing is fully opaque');
+      assert.equal(context.beginFloatingPanelGrab('left', Matrix.Identity(), scrimmage, undefined, .03, true),
+        false, 'The audience holds the sign; it is not a floating grabbable panel');
+      assert.equal(scrimmage.parent.parent.name, 'stands', 'Sign follows the stadium and tabletop transforms');
       const draftingSign = scene.getMeshByName(`stadiumMediaSignFace-${side}-panel-DRAFTING`);
       assert.ok(draftingSign, 'Both sidelines have a drafting entry sign');
       const draftingAction = context.getHandMenuHit({ pickedMesh: draftingSign });
@@ -154,7 +165,7 @@ try {
   playing = false; transport.notifyObservers({ playing });
   scene.onBeforeRenderObservable.notifyObservers(scene);
   assert.match(visibleIcon().name, /-symbol$/);
-  console.log('Stadium crowd checks passed: tier population, ten static batches, 36 clickable signs including Drafting and Restart/Go to end, field-facing text, XR-only panel launchers, live Play/Pause, deterministic rebuild, and action cleanup.');
+  console.log('Stadium crowd checks passed: tier population, ten static batches, 38 clickable audience signs including Run Scrimmage, field-facing text, XR-only panel launchers, live Play/Pause, deterministic rebuild, and action cleanup.');
 } finally {
   scene.dispose();
   await new Promise(resolve => setTimeout(resolve, 0));

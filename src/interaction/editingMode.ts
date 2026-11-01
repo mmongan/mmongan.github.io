@@ -57,6 +57,8 @@ export function isDraftingToolAction(hit: HandMenuHit) {
 
 export function isPlaybackMenuAction(hit: HandMenuHit) {
   switch (hit.action) {
+    case 'football':
+      return hit.command === 'scrimmage';
     case 'panelControl':
       return true;
     case 'drawingTool':

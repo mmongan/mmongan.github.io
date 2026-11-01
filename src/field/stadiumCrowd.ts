@@ -43,6 +43,8 @@ const PANEL_SIGNS: { label: string; symbol: string; action: HandMenuHit }[] = [
 const SIGNS = [
   ...MEDIA_SIGNS.map(sign => ({ ...sign, action: { action: sign.action } as HandMenuHit, immersive: false })),
   ...PANEL_SIGNS.map(sign => ({ ...sign, immersive: true })),
+  { label: 'RUN SCRIMMAGE', symbol: 'FOOTBALL',
+    action: { action: 'football', command: 'scrimmage' } as HandMenuHit, immersive: false },
 ];
 
 export function createStadiumCrowd(parent: Mesh) {
@@ -74,7 +76,7 @@ export function createStadiumCrowd(parent: Mesh) {
       const playing = sign.action.action === 'playPause' && getDrillTransportState().playing;
       drawPanelButton(ctx, 512, 320, '', playing);
       ctx.fillStyle = '#ffffff';
-      if (sign.immersive) {
+      if (sign.immersive || sign.action.action === 'football') {
         ctx.font = 'bold 150px Arial';
         ctx.fillText(sign.symbol, 256, 124, 460);
         ctx.font = 'bold 49px Arial';
@@ -142,7 +144,7 @@ export function createStadiumCrowd(parent: Mesh) {
         const seatY = groundY + startY + (row + 1) * rowHeight + 0.04;
         const signRow = signs && (row === 0 || row === 3);
         const rowSigns = row === 0 ? SIGNS.slice(0, MEDIA_SIGNS.length) : SIGNS.slice(MEDIA_SIGNS.length);
-        const spacing = row === 0 ? 7 : Math.min(6, (length - 6) / (PANEL_SIGNS.length - 1));
+        const spacing = row === 0 ? 7 : Math.min(6, (length - 6) / (rowSigns.length - 1));
         for (let seat = 0; seat < seats; seat++) {
           if ((seat * 7 + row * 11 + (side + 1) * 3) % 10 >= 6 || seat % 12 === 0) continue;
           const z = (seat - (seats - 1) / 2) * 1.8;
@@ -154,7 +156,8 @@ export function createStadiumCrowd(parent: Mesh) {
         rowSigns.forEach((sign, index) => {
           const z = -side * (index - (rowSigns.length - 1) / 2) * spacing;
           spectator(side, x, seatY, z, index, true);
-          const name = sign.immersive ? `panel-${sign.label}` : sign.action.action;
+          const name = sign.immersive ? `panel-${sign.label}` :
+            sign.action.action === 'football' ? 'runScrimmage' : sign.action.action;
           const frame = MeshBuilder.CreateBox(`stadiumMediaSign-${side}-${name}`,
             { width: 3, height: 1.8, depth: 0.16 }, scene);
           frame.position.set(x, seatY + 2, z);
@@ -165,9 +168,9 @@ export function createStadiumCrowd(parent: Mesh) {
             { width: 2.86, height: 1.66 }, scene);
           face.parent = frame;
           face.position.z = -0.091;
-          face.material = signFaces[index + (sign.immersive ? MEDIA_SIGNS.length : 0)].material;
+          face.material = signFaces[index + (row === 0 ? 0 : MEDIA_SIGNS.length)].material;
           const action = sign.action;
-          if (!sign.immersive) createMediaButtonIcon(face, action, 2.86, 1.66,
+          if (row === 0) createMediaButtonIcon(face, action, 2.86, 1.66,
             () => getDrillTransportState().playing);
           registerMenuButton(frame, action);
           registerMenuButton(face, action);

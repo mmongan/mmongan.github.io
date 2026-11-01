@@ -5,15 +5,11 @@ import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
 import { Scene } from '@babylonjs/core/scene.pure';
 import { buildLowPolyTemplate, cachedInstrumentTemplate, InstrumentGeometry } from './lowPolyInstrument';
 
-// Low-poly humanoid robot (android) head in marcher body coordinates (+Z is
-// the face, x/z are later squashed by the body's build scale), in the same
-// smooth-shaded lathe style as the rest of the body: a rounded skull with a
-// flat face forward, a dark visor band around the eyes, a mouth slit, and
-// disc ears, merged into the marcher's trim mesh; plus a shared template of
-// unlit glowing eyes on the visor, cloned per marcher.
+// Face and skull share the marcher's trim mesh; eyes retain their shared
+// template. +Z faces forward and the body build scale narrows X/Z.
 const SHELL = new Color4(0.84, 0.86, 0.9, 1);
 const TRIM = new Color4(0.55, 0.59, 0.65, 1);
-const VISOR = new Color4(0.06, 0.1, 0.17, 1);
+const FACE_DETAIL = new Color4(0.16, 0.19, 0.23, 1);
 
 const v = (x: number, y: number, z: number) => new Vector3(x, y, z);
 
@@ -23,17 +19,16 @@ const HEAD_SIDES = 8;
 // The face is deeper than the back of the head.
 const FRONT_DEPTH = 1.15;
 
-// Skull from chin to crown (the shako covers the crown) and the visor band,
-// as [radius, y] profiles. The band's edges tuck into the skull.
+// Narrow chin, wider cheeks, and a rounded forehead beneath the shako.
 const SKULL_PROFILE: Array<[number, number]> = [
-  [0, 1.13], [0.085, 1.14], [0.13, 1.175], [0.145, 1.235], [0.147, 1.3], [0.13, 1.355], [0, 1.372],
+  [0, 1.13], [0.065, 1.14], [0.105, 1.175], [0.14, 1.235],
+  [0.144, 1.285], [0.14, 1.325], [0.125, 1.355], [0, 1.372],
 ];
-const VISOR_PROFILE: Array<[number, number]> = [[0.138, 1.258], [0.153, 1.266], [0.154, 1.3], [0.14, 1.31]];
-const VISOR_RADIUS = 0.1535;
+const EYE_RADIUS = 0.144;
 const EAR_Y = 1.25;
 const EAR_RADIUS = 0.142;
 const MOUTH_Y = 1.195;
-const MOUTH_RADIUS = 0.136;
+const MOUTH_RADIUS = 0.116;
 
 function headSides(geometry: InstrumentGeometry) {
   return geometry.low ? Math.max(4, HEAD_SIDES / 2) : HEAD_SIDES;
@@ -65,12 +60,19 @@ function sideFaceX(geometry: InstrumentGeometry, radius: number) {
 export function addRobotHead(geometry: InstrumentGeometry) {
   const place = placeHead(geometry);
   geometry.lathe(geometry.low
-    ? [[0, 1.13], [0.13, 1.175], [0.147, 1.3], [0.13, 1.355], [0, 1.372]]
+    ? [[0, 1.13], [0.105, 1.175], [0.14, 1.235], [0.144, 1.3], [0.125, 1.355], [0, 1.372]]
     : SKULL_PROFILE, HEAD_SIDES, SHELL, place);
-  geometry.lathe(VISOR_PROFILE, HEAD_SIDES, VISOR, place);
+  const noseZ = frontFaceZ(geometry, 0.14);
+  geometry.box(v(-0.018, 1.225, noseZ - 0.005), v(0.018, 1.28, noseZ + 0.032), SHELL);
   geometry.fine(() => {
     const mouthZ = frontFaceZ(geometry, MOUTH_RADIUS);
-    geometry.box(v(-0.035, MOUTH_Y - 0.004, mouthZ - 0.008), v(0.035, MOUTH_Y + 0.004, mouthZ + 0.002), VISOR);
+    geometry.box(v(-0.027, MOUTH_Y - 0.003, mouthZ - 0.004),
+      v(0.027, MOUTH_Y + 0.003, mouthZ + 0.003), FACE_DETAIL);
+    const browZ = frontFaceZ(geometry, EYE_RADIUS);
+    for (const side of [-1, 1]) {
+      geometry.box(v(side * 0.043 - 0.02, 1.303, browZ - 0.002),
+        v(side * 0.043 + 0.02, 1.31, browZ + 0.006), FACE_DETAIL);
+    }
     const earDepth = 0.03;
     const earX = sideFaceX(geometry, EAR_RADIUS) + earDepth / 2 - 0.004;
     for (const side of [-1, 1]) {
@@ -78,17 +80,19 @@ export function addRobotHead(geometry: InstrumentGeometry) {
     }
   });
 }
-// Unlit, so normals don't matter.
 function createRobotEyesTemplate(scene: Scene): Mesh {
   const geometry = new InstrumentGeometry();
-  const glow = new Color4(1, 1, 1, 1);
-  const visorZ = frontFaceZ(geometry, VISOR_RADIUS);
+  const white = new Color4(0.95, 0.96, 0.97, 1);
+  const pupil = new Color4(0.04, 0.07, 0.1, 1);
+  const eyeZ = frontFaceZ(geometry, EYE_RADIUS);
   for (const side of [-1, 1]) {
-    geometry.box(v(side * 0.016, 1.275, visorZ - 0.002), v(side * 0.05, 1.291, visorZ + 0.004), glow);
+    const x = side * 0.043;
+    geometry.box(v(x - 0.02, 1.276, eyeZ - 0.002), v(x + 0.02, 1.296, eyeZ + 0.006), white);
+    geometry.box(v(x - 0.007, 1.28, eyeZ + 0.005), v(x + 0.007, 1.292, eyeZ + 0.009), pupil);
   }
   const material = new StandardMaterial("robotEyesMaterial", scene);
-  material.disableLighting = true;
-  material.emissiveColor = new Color3(0.35, 0.95, 1);
+  material.diffuseColor = Color3.White();
+  material.specularColor = new Color3(0.15, 0.15, 0.15);
   return buildLowPolyTemplate("robotEyesTemplate", geometry, material, scene);
 }
 

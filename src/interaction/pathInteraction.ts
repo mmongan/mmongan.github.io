@@ -49,7 +49,6 @@ import { generateFootballPlay, type FootballFormation, type FootballPlay } from 
 import { createFootballVisuals, initFootballControls, executeFootballCommand } from '../robot/footballPlayMode';
 import { SCRIMMAGE_EXIT_COUNTS, SCRIMMAGE_PLAY_START, scrimmageWalk,
   scrimmageSideline, scrimmagePlayerRoute } from '../robot/scrimmageGeometry';
-import { initScrimmageSign } from '../menu/scrimmageSign';
 import { setRobotColor, createPresentationMarcher } from '../robot/robot';
 import { initChartPageGhostMode, isChartGhostModeEnabled, setChartGhostModeEnabled } from '../robot/chartPageGhostMode';
 import {
@@ -3918,7 +3917,6 @@ export function initInteraction() {
   updateMarcherCountValue();
   initFootballControls(loadFootballPlay, exitFootballPlay, publishFormationEdit,
     (formation, play) => loadFootballPlay(formation, play, true));
-  initScrimmageSign();
   const waitingObserver = scene.onBeforeRenderObservable.add(showWaitingFootballPlayers);
   scene.onDisposeObservable.addOnce(() => {
     scene.onBeforeRenderObservable.remove(waitingObserver);
