@@ -169,6 +169,20 @@ try {
     assert.equal(scene.meshes.filter(mesh => mesh.name.startsWith('football-helmet-')).length, 22);
     assert.equal(scene.meshes.filter(mesh => mesh.name.startsWith('football-face-')).length, 22,
       'Players have visible human faces beneath their helmets');
+    for (const mask of scene.meshes.filter(mesh => mesh.name.startsWith('football-mask-'))) {
+      const vertices = mask.getVerticesData('position');
+      const inverse = mask.parent.computeWorldMatrix(true).clone().invert();
+      const matrix = mask.computeWorldMatrix(true).multiply(inverse);
+      const points = [];
+      for (let index = 0; index < vertices.length; index += 3) {
+        points.push(Vector3.TransformCoordinates(new Vector3(vertices[index], vertices[index + 1], vertices[index + 2]), matrix));
+      }
+      const extent = axis => Math.max(...points.map(point => point[axis])) - Math.min(...points.map(point => point[axis]));
+      assert.ok(extent('y') < .02 && extent('x') > .29 && extent('z') > .4,
+        'Face guard wraps horizontally around the lower face, not vertically across it');
+      assert.ok(Math.max(...points.map(point => point.z)) > .24,
+        'Front of the face guard clears the nose');
+    }
     assert.equal(scene.meshes.filter(mesh => mesh.name.startsWith('football-thigh-')).length, 44);
     assert.equal(scene.meshes.filter(mesh => mesh.name.startsWith('football-calf-')).length, 44);
     const jersey = scene.getMeshByName('football-jersey-offense-QB');

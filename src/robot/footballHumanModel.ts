@@ -29,8 +29,8 @@ export function createFootballHumanModel(robot: TransformNode, torso: TransformN
   }
   const mask = MeshBuilder.CreateTorus(`football-mask-${id}`,
     { diameter: .29, thickness: .016, tessellation: 16 }, scene);
-  mask.parent = torso; mask.rotation.x = Math.PI / 2; mask.position.set(0, .74, .205);
-  mask.scaling.y = .7; mask.material = white;
+  mask.parent = torso; mask.position.set(0, .74, .055);
+  mask.scaling.z = 1.4; mask.material = white;
   const arms = [-1, 1].map(side => {
     sphere(`football-shoulder-pad-${id}-${side}`, torso, side * .275, .53, 0, .31, .25, .35, jerseyMaterial);
     const shoulder = new TransformNode(`football-shoulder-${id}-${side}`, scene);
