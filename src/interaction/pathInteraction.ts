@@ -3533,8 +3533,12 @@ function loadFootballPlay(formation: FootballFormation, play: FootballPlay, scri
     throw new Error('Finish calibration and release tools, players, and panels before loading a football play.');
   }
   if (scrimmage && endActiveScrimmage) {
-    endActiveScrimmage();
-    return true;
+    const transport = getDrillTransportState();
+    if (transport.beat < transport.lastBeat) {
+      endActiveScrimmage();
+      return true;
+    }
+    endActiveScrimmage = null;
   }
   const geometry = generateFootballLibraryPlay(formation, play);
   const playLength = geometry.players[0].positions.length - 1;
