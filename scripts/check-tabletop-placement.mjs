@@ -74,13 +74,25 @@ const centeredPosition = scaleContext.getARPositionForScaleAnchor(
 );
 assert.ok(Vector3.Distance(centeredPosition, midpoint) < Vector3.Distance(startPosition, midpoint),
   'Shrinking moves the field center toward the controllers/hands midpoint');
+const handMoveStart = new Vector3(3, 0.8, -4);
+const handStart = new Vector3(-2, 1, 5);
+const handCurrent = new Vector3(1, 2.5, 3);
+near(
+  scaleContext.getARPositionForSingleHandMovement(handMoveStart, handStart, handCurrent),
+  new Vector3(6, 2.3, -6),
+  'One-hand movement translates the field in all three axes',
+);
 const handInteractionSource = readFileSync(
   new URL('../src/interaction/handInteraction.ts', import.meta.url), 'utf8'
 );
 assert.match(controllerSource, /setARPosition\(getARPositionForScaleAnchor\(/,
   'Controller scaling uses the shared midpoint anchor');
+assert.match(controllerSource, /setARPosition\(getARPositionForSingleHandMovement\(/,
+  'One controller translates the field from its grip position');
 assert.match(handInteractionSource, /setARPosition\(getARPositionForScaleAnchor\(/,
   'Tracked-hand scaling uses the shared midpoint anchor');
+assert.match(handInteractionSource, /setARPosition\(getARPositionForSingleHandMovement\(/,
+  'One tracked hand translates the field from its pinch position');
 
 try {
   context.setFieldHeightSetting('table', 0.83);

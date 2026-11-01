@@ -30,6 +30,11 @@ const pinchState = {
   startSurfaceY: 0,
   startMidpointY: 0,
 };
+let singleControllerMove: {
+  handedness: string;
+  startControllerPosition: Vector3;
+  startARPosition: Vector3;
+} | null = null;
 
 function resetPinchState() {
   pinchState.active = false;
@@ -61,6 +66,18 @@ export function getARPositionForScaleAnchor(
   rotation: number,
 ): Vector3 {
   return midpoint.subtract(rotateAroundY(localAnchor.scale(scale), rotation));
+}
+
+export function getARPositionForSingleHandMovement(
+  startARPosition: Vector3,
+  startHandPosition: Vector3,
+  currentHandPosition: Vector3,
+): Vector3 {
+  return startARPosition.add(currentHandPosition.subtract(startHandPosition));
+}
+
+function resetSingleControllerMove() {
+  singleControllerMove = null;
 }
 
 function isGripPressed(controller: WebXRInputSource): boolean {
@@ -104,24 +121,65 @@ export function removeActiveController(
   activeControllers.delete(handedness);
 }
 
+export function isControllerSceneManipulationActive() {
+  return pinchState.active || singleControllerMove !== null;
+}
+
 export function updateARResizeFromControllers(grabActive: boolean) {
   if (floorCalibrationToggle?.checked || grabActive) {
     resetPinchState();
+    resetSingleControllerMove();
     return;
   }
   const left = activeControllers.get('left');
   const right = activeControllers.get('right');
-  if (!left || !right) return;
-
-  if (!isGripPressed(left) || !isGripPressed(right)) {
+  if (!left && !right) {
     resetPinchState();
+    resetSingleControllerMove();
     return;
   }
 
+  const leftPressed = !!left && isGripPressed(left);
+  const rightPressed = !!right && isGripPressed(right);
+  if (left && right && leftPressed && rightPressed) {
+    resetSingleControllerMove();
+  } else if (leftPressed !== rightPressed) {
+    resetPinchState();
+    const handedness = leftPressed ? 'left' : 'right';
+    const controller = leftPressed ? left : right;
+    if (!controller) {
+      resetSingleControllerMove();
+      return;
+    }
+    const currentPosition = getControllerPosition(controller).getAbsolutePosition();
+    if (!singleControllerMove || singleControllerMove.handedness !== handedness) {
+      singleControllerMove = {
+        handedness,
+        startControllerPosition: currentPosition.clone(),
+        startARPosition: getARPosition(),
+      };
+      return;
+    }
+    setARPosition(getARPositionForSingleHandMovement(
+      singleControllerMove.startARPosition,
+      singleControllerMove.startControllerPosition,
+      currentPosition,
+    ));
+    return;
+  } else {
+    resetPinchState();
+    resetSingleControllerMove();
+    return;
+  }
+
+  if (!left || !right) return;
   const leftPosition = getControllerPosition(left).getAbsolutePosition();
   const rightPosition = getControllerPosition(right).getAbsolutePosition();
   const distance = Vector3.Distance(leftPosition, rightPosition);
-  if (distance <= 0.05) return;
+  if (distance <= 0.05) {
+    resetPinchState();
+    return;
+  }
 
   const midpoint = leftPosition.add(rightPosition).scale(0.5);
   const currentYaw = getControllerYaw(leftPosition, rightPosition);

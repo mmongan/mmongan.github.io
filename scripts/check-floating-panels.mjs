@@ -261,8 +261,8 @@ try {
   assert.equal(rails.length, 4, 'Rectangular panels have four solid grab rails');
   for (const rail of rails) {
     const size = rail.getBoundingInfo().boundingBox.extendSize.scale(2);
-    assert.ok(size.z >= .055 && Math.min(size.x, size.y) >= .018 - 1e-6,
-      'Rails provide at least 5.5 cm depth and 1.8 cm edge width');
+    assert.ok(size.z >= .03 && Math.min(size.x, size.y) >= .009 - 1e-6,
+      'Slim frame rails provide at least 3 cm depth and 0.9 cm edge width');
     assert.ok(rimPanel.panel.meshes.has(rail));
     const world = rail.computeWorldMatrix(true);
     assert.ok(rimPanel.panel.near(world.getTranslation()), 'Contact bounds include the physical rail');

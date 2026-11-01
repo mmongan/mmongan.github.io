@@ -78,7 +78,14 @@ try {
       assert.ok(previousFace.isDisposed(), 'Changing stadium level removes old signs');
       assert.equal(context.getHandMenuHit({ pickedMesh: previousFace }), null, 'Rebuild unregisters old actions');
     }
-    assert.equal(faces().length, 34, 'Both sidelines have seven media signs and ten XR panel signs');
+    assert.equal(faces().length, 36, 'Both sidelines have seven media signs and eleven XR panel signs');
+    for (const side of [-1, 1]) {
+      const draftingSign = scene.getMeshByName(`stadiumMediaSignFace-${side}-panel-DRAFTING`);
+      assert.ok(draftingSign, 'Both sidelines have a drafting entry sign');
+      const draftingAction = context.getHandMenuHit({ pickedMesh: draftingSign });
+      assert.equal(draftingAction.action, 'drawingTool');
+      assert.equal(draftingAction.tool, 'table', 'Drafting sign enters drafting-table mode');
+    }
     const signFace = faces().find(face => !face.name.includes('-panel-'));
     const sign = signFace.parent;
     const signParent = sign.parent;
@@ -147,7 +154,7 @@ try {
   playing = false; transport.notifyObservers({ playing });
   scene.onBeforeRenderObservable.notifyObservers(scene);
   assert.match(visibleIcon().name, /-symbol$/);
-  console.log('Stadium crowd checks passed: tier population, ten static batches, 34 clickable signs including Restart/Go to end, field-facing text, XR-only panel launchers, live Play/Pause, deterministic rebuild, and action cleanup.');
+  console.log('Stadium crowd checks passed: tier population, ten static batches, 36 clickable signs including Drafting and Restart/Go to end, field-facing text, XR-only panel launchers, live Play/Pause, deterministic rebuild, and action cleanup.');
 } finally {
   scene.dispose();
   await new Promise(resolve => setTimeout(resolve, 0));

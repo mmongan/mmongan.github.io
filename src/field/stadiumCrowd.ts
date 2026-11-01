@@ -32,6 +32,7 @@ const PANEL_SIGNS: { label: string; symbol: string; action: HandMenuHit }[] = [
   { label: 'CHART', symbol: '[]', action: { action: 'drillChartPad' } },
   { label: 'SCORE', symbol: 'MUSIC', action: { action: 'musicStandSummon' } },
   { label: 'INSTRUMENTS', symbol: 'BAND', action: { action: 'instrumentPanelSummon' } },
+  { label: 'DRAFTING', symbol: 'DRAFT', action: { action: 'drawingTool', tool: 'table' } },
   { label: 'DRAWING', symbol: '/', action: { action: 'drawingTool', tool: 'show' } },
   { label: 'PRECISION', symbol: '90', action: { action: 'drawingTool', tool: 'drafting' } },
   { label: 'STENCILS', symbol: 'ABC', action: { action: 'drawingTool', tool: 'stencils' } },

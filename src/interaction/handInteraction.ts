@@ -41,7 +41,10 @@ import {
 } from '../menu/floatingPanel';
 import { getHandMenuHit, getHandMenuHitNearPoint, pickMenuControl } from '../menu/handMenu';
 import type { MarcherInstrument } from '../robot/robot';
-import { getARPositionForScaleAnchor, getControllerYaw, rotateAroundY } from './controllers';
+import {
+  getARPositionForScaleAnchor, getARPositionForSingleHandMovement, getControllerYaw,
+  isControllerSceneManipulationActive, rotateAroundY,
+} from './controllers';
 import { canPlaceManualMarcherPose, tryManualMarcherPose } from '../robot/manualPlacement';
 import { createMarcherDragGhost } from '../robot/marcherGhost';
 
@@ -170,6 +173,11 @@ export function createHandInteraction(paths: HandPathDependencies) {
     startScale: number;
     startRotation: number;
     localAnchor: Vector3;
+  } | null = null;
+  let singleHandFieldMove: {
+    handedness: string;
+    startHandPosition: Vector3;
+    startARPosition: Vector3;
   } | null = null;
   const marcherGrabs = new Map<string, MarcherGrab>();
   const fingerPushes = new Set<string>();
@@ -1012,12 +1020,14 @@ export function createHandInteraction(paths: HandPathDependencies) {
       });
     if (joystickOwnsHands) {
       sceneGesture = null;
+      singleHandFieldMove = null;
       for (const side of ['left', 'right']) handPinches.set(side, true);
       return;
     }
     if (formationPull?.originalGrab.source === 'controller' && !floorCalibrationToggle?.checked) return;
     if (floorCalibrationToggle?.checked || !handTracking) {
       sceneGesture = null;
+      singleHandFieldMove = null;
       padHands.forEach((handedness) => endFloatingPanelGrab(handedness));
       padHands.clear();
       finishFormationPull(false);
@@ -1083,6 +1093,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
     const right = pinchedPoints.get('right');
     if (paths.isPainting?.()) {
       sceneGesture = null;
+      singleHandFieldMove = null;
       for (const handedness of ['left', 'right'] as const) {
         if (padHands.has(handedness)) continue;
         const point = pinchedPoints.get(handedness);
@@ -1096,6 +1107,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
     }
     if (isEraseMode()) {
       sceneGesture = null;
+      singleHandFieldMove = null;
       for (const handedness of ['left', 'right'] as const) {
         if (padHands.has(handedness)) continue;
         const hand = handTracking.getHandByHandedness(handedness);
@@ -1128,6 +1140,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
       finishFormationShaping();
     }
     if (updateCircleResize(left, right)) {
+      singleHandFieldMove = null;
       for (const handedness of ['left', 'right'] as const) {
         const pinching = pinchedPoints.has(handedness);
         handPinches.set(handedness, pinching);
@@ -1135,13 +1148,17 @@ export function createHandInteraction(paths: HandPathDependencies) {
       }
       return;
     }
-    if (left && right && beginCircleResize(left, right)) return;
+    if (left && right && beginCircleResize(left, right)) {
+      singleHandFieldMove = null;
+      return;
+    }
     const marcherHandsBusy = !sceneGesture && (
       formationPull !== null || marcherPinchHands.size > 0 ||
       [...marcherGrabs.values()].some((grab) => grab.source === 'hand')
     );
     const pinchesOutsideField = left && right && !isPointOnField(left) && !isPointOnField(right);
     if (left && right && pinchesOutsideField && !marcherHandsBusy) {
+      singleHandFieldMove = null;
       finishFingerPath(false);
       for (const handedness of ['left', 'right']) {
         if (marcherGrabs.get(handedness)?.source === 'hand') finishMarcherGrab(handedness, false);
@@ -1174,6 +1191,31 @@ export function createHandInteraction(paths: HandPathDependencies) {
       return;
     }
     sceneGesture = null;
+    const singlePinch = left
+      ? { handedness: 'left', point: left }
+      : right ? { handedness: 'right', point: right } : null;
+    if (singleHandFieldMove) {
+      if (singlePinch?.handedness === singleHandFieldMove.handedness &&
+        !isControllerSceneManipulationActive()) {
+        setARPosition(getARPositionForSingleHandMovement(
+          singleHandFieldMove.startARPosition,
+          singleHandFieldMove.startHandPosition,
+          singlePinch.point,
+        ));
+        return;
+      }
+      singleHandFieldMove = null;
+    }
+    if (singlePinch && !isControllerSceneManipulationActive() && !isDraftingTableMode() &&
+      !marcherHandsBusy && !isPointOnField(singlePinch.point) &&
+      !getSidelineDraftPosition(singlePinch.point) && !findMarcherNearHand(singlePinch.point)) {
+      singleHandFieldMove = {
+        handedness: singlePinch.handedness,
+        startHandPosition: singlePinch.point.clone(),
+        startARPosition: getARPosition(),
+      };
+      return;
+    }
     for (const handedness of ['left', 'right'] as const) {
       if (padHands.has(handedness)) continue;
       const hand = handTracking.getHandByHandedness(handedness);
@@ -1435,6 +1477,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
     });
     handTracking = tracking;
     sceneGesture = null;
+    singleHandFieldMove = null;
     handPinches.clear();
     marcherPinchHands.clear();
   }
@@ -1455,6 +1498,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
     if (floorCalibrationToggle?.checked) {
       [...fingerPushes].forEach(finishFingerPush);
       sceneGesture = null;
+      singleHandFieldMove = null;
       finishCircleResize(false);
       finishFormationPull(false);
       marcherPinchHands.clear();
@@ -1468,6 +1512,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
   return {
     prepareForErase: () => {
       sceneGesture = null;
+      singleHandFieldMove = null;
       finishFingerPath(true);
       finishCircleResize(true);
       if (formationPull) {

@@ -84,13 +84,13 @@ export class FloatingPanel {
           },
         };
       }
-      const rim = 0.024;
-      const depth = 0.06;
+      const rim = 0.012;
+      const depth = 0.035;
       const frameZ = -halfSize.z + depth / 2;
       const material = new StandardMaterial(`${root.name}GrabRimMaterial`, scene);
       material.diffuseColor = Color3.FromHexString('#18263b');
-      material.emissiveColor = new Color3(0.03, 0.1, 0.14);
-      material.specularColor = new Color3(0.35, 0.45, 0.5);
+      material.emissiveColor = new Color3(0.015, 0.045, 0.06);
+      material.specularColor = new Color3(0.18, 0.23, 0.26);
       const rails = [
         { x: -halfSize.x - rim / 2, y: 0, width: rim, height: halfSize.y * 2 + rim * 2 },
         { x: halfSize.x + rim / 2, y: 0, width: rim, height: halfSize.y * 2 + rim * 2 },
@@ -104,7 +104,7 @@ export class FloatingPanel {
         rail.material = material;
         meshes.add(rail);
       });
-      const size = 0.09;
+      const size = 0.06;
       const y = halfSize.y + rim + size / 2;
       const front = frameZ - depth / 2 - rim / 4;
       const header = MeshBuilder.CreateBox(`${root.name}PanelHeader`,
