@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
 import { GhostBandPreview } from './ghostBandPreview';
 import { VertexBuffer } from '@babylonjs/core/Buffers/buffer.pure';
@@ -2547,6 +2550,20 @@ export function setRobotSetPoses(
   authorChartPage(previousSet);
   authorChartPage(index);
   authorChartPage(nextSet);
+  if (blankChartPage?.count === index) {
+    const page = blankChartPage;
+    for (const { robot } of poses) {
+      const ghost = page.pending.get(robot);
+      if (ghost) {
+        page.pending.delete(robot);
+        setBlankPageGhostWaiting(robot, ghost, false);
+        page.leftBehind.set(robot, ghost);
+      }
+      page.claimed.delete(robot);
+      robot.setEnabled(true);
+    }
+    notifyBlankChartPage();
+  }
   applyGlobalCountToAllRobots();
   recalculateCollisionMarkers(scene);
   return true;
@@ -2934,7 +2951,8 @@ function placeRobotOnBlankChartPage(robot: TransformNode, position: Vector3, sce
 
 // Inserts a blank page after the set at `afterCount` and seeks to it.
 // Returns the new page's count, or null when there are no routed marchers.
-export function insertBlankChartPage(afterCount: number, countsPerPage: number, scene: Scene): number | null {
+export function insertBlankChartPage(afterCount: number, countsPerPage: number, scene: Scene,
+  waiting: ReadonlySet<TransformNode> | null = null): number | null {
   if (players.size === 0 || !Number.isInteger(countsPerPage) || countsPerPage < 1) return null;
   endBlankChartPage();
   setGhostBandPreviewEnabled(false);
@@ -2956,7 +2974,7 @@ export function insertBlankChartPage(afterCount: number, countsPerPage: number, 
   });
   insertChartPageTimeline(at, countsPerPage);
   seekToCount(count);
-  openBlankChartPage(count, at, Math.min(count + countsPerPage, getMaxCountIndex()), null, scene);
+  openBlankChartPage(count, at, Math.min(count + countsPerPage, getMaxCountIndex()), waiting, scene);
   return count;
 }
 

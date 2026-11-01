@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { stripTypeScriptTypes } from 'node:module';
@@ -15,6 +18,9 @@ const transform = path => stripTypeScriptTypes(readFileSync(new URL(path, import
   { mode: 'transform' }).replace(/^import[\s\S]*?;\r?$/gm, '').replace(/export /g, '');
 const geometry = vm.createContext({});
 vm.runInContext(transform('../src/robot/footballPlayGeometry.ts'), geometry);
+vm.runInContext(transform('../src/robot/footballPlaySequence.ts'), geometry);
+vm.runInContext(transform('../src/robot/footballSpecialTeams.ts'), geometry);
+vm.runInContext(transform('../src/robot/footballPlayLibrary.ts'), geometry);
 const engine = new NullEngine();
 const scene = new Scene(engine);
 const parent = new TransformNode('fieldRoot', scene);
@@ -27,7 +33,7 @@ const schedules = new Map();
 const materials = [];
 const context = vm.createContext({
   MeshBuilder, Mesh, TransformNode, Color3, Matrix, Quaternion, Vector3, scene, TOP_DOWN_MARKER_LAYER_MASK: 0x10000000,
-  FIELD_WIDTH_YARDS: 53.333, FIELD_LENGTH_YARDS: 120, END_ZONE_DEPTH_YARDS: 10,
+  FIELD_WIDTH_YARDS: 53.333, FIELD_LENGTH_YARDS: 120, END_ZONE_DEPTH_YARDS: 10, FIELD_SURFACE_Y: -.48,
   StandardMaterial: class {
     constructor(name) { this.name = name; materials.push(this); }
     dispose(_effect, textures) { this.disposed = true; if (textures) this.diffuseTexture?.dispose(); }
@@ -38,8 +44,12 @@ const context = vm.createContext({
   setRobotColor() {},
   setRobotFootballMotion(robot, motion) { robot.metadata = { motion }; },
   floorCalibrationToggle: calibration,
+  footballStatus: { value: '' },
+  footballBallHighlight: { checked: false }, footballFlightPath: { checked: false },
+  initFootballTackleEditor: () => Object.assign(() => {}, { refresh() {} }),
+  createFootballFuturePreview: () => () => {},
 });
-for (const module of ['footballMovement', 'footballPresentation', 'footballSymbolModel', 'footballHumanModel', 'scrimmageGeometry']) {
+for (const module of ['footballMovement', 'footballPresentation', 'footballSymbolModel', 'footballHumanModel', 'scrimmageGeometry', 'footballTackles', 'footballBallFlight']) {
   vm.runInContext(transform(`../src/robot/${module}.ts`), context);
 }
 vm.runInContext(transform('../src/robot/footballPlayMode.ts'), context);
@@ -140,6 +150,29 @@ try {
     hip.computeWorldMatrix(true); knee.computeWorldMatrix(true); thigh.computeWorldMatrix(true);
     near(thigh.getAbsolutePosition(), Vector3.Center(hip.getAbsolutePosition(), knee.getAbsolutePosition()),
       'Human thigh follows solved hip/knee joints under tabletop scale and torso lean');
+    if (play !== 'sweep') {
+      beat = 13;
+      context.footballBallHighlight.checked = true; context.footballFlightPath.checked = true;
+      scene.onBeforeRenderObservable.notifyObservers(scene);
+      const halo = scene.getMeshByName('football-ball-highlight');
+      const line = scene.getMeshByName('football-flight-path');
+      assert.ok(halo.isEnabled() && line.isEnabled(), 'Optional halo and flight path follow live ball playback');
+      assert.equal(line.parent, parent, 'Flight guide follows rotated/scaled tabletop field');
+      assert.equal(line.getTotalVertices(), 33, 'Whole flight arc has fixed reusable samples');
+      const lastEvent = data.ballEvents[data.ballEvents.length - 1];
+      const receiver = players.find(entry => entry.player.id === lastEvent.toId).robot;
+      const prior = line.getVerticesData('position')[96];
+      schedules.get(receiver)[lastEvent.endCount].position.x += 1;
+      scene.onBeforeRenderObservable.notifyObservers(scene);
+      assert.ok(Math.abs(line.getVerticesData('position')[96] - prior - 1) < 1e-5,
+        'Flight guide refreshes after live endpoint edits');
+      assert.equal(line.isPickable, false); assert.equal(halo.isPickable, false);
+      calibration.checked = true; scene.onBeforeRenderObservable.notifyObservers(scene);
+      assert.equal(line.isEnabled(), false); assert.equal(halo.isEnabled(), false);
+      calibration.checked = false; context.footballBallHighlight.checked = false; context.footballFlightPath.checked = false;
+      scene.onBeforeRenderObservable.notifyObservers(scene);
+      assert.equal(line.isEnabled(), false); assert.equal(halo.isEnabled(), false);
+    }
     dispose();
     await new Promise(resolve => setTimeout(resolve, 0));
     assert.equal(scene.getMeshByName('football-ball'), null);
@@ -171,8 +204,153 @@ try {
     await new Promise(resolve => setTimeout(resolve, 0));
     assert.equal(scene.meshes.filter(mesh => mesh.name.startsWith('football-bench-')).length, 0,
       'Benches dispose with football presentation');
+    for (const { robot, player } of players) {
+      schedules.set(robot, context.scrimmagePlayerRoute(player.positions, players.findIndex(entry => entry.robot === robot))
+        .map(point => ({ position: new Vector3(point.x, -.48, point.z) })));
+    }
+    const stagedDispose = context.createFootballVisuals(players, data.ballEvents.map(event => ({
+      ...event, startCount: event.startCount + 96, endCount: event.endCount + 96,
+    })), parent, 96);
+    beat = 49;
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    const standingHeight = scene.getTransformNodeByName('football-player-offense-QB').position.y;
+    for (const { robot } of players) {
+      const counts = schedules.get(robot);
+      schedules.set(robot, [counts[0], ...Array.from({ length: 4 }, () => ({ position: counts[0].position.clone() })),
+        ...counts.slice(1)]);
+    }
+    context.shiftFootballTimeline(0, 4);
+    beat = 53;
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    assert.equal(scene.getTransformNodeByName('football-player-offense-QB').position.y, standingHeight,
+      'Chart insertion before the entrance shifts seated/standing presentation with route counts');
+    stagedDispose();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    if (play === 'four-verticals') {
+      const sequence = geometry.generateFootballPlaySequence();
+      for (const { robot, player } of players) {
+        const route = sequence.players.find(candidate => candidate.id === player.id);
+        schedules.set(robot, route.positions.map(point => ({ position: new Vector3(point.x, -.48, point.z) })));
+      }
+      beat = 0;
+      const sequenceDispose = context.createFootballVisuals(players, sequence.ballEvents, parent, 0, sequence.sequence, sequence.tackles);
+      const sequenceBall = scene.getMeshByName('football-ball');
+      for (const segment of sequence.sequence) {
+        beat = segment.startCount;
+        scene.onBeforeRenderObservable.notifyObservers(scene);
+        assert.ok(sequenceBall.isEnabled(), 'Ball returns for each snap');
+        near(sequenceBall.position, schedules.get(players.find(value => value.player.label === 'C').robot)[beat]
+          .position.add(new Vector3(0, 1.05, 0)), 'Each snap begins at center');
+        assert.ok(context.footballStatus.value.includes(segment.label), 'Status names current concept');
+        beat = segment.endCount + 2;
+        scene.onBeforeRenderObservable.notifyObservers(scene);
+        const event = sequence.tackles.find(event => event.count === segment.endCount);
+        for (const id of [event.defenderId, event.carrierId]) {
+          const torso = scene.getTransformNodeByName(`football-player-${id}`);
+          assert.ok(Math.abs(torso.rotation.x - Math.PI / 2) < 1e-9, 'Both players fall horizontally');
+          assert.equal(torso.position.y, .22, 'Fallen players are on the turf');
+        }
+        assert.equal(sequenceBall.isEnabled(), true, 'Ball stays with tackled carrier while falling');
+        const saved = scene.getTransformNodeByName(`football-player-${event.carrierId}`).rotation.x;
+        beat = segment.endCount + 6;
+        scene.onBeforeRenderObservable.notifyObservers(scene);
+        assert.ok(scene.getTransformNodeByName(`football-player-${event.carrierId}`).rotation.x < saved,
+          'Both players recover before moving to the next set');
+        beat = segment.endCount + 2;
+        scene.onBeforeRenderObservable.notifyObservers(scene);
+        assert.equal(scene.getTransformNodeByName(`football-player-${event.carrierId}`).rotation.x, saved,
+          'Reverse scrubbing reconstructs tackle pose exactly');
+        beat = segment.endCount + 8;
+        scene.onBeforeRenderObservable.notifyObservers(scene);
+        assert.equal(sequenceBall.isEnabled(), false, 'Ball is hidden during walk-back resets and after sequence');
+      }
+      for (const { robot } of players) {
+        const counts = schedules.get(robot);
+        schedules.set(robot, [counts[0], ...Array.from({ length: 4 }, () => ({ position: counts[0].position.clone() })),
+          ...counts.slice(1)]);
+      }
+      context.shiftFootballTimeline(0, 4);
+      assert.equal(sequence.sequence[1].startCount, 48, 'Timeline insertion does not mutate input geometry');
+      beat = 52;
+      scene.onBeforeRenderObservable.notifyObservers(scene);
+      assert.ok(context.footballStatus.value.includes('Stick'), 'Play names follow inserted counts');
+      near(sequenceBall.position, schedules.get(players.find(value => value.player.label === 'C').robot)[52]
+        .position.add(new Vector3(0, 1.05, 0)), 'Next snap and ball endpoints shift with chart insertion');
+      beat = 22;
+      scene.onBeforeRenderObservable.notifyObservers(scene);
+      assert.equal(scene.getTransformNodeByName('football-player-offense-WR3').rotation.x, Math.PI / 2,
+        'Tackle shifts with inserted chart counts');
+      sequenceDispose();
+      assert.throws(() => context.shiftFootballTimeline(0, 4), /active football timeline/,
+        'Disposed football mode unregisters event retiming');
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
     players.forEach(({ robot }) => robot.dispose());
     schedules.clear();
+  }
+  for (const play of ['drive', 'kickoff', 'punt', 'field-goal']) {
+    const data = geometry.generateFootballLibraryPlay('spread', play);
+    const players = data.players.map(player => {
+      const robot = new TransformNode(player.id, scene); robot.parent = parent;
+      const rig = new TransformNode('marcherLegRoot', scene); rig.parent = robot;
+      for (const side of [-1, 1]) {
+        const hip = new TransformNode('marcherLeg', scene); hip.parent = rig; hip.position.set(side * .12, .98, 0);
+        const knee = new TransformNode('marcherKnee', scene); knee.parent = hip; knee.position.y = -.45;
+        const ankle = new TransformNode('marcherAnkle', scene); ankle.parent = knee; ankle.position.y = -.45;
+      }
+      schedules.set(robot, player.positions.map(point => ({ position: new Vector3(point.x, -.48, point.z) })));
+      return { robot, player };
+    });
+    beat = 0;
+    const dispose = context.createFootballVisuals(players, data.ballEvents, parent, 0, data.sequence, data.tackles, data.outcomes);
+    const ball = scene.getMeshByName('football-ball');
+    const kick = data.ballEvents.find(event => event.kind === 'kick' || event.kind === 'punt');
+    if (kick) {
+      if (play === 'kickoff') {
+        const tee = scene.getMeshByName('football-kicking-tee');
+        assert.ok(tee.isEnabled() && !tee.isPickable, 'Kickoff ball waits on a non-pickable tee');
+        near(ball.position, new Vector3(0, -.48 + .14, -15), 'Kickoff ball is stationary at own 35 before approach');
+      }
+      const foot = scene.getMeshByName(`football-cleat-${kick.fromId}-1`);
+      beat = kick.startCount - 1; scene.onBeforeRenderObservable.notifyObservers(scene);
+      const before = foot.position.clone();
+      beat = kick.startCount + .5; scene.onBeforeRenderObservable.notifyObservers(scene);
+      const kicked = foot.position.clone();
+      assert.ok(kicked.z > before.z + .2, 'Kicker/punter swings right leg through contact');
+      beat = kick.startCount - 1; scene.onBeforeRenderObservable.notifyObservers(scene);
+      near(foot.position, before, 'Rewind restores normal legs');
+      beat = kick.startCount + .5; scene.onBeforeRenderObservable.notifyObservers(scene);
+      near(foot.position, kicked, 'Fractional reverse seek reconstructs kick pose');
+      context.footballFlightPath.checked = true;
+      scene.onBeforeRenderObservable.notifyObservers(scene);
+      assert.ok(scene.getMeshByName('football-flight-path').isEnabled());
+      if (play === 'kickoff') assert.equal(scene.getMeshByName('football-kicking-tee').isEnabled(), false);
+      assert.ok(ball.position.y > -.48 + 1, 'Kicked football follows a raised arc');
+      if (play === 'punt') {
+        beat = kick.startCount - .5;
+        scene.onBeforeRenderObservable.notifyObservers(scene);
+        assert.ok(Math.abs(ball.position.y - (-.48 + (1.05 + .3) / 2)) < 1e-6,
+          'Punter lowers the ball continuously before foot contact');
+      }
+      context.footballFlightPath.checked = false;
+    }
+    if (data.outcomes?.length) {
+      const event = data.outcomes[0];
+      beat = event.count; scene.onBeforeRenderObservable.notifyObservers(scene);
+      assert.ok(scene.getMeshByName('football-score-sign').isEnabled(), 'Touchdown/field goal has visible field sign');
+      assert.ok(ball.isEnabled(), 'Scoring ball stays visible after flight/play');
+      assert.ok(context.footballStatus.value.includes(event.kind === 'touchdown' ? 'TOUCHDOWN' : 'FIELD GOAL'));
+      beat = event.count - 1; scene.onBeforeRenderObservable.notifyObservers(scene);
+      assert.equal(scene.getMeshByName('football-score-sign').isEnabled(), false, 'No premature score on reverse seek');
+      beat = event.count; calibration.checked = true; scene.onBeforeRenderObservable.notifyObservers(scene);
+      assert.equal(scene.getMeshByName('football-score-sign').isEnabled(), false);
+      calibration.checked = false;
+    }
+    dispose(); players.forEach(({ robot }) => robot.dispose()); schedules.clear();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(scene.getMeshByName('football-flight-path'), null);
+    assert.equal(scene.getMeshByName('football-ball-highlight'), null);
+    assert.equal(scene.getMeshByName('football-score-sign'), null);
   }
   assert.ok(materials.filter(material => !material.name?.startsWith('footballSymbol-'))
     .every(material => material.disposed), 'All non-shared owned materials are disposed');

@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 export const FIELD_LENGTH_YARDS = 120;
 export const FIELD_WIDTH_YARDS = 53.333;
 export const FIELD_SURFACE_Y = -0.48;

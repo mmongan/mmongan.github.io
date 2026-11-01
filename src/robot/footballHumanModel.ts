@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
 import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
@@ -83,7 +86,7 @@ export function createFootballHumanModel(robot: TransformNode, torso: TransformN
     node.computeWorldMatrix(true);
     return Vector3.TransformCoordinates(node.getAbsolutePosition(), inverse);
   };
-  const updateLegs = (seated = 0, seatYaw = 0) => {
+  const updateLegs = (seated = 0, seatYaw = 0, fall = 0, kick = 0) => {
     legsRoot.computeWorldMatrix(true).invertToRef(inverse);
     const seatedPoint = (x: number, y: number, z: number) =>
       Vector3.TransformCoordinates(Vector3.TransformCoordinates(
@@ -94,6 +97,14 @@ export function createFootballHumanModel(robot: TransformNode, torso: TransformN
       const a = Vector3.Lerp(local(hip), seatedPoint(x, .60, 0), seated);
       const b = Vector3.Lerp(local(knee), seatedPoint(x, .60, .4), seated);
       const c = Vector3.Lerp(local(ankle), seatedPoint(x, .09, .4), seated);
+      Vector3.LerpToRef(a, new Vector3(x, 0, 0), fall, a);
+      Vector3.LerpToRef(b, new Vector3(x, -.43, .03), fall, b);
+      Vector3.LerpToRef(c, new Vector3(x, -.88, .04), fall, c);
+      if (index === 1 && kick > 0) {
+        Vector3.LerpToRef(a, new Vector3(x, 0, 0), kick, a);
+        Vector3.LerpToRef(b, new Vector3(x, -.24, .35), kick, b);
+        Vector3.LerpToRef(c, new Vector3(x, -.42, .75), kick, c);
+      }
       for (const [mesh, from, to] of [[thigh, a, b], [calf, b, c]] as const) {
         const direction = to.subtract(from);
         mesh.position.copyFrom(Vector3.Center(from, to));
@@ -104,9 +115,12 @@ export function createFootballHumanModel(robot: TransformNode, torso: TransformN
       const foot = seatedPoint(x, .05, .47);
       shoe.position.copyFrom(Vector3.Lerp(local(ankle), foot, seated));
       shoe.position.z += (1 - seated) * .07;
+      Vector3.LerpToRef(shoe.position, new Vector3(x, -.91, .1), fall, shoe.position);
+      if (index === 1 && kick > 0) Vector3.LerpToRef(shoe.position, new Vector3(x, -.43, .82), kick, shoe.position);
       shoe.rotationQuaternion = ankle.absoluteRotationQuaternion.clone();
       const parentRotation = legsRoot.absoluteRotationQuaternion.conjugate();
       shoe.rotationQuaternion = parentRotation.multiply(shoe.rotationQuaternion);
+      shoe.rotationQuaternion = Quaternion.Slerp(shoe.rotationQuaternion, Quaternion.Identity(), fall);
       if (seated > 0) {
         const seatRotation = parentRotation.multiply(robot.absoluteRotationQuaternion)
           .multiply(Quaternion.FromEulerAngles(0, seatYaw, 0));

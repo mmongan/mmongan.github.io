@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { OPEN_CHART_SAMPLE, OPEN_CHART_SAMPLE_SIZE, type OpenChartPerformance } from "./openChartFormat";
 import type { MarcherScheduleSnapshot, ResolvedCountGait } from "./robot";
 

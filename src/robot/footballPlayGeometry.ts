@@ -1,7 +1,13 @@
+// Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+import type { FootballTackleEvent } from './footballTackles';
+
 export type FootballTeam = 'offense' | 'defense';
 export type FootballFormation = 'shotgun' | 'spread' | 'i-form';
-export type FootballPlay = 'slants' | 'sweep' | 'four-verticals';
-export type FootballBallEventKind = 'snap' | 'handoff' | 'pass';
+export type FootballPlay = 'slants' | 'sweep' | 'four-verticals' | 'sequence' |
+  'drive' | 'slant-flat' | 'stick' | 'smash' | 'flood' | 'mesh' | 'kickoff' | 'punt' | 'field-goal';
+export type FootballBallEventKind = 'snap' | 'handoff' | 'pass' | 'kick' | 'punt';
 
 export interface FootballPosition {
   x: number;
@@ -10,7 +16,7 @@ export interface FootballPosition {
 
 export type OffensivePlayerRole =
   | 'LT' | 'LG' | 'C' | 'RG' | 'RT'
-  | 'QB' | 'RB' | 'FB' | 'TE' | 'WR1' | 'WR2' | 'WR3';
+  | 'QB' | 'RB' | 'FB' | 'TE' | 'WR1' | 'WR2' | 'WR3' | 'K' | 'P' | 'H' | 'LS';
 
 export type DefensivePlayerRole =
   | 'DE-L' | 'DT-L' | 'DT-R' | 'DE-R'
@@ -24,12 +30,12 @@ export interface FootballFormationPreset {
 
 export interface FootballPlayPreset {
   label: string;
-  target: 'WR1' | 'WR3' | 'RB';
+  target: 'WR1' | 'WR3' | 'RB' | 'TE' | 'WR2';
 }
 
 export interface FootballPlayer {
   id: string;
-  label: OffensivePlayerRole | DefensivePlayerRole;
+  label: OffensivePlayerRole | DefensivePlayerRole | 'KR' | 'PR';
   team: FootballTeam;
   positions: FootballPosition[];
 }
@@ -40,15 +46,31 @@ export interface FootballBallEvent {
   fromId: string;
   toId: string;
   kind: FootballBallEventKind;
+  startPosition?: FootballPosition & { height: number };
+  targetPosition?: FootballPosition & { height: number };
+  startHeight?: number;
+  launchId?: string;
+  endHeight?: number;
+  flightHeight?: number;
+}
+
+export interface FootballOutcome {
+  kind: 'touchdown' | 'fieldGoal';
+  count: number;
+  playerId?: string;
 }
 
 export interface FootballPlayGeometry {
+  outcomes?: FootballOutcome[];
+  tackles?: FootballTackleEvent[];
+  sequence?: { label: string; startCount: number; endCount: number; source: string }[];
   players: FootballPlayer[];
   ballEvents: FootballBallEvent[];
 }
 
 export const FOOTBALL_FORMATIONS = ['shotgun', 'spread', 'i-form'] as const satisfies readonly FootballFormation[];
-export const FOOTBALL_PLAYS = ['slants', 'sweep', 'four-verticals'] as const satisfies readonly FootballPlay[];
+export const FOOTBALL_PLAYS = ['slants', 'sweep', 'four-verticals', 'sequence', 'drive',
+  'slant-flat', 'stick', 'smash', 'flood', 'mesh', 'kickoff', 'punt', 'field-goal'] as const satisfies readonly FootballPlay[];
 
 export const FOOTBALL_FORMATION_OPTIONS: ReadonlyArray<{ value: FootballFormation; label: string }> = [
   { value: 'shotgun', label: 'Shotgun' },
@@ -60,9 +82,19 @@ export const FOOTBALL_PLAY_OPTIONS: ReadonlyArray<{ value: FootballPlay; label: 
   { value: 'slants', label: 'Slants' },
   { value: 'sweep', label: 'Sweep' },
   { value: 'four-verticals', label: 'Four Verticals' },
+  { value: 'sequence', label: 'Six-play coaching sequence' },
+  { value: 'drive', label: 'Touchdown drive (six plays)' },
+  { value: 'slant-flat', label: 'Slant / Flat' },
+  { value: 'stick', label: 'Stick' },
+  { value: 'smash', label: 'Smash' },
+  { value: 'flood', label: 'Flood' },
+  { value: 'mesh', label: 'Mesh' },
+  { value: 'kickoff', label: 'Kickoff and return' },
+  { value: 'punt', label: 'Punt and return' },
+  { value: 'field-goal', label: 'Field goal (kicker and holder)' },
 ];
 
-export const FOOTBALL_SCRIMMAGE_DEFAULT = { formation: 'spread', play: 'four-verticals' } as const;
+export const FOOTBALL_SCRIMMAGE_DEFAULT = { formation: 'spread', play: 'drive' } as const;
 export const FOUR_VERTICALS_SOURCE = 'https://www.footballplaybookdesigner.com/library/article/four-verticals';
 
 export const FOOTBALL_FORMATION_PRESETS: Record<FootballFormation, FootballFormationPreset> = {
@@ -102,6 +134,16 @@ export const FOOTBALL_PLAY_PRESETS: Record<FootballPlay, FootballPlayPreset> = {
   slants: { label: 'Slants', target: 'WR1' },
   sweep: { label: 'Sweep', target: 'RB' },
   'four-verticals': { label: 'Four Verticals', target: 'WR3' },
+  sequence: { label: 'Six-play coaching sequence', target: 'WR3' },
+  drive: { label: 'Touchdown drive', target: 'WR3' },
+  'slant-flat': { label: 'Slant / Flat', target: 'WR3' },
+  stick: { label: 'Stick', target: 'TE' },
+  smash: { label: 'Smash', target: 'TE' },
+  flood: { label: 'Flood', target: 'TE' },
+  mesh: { label: 'Mesh', target: 'WR2' },
+  kickoff: { label: 'Kickoff and return', target: 'WR3' },
+  punt: { label: 'Punt and return', target: 'WR3' },
+  'field-goal': { label: 'Field goal', target: 'WR3' },
 };
 
 const DEFENSE: Record<DefensivePlayerRole, FootballPosition> = {
@@ -281,7 +323,7 @@ function ballEvents(play: FootballPlay): FootballBallEvent[] {
 
 export function generateFootballPlay(formation: FootballFormation, play: FootballPlay): FootballPlayGeometry {
   const preset = FOOTBALL_FORMATION_PRESETS[formation];
-  if (!preset || !FOOTBALL_PLAYS.includes(play)) {
+  if (!preset || !['slants', 'sweep', 'four-verticals'].includes(play)) {
     throw new Error('Choose a supported football formation and play.');
   }
 

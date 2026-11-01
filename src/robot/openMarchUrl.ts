@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 /// <reference types="vite/client" />
 import type { SqlJsStatic } from "sql.js";
 import { FIELD_WIDTH_YARDS } from "../field/constants";

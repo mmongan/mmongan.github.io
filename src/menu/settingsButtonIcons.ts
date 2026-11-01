@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
 import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
 import type { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.pure';

@@ -1,9 +1,13 @@
+// Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { Observable } from '@babylonjs/core/Misc/observable';
 import type { HandMenuHit } from '../menu/handMenu';
 import type { CameraFieldCommand, DrawingToolCommand } from './fieldDrawingGeometry';
 
 let immersiveEditing = false;
 let cameraFieldEditing = false;
+let footballEditing = false;
 let draftingTools = false;
 export const onEditingModeChangedObservable = new Observable<boolean>();
 export const onDraftingToolsChangedObservable = new Observable<boolean>();
@@ -15,7 +19,7 @@ export function isCameraFieldCommand(command: DrawingToolCommand): command is Ca
 }
 
 export function isDrillEditingEnabled() {
-  return immersiveEditing || cameraFieldEditing;
+  return immersiveEditing || cameraFieldEditing || footballEditing;
 }
 
 export function setDrillEditingEnabled(enabled: boolean) {
@@ -28,6 +32,12 @@ export function setDrillEditingEnabled(enabled: boolean) {
 export function setCameraFieldEditingEnabled(enabled: boolean) {
   const previous = isDrillEditingEnabled();
   cameraFieldEditing = enabled;
+  if (previous !== isDrillEditingEnabled()) onEditingModeChangedObservable.notifyObservers(isDrillEditingEnabled());
+}
+
+export function setFootballEditingEnabled(enabled: boolean) {
+  const previous = isDrillEditingEnabled();
+  footballEditing = enabled;
   if (previous !== isDrillEditingEnabled()) onEditingModeChangedObservable.notifyObservers(isDrillEditingEnabled());
 }
 

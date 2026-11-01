@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import type { PickingInfo } from '@babylonjs/core/Collisions/pickingInfo';
 import { Ray } from '@babylonjs/core/Culling/ray';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
@@ -27,7 +30,7 @@ export type HandMenuHit =
   | { action: "drillChartPad" | "recallPanels" | "xrSettings" | "xrSettingsHide" }
   | { action: "marcherDrumGame" }
   | { action: "xrSetting"; setting: "fullScale" | "tabletop" | "giant" | "seated" | "grid" | "snap" }
-  | { action: 'football'; command: 'load' | 'exit' | 'formation' | 'play' | 'scrimmage' }
+  | { action: 'football'; command: import('../robot/footballPlayMode').FootballCommand }
   | { action: "musicStandSummon" }
   | { action: "marcherPOV" }
   | { action: "drillChartHide" | "musicStandHide" | "drillChartInsertPage" }

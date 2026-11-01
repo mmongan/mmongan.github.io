@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import type { FootballTeam } from './footballPlayGeometry';
 
 export type FootballGait = 'ready' | 'jog' | 'sprint' | 'backpedal' | 'shuffle' | 'block';
@@ -5,12 +8,15 @@ export interface FootballMotion {
   team: FootballTeam;
   role: string;
   playStart: number;
+  playWindows?: ReadonlyArray<{ startCount: number; endCount: number }>;
 }
 
 export function footballMovement(motion: FootballMotion, count: number, dx: number, dz: number) {
   const distance = Math.hypot(dx, dz);
   const travelYaw = distance > 1e-6 ? Math.atan2(dx, dz) : motion.team === 'offense' ? 0 : Math.PI;
-  const play = count >= motion.playStart;
+  const play = motion.playWindows
+    ? motion.playWindows.some(window => count >= window.startCount && count < window.endCount)
+    : count >= motion.playStart;
   const lineman = ['LT', 'LG', 'C', 'RG', 'RT'].includes(motion.role);
   let gait: FootballGait;
   if (!play) gait = distance > 1e-6 ? 'jog' : 'ready';

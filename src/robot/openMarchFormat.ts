@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import type { Database, SqlJsStatic } from "sql.js";
 
 // OpenMarch (https://openmarch.com) stores a show as a `.dots` SQLite

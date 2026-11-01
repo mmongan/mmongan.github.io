@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Each chart page keeps its own drafted guides. The field shows the guides of
 // the page being shown; the other pages' guides wait here, keyed by page index.
 import { scene } from '../scene/engine';

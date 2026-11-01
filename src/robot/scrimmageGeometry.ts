@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS, END_ZONE_DEPTH_YARDS } from '../field/constants';
 import type { FootballPosition } from './footballPlayGeometry';
 

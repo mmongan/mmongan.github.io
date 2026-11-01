@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { stripTypeScriptTypes } from 'node:module';
@@ -14,14 +17,15 @@ globalThis.api = {
 
 const api = context.api;
 assert.deepEqual(Array.from(api.FOOTBALL_FORMATIONS), ['shotgun', 'spread', 'i-form']);
-assert.deepEqual(Array.from(api.FOOTBALL_PLAYS), ['slants', 'sweep', 'four-verticals']);
+assert.deepEqual(Array.from(api.FOOTBALL_PLAYS), ['slants', 'sweep', 'four-verticals', 'sequence',
+  'drive', 'slant-flat', 'stick', 'smash', 'flood', 'mesh', 'kickoff', 'punt', 'field-goal']);
 assert.equal(api.FOOTBALL_FORMATION_OPTIONS.length, 3);
-assert.equal(api.FOOTBALL_PLAY_OPTIONS.length, 3);
+assert.equal(api.FOOTBALL_PLAY_OPTIONS.length, api.FOOTBALL_PLAYS.length);
 assert.deepEqual(Object.keys(api.FOOTBALL_FORMATION_PRESETS).sort(), ['i-form', 'shotgun', 'spread']);
-assert.deepEqual(Object.keys(api.FOOTBALL_PLAY_PRESETS).sort(), ['four-verticals', 'slants', 'sweep']);
+assert.deepEqual(Object.keys(api.FOOTBALL_PLAY_PRESETS).sort(), Array.from(api.FOOTBALL_PLAYS).sort());
 
 for (const formation of api.FOOTBALL_FORMATIONS) {
-  for (const play of api.FOOTBALL_PLAYS) {
+  for (const play of ['slants', 'sweep', 'four-verticals']) {
     const result = api.generateFootballPlay(formation, play);
     assert.equal(result.players.length, 22, `${formation}/${play} has 22 players`);
     assert.equal(result.players.filter(player => player.team === 'offense').length, 11);

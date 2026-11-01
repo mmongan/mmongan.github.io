@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Browser-saved "chart page draft in progress": every marcher's full count
 // schedule, the open blank page (and which marchers still wait as ghosts),
 // the transition library choice, and the drafted guides. Plain JSON only, so

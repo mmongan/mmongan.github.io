@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
 
 export function marcherSoleInRig(target: Vector3, bodyYaw: number, bodyScale: number): Vector3 {

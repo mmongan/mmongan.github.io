@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { Quaternion } from '@babylonjs/core/Maths/math.vector.pure';
 import { MARCHER_THIGH_LENGTH, type solvePlantedMarcherLeg } from './marcherLegPose';
 

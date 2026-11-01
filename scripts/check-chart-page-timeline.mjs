@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { stripTypeScriptTypes } from 'node:module';
@@ -14,7 +17,7 @@ const state = { counts: Array.from({ length: 25 }, (_, index) => ({
 const players = new Map([[marcher, state]]);
 let accepted = true;
 const context = vm.createContext({
-  Vector3, players, allRobots: new Set([marcher]),
+  Vector3, players, allRobots: new Set([marcher]), blankChartPage: null,
   getMaxCountIndex: () => 24, tryManualMarcherPoses: () => accepted,
   invalidateLegBake() {}, applyGlobalCountToAllRobots() {}, recalculateCollisionMarkers() {},
 });

@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Copies the Vite build output (dist/) into the repo root and pushes it to
 // main, since GitHub Pages serves a username.github.io repo from the root
 // of the main branch.

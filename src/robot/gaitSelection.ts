@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Picks the marching gait a marcher should use for one count from how its body
 // faces, which way it travels, and how far it moves in that count. Used for
 // imported routes and editing; baked OpenChart schedules retain the result.

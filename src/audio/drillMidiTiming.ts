@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 export function drillCountToMidiBeat(count: number, ticks: readonly number[], ppq: number): number {
   if (ticks.length < 2) return count + (ticks[0] ?? 0) / ppq;
   const index = Math.max(0, Math.min(ticks.length - 2, Math.floor(count)));

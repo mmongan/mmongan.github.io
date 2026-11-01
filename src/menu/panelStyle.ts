@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 export const PANEL_FRAME_COLOR = '#18263b';
 export const PANEL_PAPER_COLOR = '#fffdf7';
 

@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { stripTypeScriptTypes } from 'node:module';
@@ -168,6 +171,11 @@ assert.equal(readiness.isMidiPlaybackReady(), true, 'Explicit mute or reported a
 readiness.audioEnabled = true;
 readiness.timeline = null;
 assert.equal(readiness.isMidiPlaybackReady(), true, 'No MIDI or failed MIDI load does not block drill');
+const midiLoadSource = source.slice(source.indexOf('async function loadMidi('), source.indexOf('function loadMidiFromUrl('));
+assert.match(midiLoadSource, /initializeAudioContext\(\);\s*await prepareSynth\(\)/,
+  'New MIDI preloads samples even while explicitly muted');
+assert.doesNotMatch(midiLoadSource, /if \(audioEnabled\) await prepareSynth/,
+  'First Play or unmute must not be the first sample download');
 const statusSource = source.slice(source.indexOf('export function isMidiPlaybackReady()'), source.indexOf('function stopVoices('));
 const hintContext = vm.createContext({
   audioEnabled: true, midiLoading: false, timeline: {}, context: { state: 'running' },

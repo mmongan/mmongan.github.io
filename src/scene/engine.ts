@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { Engine } from '@babylonjs/core/Engines/engine';
 import '@babylonjs/core/Collisions/collisionCoordinator';
 import { DirectionalLight } from '@babylonjs/core/Lights/directionalLight.pure';

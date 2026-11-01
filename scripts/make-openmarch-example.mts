@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Regenerates the bundled OpenMarch example show:
 //   node --experimental-strip-types scripts/make-openmarch-example.mts
 // The band is an 8-file by 5-rank block (front rank nearest the audience) that

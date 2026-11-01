@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import type { Ray } from '@babylonjs/core/Culling/ray';
 import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
 import { Plane } from '@babylonjs/core/Maths/math.plane';

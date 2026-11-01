@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { Ray } from '@babylonjs/core/Culling/ray';
 import { PointerEventTypes } from '@babylonjs/core/Events/pointerEvents';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
@@ -27,8 +30,13 @@ import { createSelectionEditor } from './selectionEditor';
 import {
   DESKTOP_PLAYBACK_NOTICE, isDrillEditingEnabled, isMenuActionAvailable, onEditingModeChangedObservable,
   DRAFTING_TOOLS_NOTICE, isDraftingToolAction, onDraftingToolsChangedObservable,
+  setFootballEditingEnabled,
 } from './editingMode';
-import { sampleGuideMarchers } from './guideMarcherLayout';
+import { sampleGuideMarchers, sampleDestinationGuide, type GuideMarcherSettings } from './guideMarcherLayout';
+import { draftFootballGuide } from './footballDrafting';
+import { getFootballTeam } from '../robot/footballPresentation';
+import { footballDraftTeam, footballDraftFrom, footballDraftTo, footballChartEdit, footballDraftStatus,
+  drillSelectionMode, drillSetEditMode, drillEditSet } from '../ui/dom';
 import { getChartPageTimeline, setChartPageTimeline, getChartPageCounts } from '../robot/chartPageTimeline';
 import { parseDraftingWorkspace } from './draftingWorkspace';
 import {
@@ -46,7 +54,8 @@ import { resetThumbJog, updateThumbJog } from './thumbJogGesture';
 import { hideInstrumentPanel, summonInstrumentPanel } from '../menu/instrumentPanel';
 import { executeXRSetting, setXRSettingsPanelVisible, summonXRSettingsPanel } from '../menu/xrSettingsPanel';
 import { generateFootballPlay, type FootballFormation, type FootballPlay } from '../robot/footballPlayGeometry';
-import { createFootballVisuals, initFootballControls, executeFootballCommand } from '../robot/footballPlayMode';
+import { createFootballVisuals, initFootballControls, executeFootballCommand, shiftFootballTimeline } from '../robot/footballPlayMode';
+import { generateFootballLibraryPlay } from '../robot/footballPlayLibrary';
 import { SCRIMMAGE_EXIT_COUNTS, SCRIMMAGE_PLAY_START, scrimmageWalk,
   scrimmageBandEndZone, scrimmagePlayerRoute, scrimmageBenchSeat } from '../robot/scrimmageGeometry';
 import { setRobotColor, createPresentationMarcher } from '../robot/robot';
@@ -121,7 +130,6 @@ import {
   playAll,
   pauseAll,
   registerRobotCounts,
-  onMarcherStrideLimited,
   captureMarcherSchedules,
   captureFieldPlayback,
   restoreFieldPlayback,
@@ -536,7 +544,8 @@ function addBlankChartPage() {
     return;
   }
   selectRobot(null);
-  const count = insertBlankDrillChartPage();
+  const count = insertBlankDrillChartPage(footballVisuals
+    ? new Set([...robotPaths.keys()].filter(robot => getFootballTeam(robot) !== undefined)) : null);
   if (count === null) {
     const cleared = clearDrawingGuides();
     showPlacementNotice(cleared ? "Drafted guides cleared. Add marchers to build chart pages." :
@@ -544,6 +553,16 @@ function addBlankChartPage() {
     return;
   }
   const afterCounts = getDrillChartSetCounts();
+  if (footballVisuals) {
+    const amount = getChartPageTimeline().beatsPerPage;
+    shiftFootballTimeline(at, amount);
+    for (const input of [footballDraftFrom, footballDraftTo]) {
+      if (input && Number(input.value) > at) input.value = String(Number(input.value) + amount);
+    }
+    if (footballDraftFrom) footballDraftFrom.value = String(at);
+    if (footballDraftTo) footballDraftTo.value = String(count);
+    refreshSelectionEdits([...robotPaths.keys()]);
+  }
   for (const entries of [chartPageNames, chartPageNotes]) {
     const shifted = [...entries].map(([previous, value]): [number, string] =>
       [previous > at ? previous + getChartPageTimeline().beatsPerPage : previous, value]);
@@ -886,10 +905,8 @@ function showPlacementNotice(message: string) {
 }
 const placementBlockedObserver = onManualPlacementBlocked.add(() =>
   showPlacementNotice("Move blocked: leave room for the marcher's body and instrument."));
-const strideLimitedObserver = onMarcherStrideLimited.add(showPlacementNotice);
 scene.onDisposeObservable.addOnce(() => {
   onManualPlacementBlocked.remove(placementBlockedObserver);
-  onMarcherStrideLimited.remove(strideLimitedObserver);
   clearTimeout(placementNoticeTimeout);
   placementNotice?.remove();
 });
@@ -2109,34 +2126,6 @@ function getEditableEditorFormation(): Segment | undefined {
     return undefined;
   }
   return segment;
-}
-
-function sampleDestinationGuide(controlPoints: readonly Vector3[], count: number): Vector3[] {
-  const points = controlPoints.map(point => new Vector3(point.x, FIELD_SURFACE_Y, point.z));
-  const closed = points.length > 2 && Vector3.DistanceSquared(points[0], points[points.length - 1]) < 1e-6;
-  if (closed) points.pop();
-
-  const segmentCount = closed ? points.length : points.length - 1;
-  const lengths = Array.from({ length: segmentCount }, (_, index) =>
-    Vector3.Distance(points[index], points[(index + 1) % points.length]));
-  const totalLength = lengths.reduce((sum, length) => sum + length, 0);
-  if (points.length < 2 || !Number.isFinite(totalLength) || totalLength < 0.05) return [];
-
-  return Array.from({ length: count }, (_, index) => {
-    const distance = closed
-      ? totalLength * index / count
-      : count === 1 ? totalLength / 2 : totalLength * index / (count - 1);
-    let remaining = distance;
-    let segment = 0;
-    while (segment < lengths.length - 1 && remaining > lengths[segment]) {
-      remaining -= lengths[segment];
-      segment++;
-    }
-    const start = points[segment];
-    const end = points[(segment + 1) % points.length];
-    const length = lengths[segment];
-    return Vector3.Lerp(start, end, length > 0 ? Math.min(1, remaining / length) : 0);
-  });
 }
 
 function createSynchronizedRoutesFromGuide(controlPoints: Vector3[]): boolean {
@@ -3382,6 +3371,7 @@ function spawnRandomRobots(count: number) {
 // lines, segments/handles, formation connections) so a fresh drill starts on
 // an empty field instead of piling onto whatever was already there.
 function clearAllRobots() {
+  setFootballEditingEnabled(false);
   clearWaitingFootballPlayers();
   footballVisuals?.();
   footballVisuals = null;
@@ -3464,12 +3454,82 @@ function showWaitingFootballPlayers() {
   };
 }
 
+function footballDraftPlayers() {
+  const team = footballDraftTeam?.value ?? 'offense';
+  const selected = selectionTools?.selected().filter(robot => getFootballTeam(robot) !== undefined) ?? [];
+  if (team === 'selected') {
+    if (selected.length) return selected;
+    return selectedRobot && getFootballTeam(selectedRobot) !== undefined ? [selectedRobot] : [];
+  }
+  if (team !== 'offense' && team !== 'defense') throw new Error('Choose offense, defense, or selected football players.');
+  return [...robotPaths.keys()].filter(robot => !robot.isDisposed() &&
+    (robot.isEnabled() || getBlankChartPageState() !== null) && getFootballTeam(robot) === team);
+}
+
+function convertFootballGuide(points: Vector3[], mode: 'formation' | 'path' | 'routes', settings?: GuideMarcherSettings) {
+  try {
+    if (floorCalibrationToggle?.checked || marcherGrabs.size || isFloatingPanelGrabbed()) {
+      throw new Error('Finish calibration and release players/panels before drafting football routes.');
+    }
+    const robots = mode === 'path'
+      ? selectedRobot && getFootballTeam(selectedRobot) !== undefined ? [selectedRobot]
+        : (selectionTools?.selected() ?? []).filter(robot => getFootballTeam(robot) !== undefined)
+      : footballDraftPlayers();
+    const before = getDrillChartSetCounts();
+    const message = draftFootballGuide(robots, points, mode, settings);
+    refreshSelectionEdits(robots);
+    const after = getDrillChartSetCounts();
+    remapChartPageGuides(before, after);
+    showChartPageGuides(getDrillChartPageIndex());
+    refreshChartEditorPages();
+    redrawDrillChartPad();
+    publishFormationEdit(message);
+    return true;
+  } catch (error) {
+    console.warn('Could not draft football guide:', error);
+    const message = error instanceof Error ? error.message : String(error);
+    if (footballDraftStatus) footballDraftStatus.value = message;
+    publishFormationEdit(message);
+    return false;
+  }
+}
+
+function editFootballChart() {
+  try {
+    if (!footballVisuals) throw new Error('Load a football play before editing its chart.');
+    if (floorCalibrationToggle?.checked || marcherGrabs.size || isFloatingPanelGrabbed() || !canUseCameraFieldCopies()) {
+      throw new Error('Finish calibration/drawing and release players/panels before editing the football chart.');
+    }
+    executeDrawingToolAction({ action: 'drawingTool', tool: 'stop' });
+    executeDrawingToolAction({ action: 'drawingTool', tool: 'tableExit' });
+    const pages = getDrillChartSetCounts();
+    const robots = footballDraftPlayers();
+    const requested = Number(footballDraftTo?.value);
+    const target = Number.isInteger(requested) ? requested : Math.floor(getDrillTransportState().beat);
+    const found = pages.findIndex(count => count >= target);
+    const index = found < 0 ? pages.length - 1 : found;
+    drillSetEditMode.checked = true;
+    drillEditSet.value = String(index);
+    drillSelectionMode.checked = true;
+    drillSelectionMode.dispatchEvent(new Event('change'));
+    selectionTools?.select(robots);
+    setDrillChartPadVisible(true);
+    if (footballDraftStatus) footballDraftStatus.value = 'Football chart editing: move/rotate selected players, shape the lineup, copy sets, or add a blank keyframe.';
+  } catch (error) {
+    console.warn('Could not edit football chart:', error);
+    const message = error instanceof Error ? error.message : String(error);
+    if (footballDraftStatus) footballDraftStatus.value = message;
+    publishFormationEdit(message);
+  }
+}
+
 function loadFootballPlay(formation: FootballFormation, play: FootballPlay, scrimmage = false) {
   if (floorCalibrationToggle?.checked || marcherGrabs.size || isFloatingPanelGrabbed() || isMarcherPOVActive() ||
     !canUseCameraFieldCopies()) {
     throw new Error('Finish calibration and release tools, players, and panels before loading a football play.');
   }
-  const geometry = generateFootballPlay(formation, play);
+  const geometry = generateFootballLibraryPlay(formation, play);
+  const playLength = geometry.players[0].positions.length - 1;
   clearWaitingFootballPlayers();
   const previous = footballPreviousState ?? captureCameraFieldState();
   openMarchRequest++;
@@ -3486,7 +3546,7 @@ function loadFootballPlay(formation: FootballFormation, play: FootballPlay, scri
         const start = { x: schedule.position.x, z: schedule.position.z };
         const end = scrimmageBandEndZone(start, index);
         const exit = scrimmageWalk(start, end, SCRIMMAGE_EXIT_COUNTS);
-        const path = [...exit, ...Array.from({ length: SCRIMMAGE_PLAY_START + 16 - SCRIMMAGE_EXIT_COUNTS },
+        const path = [...exit, ...Array.from({ length: SCRIMMAGE_PLAY_START + playLength - SCRIMMAGE_EXIT_COUNTS },
           () => ({ ...end }))].map(position => new Vector3(position.x, FIELD_SURFACE_Y, position.z));
         robotPaths.set(robot, path);
         walkRobotAlongCounts(robot, path, scene);
@@ -3506,11 +3566,41 @@ function loadFootballPlay(formation: FootballFormation, play: FootballPlay, scri
     const offset = scrimmage ? SCRIMMAGE_PLAY_START : 0;
     footballVisuals = createFootballVisuals(players, geometry.ballEvents.map(event => ({
       ...event, startCount: event.startCount + offset, endCount: event.endCount + offset,
-    })), pathRoot, offset);
+    })), pathRoot, offset, geometry.sequence?.map(segment => ({
+      ...segment, startCount: segment.startCount + offset, endCount: segment.endCount + offset,
+    })), geometry.tackles?.map(event => ({ ...event, count: event.count + offset })),
+    geometry.outcomes?.map(event => ({ ...event, count: event.count + offset })));
+    setFootballEditingEnabled(true);
+    if (footballDraftFrom) footballDraftFrom.value = String(offset);
+    if (footballDraftTo) footballDraftTo.value = String(offset + 16);
+    if (footballDraftStatus) footballDraftStatus.value = 'Football chart/drafting ready: existing lineup identities and shared routes are retained.';
     setDrillLabels(scene, pathRoot, players.map(({ robot, player }) => ({ robot, label: player.label })));
-    currentShowName = `Football: ${formation} / ${play}`;
+    currentShowName = `Football: ${play}`;
     setChartPageTimeline({ beatsPerPage: 4,
-      authoredCounts: [...(scrimmage ? [0, SCRIMMAGE_EXIT_COUNTS] : []), ...[0, 4, 8, 12, 16].map(count => count + offset)] });
+      authoredCounts: [...(scrimmage ? [0, SCRIMMAGE_EXIT_COUNTS] : []),
+        ...(geometry.sequence ? geometry.sequence.flatMap(segment =>
+          [0, 4, 8, 12, 16].map(count => count + segment.startCount + offset))
+          : [0, 4, 8, 12, 16].map(count => count + offset)),
+        ...(geometry.tackles?.flatMap(event => [event.count + 2, event.count + 4, event.count + 8]
+          .map(count => count + offset)) ?? []),
+        ...geometry.ballEvents.flatMap(event => [event.startCount + offset, event.endCount + offset]),
+        ...(geometry.outcomes?.map(event => event.count + offset) ?? []),
+        playLength + offset] });
+    for (const segment of geometry.sequence ?? []) {
+      for (const count of [0, 4, 8, 12, 16]) {
+        chartPageNames.set(segment.startCount + count + offset,
+          `${segment.label} / ${count === 0 ? 'Snap' : count === 16 ? 'Play end' : `Count ${count}`}`);
+      }
+    }
+    for (const event of geometry.tackles ?? []) {
+      chartPageNames.set(event.count + offset, 'Scripted tackle');
+      chartPageNames.set(event.count + 2 + offset, 'Players down');
+      chartPageNames.set(event.count + 4 + offset, 'Recover');
+      chartPageNames.set(event.count + 8 + offset, 'Recovered / reset');
+    }
+    for (const event of geometry.outcomes ?? []) {
+      chartPageNames.set(event.count + offset, event.kind === 'touchdown' ? 'TOUCHDOWN' : 'FIELD GOAL');
+    }
     refreshChartEditorPages();
     seekToCount(0);
     refreshCollisionMarkers(scene);
@@ -3796,6 +3886,7 @@ export function initInteraction() {
       selectionTools?.disable();
     },
     createFormation: (points, settings) => {
+      if (footballVisuals) return convertFootballGuide(points, 'formation', settings);
       const first = settings ? sampleGuideMarchers(points, settings)[0] : null;
       const anchor = settings ? createLowPolyRobot(scene) : createStandingMarcher(points[0]);
       if (first) {
@@ -3822,6 +3913,7 @@ export function initInteraction() {
       return true;
     },
     createPath: points => {
+      if (footballVisuals) return convertFootballGuide(points, 'path');
       const robot = createStandingMarcher(points[0]);
       if (!robot.isEnabled()) {
         robot.dispose();
@@ -3833,12 +3925,14 @@ export function initInteraction() {
       refreshCollisionMarkers(scene);
       return true;
     },
-    createSynchronizedRoutes: createSynchronizedRoutesFromGuide,
+    createSynchronizedRoutes: points => footballVisuals
+      ? convertFootballGuide(points, 'routes') : createSynchronizedRoutesFromGuide(points),
   });
   initChartPageGuides(getDrillChartPageIndex);
   selectionTools = createSelectionEditor({
     root: pathRoot,
-    getMarchers: () => scene.transformNodes.filter(node => node.name === "pathRobot" && node.parent === pathRoot),
+    getMarchers: () => scene.transformNodes.filter(node => node.name === "pathRobot" && node.parent === pathRoot &&
+      (!footballVisuals || getFootballTeam(node) !== undefined)),
     getStandingForm: () => getEditorFormation()?.robots ?? [],
     detachStandingMembers: detachStandingSelection,
     changed: refreshSelectionEdits,
@@ -3917,6 +4011,8 @@ export function initInteraction() {
   updateMarcherCountValue();
   initFootballControls(loadFootballPlay, exitFootballPlay, publishFormationEdit,
     (formation, play) => loadFootballPlay(formation, play, true));
+  footballChartEdit?.addEventListener('click', editFootballChart);
+  scene.onDisposeObservable.addOnce(() => footballChartEdit?.removeEventListener('click', editFootballChart));
   const waitingObserver = scene.onBeforeRenderObservable.add(showWaitingFootballPlayers);
   scene.onDisposeObservable.addOnce(() => {
     scene.onBeforeRenderObservable.remove(waitingObserver);
@@ -3924,6 +4020,7 @@ export function initInteraction() {
     footballVisuals?.();
     footballVisuals = null;
     footballPreviousState = null;
+    setFootballEditingEnabled(false);
   });
   addRandomRobotsButton?.addEventListener("click", () => spawnRandomRobots(getMarcherCount()));
   generateDrillButton?.addEventListener("click", () => {

@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { stripTypeScriptTypes } from 'node:module';
@@ -30,6 +33,16 @@ const context = vm.createContext({
   scene, Mesh, MeshBuilder, TransformNode, StandardMaterial, Matrix, Quaternion, Vector3, Plane, Color3, Ray, Observable, ...controls,
   footballFormationSelect: { selectedOptions: [{ text: 'Shotgun' }] },
   footballPlaySelect: { selectedOptions: [{ text: 'Slants' }] },
+  footballTackleDefender: { selectedOptions: [{ text: 'CB-R' }] },
+  footballTackleCarrier: { selectedOptions: [{ text: 'WR3' }] },
+  footballTackleEvents: { selectedOptions: [{ text: '16: tackle' }] },
+  footballTackleCount: { value: '16' },
+  footballDraftTeam: { selectedOptions: [{ text: 'Offense' }] },
+  footballDraftFrom: { value: '0' },
+  footballDraftTo: { value: '16' },
+  footballBallHighlight: { checked: false },
+  footballFlightPath: { checked: false },
+  footballFutureGhosts: { checked: false },
   document: { createElement: () => ({ getContext: () => ({ fillText: label => labels.push(label) }) }) },
   DynamicTexture: class { update() {} dispose() {} },
   Texture: { TRILINEAR_SAMPLINGMODE: 3 },

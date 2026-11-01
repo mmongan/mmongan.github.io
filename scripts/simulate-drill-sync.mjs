@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 const DRILL_ROWS = 8, DRILL_COLS = 10, FORMATION_SPACING_YARDS = 1.25, DRILL_BLOCK_START_Z = -30;
 const DRILL_CIRCLE_RADIUS_YARDS = 15, DRILL_CIRCLE_CENTER_Z = 10;
 const MARCH_STEP_YARDS = 0.625, COLLISION_MARKER_RADIUS_YARDS = 0.35;

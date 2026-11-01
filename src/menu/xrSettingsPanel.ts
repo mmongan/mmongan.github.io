@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
 import type { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.pure';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
@@ -11,6 +14,10 @@ import {
   xrSettingsPanelButton, xrSettingsPanelToggle, fullScaleVRButton, tabletopScaleButton,
   giantModeButton, sittingModeToggle, fieldGridToggle, gridSnapToggle,
   footballFormationSelect, footballPlaySelect,
+  footballTackleDefender, footballTackleCarrier, footballTackleEvents, footballTackleCount,
+  footballDraftTeam, footballDraftFrom, footballDraftTo,
+  footballBallHighlight, footballFlightPath,
+  footballFutureGhosts,
 } from '../ui/dom';
 import { FloatingPanel } from './floatingPanel';
 import { registerMenuButton, type HandMenuHit } from './handMenu';
@@ -60,9 +67,9 @@ export function initXRSettingsPanel() {
   root = panelRoot;
   const meshes = new Set<AbstractMesh>();
   const buttons = new Map<AbstractMesh, HandMenuHit>();
-  const backing = MeshBuilder.CreateBox('xrSettingsBacking', { width: 0.84, height: 1.32, depth: 0.02 }, scene);
+  const backing = MeshBuilder.CreateBox('xrSettingsBacking', { width: 0.84, height: 1.92, depth: 0.02 }, scene);
   backing.parent = panelRoot;
-  backing.position.y = -0.20;
+  backing.position.y = -0.50;
   const backingMaterial = new StandardMaterial('xrSettingsBackingMaterial', scene);
   backingMaterial.diffuseColor = Color3.FromHexString(PANEL_FRAME_COLOR);
   backingMaterial.alpha = 0.45;
@@ -110,19 +117,39 @@ export function initXRSettingsPanel() {
   SETTINGS_PANEL_ROWS.forEach((row, y) => row.forEach(([label, action, toggle], x) =>
     button(label, (x - 1) * 0.27, 0.27 - y * 0.12, 0.25, action, toggle)));
   button('Formation', -.27, -.65, .25, { action: 'football', command: 'formation' });
-  button('Play preset', 0, -.65, .25, { action: 'football', command: 'play' });
+  button('Play library', 0, -.65, .25, { action: 'football', command: 'play' });
   button('Load football', .27, -.65, .25, { action: 'football', command: 'load' });
-  button('Restore band', 0, -.77, .52, { action: 'football', command: 'exit' });
-  panel = new FloatingPanel(panelRoot, meshes, backing, new Vector3(0.42, 0.66, 0.025), buttons);
+  button('Draft lineup', -.27, -.77, .25, { action: 'football', command: 'draftTeam' });
+  button('Restore band', .135, -.77, .52, { action: 'football', command: 'exit' });
+  button('Tackler', -.27, -.89, .25, { action: 'football', command: 'tackleDefender' });
+  button('Carrier', 0, -.89, .25, { action: 'football', command: 'tackleCarrier' });
+  button('Tackle count', .27, -.89, .25, { action: 'football', command: 'tackleCount' });
+  button('Save tackle', -.27, -1.01, .25, { action: 'football', command: 'tackleAdd' });
+  button('Tackle event', 0, -1.01, .25, { action: 'football', command: 'tackleEvent' });
+  button('Remove tackle', .27, -1.01, .25, { action: 'football', command: 'tackleRemove' });
+  button('Route start', -.27, -1.13, .25, { action: 'football', command: 'draftFrom' });
+  button('Destination', 0, -1.13, .25, { action: 'football', command: 'draftTo' });
+  button('Edit chart', .27, -1.13, .25, { action: 'football', command: 'chart' });
+  button('Ball highlight', -.135, -1.25, .25, { action: 'football', command: 'ballHighlight' }, footballBallHighlight);
+  button('Flight path', .135, -1.25, .25, { action: 'football', command: 'flightPath' }, footballFlightPath);
+  button('Future ghosts', 0, -1.37, .52, { action: 'football', command: 'futureGhosts' }, footballFutureGhosts);
+  panel = new FloatingPanel(panelRoot, meshes, backing, new Vector3(0.42, 0.96, 0.025), buttons);
   panelRoot.setEnabled(false);
   const update = () => {
     if (!panelRoot.isEnabled()) return;
     for (const label of labels) {
       const select = label.label === 'Formation' ? footballFormationSelect
-        : label.label === 'Play preset' ? footballPlaySelect : null;
-      if (!label.toggle && !select) continue;
+        : label.label === 'Play library' ? footballPlaySelect
+        : label.label === 'Tackler' ? footballTackleDefender
+        : label.label === 'Carrier' ? footballTackleCarrier
+        : label.label === 'Tackle event' ? footballTackleEvents
+        : label.label === 'Draft lineup' ? footballDraftTeam : null;
+      const count = label.label === 'Tackle count' ? footballTackleCount
+        : label.label === 'Route start' ? footballDraftFrom
+        : label.label === 'Destination' ? footballDraftTo : null;
+      if (!label.toggle && !select && !count) continue;
       const text = select ? select.selectedOptions[0]?.text ?? label.label
-        : `${label.label}: ${label.toggle!.checked ? 'on' : 'off'}`;
+        : count ? `Count ${count.value}` : `${label.label}: ${label.toggle!.checked ? 'on' : 'off'}`;
       if (label.signature === text) continue;
       label.signature = text;
       draw(label.ctx, text, label.toggle?.checked ?? false);

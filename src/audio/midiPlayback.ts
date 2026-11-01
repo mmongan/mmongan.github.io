@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import {
   getMusicTransportState,
   setPlaybackRepeat,
@@ -74,7 +77,8 @@ function initializeAudioContext() {
   context.addEventListener('statechange', () => {
     if (!audioEnabled) return;
     if (context?.state === 'running') {
-      status(timeline ? `${loadedDescription}. Following drill playback.` : "Audio enabled. Loading MIDI.");
+      status(synthLoading ? 'Preloading MIDI instrument samples…'
+        : timeline && synth ? `${loadedDescription}. Following drill playback.` : "Audio enabled. Loading MIDI.");
       updatePlayback();
     } else {
       stopVoices();
@@ -114,7 +118,8 @@ async function enableAudio(automatic = false) {
     if (audioContext.state !== "running") throw new Error("Browser audio is suspended.");
     audioEnabled = true;
     if (midiAudioButton) midiAudioButton.textContent = "Mute MIDI audio";
-    status(timeline ? `${loadedDescription}. Following drill playback.` : "Audio enabled. Loading or importing MIDI will play with the drill.");
+    status(synthLoading ? 'Preloading MIDI instrument samples…'
+      : timeline && synth ? `${loadedDescription}. Following drill playback.` : "Audio enabled. Loading or importing MIDI will play with the drill.");
     timeline?.reset();
     if (!synth && midiNotes.length && !synthLoading) await prepareSynth();
     else updatePlayback();
@@ -145,7 +150,8 @@ async function prepareSynth() {
     synth = pending;
     synthLoading = false;
     timeline?.reset();
-    status(`${loadedDescription}. Sampled General MIDI ready.`);
+    status(`${loadedDescription}. All required MIDI instruments preloaded.${
+      context?.state === 'running' ? ' Ready for playback.' : ' Press Play to enable browser audio.'}`);
     updatePlayback();
   } catch (error) {
     pending.dispose();
@@ -265,7 +271,8 @@ async function loadMidi(name: string, read: () => Promise<ArrayBuffer>, failureH
       ? context?.state === "running" ? "Following drill playback." : "MIDI audio is enabled. Click, tap, or press a key to start sound."
       : "Enable MIDI audio to hear it."}`);
     if (midiClearButton) midiClearButton.disabled = false;
-    if (audioEnabled) await prepareSynth();
+    initializeAudioContext();
+    await prepareSynth();
   } catch (error) {
     if (request !== loadRequest) return;
     status(`Could not load MIDI: ${error instanceof Error ? error.message : String(error)}${timeline ? " Previous MIDI retained." : ""}${failureHint}`, true);

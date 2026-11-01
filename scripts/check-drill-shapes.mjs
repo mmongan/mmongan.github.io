@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { stripTypeScriptTypes } from 'node:module';
@@ -70,7 +73,7 @@ const players = new Map(robots.map((robot, index) => [robot, {
 const snapshots = () => JSON.stringify([...players.values()].map(state => state.counts));
 let blocked = false, checks = 0, refreshed = 0;
 Object.assign(context, {
-  players, allRobots: new Set(robots),
+  players, allRobots: new Set(robots), blankChartPage: null,
   getChartPageTimeline: () => ({ authoredCounts: [] }), authorChartPage() {},
   invalidateLegBake() {},
   tryManualMarcherPoses(poses, sweep) {

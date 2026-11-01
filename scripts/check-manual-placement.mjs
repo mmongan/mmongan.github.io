@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { registerHooks, stripTypeScriptTypes } from 'node:module';
@@ -144,7 +147,7 @@ globalThis.edit = setRobotCountPosition;`, context);
   assert.equal(disposedBake, 1, 'Successful authored edits discard obsolete baked leg poses');
   const setStart = robotSource.indexOf('export function setRobotSetPoses(');
   Object.assign(context, {
-    Vector3, tryManualMarcherPoses, applyGlobalCountToAllRobots: () => applied++,
+    Vector3, tryManualMarcherPoses, applyGlobalCountToAllRobots: () => applied++, blankChartPage: null,
   });
   vm.runInContext(stripTypeScriptTypes(robotSource.slice(setStart, robotSource.indexOf('\n}', setStart) + 2))
     .replace('export ', ''), context);

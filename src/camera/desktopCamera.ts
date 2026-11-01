@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { UniversalCamera } from '@babylonjs/core/Cameras/universalCamera.pure';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
 import { canvas } from '../ui/dom';

@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
 import { InstancedMesh } from '@babylonjs/core/Meshes/instancedMesh.pure';
 import type { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.pure';

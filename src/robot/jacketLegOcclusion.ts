@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { MaterialPluginBase } from '@babylonjs/core/Materials/materialPluginBase';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
 import { Matrix, Vector4 } from '@babylonjs/core/Maths/math.vector.pure';

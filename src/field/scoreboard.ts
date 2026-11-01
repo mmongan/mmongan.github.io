@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { PickingInfo } from '@babylonjs/core/Collisions/pickingInfo';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
 import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.pure';

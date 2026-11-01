@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { stripTypeScriptTypes } from 'node:module';
@@ -7,10 +10,15 @@ import { instrumentByPatchID } from '@tonejs/midi/dist/InstrumentMaps.js';
 
 const instruments = [];
 let fail = false;
+let defer = false;
+let failConstruction = false;
+const releases = [];
 const context = vm.createContext({
   Soundfont: (_, options) => {
+    if (failConstruction && /alto_sax/.test(options.instrumentUrl)) throw new Error('instrument construction failed');
     const instance = {
-      options, ready: fail ? Promise.reject(new Error('network failed')) : Promise.resolve(),
+      options, ready: fail ? Promise.reject(new Error('network failed'))
+        : defer ? new Promise(resolve => releases.push(resolve)) : Promise.resolve(),
       loadProgress: { total: 2 }, events: [], stopped: 0, cancelled: 0, disposed: 0,
       start(event) {
         this.events.push(event);
@@ -52,13 +60,39 @@ for (let i = 0; i < 65; i++) synth.start(event);
 assert.match(messages.at(-1), /64-voice limit/);
 synth.dispose();
 assert.equal(instruments[0].disposed, 1);
+defer = true;
+const preload = new context.SampledMidiSynth(audioContext, {}, () => {});
+const priorCount = instruments.length;
+const loading = preload.load([note, { ...note, program: 65 }, { ...note, percussion: true }]);
+assert.equal(instruments.length - priorCount, 3,
+  'All required instruments begin loading before any earlier instrument finishes');
+assert.equal(instruments.slice(priorCount).every(instrument => instrument.events.length === 0), true,
+  'Preloading never starts notes or needs audio-context resume');
+releases.forEach(resolve => resolve()); await loading;
+preload.start(event);
+assert.equal(instruments[priorCount].events.length, 1, 'Preloaded instrument starts without another download');
+preload.dispose();
+releases.length = 0;
+const cancelled = new context.SampledMidiSynth(audioContext, {}, () => {});
+const cancelledStart = instruments.length;
+const cancelledLoading = cancelled.load([note, { ...note, program: 65 }]);
+cancelled.dispose();
+const cancellation = assert.rejects(cancelledLoading, /cancelled/);
+releases.forEach(resolve => resolve()); await cancellation;
+assert.ok(instruments.slice(cancelledStart).every(instrument => instrument.disposed === 1),
+  'Cancelling parallel preload disposes every started instrument exactly once');
+defer = false;
 fail = true;
 const failed = new context.SampledMidiSynth(audioContext, {}, () => {});
 await assert.rejects(() => failed.load([note]), /network failed/);
 assert.equal(instruments.at(-1).disposed, 1);
+failConstruction = true;
+const constructionFailed = new context.SampledMidiSynth(audioContext, {}, () => {});
+await assert.rejects(constructionFailed.load([note, { ...note, program: 65 }]), /network failed|construction failed/);
+failConstruction = false;
 for (let program = 0; program < 128; program++) {
   assert.ok(getSoundfontNames().includes(context.instrumentKey({ ...note, program })));
 }
 assert.equal(context.instrumentKey({ ...note, program: 0 }), 'acoustic_grand_piano');
 assert.equal(context.instrumentKey({ ...note, program: 65 }), 'alto_sax');
-console.log('Sampled MIDI checks passed: GM program/percussion selection, required pitches, audio-clock scheduling, velocity, unique voice IDs, queued-note cancellation, polyphony limit, disposal, and load errors.');
+console.log('Sampled MIDI checks passed: parallel startup preload, cancellation/construction errors, GM programs/percussion, required pitches, audio-clock scheduling, velocity, unique voices, queued-note cancellation, polyphony, disposal and load errors.');

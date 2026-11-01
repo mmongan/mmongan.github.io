@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import type { Ray } from '@babylonjs/core/Culling/ray';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
 import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.pure';
@@ -115,9 +118,9 @@ export function flipDrillChartPage(direction: 1 | -1) {
 }
 
 // Inserts a blank page (keyframe) right after the page being shown and turns to it.
-export function insertBlankDrillChartPage(): number | null {
+export function insertBlankDrillChartPage(waiting: ReadonlySet<TransformNode> | null = null): number | null {
   const setCounts = getDrillChartSetCounts();
-  const count = insertBlankChartPage(setCounts[getCurrentPage(setCounts)], getChartPageTimeline().beatsPerPage, scene);
+  const count = insertBlankChartPage(setCounts[getCurrentPage(setCounts)], getChartPageTimeline().beatsPerPage, scene, waiting);
   framesUntilRedraw = 0;
   return count;
 }

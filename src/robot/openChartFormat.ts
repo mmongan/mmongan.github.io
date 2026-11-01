@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 export const OPEN_CHART_EXTENSION = ".openchart";
 const SIGNATURE = "OCHART13";
 // Wire codes are permanent and independent of runtime library ordering.

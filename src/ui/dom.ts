@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Shared DOM references for the canvas and application controls.
 export const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
 export const footballFormationSelect = document.getElementById('footballFormation') as HTMLSelectElement | null;
@@ -6,6 +9,23 @@ export const footballLoadButton = document.getElementById('footballLoad') as HTM
 export const scrimmageButton = document.getElementById('runScrimmage') as HTMLButtonElement | null;
 export const footballExitButton = document.getElementById('footballExit') as HTMLButtonElement | null;
 export const footballStatus = document.getElementById('footballStatus') as HTMLOutputElement | null;
+export const footballBallHighlight = document.getElementById('footballBallHighlight') as HTMLInputElement | null;
+export const footballFlightPath = document.getElementById('footballFlightPath') as HTMLInputElement | null;
+export const footballFutureGhosts = document.getElementById('footballFutureGhosts') as HTMLInputElement | null;
+export const footballFutureStatus = document.getElementById('footballFutureStatus') as HTMLOutputElement | null;
+export const footballDraftTeam = document.getElementById('footballDraftTeam') as HTMLSelectElement | null;
+export const footballDraftFrom = document.getElementById('footballDraftFrom') as HTMLInputElement | null;
+export const footballDraftTo = document.getElementById('footballDraftTo') as HTMLInputElement | null;
+export const footballChartEdit = document.getElementById('footballChartEdit') as HTMLButtonElement | null;
+export const footballDraftStatus = document.getElementById('footballDraftStatus') as HTMLOutputElement | null;
+export const footballTackleDefender = document.getElementById('footballTackleDefender') as HTMLSelectElement | null;
+export const footballTackleCarrier = document.getElementById('footballTackleCarrier') as HTMLSelectElement | null;
+export const footballTackleCount = document.getElementById('footballTackleCount') as HTMLInputElement | null;
+export const footballTackleNow = document.getElementById('footballTackleNow') as HTMLButtonElement | null;
+export const footballTackleAdd = document.getElementById('footballTackleAdd') as HTMLButtonElement | null;
+export const footballTackleEvents = document.getElementById('footballTackleEvents') as HTMLSelectElement | null;
+export const footballTackleRemove = document.getElementById('footballTackleRemove') as HTMLButtonElement | null;
+export const footballTackleStatus = document.getElementById('footballTackleStatus') as HTMLOutputElement | null;
 export const enterVRButton = document.getElementById("enterVRButton") as HTMLButtonElement | null;
 export const enterARButton = document.getElementById("enterARButton") as HTMLButtonElement | null;
 export const openChartFileInput = document.getElementById("openChartFile") as HTMLInputElement | null;

@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { Axis } from '@babylonjs/core/Maths/math.axis';
 import { Ray } from '@babylonjs/core/Culling/ray';
 import { Color3 } from '@babylonjs/core/Maths/math.color.pure';

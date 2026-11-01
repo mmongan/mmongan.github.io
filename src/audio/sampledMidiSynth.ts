@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { Soundfont, getSoundfontNames, type StopFn } from 'smplr';
 import { instrumentByPatchID } from '@tonejs/midi/dist/InstrumentMaps';
 import type { MidiNote, ScheduledMidiNote } from './midiTimeline';
@@ -37,7 +40,7 @@ export class SampledMidiSynth {
       pitches.set(key, required);
     }
     try {
-      for (const [name, required] of pitches) {
+      await Promise.all([...pitches].map(async ([name, required]) => {
         if (this.disposed) throw new Error("Sample loading was cancelled.");
         this.report(`Loading sampled instrument: ${name.replace(/_/g, ' ')}…`);
         const instrument = Soundfont(this.context, {
@@ -49,12 +52,10 @@ export class SampledMidiSynth {
         });
         this.instruments.set(name, instrument);
         await instrument.ready;
-        if (this.disposed) {
-          instrument.dispose();
-          throw new Error("Sample loading was cancelled.");
-        }
+        if (this.disposed) throw new Error("Sample loading was cancelled.");
         if (instrument.loadProgress.total === 0) throw new Error(`No samples loaded for ${name}.`);
-      }
+      }));
+      this.report('All required MIDI instruments preloaded.');
     } catch (error) {
       this.dispose();
       throw error;
