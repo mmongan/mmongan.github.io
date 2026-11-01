@@ -42,7 +42,7 @@ import { getHandMenuHit, getHandMenuHitNearPoint, pickMenuControl } from '../men
 import type { MarcherInstrument } from '../robot/robot';
 import {
   getARPositionForScaleAnchor, getHorizontalHandSpan, beginSingleHandFieldMovement, updateSingleHandFieldMovement,
-  getSingleHandYaw, type SingleHandFieldMovement, getControllerYaw,
+  getSingleHandYaw, type SingleHandFieldMovement, getControllerYaw, getScaleForHandSeparation,
   isControllerSceneManipulationActive, isSceneManipulationLocked, rotateAroundY,
 } from './controllers';
 import { canPlaceManualMarcherPose, tryManualMarcherPose } from '../robot/manualPlacement';
@@ -1190,7 +1190,9 @@ export function createHandInteraction(paths: HandPathDependencies) {
         };
         preserveARSurfaceHeight(sceneGesture.startSurfaceY);
       } else {
-        const scale = setARScale(sceneGesture.startScale * distance / sceneGesture.startDistance);
+        const scale = setARScale(getScaleForHandSeparation(
+          sceneGesture.startScale, sceneGesture.startDistance, distance,
+        ));
         const yawDelta = yaw - sceneGesture.startYaw;
         const rotation = sceneGesture.startRotation + Math.atan2(Math.sin(yawDelta), Math.cos(yawDelta));
         setARRotation(rotation);

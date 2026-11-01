@@ -16,13 +16,11 @@ import { floorCalibrationToggle } from '../ui/dom';
 
 export const activeControllers = new Map<string, WebXRInputSource>();
 
-const SCALE_EXPONENT_AT_MIN = 0.4;
-const SCALE_EXPONENT_AT_MAX = 1.6;
+const TABLETOP_TO_FULL_SCALE_TRAVEL = 0.5;
 const pinchState = {
   active: false,
   startDistance: 0,
   startScale: 1,
-  scaleExponent: SCALE_EXPONENT_AT_MIN,
   localAnchor: new Vector3(),
   startYaw: 0,
   startRotation: 0,
@@ -41,18 +39,17 @@ function resetPinchState() {
   pinchState.active = false;
   pinchState.startDistance = 0;
   pinchState.startScale = 1;
-  pinchState.scaleExponent = SCALE_EXPONENT_AT_MIN;
   pinchState.localAnchor = new Vector3();
   pinchState.startYaw = 0;
   pinchState.startRotation = 0;
   pinchState.startSurfaceY = 0;
 }
 
-function getScaleExponentFor(scale: number): number {
-  const { min, max } = getARScaleRange();
-  const t = (Math.log(scale) - Math.log(min)) / (Math.log(max) - Math.log(min));
-  const clampedT = Math.min(1, Math.max(0, t));
-  return SCALE_EXPONENT_AT_MIN + (SCALE_EXPONENT_AT_MAX - SCALE_EXPONENT_AT_MIN) * clampedT;
+export function getScaleForHandSeparation(startScale: number, startDistance: number, distance: number): number {
+  const { min, max, default: tabletopScale } = getARScaleRange();
+  const logScale = Math.log(startScale) + (distance - startDistance) *
+    Math.log(max / tabletopScale) / TABLETOP_TO_FULL_SCALE_TRAVEL;
+  return Math.exp(Math.min(Math.log(max), Math.max(Math.log(min), logScale)));
 }
 
 export function rotateAroundY(vector: Vector3, angle: number): Vector3 {
@@ -144,10 +141,7 @@ function getControllerPosition(controller: WebXRInputSource) {
 }
 
 function getScaleFromControllerDistance(distance: number) {
-  const { min, max } = getARScaleRange();
-  const scaleRatio = distance / pinchState.startDistance;
-  const easedRatio = Math.pow(scaleRatio, pinchState.scaleExponent);
-  return Math.min(max, Math.max(min, pinchState.startScale * easedRatio));
+  return getScaleForHandSeparation(pinchState.startScale, pinchState.startDistance, distance);
 }
 
 export function getControllerYaw(leftPosition: Vector3, rightPosition: Vector3) {
@@ -258,7 +252,6 @@ export function updateARResizeFromControllers(grabActive: boolean) {
     pinchState.active = true;
     pinchState.startDistance = distance;
     pinchState.startScale = getARScale();
-    pinchState.scaleExponent = getScaleExponentFor(pinchState.startScale);
     pinchState.startYaw = currentYaw;
     pinchState.startRotation = getARRotation();
     pinchState.startSurfaceY = getARSurfaceHeight();

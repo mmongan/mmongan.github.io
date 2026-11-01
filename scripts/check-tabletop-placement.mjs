@@ -326,8 +326,24 @@ try {
     'setARSurfaceHeight', 'preserveARSurfaceHeight',
   ].map(name => [name, context[name]]));
   Object.assign(scaleContext, resizeAPI);
+  const logarithmicScale = scaleContext.getScaleForHandSeparation;
+  assert.ok(Math.abs(logarithmicScale(1 / 120, .2, .7) - 1) < 1e-9,
+    '50 cm of horizontal separation expands tabletop to full size');
+  assert.ok(Math.abs(logarithmicScale(1, .7, .2) - 1 / 120) < 1e-9,
+    '50 cm of horizontal contraction shrinks full size to tabletop');
+  const smallRatio = logarithmicScale(.01, .4, .45) / .01;
+  const largeRatio = logarithmicScale(.2, .4, .45) / .2;
+  assert.ok(Math.abs(smallRatio - largeRatio) < 1e-9,
+    'Equal hand travel gives the same percentage change at different field sizes');
+  assert.ok(Math.abs(logarithmicScale(logarithmicScale(.1, .4, .45), .45, .4) - .1) < 1e-9,
+    'Unclamped logarithmic scaling is reversible');
+  assert.ok(Math.abs(logarithmicScale(.1, .4, -100) - .002) < 1e-9,
+    'Logarithmic shrinking respects the minimum');
+  assert.equal(logarithmicScale(.1, .4, 100), 1,
+    'Logarithmic expansion respects full size');
   Object.assign(handContext, resizeAPI, {
     getControllerYaw: scaleContext.getControllerYaw,
+    getScaleForHandSeparation: scaleContext.getScaleForHandSeparation,
     getARPositionForScaleAnchor: scaleContext.getARPositionForScaleAnchor,
     getHorizontalHandSpan: scaleContext.getHorizontalHandSpan,
     rotateAroundY: scaleContext.rotateAroundY,
@@ -408,8 +424,7 @@ ${handInteractionSource.slice(twoHandStart, handBranchEnd)}
       } finally {
         surfaceProbe.dispose();
       }
-      const fullSeparation = .8 * Math.pow(1 / initialScale,
-        input === 'controllers' ? 1 / scaleContext.getScaleExponentFor(initialScale) : 1) * 1.01;
+      const fullSeparation = .8 + .5 * Math.log(1 / initialScale) / Math.log(120) + .001;
       grips.forEach(({ grip }, index) => grip.position.copyFrom(
         new Vector3((index ? 1 : -1) * fullSeparation / 2, .3, 2)));
       update();
