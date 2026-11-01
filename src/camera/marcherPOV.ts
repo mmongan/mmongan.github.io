@@ -8,6 +8,10 @@ import { camera as desktopCamera, setDesktopMarcherPOV } from './desktopCamera';
 import { MarcherPOVCamera } from './marcherPOVCamera';
 import { getMarcherEyePose } from '../robot/robot';
 import { marcherPOVSelect, marcherPOVStatus, marcherPOVExitButton, marcherPOVModeButton } from '../ui/dom';
+import {
+  initMarcherDrumGame, isMarcherDrumGameActive as isDrumGameActive,
+  stopMarcherDrumGame, toggleMarcherDrumGame as toggleDrumGame,
+} from './marcherDrumGame';
 
 const follower = new MarcherPOVCamera(getMarcherEyePose);
 let getSelected: () => TransformNode | null = () => null;
@@ -18,6 +22,8 @@ let listSignature = '';
 let refreshPaths: () => void = () => {};
 
 export function isMarcherPOVActive() { return follower.active; }
+export function isMarcherDrumGameActive() { return isDrumGameActive(); }
+export function toggleMarcherDrumGame() { toggleDrumGame(); }
 export function getMarcherPOVRobot() {
   const robot = getSelected();
   return follower.active && robot && !robot.isDisposed() ? robot : null;
@@ -29,6 +35,7 @@ export function getMarcherPOVLabel() {
 
 export function setMarcherPOVEnabled(enabled: boolean) {
   if (!enabled) {
+    stopMarcherDrumGame();
     follower.stop();
     setDesktopMarcherPOV(false);
     publish('POV off. Select a marcher, then enable POV.');
@@ -99,6 +106,13 @@ export function initMarcherPOV(
   getMarchers = marchers;
   selectMarcher = select;
   refreshPaths = updatePaths;
+  initMarcherDrumGame({
+    getSelected,
+    startPOV: () => setMarcherPOVEnabled(true),
+    isPOVActive: isMarcherPOVActive,
+    isVRActive: availableVR,
+    status: publish,
+  });
   const selector = marcherPOVSelect;
   marcherPOVExitButton?.addEventListener('click', () => setMarcherPOVEnabled(false));
   marcherPOVModeButton?.addEventListener('click', () => setMarcherPOVEnabled(!follower.active));

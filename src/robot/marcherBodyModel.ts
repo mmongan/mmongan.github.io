@@ -134,11 +134,12 @@ export const getMarcherShoeTemplate = partTemplate("marcherShoeTemplate", (geome
   geometry.lathe(geometry.low
     ? [[0, -0.085], [0.03, -0.075], [0.03, -0.055], [0.03, 0.055], [0.0225, 0.095], [0, 0.105]]
     : [[0, -0.085], [0.03, -0.075], [0.03, -0.055], [0.03, 0.055], [0.0225, 0.095], [0, 0.105]], 12, BOOT,
-    ({ x, y, z }) => new Vector3(x * 1.8, -z * (geometry.low ? 1 / Math.cos(Math.PI / 6) : 1), y));
+    ({ x, y, z }) => new Vector3(x * 1.8, -z * (geometry.low ? 1 / Math.cos(Math.PI / 6) : 1), y), 6);
 });
 
 export const getMarcherGloveTemplate = partTemplate("marcherGloveTemplate", (geometry) => {
   geometry.lathe(geometry.low
     ? [[0, -0.0475], [0.0475, 0], [0, 0.0475]]
-    : [[0, -0.0475], [0.034, -0.034], [0.0475, 0], [0.034, 0.034], [0, 0.0475]], geometry.low ? 12 : 8, GLOVE);
+    : [[0, -0.0475], [0.034, -0.034], [0.0475, 0], [0.034, 0.034], [0, 0.0475]],
+  geometry.low ? 12 : 8, GLOVE, undefined, 6);
 });

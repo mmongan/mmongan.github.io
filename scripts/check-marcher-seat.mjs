@@ -43,17 +43,26 @@ const templates = load('marcherBodyModel', [
 ]);
 const { getMarcherTrimTemplate } = templates;
 const partNames = Object.keys(templates);
-const previousTemplates = load('marcherBodyModel', partNames,
-  source => source.replace('const LEG_RADIAL_SIDES = 8;', 'const LEG_RADIAL_SIDES = 12;')
-    .replace('geometry.low ? 16 : 12', '16'));
-const baselineShared = load('lowPolyInstrument',
-  ['InstrumentGeometry', 'cachedInstrumentTemplate', 'buildLowPolyTemplate'],
-  source => source.replace('profile = this.simplifyBodyProfile(profile)', 'profile = profile'));
 const optimizedShared = {
   InstrumentGeometry: context.InstrumentGeometry,
   cachedInstrumentTemplate: context.cachedInstrumentTemplate,
   buildLowPolyTemplate: context.buildLowPolyTemplate,
 };
+const previousShared = load('lowPolyInstrument',
+  ['InstrumentGeometry', 'cachedInstrumentTemplate', 'buildLowPolyTemplate'],
+  source => source.replace(
+    /const reduction = this\.surface === "body" \? 0\.375 : 0\.5;\r?\n\s*sides = lowSides \?\? Math\.max\(4, Math\.ceil\(sides \* reduction\)\);/,
+    'sides = lowSides ?? Math.max(4, Math.ceil(sides / 2));'));
+Object.assign(context, previousShared);
+const previousTemplates = load('marcherBodyModel', partNames,
+  source => source.replace('const LEG_RADIAL_SIDES = 8;', 'const LEG_RADIAL_SIDES = 12;')
+    .replace('geometry.low ? 16 : 12', '16'));
+const previousMeshes = Object.fromEntries(['high', 'low'].map(detail => [detail,
+  Object.fromEntries(partNames.map(name => [name, previousTemplates[name](scene, detail)]))]));
+Object.assign(context, optimizedShared);
+const baselineShared = load('lowPolyInstrument',
+  ['InstrumentGeometry', 'cachedInstrumentTemplate', 'buildLowPolyTemplate'],
+  source => source.replace('profile = this.simplifyBodyProfile(profile)', 'profile = profile'));
 Object.assign(context, baselineShared);
 const baselineTemplates = load('marcherBodyModel', partNames,
   source => source.replaceAll('geometry.low ? 12 : 8', '12')
@@ -299,13 +308,24 @@ try {
       const copies = name === 'getMarcherTrimTemplate' || name === 'getMarcherJacketTemplate' ? 1 : 2;
       before += copies * oldMesh.getTotalVertices();
       after += copies * mesh.getTotalVertices();
-      const previousMesh = previousTemplates[name](scene, detail);
+      const previousMesh = previousMeshes[detail][name];
       previous += copies * previousMesh.getTotalVertices();
       const previousBounds = previousMesh.getBoundingInfo().boundingBox;
       const currentBounds = mesh.getBoundingInfo().boundingBox;
-      assert.ok(Vector3.Distance(previousBounds.minimum, currentBounds.minimum) < 1e-6 &&
-        Vector3.Distance(previousBounds.maximum, currentBounds.maximum) < 1e-6,
-      `${name} ${detail}: radial reduction preserves existing part bounds`);
+      if (detail === 'low' && mesh.getTotalVertices() < previousMesh.getTotalVertices()) {
+        assert.ok(Math.abs(previousBounds.minimum.y - currentBounds.minimum.y) < 1e-6 &&
+          Math.abs(previousBounds.maximum.y - currentBounds.maximum.y) < 1e-6,
+        `${name} ${detail}: radial reduction preserves part height`);
+        assert.ok(Math.abs(previousBounds.minimum.x - currentBounds.minimum.x) < 0.03 &&
+          Math.abs(previousBounds.maximum.x - currentBounds.maximum.x) < 0.03 &&
+          Math.abs(previousBounds.minimum.z - currentBounds.minimum.z) < 0.03 &&
+          Math.abs(previousBounds.maximum.z - currentBounds.maximum.z) < 0.03,
+        `${name} ${detail}: radial reduction stays within 3 cm of the original silhouette`);
+      } else {
+        assert.ok(Vector3.Distance(previousBounds.minimum, currentBounds.minimum) < 1e-6 &&
+          Vector3.Distance(previousBounds.maximum, currentBounds.maximum) < 1e-6,
+        `${name} ${detail}: radial reduction preserves existing part bounds`);
+      }
       const oldBounds = oldMesh.getBoundingInfo().boundingBox;
       const bounds = mesh.getBoundingInfo().boundingBox;
       const radiusScale = name === 'getMarcherUpperArmTemplate' ? 0.75 :
@@ -318,9 +338,9 @@ try {
     }
     assert.ok(after < before, `${detail}: marcher body vertex count reduced`);
     if (detail === 'high') assert.ok(after <= 1010, 'Full-detail body stays below the reduced vertex budget');
-    else assert.equal(after, 384, 'Reduced-detail geometry is preserved');
+    else assert.ok(after < previous, 'Low-detail bodies use fewer radial vertices');
     assert.equal(previous, detail === 'high' ? 1196 : 384, 'Measured previous topology matches its documented budget');
-    assert.equal(after, detail === 'high' ? 1008 : previous);
+    if (detail === 'high') assert.equal(after, 1008);
     console.log(`Current reduction ${detail}: ${previous} -> ${after} vertices (${(100 * (1 - after / previous)).toFixed(1)}% fewer).`);
     console.log(`Marcher body ${detail}: ${before} -> ${after} vertices (${(100 * (1 - after / before)).toFixed(1)}% fewer, eyes/instrument excluded).`);
   }

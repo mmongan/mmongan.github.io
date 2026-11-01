@@ -35,6 +35,7 @@ let singleControllerMove: {
   startControllerPosition: Vector3;
   startARPosition: Vector3;
 } | null = null;
+let sceneManipulationLocked = false;
 
 function resetPinchState() {
   pinchState.active = false;
@@ -125,8 +126,20 @@ export function isControllerSceneManipulationActive() {
   return pinchState.active || singleControllerMove !== null;
 }
 
+export function setSceneManipulationLocked(locked: boolean) {
+  sceneManipulationLocked = locked;
+  if (locked) {
+    resetPinchState();
+    resetSingleControllerMove();
+  }
+}
+
+export function isSceneManipulationLocked() {
+  return sceneManipulationLocked;
+}
+
 export function updateARResizeFromControllers(grabActive: boolean) {
-  if (floorCalibrationToggle?.checked || grabActive) {
+  if (sceneManipulationLocked || floorCalibrationToggle?.checked || grabActive) {
     resetPinchState();
     resetSingleControllerMove();
     return;

@@ -25,6 +25,7 @@ export type HandMenuHit =
   | { action: "formationPreset"; preset: "line" | "arc" | "circle" | "block" | "triangle" | "square" | "pentagon" | "hexagon" | "star" }
   | { action: "formationLetter"; letter: FormationLetter }
   | { action: "drillChartPad" | "recallPanels" | "xrSettings" | "xrSettingsHide" }
+  | { action: "marcherDrumGame" }
   | { action: "xrSetting"; setting: "fullScale" | "tabletop" | "giant" | "seated" | "grid" | "snap" }
   | { action: "musicStandSummon" }
   | { action: "marcherPOV" }

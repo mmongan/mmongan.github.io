@@ -146,7 +146,9 @@ import { openChartFileInput, saveOpenChartButton } from '../ui/dom';
 import { clearDrillLabels, getDrillLabel, setDrillLabels, setDrillLabelsVisible } from '../robot/drillLabels';
 import { clearShowInfo, setShowInfo } from '../menu/showInfoPanel';
 import { cycleMusicStandStaff, setMusicStandVisible, summonMusicStand } from '../menu/musicStand';
-import { isMarcherPOVActive, setMarcherPOVEnabled } from '../camera/marcherPOV';
+import {
+  isMarcherPOVActive, setMarcherPOVEnabled, toggleMarcherDrumGame,
+} from '../camera/marcherPOV';
 import { getHandMenuHit, getHandMenuHitNearPoint, pickMenuControl, isMenuControl } from '../menu/handMenu';
 import {
   flipDrillChartPage,
@@ -2439,6 +2441,9 @@ function executeMenuAction(hit: NonNullable<ReturnType<typeof getHandMenuHit>>) 
       break;
     case "marcherPOV":
       setMarcherPOVEnabled(!isMarcherPOVActive());
+      break;
+    case "marcherDrumGame":
+      toggleMarcherDrumGame();
       break;
     case "undoErase":
       if (!floorCalibrationToggle?.checked) eraseHistory.undo();

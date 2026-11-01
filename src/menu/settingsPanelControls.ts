@@ -21,6 +21,7 @@ export const SETTINGS_PANEL_ROWS: SettingsPanelControl[][] = [
   [['Projector', { action: 'fieldProjector', command: 'show' }],
     ['Marcher POV', { action: 'marcherPOV' }],
     ['Reset panels/signs', { action: 'recallPanels' }]],
+  [['Drum Game', { action: 'marcherDrumGame' }]],
   [['Commit form', { action: 'commitFormation' }],
     ['Undo edit', { action: 'undoErase' }], ['Redo edit', { action: 'redoErase' }]],
 ];

@@ -43,7 +43,7 @@ import { getHandMenuHit, getHandMenuHitNearPoint, pickMenuControl } from '../men
 import type { MarcherInstrument } from '../robot/robot';
 import {
   getARPositionForScaleAnchor, getARPositionForSingleHandMovement, getControllerYaw,
-  isControllerSceneManipulationActive, rotateAroundY,
+  isControllerSceneManipulationActive, isSceneManipulationLocked, rotateAroundY,
 } from './controllers';
 import { canPlaceManualMarcherPose, tryManualMarcherPose } from '../robot/manualPlacement';
 import { createMarcherDragGhost } from '../robot/marcherGhost';
@@ -1034,6 +1034,10 @@ export function createHandInteraction(paths: HandPathDependencies) {
       finishCircleResize(false);
       return;
     }
+    if (isSceneManipulationLocked()) {
+      sceneGesture = null;
+      singleHandFieldMove = null;
+    }
     if (circleResize && (
       !handTracking.getHandByHandedness('left') || !handTracking.getHandByHandedness('right')
     )) finishCircleResize(false);
@@ -1157,7 +1161,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
       [...marcherGrabs.values()].some((grab) => grab.source === 'hand')
     );
     const pinchesOutsideField = left && right && !isPointOnField(left) && !isPointOnField(right);
-    if (left && right && pinchesOutsideField && !marcherHandsBusy) {
+    if (!isSceneManipulationLocked() && left && right && pinchesOutsideField && !marcherHandsBusy) {
       singleHandFieldMove = null;
       finishFingerPath(false);
       for (const handedness of ['left', 'right']) {
@@ -1206,7 +1210,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
       }
       singleHandFieldMove = null;
     }
-    if (singlePinch && !isControllerSceneManipulationActive() && !isDraftingTableMode() &&
+    if (singlePinch && !isSceneManipulationLocked() && !isControllerSceneManipulationActive() && !isDraftingTableMode() &&
       !marcherHandsBusy && !isPointOnField(singlePinch.point) &&
       !getSidelineDraftPosition(singlePinch.point) && !findMarcherNearHand(singlePinch.point)) {
       singleHandFieldMove = {

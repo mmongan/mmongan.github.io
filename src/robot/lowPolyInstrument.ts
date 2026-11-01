@@ -264,13 +264,17 @@ export class InstrumentGeometry {
   // bottom to top). A zero radius is a single pole vertex; a nonzero first or
   // last ring is left open. `place` maps each point (e.g. to stretch it or
   // rotate the axis; it must be a proper rotation so faces stay outward).
-  // At low detail it has about half the sides, turned half a step so a flat
-  // face, not an edge, points forward.
+  // Low-detail bodies keep small parts unchanged and reduce broad surfaces
+  // further; instruments retain their existing reduction. `lowSides` keeps
+  // fit-critical parts from losing support when their cross-section shrinks.
   lathe(profile: Array<[number, number]>, sides: number, color: Color4,
-    place: (point: Vector3) => Vector3 = (point) => point) {
+    place: (point: Vector3) => Vector3 = (point) => point, lowSides?: number) {
     if (this.surface === "body") profile = this.simplifyBodyProfile(profile);
     const turn = this.low ? 0.5 : 0;
-    if (this.low) sides = Math.max(4, Math.ceil(sides / 2));
+    if (this.low) {
+      const reduction = this.surface === "body" ? 0.375 : 0.5;
+      sides = lowSides ?? Math.max(4, Math.ceil(sides * reduction));
+    }
     let previous: { start: number; pole: boolean } | null = null;
     for (const [radius, y] of profile) {
       const pole = radius === 0;

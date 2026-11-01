@@ -204,6 +204,8 @@ globalThis.drawPage = drawPage;globalThis.signature = getPageSignature;`, chartC
     desktopCamera: camera, setDesktopMarcherPOV() {},
     getObjectName: () => undefined,
     marcherPOVSelect: null, marcherPOVStatus: null, marcherPOVExitButton: null, marcherPOVModeButton: null,
+    initMarcherDrumGame() {}, isDrumGameActive: () => false,
+    stopMarcherDrumGame() {}, toggleDrumGame() {},
     window: { addEventListener() {} },
   });
   vm.runInContext(compile(povSource), startupContext);
