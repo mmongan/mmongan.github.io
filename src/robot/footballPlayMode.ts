@@ -46,6 +46,12 @@ export function shiftFootballTimeline(at: number, amount: number) {
 let notifyFootball = (message: string) => {
   if (footballStatus) footballStatus.value = message;
 };
+function updateScrimmageButton(returnBand: boolean) {
+  if (!scrimmageButton || scrimmageButton.dataset.returnBand === String(returnBand)) return;
+  scrimmageButton.dataset.returnBand = String(returnBand);
+  scrimmageButton.textContent = returnBand ? '🎺 Return band' : '🏈 Start scrimmage';
+  scrimmageButton.dispatchEvent(new Event('change'));
+}
 
 export function executeFootballCommand(command: FootballCommand) {
   if (command === 'ballHighlight' || command === 'flightPath' || command === 'futureGhosts') {
@@ -116,7 +122,7 @@ export function initFootballControls(load: (formation: FootballFormation, play: 
       if (fixedFormation) formation.value = 'spread';
       const effectiveFormation = fixedFormation ? 'spread' : selectedFormation;
       if (scrimmageMode && scrimmage(effectiveFormation, selectedPlay)) {
-        notifyFootball('Ending scrimmage: players return to benches, then the band returns to formation.');
+        notifyFootball('Ending scrimmage: players return to benches while the band marches back to formation.');
         return;
       }
       if (!scrimmageMode) load(effectiveFormation, selectedPlay);
@@ -158,6 +164,7 @@ export function createFootballVisuals(
   authoredTackles: ReadonlyArray<FootballTackleEvent> = [],
   inputOutcomes: ReadonlyArray<FootballOutcome> = [],
   returnStart?: number,
+  bandReturnDelay = SCRIMMAGE_RETURN_COUNTS + SCRIMMAGE_SIT_COUNTS,
 ) {
   const events = inputEvents.map(event => ({ ...event }));
   const sequence = inputSequence?.map(segment => ({ ...segment }));
@@ -185,6 +192,7 @@ export function createFootballVisuals(
     return result;
   };
   const cleanup = () => {
+    updateScrimmageButton(false);
     disposeTackleEditor();
     disposeObserver();
     releaseTimeline();
@@ -445,6 +453,8 @@ export function createFootballVisuals(
     };
     const update = () => {
       const currentBeat = getDrillTransportState().beat;
+      const lastCount = Math.max(...players.map(({ robot }) => (getRobotCounts(robot)?.length ?? 1) - 1));
+      updateScrimmageButton(returnStart !== undefined && currentBeat < lastCount);
       const spot = footballScrimmageSpot(events, currentBeat, tacklePosition);
       const returning = returnStart !== undefined && currentBeat >= returnStart;
       scrimmageLine.setEnabled(!!spot && Number.isFinite(visibleFromCount) &&
@@ -569,8 +579,10 @@ export function createFootballVisuals(
       }
       if (returning && footballStatus) {
         const elapsed = seatBeatAt(currentBeat) - (initialReturnStart ?? 0);
-        footballStatus.value = elapsed >= SCRIMMAGE_RETURN_COUNTS + SCRIMMAGE_SIT_COUNTS + SCRIMMAGE_BAND_RETURN_COUNTS
+        footballStatus.value = elapsed >= Math.max(SCRIMMAGE_RETURN_COUNTS + SCRIMMAGE_SIT_COUNTS,
+          bandReturnDelay + SCRIMMAGE_BAND_RETURN_COUNTS)
           ? 'Scrimmage complete: teams seated; band back in starting formation.'
+          : bandReturnDelay === 0 ? 'Players returning to benches; band marching back to starting formation.'
           : elapsed >= SCRIMMAGE_RETURN_COUNTS + SCRIMMAGE_SIT_COUNTS
             ? 'Teams seated: band marching back to starting formation.'
             : 'Scrimmage complete: players returning to team benches.';

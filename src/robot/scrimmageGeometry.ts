@@ -41,10 +41,11 @@ export function scrimmagePlayerRoute(route: ReadonlyArray<FootballPosition>, ind
     ...route.slice(1), ...scrimmagePlayerReturn(route[route.length - 1], index).slice(1)];
 }
 
-export function scrimmagePlayerReturn(start: FootballPosition, index: number): FootballPosition[] {
+export function scrimmagePlayerReturn(start: FootballPosition, index: number, waitForBand = true): FootballPosition[] {
   const seat = scrimmageBenchSeat(index);
   return [...scrimmageWalk(start, seat, SCRIMMAGE_RETURN_COUNTS),
-    ...Array.from({ length: SCRIMMAGE_SIT_COUNTS + SCRIMMAGE_BAND_RETURN_COUNTS }, () => ({ ...seat }))];
+    ...Array.from({ length: SCRIMMAGE_SIT_COUNTS + (waitForBand ? SCRIMMAGE_BAND_RETURN_COUNTS : 0) },
+      () => ({ ...seat }))];
 }
 
 export function scrimmageBenchSeat(index: number): FootballPosition {

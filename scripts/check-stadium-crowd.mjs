@@ -26,7 +26,12 @@ let playing = false;
 const textures = [];
 const spectatorBoxes = [];
 const transport = new Observable();
+const scrimmageListeners = new Set();
+const scrimmageButton = { dataset: { returnBand: 'false' },
+  addEventListener: (_, listener) => scrimmageListeners.add(listener),
+  removeEventListener: (_, listener) => scrimmageListeners.delete(listener) };
 const context = vm.createContext({
+  scrimmageButton,
   scene, Mesh, MeshBuilder: { ...MeshBuilder, CreateBox(name, options, scene) {
     const mesh = MeshBuilder.CreateBox(name, options, scene);
     if (name === 'spectatorTorso' || name === 'spectatorThigh') spectatorBoxes.push({ mesh, options });
@@ -53,6 +58,13 @@ try {
     vm.runInContext(compile(read(`../src/${file}.ts`)), context);
   }
   const { updateStands } = context.createStands();
+  const scrimmageTexture = textures[textures.length - 1];
+  assert.ok(scrimmageTexture.ctx.labels.includes('🏈'), 'Start sign displays football picture');
+  scrimmageButton.dataset.returnBand = 'true';
+  scrimmageListeners.forEach(listener => listener());
+  assert.ok(scrimmageTexture.ctx.labels.includes('🎺'), 'Return sign displays trumpet picture');
+  scrimmageButton.dataset.returnBand = 'false';
+  scrimmageListeners.forEach(listener => listener());
   const faces = () => scene.meshes.filter(mesh => mesh.name.startsWith('stadiumMediaSignFace-'));
   const crowd = () => scene.meshes.filter(mesh => mesh.name.startsWith('stadiumCrowd_'));
   let previousFace;

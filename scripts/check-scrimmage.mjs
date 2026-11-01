@@ -88,6 +88,9 @@ for (const [index, start] of [[0, { x: -4, z: -12 }], [21, { x: 9, z: 3 }]]) {
   assert.equal(path[0].z, start.z);
   assert.deepEqual(path[48], context.scrimmageBenchSeat(index));
   assert.ok(path.slice(48).every(point => point.x === path[48].x && point.z === path[48].z));
+  const immediate = context.scrimmagePlayerReturn(start, index, false);
+  assert.equal(immediate.length, 51, 'Simultaneous ending lasts 48 walking counts plus two seating counts');
+  assert.deepEqual(immediate[48], context.scrimmageBenchSeat(index));
 }
 assert.equal(new Set(Array.from({ length: 22 }, (_, index) => JSON.stringify(context.scrimmageBenchSeat(index)))).size,
   22, 'Players have distinct, evenly spaced bench seats');

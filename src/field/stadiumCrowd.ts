@@ -16,6 +16,7 @@ import { getDrillTransportState, onDrillTransportChangedObservable } from '../ro
 import { FIELD_WIDTH_YARDS } from './constants';
 import { mergeMeshesByMaterial } from './meshMerging';
 import { createMediaButtonIcon } from '../menu/settingsButtonIcons';
+import { scrimmageButton } from '../ui/dom';
 import {
   isDrillEditingEnabled, onEditingModeChangedObservable, isMenuActionAvailable, onDraftingToolsChangedObservable,
 } from '../interaction/editingMode';
@@ -79,7 +80,13 @@ export function createStadiumCrowd(parent: Mesh) {
       const playing = sign.action.action === 'playPause' && getDrillTransportState().playing;
       drawPanelButton(ctx, 512, 320, '', playing);
       ctx.fillStyle = '#ffffff';
-      if (sign.immersive || sign.action.action === 'football') {
+      if (sign.action.action === 'football') {
+        const returnBand = scrimmageButton?.dataset.returnBand === 'true';
+        ctx.font = '150px "Segoe UI Emoji", "Apple Color Emoji", sans-serif';
+        ctx.fillText(returnBand ? '🎺' : '🏈', 256, 155, 460);
+        ctx.font = 'bold 49px Arial';
+        ctx.fillText(returnBand ? 'RETURN BAND' : 'START SCRIMMAGE', 256, 258, 470);
+      } else if (sign.immersive) {
         ctx.font = 'bold 150px Arial';
         ctx.fillText(sign.symbol, 256, 124, 460);
         ctx.font = 'bold 49px Arial';
@@ -90,6 +97,8 @@ export function createStadiumCrowd(parent: Mesh) {
     draw();
     return { material: mat, draw };
   });
+  const updateScrimmageSign = () => signFaces[SIGNS.length - 1].draw();
+  scrimmageButton?.addEventListener('change', updateScrimmageSign);
   let previousPlaying = getDrillTransportState().playing;
   const observer = onDrillTransportChangedObservable.add(state => {
     if (state.playing === previousPlaying) return;
@@ -104,6 +113,7 @@ export function createStadiumCrowd(parent: Mesh) {
   const modeObserver = onEditingModeChangedObservable.add(updateSigns);
   const draftingObserver = onDraftingToolsChangedObservable.add(updateSigns);
   scene.onDisposeObservable.addOnce(() => {
+    scrimmageButton?.removeEventListener('change', updateScrimmageSign);
     onDrillTransportChangedObservable.remove(observer);
     onEditingModeChangedObservable.remove(modeObserver);
     onDraftingToolsChangedObservable.remove(draftingObserver);

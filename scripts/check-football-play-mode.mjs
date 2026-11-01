@@ -46,6 +46,7 @@ const context = vm.createContext({
   setRobotColor() {},
   setRobotFootballMotion(robot, motion) { robot.metadata = { motion }; },
   floorCalibrationToggle: calibration,
+  scrimmageButton: null,
   footballStatus: { value: '' },
   footballBallHighlight: { checked: false }, footballFlightPath: { checked: false },
   initFootballTackleEditor: () => Object.assign(() => {}, { refresh() {} }),

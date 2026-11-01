@@ -3632,19 +3632,17 @@ function loadFootballPlay(formation: FootballFormation, play: FootballPlay, scri
     if (scrimmage) {
       let ending = false;
       endActiveScrimmage = () => {
-        const scheduledReturn = (getRobotCounts(players[0].robot)?.length ?? 1) - 1 -
-          SCRIMMAGE_RETURN_COUNTS - SCRIMMAGE_SIT_COUNTS - SCRIMMAGE_BAND_RETURN_COUNTS;
-        if (ending || getDrillTransportState().beat >= scheduledReturn) { playAll(); return; }
+        if (ending) { playAll(); return; }
         const band = [...robotPaths.keys()].filter(robot => !players.some(entry => entry.robot === robot));
         const playerRoutes = players.map(({ robot }, index) => scrimmagePlayerReturn(
-          { x: robot.position.x, z: robot.position.z }, index));
+          { x: robot.position.x, z: robot.position.z }, index, false));
         const bandRoutes = band.map((robot, index) => {
           const start = { x: robot.position.x, z: robot.position.z };
           const original = previous.marchers[index]?.position;
           if (!original) throw new Error('Scrimmage band is missing its original formation position.');
           const target = { x: original.x, z: original.z };
-          return [...Array.from({ length: SCRIMMAGE_RETURN_COUNTS + SCRIMMAGE_SIT_COUNTS + 1 },
-            () => ({ ...start })), ...scrimmageWalk(start, target, SCRIMMAGE_BAND_RETURN_COUNTS).slice(1)];
+          return [...scrimmageWalk(start, target, SCRIMMAGE_BAND_RETURN_COUNTS),
+            ...Array.from({ length: SCRIMMAGE_SIT_COUNTS }, () => ({ ...target }))];
         });
         pauseAll();
         footballVisuals?.(); footballVisuals = null;
@@ -3659,13 +3657,12 @@ function loadFootballPlay(formation: FootballFormation, play: FootballPlay, scri
             : points.map((_, count) => count === points.length - 1 ? finalFacing : undefined), true);
           updateRobotPathLine(robot, points);
         });
-        footballVisuals = createFootballVisuals(players, [], pathRoot, 1, undefined, [], [], 0);
-        setChartPageTimeline({ beatsPerPage: 4, authoredCounts: [0, 48, 50, 98] });
+        footballVisuals = createFootballVisuals(players, [], pathRoot, 1, undefined, [], [], 0, 0);
+        setChartPageTimeline({ beatsPerPage: 4, authoredCounts: [0, 48, 50] });
         chartPageNames.clear();
-        chartPageNames.set(0, 'End scrimmage / return to benches');
-        chartPageNames.set(48, 'Arrive at benches');
-        chartPageNames.set(50, 'Teams seated / band returns');
-        chartPageNames.set(98, 'Band back in starting formation');
+        chartPageNames.set(0, 'Teams to benches / band returns');
+        chartPageNames.set(48, 'Teams at benches / band in formation');
+        chartPageNames.set(50, 'Teams seated / band restored');
         refreshChartEditorPages(); refreshCollisionMarkers(scene);
         ending = true;
         seekToCount(0); playAll();
