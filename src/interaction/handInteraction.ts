@@ -42,7 +42,8 @@ import {
 import { getHandMenuHit, getHandMenuHitNearPoint, pickMenuControl } from '../menu/handMenu';
 import type { MarcherInstrument } from '../robot/robot';
 import {
-  getARPositionForScaleAnchor, getARPositionForSingleHandMovement, getControllerYaw,
+  getARPositionForScaleAnchor, beginSingleHandFieldMovement, updateSingleHandFieldMovement,
+  getSingleHandYaw, type SingleHandFieldMovement, getControllerYaw,
   isControllerSceneManipulationActive, isSceneManipulationLocked, rotateAroundY,
 } from './controllers';
 import { canPlaceManualMarcherPose, tryManualMarcherPose } from '../robot/manualPlacement';
@@ -176,8 +177,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
   } | null = null;
   let singleHandFieldMove: {
     handedness: string;
-    startHandPosition: Vector3;
-    startARPosition: Vector3;
+    movement: SingleHandFieldMovement;
   } | null = null;
   const marcherGrabs = new Map<string, MarcherGrab>();
   const fingerPushes = new Set<string>();
@@ -251,6 +251,14 @@ export function createHandInteraction(paths: HandPathDependencies) {
     const wrist = hand.getJointMesh(WebXRHandJoint.WRIST).getAbsolutePosition();
     const middleFinger = hand.getJointMesh(WebXRHandJoint.MIDDLE_FINGER_METACARPAL).getAbsolutePosition();
     return getFacingYaw(middleFinger.subtract(wrist));
+  }
+
+  function getHandWorldYaw(handedness: 'left' | 'right'): number | null {
+    const hand = handTracking?.getHandByHandedness(handedness);
+    if (!hand) return null;
+    const wrist = hand.getJointMesh(WebXRHandJoint.WRIST).getAbsolutePosition();
+    const middleFinger = hand.getJointMesh(WebXRHandJoint.MIDDLE_FINGER_METACARPAL).getAbsolutePosition();
+    return getSingleHandYaw(middleFinger.subtract(wrist));
   }
 
   function beginMarcherGrab(
@@ -1196,16 +1204,13 @@ export function createHandInteraction(paths: HandPathDependencies) {
     }
     sceneGesture = null;
     const singlePinch = left
-      ? { handedness: 'left', point: left }
-      : right ? { handedness: 'right', point: right } : null;
+      ? { handedness: 'left' as const, point: left }
+      : right ? { handedness: 'right' as const, point: right } : null;
     if (singleHandFieldMove) {
       if (singlePinch?.handedness === singleHandFieldMove.handedness &&
         !isControllerSceneManipulationActive()) {
-        setARPosition(getARPositionForSingleHandMovement(
-          singleHandFieldMove.startARPosition,
-          singleHandFieldMove.startHandPosition,
-          singlePinch.point,
-        ));
+        updateSingleHandFieldMovement(singleHandFieldMove.movement,
+          singlePinch.point, getHandWorldYaw(singlePinch.handedness));
         return;
       }
       singleHandFieldMove = null;
@@ -1215,8 +1220,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
       !getSidelineDraftPosition(singlePinch.point) && !findMarcherNearHand(singlePinch.point)) {
       singleHandFieldMove = {
         handedness: singlePinch.handedness,
-        startHandPosition: singlePinch.point.clone(),
-        startARPosition: getARPosition(),
+        movement: beginSingleHandFieldMovement(singlePinch.point, getHandWorldYaw(singlePinch.handedness)),
       };
       return;
     }

@@ -84,15 +84,114 @@ near(
 );
 const handInteractionSource = readFileSync(
   new URL('../src/interaction/handInteraction.ts', import.meta.url), 'utf8'
-);
+).replace(/\r\n/g, '\n');
 assert.match(controllerSource, /setARPosition\(getARPositionForScaleAnchor\(/,
   'Controller scaling uses the shared midpoint anchor');
 assert.match(controllerSource, /setARPosition\(getARPositionForSingleHandMovement\(/,
   'One controller translates the field from its grip position');
 assert.match(handInteractionSource, /setARPosition\(getARPositionForScaleAnchor\(/,
   'Tracked-hand scaling uses the shared midpoint anchor');
-assert.match(handInteractionSource, /setARPosition\(getARPositionForSingleHandMovement\(/,
-  'One tracked hand translates the field from its pinch position');
+assert.match(handInteractionSource, /updateSingleHandFieldMovement\(singleHandFieldMove\.movement/,
+  'One tracked hand uses the shared anchored translation and rotation');
+
+let fieldPosition = handMoveStart.clone();
+let fieldRotation = 0.7;
+Object.assign(scaleContext, {
+  getARPosition: () => fieldPosition.clone(),
+  getARRotation: () => fieldRotation,
+  setARPosition: position => { fieldPosition = position.clone(); },
+  setARRotation: rotation => { fieldRotation = rotation; },
+  floorCalibrationToggle: { checked: false },
+});
+for (const scale of [0.01, 0.2, 1]) {
+  for (const initialRotation of [0, 0.7, -2]) {
+    fieldPosition = handMoveStart.clone();
+    fieldRotation = initialRotation;
+    const movement = scaleContext.beginSingleHandFieldMovement(handStart, 3);
+    near(fieldPosition, handMoveStart, 'Starting one-hand rotation never jumps the field');
+    const heldLocal = scaleContext.rotateAroundY(handStart.subtract(fieldPosition), -fieldRotation).scale(1 / scale);
+    scaleContext.updateSingleHandFieldMovement(movement, handCurrent, -3);
+    const delta = Math.atan2(Math.sin(-6), Math.cos(-6));
+    assert.ok(Math.abs(fieldRotation - initialRotation - delta) < 1e-6,
+      'Wrist yaw crosses the +/-pi boundary without a full turn');
+    near(fieldPosition.add(scaleContext.rotateAroundY(heldLocal.scale(scale), fieldRotation)), handCurrent,
+      'Translation and wrist rotation keep the held field point under the hand at every scale');
+    const heldRotation = fieldRotation;
+    scaleContext.updateSingleHandFieldMovement(movement, handCurrent, null);
+    scaleContext.updateSingleHandFieldMovement(movement, handCurrent, 1);
+    assert.equal(fieldRotation, heldRotation, 'Vertical poses and recovery do not snap rotation');
+    scaleContext.updateSingleHandFieldMovement(movement, handCurrent, 1.2);
+    assert.ok(Math.abs(fieldRotation - heldRotation - 0.2) < 1e-6);
+  }
+}
+assert.equal(scaleContext.getSingleHandYaw(Vector3.Up()), null, 'Vertical wrist has no usable yaw');
+assert.equal(scaleContext.getSingleHandYaw(Vector3.Zero()), null, 'Missing joint direction has no usable yaw');
+assert.ok(Math.abs(scaleContext.getSingleHandYaw(new Vector3(1, 0, 1)) - Math.PI / 4) < 1e-6);
+
+for (const handedness of ['left', 'right']) {
+  const grip = new TransformNode(`singleGrip-${handedness}`, scene);
+  const controller = { uniqueId: handedness, inputSource: { handedness },
+    motionController: { getComponentOfType: () => ({ pressed: true }) }, grip, pointer: grip };
+  fieldPosition = handMoveStart.clone();
+  fieldRotation = 0.7;
+  grip.position.copyFrom(handStart);
+  grip.rotation.y = 0.2;
+  scaleContext.setActiveController(controller);
+  scaleContext.updateARResizeFromControllers(false);
+  near(fieldPosition, handMoveStart, `${handedness}: first squeeze establishes the anchor`);
+  grip.rotation.y = 0.6;
+  grip.position.copyFrom(handCurrent);
+  scaleContext.updateARResizeFromControllers(false);
+  assert.ok(Math.abs(fieldRotation - 1.1) < 1e-6, `${handedness}: controller wrist yaw rotates the field`);
+  near(fieldPosition, scaleContext.getARPositionForSingleHandMovement(handMoveStart, handStart, handCurrent, 0.4),
+    `${handedness}: controller movement rotates around its held point`);
+  scaleContext.setSceneManipulationLocked(true);
+  grip.rotation.y = 1.2;
+  scaleContext.updateARResizeFromControllers(false);
+  assert.ok(Math.abs(fieldRotation - 1.1) < 1e-6, 'Drum Game lock blocks one-handed rotation');
+  scaleContext.setSceneManipulationLocked(false);
+  scaleContext.removeActiveController(controller, () => {});
+  scaleContext.updateARResizeFromControllers(false);
+  grip.dispose();
+}
+
+const handBranchStart = handInteractionSource.indexOf('    sceneGesture = null;\n    const singlePinch');
+const handBranchEnd = handInteractionSource.indexOf("    for (const handedness of ['left', 'right'] as const)", handBranchStart);
+assert.ok(handBranchStart >= 0 && handBranchEnd > handBranchStart);
+const handYawSource = handInteractionSource.match(/  function getHandWorldYaw[\s\S]*?\n  }/)[0];
+const handContext = vm.createContext({
+  Vector3, left: null, right: null, marcherHandsBusy: false,
+  WebXRHandJoint: { WRIST: 'wrist', MIDDLE_FINGER_METACARPAL: 'middle' },
+  getSingleHandYaw: scaleContext.getSingleHandYaw,
+  beginSingleHandFieldMovement: scaleContext.beginSingleHandFieldMovement,
+  updateSingleHandFieldMovement: scaleContext.updateSingleHandFieldMovement,
+  isControllerSceneManipulationActive: () => false, isSceneManipulationLocked: () => false,
+  isDraftingTableMode: () => false, isPointOnField: () => false,
+  getSidelineDraftPosition: () => null, findMarcherNearHand: () => null,
+});
+vm.runInContext(stripTypeScriptTypes(`let singleHandFieldMove = null, sceneGesture = null;
+${handYawSource}
+function moveHand() {
+${handInteractionSource.slice(handBranchStart, handBranchEnd)}
+}`, { mode: 'transform' }), handContext);
+for (const handedness of ['left', 'right']) {
+  let direction = new Vector3(0, 0, 0.05);
+  handContext.handTracking = { getHandByHandedness: side => side === handedness ? {
+    getJointMesh: joint => ({ getAbsolutePosition: () => joint === 'wrist' ? Vector3.Zero() : direction }),
+  } : null };
+  fieldPosition = handMoveStart.clone();
+  fieldRotation = 0.7;
+  handContext[handedness] = handStart;
+  handContext.moveHand();
+  handContext[handedness] = handCurrent;
+  direction = new Vector3(Math.sin(0.4) * 0.05, 0, Math.cos(0.4) * 0.05);
+  handContext.moveHand();
+  assert.ok(Math.abs(fieldRotation - 1.1) < 1e-6, `${handedness}: tracked wrist yaw rotates the field`);
+  near(fieldPosition, scaleContext.getARPositionForSingleHandMovement(handMoveStart, handStart, handCurrent, 0.4),
+    `${handedness}: tracked pinch keeps its held point anchored`);
+  handContext[handedness] = null;
+  handContext.moveHand();
+}
 
 try {
   context.setFieldHeightSetting('table', 0.83);
@@ -242,7 +341,7 @@ try {
       'Both resize inputs use the scale-aware surface-height transition');
     assert.doesNotMatch(interaction, /setARSurfaceHeightForScaleGesture/, 'No threshold height resets remain');
   }
-  console.log('Tabletop placement passed: viewer-relative entry, AR re-entry, both coordinate systems, vertical gaze, button-only height reset, resize threshold crossings, preserved custom height, and vertical movement.');
+  console.log('Tabletop placement passed: viewer-relative entry, AR re-entry, both coordinate systems, vertical gaze, height transitions, and anchored one-handed translation/rotation for both controllers and tracked hands.');
 } finally {
   scene.dispose();
   engine.dispose();

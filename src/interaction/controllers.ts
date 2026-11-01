@@ -32,8 +32,7 @@ const pinchState = {
 };
 let singleControllerMove: {
   handedness: string;
-  startControllerPosition: Vector3;
-  startARPosition: Vector3;
+  movement: SingleHandFieldMovement;
 } | null = null;
 let sceneManipulationLocked = false;
 
@@ -73,8 +72,49 @@ export function getARPositionForSingleHandMovement(
   startARPosition: Vector3,
   startHandPosition: Vector3,
   currentHandPosition: Vector3,
+  rotationDelta = 0,
 ): Vector3 {
-  return startARPosition.add(currentHandPosition.subtract(startHandPosition));
+  return currentHandPosition.subtract(rotateAroundY(
+    startHandPosition.subtract(startARPosition), rotationDelta,
+  ));
+}
+
+export type SingleHandFieldMovement = {
+  startHandPosition: Vector3;
+  startARPosition: Vector3;
+  startRotation: number;
+  rotation: number;
+  previousYaw: number | null;
+};
+
+export function getSingleHandYaw(direction: Vector3): number | null {
+  const lengthSquared = direction.lengthSquared();
+  if (lengthSquared < 1e-10 ||
+    direction.x * direction.x + direction.z * direction.z < lengthSquared * 0.01) return null;
+  return Math.atan2(direction.x, direction.z);
+}
+
+export function beginSingleHandFieldMovement(position: Vector3, yaw: number | null): SingleHandFieldMovement {
+  const rotation = getARRotation();
+  return {
+    startHandPosition: position.clone(), startARPosition: getARPosition(),
+    startRotation: rotation, rotation, previousYaw: yaw,
+  };
+}
+
+export function updateSingleHandFieldMovement(
+  movement: SingleHandFieldMovement, position: Vector3, yaw: number | null,
+) {
+  if (yaw !== null && movement.previousYaw !== null) {
+    const delta = yaw - movement.previousYaw;
+    movement.rotation += Math.atan2(Math.sin(delta), Math.cos(delta));
+  }
+  movement.previousYaw = yaw;
+  setARRotation(movement.rotation);
+  setARPosition(getARPositionForSingleHandMovement(
+    movement.startARPosition, movement.startHandPosition, position,
+    movement.rotation - movement.startRotation,
+  ));
 }
 
 function resetSingleControllerMove() {
@@ -164,20 +204,18 @@ export function updateARResizeFromControllers(grabActive: boolean) {
       resetSingleControllerMove();
       return;
     }
-    const currentPosition = getControllerPosition(controller).getAbsolutePosition();
+    const pose = getControllerPosition(controller);
+    pose.computeWorldMatrix(true);
+    const currentPosition = pose.getAbsolutePosition();
+    const yaw = getSingleHandYaw(Vector3.TransformNormal(new Vector3(0, 0, 1), pose.getWorldMatrix()));
     if (!singleControllerMove || singleControllerMove.handedness !== handedness) {
       singleControllerMove = {
         handedness,
-        startControllerPosition: currentPosition.clone(),
-        startARPosition: getARPosition(),
+        movement: beginSingleHandFieldMovement(currentPosition, yaw),
       };
       return;
     }
-    setARPosition(getARPositionForSingleHandMovement(
-      singleControllerMove.startARPosition,
-      singleControllerMove.startControllerPosition,
-      currentPosition,
-    ));
+    updateSingleHandFieldMovement(singleControllerMove.movement, currentPosition, yaw);
     return;
   } else {
     resetPinchState();

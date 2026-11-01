@@ -67,6 +67,7 @@ try {
     handTracking: { getHandByHandedness: side => trackedHands.get(side) },
     joystickOwnsHands: false, formationPull: null, circleResize: null, fingerPath: null,
     floorCalibrationToggle: { checked: false }, sceneGesture: null,
+    isSceneManipulationLocked: () => false,
     padHands: new Set(), handPinches: new Map(),
     finishFormationPull() {}, finishCircleResize() {},
     WebXRHandJoint: { THUMB_TIP: 'thumb', INDEX_FINGER_TIP: 'index' },
