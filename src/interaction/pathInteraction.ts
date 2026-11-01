@@ -3636,8 +3636,9 @@ function loadFootballPlay(formation: FootballFormation, play: FootballPlay, scri
           { x: robot.position.x, z: robot.position.z }, index));
         const bandRoutes = band.map((robot, index) => {
           const start = { x: robot.position.x, z: robot.position.z };
-          const target = previous.marchers[index]?.position;
-          if (!target) throw new Error('Scrimmage band is missing its original formation position.');
+          const original = previous.marchers[index]?.position;
+          if (!original) throw new Error('Scrimmage band is missing its original formation position.');
+          const target = { x: original.x, z: original.z };
           return [...Array.from({ length: SCRIMMAGE_RETURN_COUNTS + SCRIMMAGE_SIT_COUNTS + 1 },
             () => ({ ...start })), ...scrimmageWalk(start, target, SCRIMMAGE_BAND_RETURN_COUNTS).slice(1)];
         });

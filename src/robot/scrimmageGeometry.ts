@@ -14,8 +14,8 @@ export const SCRIMMAGE_PLAY_START = SCRIMMAGE_EXIT_COUNTS + SCRIMMAGE_ENTRY_COUN
 
 export function scrimmageWalk(start: FootballPosition, end: FootballPosition, counts: number): FootballPosition[] {
   return Array.from({ length: counts + 1 }, (_, count) => {
-    if (count === 0) return { ...start };
-    if (count === counts) return { ...end };
+    if (count === 0) return { x: start.x, z: start.z };
+    if (count === counts) return { x: end.x, z: end.z };
     const t = count / counts;
     return { x: start.x + (end.x - start.x) * t, z: start.z + (end.z - start.z) * t };
   });

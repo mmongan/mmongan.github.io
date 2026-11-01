@@ -5,12 +5,23 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { stripTypeScriptTypes } from 'node:module';
 import vm from 'node:vm';
+import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 
 const compile = path => stripTypeScriptTypes(readFileSync(new URL(path, import.meta.url), 'utf8'),
   { mode: 'transform' }).replace(/^import[\s\S]*?;\r?$/gm, '').replace(/export /g, '');
 const context = vm.createContext({ FIELD_WIDTH_YARDS: 53.333, FIELD_LENGTH_YARDS: 120, END_ZONE_DEPTH_YARDS: 10 });
 vm.runInContext(compile('../src/robot/footballPlayGeometry.ts'), context);
 vm.runInContext(compile('../src/robot/scrimmageGeometry.ts'), context);
+for (let index = 0; index < 40; index++) {
+  const start = new Vector3(index - 20, -.48, 64);
+  const target = new Vector3((index % 8 - 4) * 3, -.48, (Math.floor(index / 8) - 2) * 4);
+  const route = context.scrimmageWalk(start, target, 48);
+  assert.equal(route[0].x, start.x);
+  assert.equal(route[0].z, start.z);
+  assert.equal(route[48].x, target.x, 'Babylon-vector destinations retain each marcher formation X');
+  assert.equal(route[48].z, target.z, 'Babylon-vector destinations retain each marcher formation Z');
+  assert.ok(route.every(point => Number.isFinite(point.x) && Number.isFinite(point.z)));
+}
 for (const formation of ['shotgun', 'spread', 'i-form']) {
   const geometry = context.generateFootballPlay(formation, 'slants');
   geometry.players.forEach((player, index) => {
