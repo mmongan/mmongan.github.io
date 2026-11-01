@@ -48,9 +48,10 @@ export function wrapAngle(angle: number): number {
 }
 
 export function buildGaitStepPhaseOffsets(stepsPerCount: ReadonlyArray<number>): number[] {
-  const offsets = [0];
-  for (const steps of stepsPerCount) offsets.push(offsets[offsets.length - 1] + steps);
-  return offsets;
+  // Cadence changes rejoin the shared count clock instead of carrying a
+  // route-specific left/right offset into the next section.
+  return [...stepsPerCount.map((steps, index) => index * steps),
+    stepsPerCount.length * (stepsPerCount[stepsPerCount.length - 1] ?? 1)];
 }
 
 export function gaitPhaseAtBeat(beat: number, stepsPerCount: number) {

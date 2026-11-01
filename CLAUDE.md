@@ -33,6 +33,19 @@ Preserve the ordering in `src/scene/index.ts` unless the change explicitly requi
 
 The content-root snapshot and teleport-grid ordering is important for AR tabletop transforms. Review `src/xr/ar.ts` before changing scene parenting or scale behavior.
 
+## Field Manipulation And Panels
+
+- `src/interaction/controllers.ts` owns shared field-gesture math and controller manipulation; `src/interaction/handInteraction.ts` reuses it for tracked hands. One-controller squeeze or clear-space hand pinch translates in 3D and rotates by world-space wrist yaw around the held point. Reuse `beginSingleHandFieldMovement`, `updateSingleHandFieldMovement`, and `getSingleHandYaw`; do not use field-local marcher-facing yaw for field rotation. Accumulate wrapped yaw deltas, suspend rotation near vertical poses, and rebase yaw on recovery without a jump. Preserve two-hand resize/rotation, release behavior, and priority for marcher, guide, tool, and panel interactions.
+- Field scaling stays anchored horizontally to the controller/hand midpoint. `src/xr/ar.ts` owns the scale-dependent transition from configured Table height at tabletop size to configured Floor height at 1:1. `src/xr/webXR.ts` owns Giant-mode room fitting and smooth tracked-floor following. Preserve floating/sinking transitions rather than snapping altitude; do not reset custom height except through the existing explicit placement/preset flows.
+- `setSceneManipulationLocked` blocks controller and tracked-hand field transforms during Drum Game. Preserve this lock when adding gestures.
+- `src/menu/floatingPanel.ts` owns the shared slim, subdued grab frame and resize/close controls. Keep visual changes shared rather than adding panel-specific competing frames. `src/field/stadiumCrowd.ts` owns the sideline DRAFTING sign, which dispatches the existing `drawingTool: table` action rather than a separate drafting entry flow.
+
+## Marcher POV And Drum Game
+
+- `src/camera/marcherPOV.ts` owns POV setup and lifecycle; `src/camera/marcherPOVCamera.ts` follows the existing marcher's eye pose. Preserve natural VR headset look and physical movement, own-body hiding, and spectator restoration; do not create a second camera-follow or marching system.
+- `src/camera/marcherDrumGame.ts` owns the immersive-VR-only game. Entry requires a visible selected percussion marcher, full field scale, and remaining scheduled counts. Settings dispatches `marcherDrumGame` through the shared menu registry. Reuse POV and the shared drill transport: pause on entry, seek exactly to the hit target count, then place the next floating drum in the marcher's parent-local route coordinates. Controller-grip virtual stick tips trigger debounced physical hits; these are not trigger-button hits or tracked-hand stick meshes.
+- Completion reaches the final count before ending. Stop on POV exit or selected-marcher invalidation, unlock field manipulation, and dispose target/stick meshes and materials; remove disconnected controller sticks. Resume playback only if it was playing at entry, never during scene disposal. Ending the game alone leaves POV active.
+
 ## Drafting Tools
 
 - `src/interaction/fieldDrawingTools.ts` owns the physical tool trays, field strokes, laser preview, and guide lifecycle. Reuse its guide conversion and cleanup paths rather than adding separate formation/path creation logic.
@@ -64,6 +77,8 @@ The content-root snapshot and teleport-grid ordering is important for AR tableto
 
 ## Performer Appearance
 
+- `src/robot/marcherBodyModel.ts` and `src/robot/robotFaceModel.ts` own the stylized body templates; `src/robot/lowPolyInstrument.ts` supplies the shared geometry builder. Preserve shared hardware instances, vertex colors, high/low-detail switching, rounded joint overlap, silhouette profiles, and rig/grip positions. Low-polygon bodies are enabled by default without reducing full-scale instrument detail; shrunk fields reduce both automatically.
+- Low-detail body lathes use four to six radial sides, with explicit six-sided shoe/glove overrides to preserve sole contact and cuff fit. Instrument tessellation must remain independent. Validate actual mesh counts, silhouette bounds, elbow shading, glove containment, and shoe geometry against the contact solver before accepting reductions; vertex reductions are not measured FPS improvements.
 - Color guard uses `guardFlag`, `guardRifle`, and `guardSabre` in the existing `MarcherInstrument` registry, not a second marcher/transport implementation. `src/robot/colorGuardModels.ts` owns cached high/low-detail static equipment and grips. Keep Settings, creation panels, miniature models, and OpenMarch section mapping consistent. Guard uses normal routes and gait solving; do not imply spins, tosses, cloth simulation, or independent choreography.
 - `src/interaction/marcherPaint.ts` owns the grabbable uniform palette and shared paint state/actions. Keep the kidney-shaped board solid with a through thumb hole, beveled rim, and procedural wood grain; swatches are individually sculpted, glossy 3D oil-paint blobs, not discs. Reuse floating-panel/menu dispatch for desktop, controller rays, and tracked-hand pinches. Enable paint by disabling conflicting editing/drawing gestures and finish existing grabs first. Block during floor calibration and exit on other edit modes. Painting must not select, move, erase, scrub, or enter marcher POV; quick consecutive swatch/marcher taps must also work.
 - `setRobotColor` in `src/robot/robot.ts` updates the per-marcher color, tinted uniform instance buffers, held-clone material, and top-down marker only; never tint shared equipment materials. New rendering parts inherit the stored color. Refresh matching route/selected step visuals after painting. Color is session-only, outside drafting persistence and camera capture. Dispose palette meshes/materials/textures and unregister DOM/render callbacks with the scene.
@@ -74,6 +89,9 @@ The content-root snapshot and teleport-grid ordering is important for AR tableto
 - Run the local server with `npm run dev`.
 - Run strict TypeScript validation with `npx tsc --noEmit`.
 - Run the production build with `npm run build`.
+- Run `node scripts/check-tabletop-placement.mjs` for field scale/height/placement and one-handed translation/rotation. Preserve coverage of both controllers and tracked hands, held-point anchoring at multiple scales, yaw wrapping, vertical-pose recovery, and scene-manipulation locks. Run `node scripts/check-controller-panel-grab.mjs`, `node scripts/check-controller-roles.mjs`, and `node scripts/check-hand-joystick.mjs` for nearby interaction ownership and navigation changes.
+- Run `node scripts/check-marcher-drum-game.mjs` and `node scripts/check-marcher-pov.mjs` for Drum Game or POV changes; run `node scripts/check-xr-settings-panel.mjs` when changing its Settings launcher.
+- Run `node scripts/check-marcher-seat.mjs` and `node scripts/check-instrument-geometry.mjs` for body topology/detail changes. Preserve joint fit, shoe contact, cached templates, bounds, and independent instrument detail. Run `node scripts/check-stadium-crowd.mjs` for sideline launcher changes and `node scripts/check-floating-panels.mjs` for shared panel-frame changes.
 - Run `node scripts/simulate-drill-sync.mjs` when changing synchronized drill path planning or collision avoidance.
 - Run `node scripts/check-field-drawing-tools.mjs` when changing drafting tools, laser aiming/pinning, advanced drafting geometry, dimension labels, editable pins/splines, or guide cleanup. Preserve coverage of physical contact/release, desktop field-plane dragging, and rotated/scaled tabletop transforms.
 - Run `node scripts/check-adjustable-grid.mjs` when changing the visible field grid.

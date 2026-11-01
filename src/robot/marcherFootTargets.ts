@@ -13,7 +13,7 @@ export function marcherFootTarget(
   left: boolean,
   landing: (step: number, left: boolean) => Vector3
 ): Vector3 {
-  const leftStance = ((stepNumber % 2) + 2) % 2 === 0;
+  const leftStance = ((stepNumber % 2) + 2) % 2 === 1;
   if (left === leftStance) return landing(stepNumber, left);
   const from = landing(stepNumber - 1, left);
   const to = landing(stepNumber + 1, left);

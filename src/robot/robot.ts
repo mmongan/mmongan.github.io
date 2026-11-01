@@ -1367,7 +1367,8 @@ function getGaitStepPhaseOffsets(state: PlayerState, styleIndex: number): number
 
   const stepsPerCount = Array.from({ length: Math.max(0, state.counts.length - 1) }, (_, index) =>
     resolveSegmentGait(state, index, styleIndex)?.stepsPerCount ?? 0);
-  const offsets = buildGaitStepPhaseOffsets(stepsPerCount);
+  const offsets = buildGaitStepPhaseOffsets(stepsPerCount)
+    .map((phase, index) => savedOffsets[index] ?? phase);
   (state.gaitPhaseCache ??= new Map()).set(styleIndex, { counts: state.counts, offsets });
   return offsets;
 }
@@ -1664,7 +1665,7 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState,
   const gaitProgress = phase.progress;
   const gait = MARCHING_GAITS[gaitIndex];
   const lift = marcherSwingLift(gaitProgress, gait.lift);
-  const leftStance = ((stepNumber % 2) + 2) % 2 === 0;
+  const leftStance = ((stepNumber % 2) + 2) % 2 === 1;
   // Keep only the current step. Quantization removes clock-subtraction noise,
   // not authored timing; seeks and edits invalidate the cache independently.
   const cacheKey = [transportRevision, stepNumber, stepsPerCount, parts.gaitIndex, hipHalfSpacing,
@@ -1684,10 +1685,18 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState,
         playbackCountTicks, playbackPpq);
     }
     const offsets = getGaitStepPhaseOffsets(state, parts.gaitIndex);
-    let index = 0;
-    while (index + 1 < offsets.length && offsets[index + 1] <= step) index++;
-    if (index + 1 >= offsets.length) return last;
-    return index + (step - offsets[index]) / (offsets[index + 1] - offsets[index]);
+    // Saved phases may rejoin the clock after a cadence change, so they need
+    // not be monotone. Prefer the nearest segment containing this footfall.
+    for (let distance = 0; distance < last; distance++) {
+      for (const index of distance === 0 ? [segmentStart] : [segmentStart - distance, segmentStart + distance]) {
+        if (index < 0 || index >= last) continue;
+        const cadence = resolveSegmentGait(state, index, parts.gaitIndex)?.stepsPerCount ?? 0;
+        if (cadence > 0 && step >= offsets[index] && step <= offsets[index] + cadence) {
+          return index + (step - offsets[index]) / cadence;
+        }
+      }
+    }
+    return segmentStart + (step - offsets[segmentStart]) / stepsPerCount;
   };
   if (!sample && sharedStepCyclesEnabled) {
     if (stepCache.cycleStride === undefined) {

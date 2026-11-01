@@ -81,7 +81,14 @@ for (const unit of [0.5, 1, 1.5, 2]) {
   }
 }
 
-assert.deepEqual(Array.from(buildGaitStepPhaseOffsets([0.5, 0.5, 2, 1])), [0, 0.5, 1, 3, 4]);
+assert.deepEqual(Array.from(buildGaitStepPhaseOffsets([0.5, 0.5, 2, 1])), [0, 0.5, 4, 3, 4]);
+assert.deepEqual(Array.from(buildGaitStepPhaseOffsets([])), [0]);
+const variedCadence = buildGaitStepPhaseOffsets([0.5, 1, 2, 1, 0.5, 1]);
+const steadyCadence = buildGaitStepPhaseOffsets([1, 1, 1, 1, 1, 1]);
+for (const count of [1, 3, 5]) {
+  assert.equal(variedCadence[count], steadyCadence[count],
+    'Marchers returning to normal tempo rejoin shared foot parity regardless of prior cadence');
+}
 
 for (const cadence of [0.5, 1, 2]) {
   for (let step = 0; step < 16; step++) {

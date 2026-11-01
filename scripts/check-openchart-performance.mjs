@@ -40,11 +40,6 @@ const run = source => vm.runInContext(stripTypeScriptTypes(source, { mode: 'tran
   .replace(/^import .*;\r?$/gm, '').replace(/^export /gm, ''), context);
 run(read('gaitSelection'));
 run(readFileSync(new URL('../src/audio/drillMidiTiming.ts', import.meta.url), 'utf8'));
-context.buildGaitStepPhaseOffsets = steps => {
-  const result = [0];
-  steps.forEach(step => result.push(result.at(-1) + step));
-  return result;
-};
 run(slice('export const MARCHING_GAITS =', 'let selectedMarchingGait'));
 run(slice('const GAIT_INDEX_BY_NAME =', '// The gait a marcher uses leaving'));
 run(slice('export function captureMarcherSchedules()', 'export function captureBlankChartPage('));

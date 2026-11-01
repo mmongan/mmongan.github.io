@@ -436,7 +436,7 @@ for (const rate of [0.5, 1, 2]) {
   for (let step = 0; step < 8; step++) {
     musicBeat = (step + 0.25) / rate;
     const sample = pose();
-    assert.equal(sample[0] < sample[1], step % 2 === 0, 'Left/right phase follows MIDI, not route count');
+    assert.equal(sample[0] < sample[1], step % 2 === 1, 'Left lands on pulse 1; parity follows MIDI, not route count');
     playback.playing = false;
     assert.deepEqual(pose(), sample, 'Pause freezes the exact pose and drill position');
     playback.playing = true;
@@ -615,7 +615,7 @@ for (let beat = 0; beat < 8; beat += 0.125) {
   assert.equal(parts.body.position.y, marchingBodyHeight, 'Marching torso does not bounce between steps');
   assert.equal(parts.body.position.y, 0, 'Marchers maintain an upright, uncrouched torso');
   const progress = beat % 1;
-  const plantedLeft = Math.floor(beat) % 2 === 0;
+  const plantedLeft = Math.floor(beat) % 2 === 1;
   const left = solePosition(parts.leftLeg, parts.leftKnee, parts.leftAnkle);
   const right = solePosition(parts.rightLeg, parts.rightKnee, parts.rightAnkle);
   const leftY = left.y;
@@ -649,7 +649,7 @@ for (let sample = 0; sample <= 200; sample++) {
   const progress = sample / 200;
   musicBeat = drillBeat = 2 + progress;
   pose();
-  const swingSole = solePosition(parts.rightLeg, parts.rightKnee, parts.rightAnkle);
+  const swingSole = solePosition(parts.leftLeg, parts.leftKnee, parts.leftAnkle);
   assert.ok(Math.abs(swingSole.y - fieldLift(progress)) < 1e-6,
     `Rendered swing follows the smooth arc without reach clipping: progress=${progress}`);
 }
@@ -658,7 +658,7 @@ const sampleSwingPitches = () => {
   for (let sample = 0; sample <= 2000; sample++) {
     musicBeat = drillBeat = 3 + sample / 2000;
     pose();
-    pitches.push(footPitch(parts.leftLeg, parts.leftKnee, parts.leftAnkle));
+    pitches.push(footPitch(parts.rightLeg, parts.rightKnee, parts.rightAnkle));
   }
   return pitches;
 };
@@ -723,7 +723,7 @@ for (const stride of [0.2, 0.625]) {
   for (const yaw of [0, Math.PI / 2, Math.PI]) {
     facingYaw = yaw;
     for (const step of [2, 3]) {
-      const [leg, knee, ankle] = step % 2 === 0
+      const [leg, knee, ankle] = step % 2 === 1
         ? [parts.leftLeg, parts.leftKnee, parts.leftAnkle]
         : [parts.rightLeg, parts.rightKnee, parts.rightAnkle];
       for (let sample = 1; sample < 100; sample++) {
@@ -745,7 +745,7 @@ for (const yaw of [Math.PI / 2, -Math.PI / 2, Math.PI]) {
   for (let beat = 2; beat < 3; beat += 0.125) {
     musicBeat = drillBeat = beat;
     pose();
-    const foot = solePosition(parts.leftLeg, parts.leftKnee, parts.leftAnkle);
+    const foot = solePosition(parts.rightLeg, parts.rightKnee, parts.rightAnkle);
     planted ??= foot;
     assert.ok(Vector3.Distance(planted, foot) < 1e-6, 'No skating during sideways or backward marching');
   }
@@ -757,7 +757,7 @@ for (const direction of [1, -1]) {
   for (let sample = 0; sample <= 200; sample++) {
     musicBeat = drillBeat = 4 + sample / 201;
     pose();
-    const pitch = footPitch(parts.leftLeg, parts.leftKnee, parts.leftAnkle);
+    const pitch = footPitch(parts.rightLeg, parts.rightKnee, parts.rightAnkle);
     const expectedSign = direction * (sample / 201 < 0.5 ? -1 : 1);
     if (Math.abs(sample / 201 - 0.5) > .02) {
       assert.ok(pitch * expectedSign > 0, 'Foot roll follows body-relative placement for forward and backward travel');
@@ -776,7 +776,7 @@ for (const yaw of [0, Math.PI / 2, Math.PI]) {
     for (let sample = 0; sample <= 200; sample++) {
       musicBeat = drillBeat = step + sample / 200;
       pose();
-      const swing = step % 2 === 0
+      const swing = step % 2 === 1
         ? solePosition(parts.rightLeg, parts.rightKnee, parts.rightAnkle)
         : solePosition(parts.leftLeg, parts.leftKnee, parts.leftAnkle);
       const recovery = swing.z - robot.position.z;
@@ -799,19 +799,19 @@ const afterLoop = pose();
 assert.equal(afterLoop[0] < afterLoop[1], beforeLoop[0] < beforeLoop[1],
   'Drill loop does not reset continuous MIDI left/right phase; knee angles adapt to foot reach');
 musicBeat = 0.25;
-assert.ok(pose()[0] < pose()[1], 'Song loop resets feet to the MIDI opening beat');
+assert.ok(pose()[0] > pose()[1], 'Song loop resets feet to the MIDI opening beat');
 context.playbackTempoMap = null;
-assert.ok(pose()[0] < pose()[1], 'Manual tempo override still follows the loaded MIDI beat position');
+assert.ok(pose()[0] > pose()[1], 'Manual tempo override still follows the loaded MIDI beat position');
 context.playbackBeatUnits = [{ beat: 0, quarterNotesPerPulse: 1.5 }];
 for (let pulse = 0; pulse < 8; pulse++) {
   musicBeat = (pulse + 0.25) * 1.5;
-  assert.equal(pose()[0] < pose()[1], pulse % 2 === 0,
+  assert.equal(pose()[0] < pose()[1], pulse % 2 === 1,
     '6/8 alternates feet on dotted-quarter pulses, not quarter notes');
 }
 context.playbackBeatUnits = [];
 musicBeat = 0.25;
 playback.speedMultiplier = -2;
-assert.ok(pose()[0] < pose()[1], 'Reverse playback uses the same pose at the same MIDI position');
+assert.ok(pose()[0] > pose()[1], 'Reverse playback uses the same pose at the same MIDI position');
 assert.equal(robot.position.z, 0.05, 'Drill interpolation follows the shared fractional beat');
 for (const unit of [1, 1.5]) {
   context.playbackBeatUnits = [{ beat: 0, quarterNotesPerPulse: unit }];
@@ -825,7 +825,7 @@ for (const unit of [1, 1.5]) {
       for (let progress = 0; progress < 1; progress += 0.125) {
         musicBeat = drillBeat = (4 + progress) * unit / rate;
         pose();
-        const sole = solePosition(parts.leftLeg, parts.leftKnee, parts.leftAnkle);
+        const sole = solePosition(parts.rightLeg, parts.rightKnee, parts.rightAnkle);
         planted ??= sole;
         assert.ok(Vector3.Distance(planted, sole) < 1e-6,
           'Standard 8-to-5 strides keep a fixed stance sole at every cadence, meter, and facing');
@@ -866,6 +866,60 @@ run(robotSource.slice(robotSource.indexOf('const GAIT_INDEX_BY_NAME ='),
   robotSource.indexOf('// The gait a marcher uses leaving')));
 const gaitIndex = name => vm.runInContext('MARCHING_GAITS', context).findIndex(gait => gait.name === name);
 const transformSnapshot = () => JSON.stringify([robot, parts]);
+
+context.repeatOptions = { songLength: 0, drill: false };
+parts.gaitIndex = gaitIndex('Field March');
+const originalSynchronizationCounts = state.counts;
+const routeWithHistory = initialStride => Array.from({ length: 25 }, (_, index) => ({
+  position: new Vector3(0, 0, Math.min(index, 7) * initialStride + Math.max(0, index - 7) * 0.3),
+  rotationY: 0,
+}));
+const steadyRoute = routeWithHistory(0.3);
+const halfTimeHistory = routeWithHistory(0.12);
+const doubleTimeHistory = routeWithHistory(0.9);
+const sampleContact = (counts, beat) => {
+  const isolated = { counts, stepCache: undefined, gaitPhaseCache: undefined, legBake: undefined };
+  let contact;
+  context.applyGlobalCount(robot, isolated, {
+    drillBeat: beat, musicBeat: beat,
+    contact(pose, position, yaw, left, progress) { contact = { pose, position, yaw, left, progress }; },
+  });
+  assert.ok(contact, 'A marching route supplies a solved contact pose');
+  return contact;
+};
+for (const history of [halfTimeHistory, doubleTimeHistory]) {
+  const routeState = { counts: history };
+  assert.notEqual(context.resolveSegmentGait(routeState, 0, parts.gaitIndex).stepsPerCount, 1,
+    'Synchronization regression includes a genuinely different earlier cadence');
+  const offsets = context.getGaitStepPhaseOffsets(routeState, parts.gaitIndex);
+  const saved = history.map((count, index) => ({
+    ...count, stepPhase: offsets[index],
+    bakedGait: context.resolveSegmentGait(routeState, index, parts.gaitIndex),
+  }));
+  for (const beat of [14, 14.25, 15, 15.25, 16.75]) {
+    const steady = sampleContact(steadyRoute, beat);
+    const changed = sampleContact(history, beat);
+    assert.equal(changed.left, steady.left, 'Matching tempos share the planted foot after different cadence histories');
+    assert.equal(changed.left, Math.floor(beat) % 2 === 1, 'Left plants on odd numbered counts');
+    assert.equal(changed.progress, steady.progress, 'Matching tempos share the swing phase');
+    assert.deepEqual(sampleContact(saved, beat), changed, 'Baked schedules retain synchronized phase and solved soles');
+  }
+  for (let beat = 4; beat < 14; beat += 0.25) {
+    assert.deepEqual(sampleContact(saved, beat), sampleContact(history, beat),
+      'Saved phases preserve live poses through half/double-time cadence changes');
+  }
+}
+const normal = sampleContact(steadyRoute, 15.25);
+const explicitOffbeat = steadyRoute.map((count, index) => ({ ...count, stepPhase: index + 1.5 }));
+const offbeat = sampleContact(explicitOffbeat, 15.25);
+assert.notEqual(offbeat.left, normal.left, 'Explicit phase offset can deliberately select the opposite foot');
+assert.equal(offbeat.progress, 0.75, 'Explicit fractional off-beat phase is retained');
+const partialOffbeat = steadyRoute.map((count, index) => index === 15 ? { ...count, stepPhase: 16.5 } : count);
+assert.equal(context.getGaitStepPhaseOffsets({ counts: partialOffbeat }, parts.gaitIndex)[15], 16.5,
+  'Partially authored off-beat instructions are retained alongside synchronized defaults');
+state.counts = originalSynchronizationCounts;
+console.log('Band synchronization passed: shared left-foot count-1 parity, half/double-time histories, baked cadence changes, and explicit off-beat instructions.');
+
 let verifiedContacts = 0;
 for (const songLength of [0, 32]) {
   context.repeatOptions = { songLength, drill: false };
