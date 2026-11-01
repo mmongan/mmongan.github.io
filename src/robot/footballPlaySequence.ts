@@ -107,6 +107,14 @@ export function generateFootballPlaySequence(advanceDownfield = false): Football
       player.positions.push(...route.slice(1));
       player.positions.push(...Array.from({ length: 8 }, () => ({ ...route[16] })));
     });
+    if (index > 0) {
+      const previousPass = ballEvents[ballEvents.length - 1];
+      const center = routes[base.players.findIndex(player => player.id === 'offense-C')][0];
+      const returnCount = sequence[index - 1].endCount + 8;
+      ballEvents.push({ startCount: returnCount, endCount: returnCount + 4,
+        fromId: previousPass.toId, toId: 'offense-C', kind: 'return', flightHeight: 3,
+        targetPosition: { x: center.x, z: center.z, height: .22 } });
+    }
     ballEvents.push({ startCount, endCount: startCount + 1, fromId: 'offense-C', toId: 'offense-QB', kind: 'snap' },
       { startCount: startCount + concept.throwCount, endCount: startCount + concept.throwCount + 2,
         fromId: 'offense-QB', toId: `offense-${concept.target}`, kind: 'pass' });

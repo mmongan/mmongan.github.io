@@ -43,7 +43,7 @@ export function footballSnapPose(event: FootballBallEvent, beat: number) {
 }
 
 export function footballThrowPose(event: FootballBallEvent, beat: number) {
-  if (event.kind !== 'pass') return null;
+  if (event.kind !== 'pass' && event.kind !== 'return') return null;
   const elapsed = beat - event.startCount;
   if (elapsed <= -1 || elapsed >= 2) return null;
   const smooth = (t: number) => t * t * (3 - 2 * t);
@@ -63,6 +63,13 @@ export function footballThrowPose(event: FootballBallEvent, beat: number) {
   }
   return { blend: 1 - smooth((elapsed - .8) / 1.2), arm: -.8, elbow: -1.8,
     supportArm: -.3, supportElbow: -1.5 };
+}
+
+export function footballReturnThrowYaw(event: FootballBallEvent, beat: number, yaw: number, x: number, z: number) {
+  const pose = footballThrowPose(event, beat);
+  if (event.kind !== 'return' || !event.targetPosition || !pose) return yaw;
+  const target = Math.atan2(event.targetPosition.x - x, event.targetPosition.z - z);
+  return yaw + Math.atan2(Math.sin(target - yaw), Math.cos(target - yaw)) * pose.blend;
 }
 
 export function footballCatchPose(event: FootballBallEvent, beat: number) {

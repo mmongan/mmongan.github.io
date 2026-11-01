@@ -24,12 +24,15 @@ export function footballPresnapBody(body: FootballBodyFootprint, team: FootballT
 export function footballScrimmageSpot(events: readonly FootballBallEvent[], beat: number,
   position: (id: string, count: number) => FootballPosition | null) {
   const openings = events.filter(event => event.kind === 'snap' ||
-    event.kind === 'kick' && !!event.startPosition);
-  const event = [...openings].reverse().find(event => event.startCount <= beat) ?? openings[0];
+    event.kind === 'kick' && !!event.startPosition || event.kind === 'return' && !!event.targetPosition);
+  const event = [...openings].reverse().find(event =>
+    (event.kind === 'return' ? event.endCount : event.startCount) <= beat) ?? openings[0];
   if (!event) return null;
-  const point = event.startPosition ?? position(event.fromId, event.startCount);
+  const point = event.kind === 'return' ? event.targetPosition
+    : event.startPosition ?? position(event.fromId, event.startCount);
   if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.z)) {
     throw new Error('The line of scrimmage requires a valid snap position.');
   }
-  return { z: point.z, count: event.startCount, kickoff: event.kind === 'kick' };
+  return { z: point.z, count: event.kind === 'return' ? event.endCount : event.startCount,
+    kickoff: event.kind === 'kick' };
 }

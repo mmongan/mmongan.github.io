@@ -54,7 +54,7 @@ const spots = drive.sequence.map(segment => center.positions[segment.startCount]
 assert.deepEqual(Array.from(spots), [-30, -16, -12, 10, 22, 26],
   'Six-play drive advances from own 20 to opponent 24');
 drive.sequence.slice(1).forEach((segment, index) => {
-  const priorPass = drive.ballEvents[index * 2 + 1];
+  const priorPass = drive.ballEvents.filter(event => event.kind === 'pass')[index];
   const priorCarrier = drive.players.find(player => player.id === priorPass.toId);
   assert.equal(center.positions[segment.startCount].z,
     priorCarrier.positions[drive.sequence[index].endCount].z, 'Next snap is at previous carrier dead-ball spot');
@@ -62,7 +62,8 @@ drive.sequence.slice(1).forEach((segment, index) => {
 assert.equal(drive.tackles.length, 5, 'No tackle after the scoring play');
 const touchdown = drive.outcomes[0];
 const carrier = drive.players.find(player => player.id === touchdown.playerId);
-assert.ok(touchdown.count >= drive.ballEvents[11].endCount, 'Ball is caught before scoring');
+assert.ok(touchdown.count >= drive.ballEvents.filter(event => event.kind === 'pass').at(-1).endCount,
+  'Ball is caught before scoring');
 assert.ok(carrier.positions[touchdown.count].z >= 50 && carrier.positions[touchdown.count - 1].z < 50,
   'Score occurs at first end-zone crossing, not merely when final play is loaded');
 assert.ok(carrier.positions[264].z > 50 && carrier.positions[264].z < 60, 'Scorer holds inside the end zone');
@@ -103,6 +104,8 @@ assert.equal(context.footballThrowPose(pass, 7), null);
 assert.equal(context.footballCatchPose(pass, 6), null);
 assert.equal(context.footballCatchPose(pass, 8.5), null);
 assert.equal(context.footballThrowPose({ ...pass, kind: 'snap' }, 5), null);
+assert.equal(context.footballThrowPose({ ...pass, kind: 'return' }, 5).blend, 1,
+  'Between-play returns reuse the throwing arm pose');
 assert.equal(context.footballCatchPose({ ...pass, kind: 'handoff' }, 7), null);
 assert.equal(context.footballThrowPose(pass, 5).blend, 1);
 assert.ok(context.footballThrowPose(pass, 5.35).elbow > context.footballThrowPose(pass, 5).elbow,

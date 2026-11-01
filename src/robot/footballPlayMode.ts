@@ -20,7 +20,7 @@ import { scrimmageBenchSeat, scrimmageSeatedBlend, SCRIMMAGE_RETURN_COUNTS,
 import { footballTacklePose, footballTackleYaw, validateFootballTackle, type FootballTackleEvent } from './footballTackles';
 import { FOOTBALL_PLAY_LIBRARY } from './footballPlayLibrary';
 import { footballFlightEndpoints, footballFlightPoint, footballKickPose, footballSnapPose,
-  footballThrowPose, footballCatchPose } from './footballBallFlight';
+  footballThrowPose, footballCatchPose, footballReturnThrowYaw } from './footballBallFlight';
 import { footballPresnapBody, footballPresnapSpot, footballScrimmageSpot } from './footballLineOfScrimmage';
 import { createFootballFuturePreview } from './footballFuturePreview';
 import { initFootballTackleEditor, executeFootballTackleCommand, type FootballTackleCommand } from './footballTackleEditor';
@@ -435,6 +435,9 @@ export function createFootballVisuals(
           yaw += Math.atan2(Math.sin(target - yaw), Math.cos(target - yaw)) * fall;
         }
         const position = Vector3.Lerp(from.position, to.position, time - index);
+        const returnThrow = seated === 0 && !fall && !snapPose && !floorCalibrationToggle?.checked
+          ? events.find(event => event.kind === 'return' && event.fromId === player.id && footballThrowPose(event, beat)) : null;
+        if (returnThrow) yaw = footballReturnThrowYaw(returnThrow, beat, yaw, position.x, position.z);
         const body = { x: position.x, z: position.z, yaw, fall,
           lean: seated > 0 ? .4 : snapPose ? movement.lean * (1 - snapPose.crouch) + snapPose.lean : movement.lean,
           scale: Math.max(Math.abs(robot.scaling.x), Math.abs(robot.scaling.z)) };
@@ -539,6 +542,11 @@ export function createFootballVisuals(
         const throwEvent = !floorCalibrationToggle?.checked && seated === 0 && !pose && !snap
           ? events.find(event => event.fromId === player.id && footballThrowPose(event, currentBeat)) : null;
         const throwing = throwEvent ? footballThrowPose(throwEvent, currentBeat) : null;
+        if (throwEvent?.kind === 'return' && from && to) {
+          const fraction = currentBeat - index;
+          root.rotation.y = footballReturnThrowYaw(throwEvent, currentBeat, bodyYaw,
+            from.x + (to.x - from.x) * fraction, from.z + (to.z - from.z) * fraction) - robot.rotation.y;
+        }
         const catchEvent = !floorCalibrationToggle?.checked && seated === 0 && !pose && !snap
           ? events.find(event => event.toId === player.id && footballCatchPose(event, currentBeat)) : null;
         const heldPass = !floorCalibrationToggle?.checked && seated === 0
@@ -624,7 +632,7 @@ export function createFootballVisuals(
       const updateBall = () => {
         ball.rotationQuaternion = null;
         ball.setEnabled(!floorCalibrationToggle?.checked && !returning && currentBeat >= visibleFromCount &&
-          (!sequence || !!activeSegment || activeTackles.length > 0 || !!outcome));
+          (!sequence || currentBeat < sequence[sequence.length - 1].endCount + 8 || !!outcome));
         if (!ball.isEnabled()) return;
         const beat = currentBeat;
         let carrier = events[0]?.fromId;
@@ -697,7 +705,7 @@ export function createFootballVisuals(
       }
       tee?.setEnabled(ball.isEnabled() && currentBeat < (openingKick?.startCount ?? 0));
       halo.setEnabled(ball.isEnabled() && !!footballBallHighlight?.checked);
-      const flight = events.find(event => ['pass', 'kick', 'punt'].includes(event.kind) &&
+      const flight = events.find(event => ['pass', 'kick', 'punt', 'return'].includes(event.kind) &&
         currentBeat >= event.startCount && currentBeat <= event.endCount);
       const endpoints = flight ? footballFlightEndpoints(flight, anchor) : null;
       flightLine.setEnabled(ball.isEnabled() && !!footballFlightPath?.checked && !!endpoints);

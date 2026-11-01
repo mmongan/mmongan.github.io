@@ -14,7 +14,7 @@ for (const file of ['footballPlayGeometry', 'footballPlaySequence', 'footballMov
 const data = context.generateFootballPlaySequence();
 assert.equal(data.players.length, 22);
 assert.equal(data.sequence.length, 6);
-assert.equal(data.ballEvents.length, 12);
+assert.equal(data.ballEvents.length, 17);
 assert.ok(data.players.every(player => player.positions.length === 265));
 assert.equal(data.tackles.length, 6);
 for (const event of data.tackles) {
@@ -45,7 +45,20 @@ for (const player of data.players) {
 }
 for (const event of data.ballEvents) {
   assert.ok(data.players.some(player => player.id === event.toId));
-  assert.ok(data.sequence.some(segment => event.startCount >= segment.startCount && event.endCount <= segment.endCount));
+  if (event.kind === 'return') {
+    const nextSnap = data.ballEvents.find(next => next.kind === 'snap' && next.startCount > event.endCount);
+    const previousPass = data.ballEvents.filter(previous => previous.kind === 'pass' &&
+      previous.endCount < event.startCount).at(-1);
+    assert.equal(event.fromId, previousPass.toId, 'Previous carrier throws the return');
+    assert.equal(event.toId, 'offense-C');
+    assert.equal(event.startCount % 48, 24, 'Return waits for tackle recovery');
+    assert.equal(event.endCount - event.startCount, 4);
+    assert.deepEqual({ x: event.targetPosition.x, z: event.targetPosition.z },
+      { ...player('C').positions[nextSnap.startCount] }, 'Return lands at the next snap spot');
+    assert.equal(event.targetPosition.height, .22);
+  } else {
+    assert.ok(data.sequence.some(segment => event.startCount >= segment.startCount && event.endCount <= segment.endCount));
+  }
 }
 const at = (role, play, count) => player(role).positions[play * 48 + count];
 assert.equal(at('TE', 1, 5).z, -6, 'Stick settles five yards beyond slot alignment');
@@ -58,4 +71,4 @@ assert.ok(Math.abs(at('WR2', 4, 10).z - at('TE', 4, 10).z) < 1, 'Mesh crosses wi
 const motion = { team: 'offense', role: 'LT', playStart: 0, playWindows: data.sequence };
 assert.equal(context.footballMovement(motion, 20, 0, .1).gait, 'jog', 'Linemen walk back during resets');
 assert.equal(context.footballMovement(motion, 48, 0, -.5).gait, 'block', 'Next snap restores blocking gait');
-console.log('Football sequence passed: six sourced concepts, 22 continuous routes, walk resets, 12 ball events, one entrance and role gaits.');
+console.log('Football sequence passed: six sourced concepts, 22 continuous routes, walk resets, five return throws, one entrance and role gaits.');

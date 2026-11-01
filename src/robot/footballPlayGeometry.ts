@@ -8,7 +8,7 @@ export type FootballFormation = 'shotgun' | 'spread' | 'i-form';
 export type FootballPlay = 'slants' | 'sweep' | 'four-verticals' | 'sequence' |
   'drive' | 'slant-flat' | 'stick' | 'smash' | 'flood' | 'mesh' | 'kickoff' | 'punt' | 'field-goal' |
   'edge-sack' | 'blitz-sack' | 'four-man-rush' | 'linebacker-blitz';
-export type FootballBallEventKind = 'snap' | 'handoff' | 'pass' | 'kick' | 'punt';
+export type FootballBallEventKind = 'snap' | 'handoff' | 'pass' | 'kick' | 'punt' | 'return';
 
 export interface FootballPosition {
   x: number;

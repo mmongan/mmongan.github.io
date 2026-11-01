@@ -485,8 +485,9 @@ try {
           'Reverse scrubbing reconstructs tackle pose exactly');
         beat = segment.endCount + 8;
         scene.onBeforeRenderObservable.notifyObservers(scene);
-        assert.equal(sequenceBall.isEnabled(), false, 'Ball is hidden during walk-back resets and after sequence');
-        assert.equal(possessionHalo.isEnabled(), false, 'Possession halo hides during reset');
+        const returningBall = sequence.ballEvents.some(ball => ball.kind === 'return' && ball.startCount === beat);
+        assert.equal(sequenceBall.isEnabled(), returningBall, 'Ball stays visible for resets but hides after the last play');
+        assert.equal(possessionHalo.isEnabled(), returningBall, 'Return starts with carrier possession');
       }
       for (const { robot } of players) {
         const counts = schedules.get(robot);
@@ -495,6 +496,13 @@ try {
       }
       context.shiftFootballTimeline(0, 4);
       assert.equal(sequence.sequence[1].startCount, 48, 'Timeline insertion does not mutate input geometry');
+      beat = 30; scene.onBeforeRenderObservable.notifyObservers(scene);
+      assert.ok(sequenceBall.isEnabled() && sequenceBall.position.y > -.48 + 3,
+        'Return flight retimes with inserted chart counts');
+      beat = 32; scene.onBeforeRenderObservable.notifyObservers(scene);
+      const returned = sequence.ballEvents.find(event => event.kind === 'return').targetPosition;
+      near(sequenceBall.position, new Vector3(returned.x, -.48 + returned.height, returned.z),
+        'Retimed return lands at the next snap spot');
       beat = 52;
       scene.onBeforeRenderObservable.notifyObservers(scene);
       assert.equal(scene.getMeshByName('football-line-of-scrimmage').position.z,
@@ -566,12 +574,49 @@ try {
       assert.ok(Math.abs(arm.rotation.x - Math.sin(expectedSteps * Math.PI) * gait.armSwing) < 1e-9,
         'Restoring route coordinates restores the exact original phase');
     }
-    for (const event of data.ballEvents.filter(event => event.kind === 'pass')) {
+    for (const event of data.ballEvents.filter(event => event.kind === 'pass' || event.kind === 'return')) {
       for (let elapsed = -.75; elapsed <= 1.75; elapsed += .25) {
         for (const origin of [event.startCount, event.endCount]) {
           beat = origin + elapsed; scene.onBeforeRenderObservable.notifyObservers(scene);
           assertRenderedClearance(players, data.tackles);
         }
+      }
+      for (const event of data.ballEvents.filter(event => event.kind === 'return')) {
+        const flightLine = scene.getMeshByName('football-flight-path');
+        const possessionHalo = scene.getMeshByName('football-possession-halo');
+        beat = event.startCount; scene.onBeforeRenderObservable.notifyObservers(scene);
+        const carrier = players.find(entry => entry.player.id === event.fromId);
+        const launch = schedules.get(carrier.robot)[event.startCount].position;
+        const yaw = scene.getTransformNodeByName(`football-player-${event.fromId}`).rotation.y + carrier.robot.rotation.y;
+        assert.ok(Math.abs(Math.sin(yaw - Math.atan2(event.targetPosition.x - launch.x,
+          event.targetPosition.z - launch.z))) < 1e-9, 'Carrier faces the return landing spot while throwing');
+        context.footballFlightPath.checked = true;
+        beat = event.startCount + 2; scene.onBeforeRenderObservable.notifyObservers(scene);
+        assert.ok(ball.isEnabled() && flightLine.isEnabled(), 'Return throw and optional arc stay visible between plays');
+        assert.equal(possessionHalo.isEnabled(), false, 'Airborne return has no possession halo');
+        assert.ok(ball.position.y > -.48 + 3, 'Return has a raised throwing arc');
+        const midpoint = ball.position.clone();
+        for (const count of [event.endCount, event.endCount + 10]) {
+          beat = count; scene.onBeforeRenderObservable.notifyObservers(scene);
+          near(ball.position, new Vector3(event.targetPosition.x, -.48 + .22, event.targetPosition.z),
+            'Returned ball waits at the next line of scrimmage');
+          assert.ok(ball.isEnabled(), 'Returned ball does not disappear while teams reset');
+          assert.equal(possessionHalo.isEnabled(), false, 'Grounded ball has no player possession');
+          assert.equal(scene.getMeshByName('football-line-of-scrimmage').position.z, event.targetPosition.z,
+            'Blue line advances when the return lands');
+        }
+        beat = event.startCount + 2; scene.onBeforeRenderObservable.notifyObservers(scene);
+        near(ball.position, midpoint, 'Reverse seek reconstructs the return arc');
+        calibration.checked = true; scene.onBeforeRenderObservable.notifyObservers(scene);
+        assert.equal(ball.isEnabled(), false, 'Calibration hides the return');
+        calibration.checked = false;
+        const oldPosition = parent.position.clone(), oldScale = parent.scaling.clone(), oldYaw = parent.rotation.y;
+        parent.position.set(4, 2, -3); parent.scaling.setAll(.08); parent.rotation.y = .6;
+        scene.onBeforeRenderObservable.notifyObservers(scene);
+        near(ball.position, midpoint, 'Tabletop transforms preserve field-local return arc');
+        parent.position.copyFrom(oldPosition); parent.scaling.copyFrom(oldScale); parent.rotation.y = oldYaw;
+        context.footballFlightPath.checked = false; scene.onBeforeRenderObservable.notifyObservers(scene);
+        assert.equal(flightLine.isEnabled(), false, 'Return respects the ball-path toggle');
       }
     }
     if (data.players.some(player => player.rush)) {
