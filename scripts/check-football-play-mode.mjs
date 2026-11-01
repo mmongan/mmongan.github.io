@@ -16,6 +16,8 @@ import { Color3 } from '@babylonjs/core/Maths/math.color.js';
 
 const transform = path => stripTypeScriptTypes(readFileSync(new URL(path, import.meta.url), 'utf8'),
   { mode: 'transform' }).replace(/^import[\s\S]*?;\r?$/gm, '').replace(/export /g, '');
+assert.match(readFileSync(new URL('../src/index.html', import.meta.url), 'utf8'),
+  /id="footballFlightPath"[^>]*\bchecked\b/, 'Ball path defaults on in the shared native/XR toggle');
 const geometry = vm.createContext({});
 vm.runInContext(transform('../src/robot/footballPlayGeometry.ts'), geometry);
 vm.runInContext(transform('../src/robot/footballPlaySequence.ts'), geometry);
@@ -166,6 +168,14 @@ try {
       assertRenderedClearance(players, [], count === 0 ? scrimmageLine.position.z : undefined);
     }
     const ball = scene.getMeshByName('football-ball');
+    const possessionHalo = scene.getMeshByName('football-possession-halo');
+    assert.equal(possessionHalo.parent, parent, 'Possession halo is field-local, not attached to the flying ball');
+    assert.ok(!possessionHalo.isPickable && !possessionHalo.checkCollisions);
+    beat = 0; scene.onBeforeRenderObservable.notifyObservers(scene);
+    assert.ok(possessionHalo.isEnabled(), 'Center has the ground halo before the snap');
+    const centerPosition = context.getFootballPlaybackPosition(players.find(entry => entry.player.label === 'C').robot, 0);
+    near(possessionHalo.position, new Vector3(centerPosition.x, -.455, centerPosition.z),
+      'Halo uses separated player position, not ball launch position');
     assert.equal(scene.meshes.filter(mesh => mesh.name.startsWith('football-helmet-')).length, 22);
     assert.equal(scene.meshes.filter(mesh => mesh.name.startsWith('football-face-')).length, 22,
       'Players have visible human faces beneath their helmets');
@@ -207,12 +217,51 @@ try {
       return data.ballEvents.some(event => event.kind === 'snap' && event.fromId === id && count <= event.startCount)
         ? snapAnchor(robot, count) : resolvedAnchor(robot, count);
     };
+    for (const event of data.ballEvents.filter(event => event.kind === 'pass')) {
+      const arm = scene.getTransformNodeByName(`football-shoulder-${event.fromId}-1`);
+      const elbow = scene.getTransformNodeByName(`football-elbow-${event.fromId}-1`);
+      for (const time of [-.5, 0, .175, .35, .5, .8, 1.5, 2]) {
+        beat = event.startCount + time; scene.onBeforeRenderObservable.notifyObservers(scene);
+        assertRenderedClearance(players);
+      }
+      beat = event.startCount; scene.onBeforeRenderObservable.notifyObservers(scene);
+      assert.equal(arm.rotation.x, -2.2, 'Thrower cocks right arm above shoulder');
+      assert.equal(elbow.rotation.x, -1.8, 'Throwing elbow bends in windup');
+      beat = event.startCount + .35; scene.onBeforeRenderObservable.notifyObservers(scene);
+      assert.ok(Math.abs(elbow.rotation.x + .45) < 1e-6, 'Throwing elbow extends at release');
+      const release = arm.rotation.x;
+      beat = event.startCount + 1; scene.onBeforeRenderObservable.notifyObservers(scene);
+      beat = event.startCount + .35; scene.onBeforeRenderObservable.notifyObservers(scene);
+      assert.equal(arm.rotation.x, release, 'Reverse seeking reconstructs throwing pose');
+      calibration.checked = true; scene.onBeforeRenderObservable.notifyObservers(scene);
+      assert.equal(elbow.rotation.x, -1.1, 'Calibration removes throwing override');
+      calibration.checked = false;
+      for (const time of [-.5, 0, .25, .5, 1, 1.5]) {
+        beat = event.endCount + time; scene.onBeforeRenderObservable.notifyObservers(scene);
+        assertRenderedClearance(players);
+      }
+      beat = event.endCount; scene.onBeforeRenderObservable.notifyObservers(scene);
+      const catcher = [-1, 1].map(side => scene.getTransformNodeByName(`football-shoulder-${event.toId}-${side}`));
+      catcher.forEach(arm => assert.equal(arm.rotation.x, -.75, 'Receiver reaches with both arms on arrival'));
+      assert.equal(catcher[0].rotation.z, .4, 'Left hand angles inward toward the pass');
+      assert.equal(catcher[1].rotation.z, -.4, 'Right hand angles inward toward the pass');
+      beat = event.endCount + .5; scene.onBeforeRenderObservable.notifyObservers(scene);
+      catcher.forEach(arm => assert.ok(Math.abs(arm.rotation.x + .2) < 1e-6, 'Catch tucks both arms'));
+      beat = event.endCount; scene.onBeforeRenderObservable.notifyObservers(scene);
+      catcher.forEach(arm => assert.equal(arm.rotation.x, -.75, 'Reverse seeking reconstructs catch'));
+      calibration.checked = true; scene.onBeforeRenderObservable.notifyObservers(scene);
+      assert.equal(scene.getTransformNodeByName(`football-elbow-${event.toId}-1`).rotation.x, -1.1,
+        'Calibration removes catch override');
+      catcher.forEach(arm => assert.equal(arm.rotation.z, 0, 'Calibration clears inward catch rotation'));
+      calibration.checked = false;
+    }
     for (const event of data.ballEvents) {
       beat = (event.startCount + event.endCount) / 2;
       scene.onBeforeRenderObservable.notifyObservers(scene);
       const midpoint = Vector3.Lerp(positionAt(event.fromId, event.startCount), positionAt(event.toId, event.endCount), .5);
       if (event.kind === 'pass') midpoint.y += 4;
       near(ball.position, midpoint, `${play}: ${event.kind} follows the shared timeline`);
+      assert.equal(possessionHalo.isEnabled(), false, 'No player possession halo during ball transfer');
       near(ball.computeWorldMatrix(true).getTranslation(),
         Vector3.TransformCoordinates(midpoint, parent.computeWorldMatrix(true)),
         `${play}: the ball follows scaled/rotated tabletop placement`);
@@ -221,10 +270,18 @@ try {
       schedules.get(robot)[beat].position.x += .5;
       scene.onBeforeRenderObservable.notifyObservers(scene);
       near(ball.position, positionAt(event.toId, beat), `${play}: route endpoint edits move the ball target`);
+      assert.ok(possessionHalo.isEnabled(), 'Possession halo switches to the completed transfer recipient');
+      const recipient = context.getFootballPlaybackPosition(robot, beat);
+      near(possessionHalo.position, new Vector3(recipient.x, -.455, recipient.z),
+        'Possession halo follows edited recipient route');
+      near(possessionHalo.computeWorldMatrix(true).getTranslation(),
+        Vector3.TransformCoordinates(possessionHalo.position, parent.computeWorldMatrix(true)),
+        'Ground halo follows rotated/scaled tabletop placement');
     }
     calibration.checked = true;
     scene.onBeforeRenderObservable.notifyObservers(scene);
     assert.equal(ball.isEnabled(), false, 'Calibration hides the ball');
+    assert.equal(possessionHalo.isEnabled(), false, 'Calibration hides possession halo');
     assert.equal(scrimmageLine.isEnabled(), false, 'Calibration hides the TV line');
     calibration.checked = false;
     beat = 5.25;
@@ -369,6 +426,10 @@ try {
           { x: carrier.position.x, z: carrier.position.z, yaw, fall: 1, scale: 1 }).distance >= 1.06 - 1e-6,
         'Fallen bodies including helmets and feet have disjoint clearance capsules');
         assert.equal(sequenceBall.isEnabled(), true, 'Ball stays with tackled carrier while falling');
+        const possessionHalo = scene.getMeshByName('football-possession-halo');
+        assert.ok(possessionHalo.isEnabled(), 'Ground halo stays visible during tackled possession');
+        near(possessionHalo.position, new Vector3(carrier.position.x, -.455, carrier.position.z),
+          'Ground halo remains on turf at carrier root, not at the falling chest');
         const saved = scene.getTransformNodeByName(`football-player-${event.carrierId}`).rotation.x;
         beat = segment.endCount + 6;
         scene.onBeforeRenderObservable.notifyObservers(scene);
@@ -381,6 +442,7 @@ try {
         beat = segment.endCount + 8;
         scene.onBeforeRenderObservable.notifyObservers(scene);
         assert.equal(sequenceBall.isEnabled(), false, 'Ball is hidden during walk-back resets and after sequence');
+        assert.equal(possessionHalo.isEnabled(), false, 'Possession halo hides during reset');
       }
       for (const { robot } of players) {
         const counts = schedules.get(robot);
@@ -428,7 +490,16 @@ try {
     beat = 0;
     const dispose = context.createFootballVisuals(players, data.ballEvents, parent, 0, data.sequence, data.tackles, data.outcomes);
     const ball = scene.getMeshByName('football-ball');
+    for (const event of data.ballEvents.filter(event => event.kind === 'pass')) {
+      for (let elapsed = -.75; elapsed <= 1.75; elapsed += .25) {
+        for (const origin of [event.startCount, event.endCount]) {
+          beat = origin + elapsed; scene.onBeforeRenderObservable.notifyObservers(scene);
+          assertRenderedClearance(players, data.tackles);
+        }
+      }
+    }
     if (data.players.some(player => player.rush)) {
+      beat = 0;
       scene.onBeforeRenderObservable.notifyObservers(scene);
       assertRenderedClearance(players, [], scene.getMeshByName('football-line-of-scrimmage').position.z);
       for (const count of [4, 6, 8, 10, 12, 13, 14, 16, 18, 20]) {
@@ -452,6 +523,8 @@ try {
         const tee = scene.getMeshByName('football-kicking-tee');
         assert.ok(tee.isEnabled() && !tee.isPickable, 'Kickoff ball waits on a non-pickable tee');
         near(ball.position, new Vector3(0, -.48 + .14, -15), 'Kickoff ball is stationary at own 35 before approach');
+        assert.equal(scene.getMeshByName('football-possession-halo').isEnabled(), false,
+          'Kickoff tee has no player possession');
       }
       const foot = scene.getMeshByName(`football-cleat-${kick.fromId}-1`);
       beat = kick.startCount - 1; scene.onBeforeRenderObservable.notifyObservers(scene);
@@ -468,6 +541,8 @@ try {
       assert.ok(scene.getMeshByName('football-flight-path').isEnabled());
       if (play === 'kickoff') assert.equal(scene.getMeshByName('football-kicking-tee').isEnabled(), false);
       assert.ok(ball.position.y > -.48 + 1, 'Kicked football follows a raised arc');
+      assert.equal(scene.getMeshByName('football-possession-halo').isEnabled(), false,
+        'No player halo while kick/punt is airborne');
       if (play === 'punt') {
         beat = kick.startCount - .5;
         scene.onBeforeRenderObservable.notifyObservers(scene);
@@ -482,6 +557,8 @@ try {
       assert.ok(scene.getMeshByName('football-score-sign').isEnabled(), 'Touchdown/field goal has visible field sign');
       assert.ok(ball.isEnabled(), 'Scoring ball stays visible after flight/play');
       assert.ok(context.footballStatus.value.includes(event.kind === 'touchdown' ? 'TOUCHDOWN' : 'FIELD GOAL'));
+      assert.equal(scene.getMeshByName('football-possession-halo').isEnabled(), event.kind === 'touchdown',
+        'Touchdown retains scorer possession; goalpost flight endpoint has none');
       beat = event.count - 1; scene.onBeforeRenderObservable.notifyObservers(scene);
       assert.equal(scene.getMeshByName('football-score-sign').isEnabled(), false, 'No premature score on reverse seek');
       beat = event.count; calibration.checked = true; scene.onBeforeRenderObservable.notifyObservers(scene);
@@ -493,10 +570,11 @@ try {
     assert.equal(scene.getMeshByName('football-flight-path'), null);
     assert.equal(scene.getMeshByName('football-ball-highlight'), null);
     assert.equal(scene.getMeshByName('football-score-sign'), null);
+    assert.equal(scene.getMeshByName('football-possession-halo'), null, 'Possession halo is disposed on exit');
   }
   assert.ok(materials.filter(material => !material.name?.startsWith('footballSymbol-'))
     .every(material => material.disposed), 'All non-shared owned materials are disposed');
-  console.log('Football mode passed: 22 human appearances, actual vertex/capsule body clearance, alongside fall/recovery, separated ball anchors, scrub, edits, tabletop transforms, calibration and cleanup.');
+  console.log('Football mode passed: throw/catch/recovery arms, horizontal face guards, 22 human appearances, actual vertex/capsule clearance, falls, ball anchors, scrub, tabletop transforms, calibration and cleanup.');
 } finally {
   scene.dispose();
   engine.dispose();

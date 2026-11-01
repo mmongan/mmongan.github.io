@@ -18,7 +18,8 @@ import { createFootballHumanModel } from './footballHumanModel';
 import { scrimmageBenchSeat, scrimmageSeatedBlend } from './scrimmageGeometry';
 import { footballTacklePose, footballTackleYaw, validateFootballTackle, type FootballTackleEvent } from './footballTackles';
 import { FOOTBALL_PLAY_LIBRARY } from './footballPlayLibrary';
-import { footballFlightEndpoints, footballFlightPoint, footballKickPose, footballSnapPose } from './footballBallFlight';
+import { footballFlightEndpoints, footballFlightPoint, footballKickPose, footballSnapPose,
+  footballThrowPose, footballCatchPose } from './footballBallFlight';
 import { footballPresnapBody, footballPresnapSpot, footballScrimmageSpot } from './footballLineOfScrimmage';
 import { createFootballFuturePreview } from './footballFuturePreview';
 import { initFootballTackleEditor, executeFootballTackleCommand, type FootballTackleCommand } from './footballTackleEditor';
@@ -299,6 +300,15 @@ export function createFootballVisuals(
     haloMaterial.emissiveColor = Color3.FromHexString('#ffd54f'); haloMaterial.alpha = .3;
     halo.material = haloMaterial;
     halo.setEnabled(false);
+    const possessionHalo = MeshBuilder.CreateTorus('football-possession-halo',
+      { diameter: 1.8, thickness: .08, tessellation: 48 }, scene);
+    possessionHalo.parent = parent; possessionHalo.isPickable = false; possessionHalo.checkCollisions = false;
+    possessionHalo.scaling.y = .2;
+    const possessionMaterial = material('football-possession-gold', Color3.FromHexString('#ffe45c'));
+    possessionMaterial.emissiveColor = possessionMaterial.diffuseColor.clone();
+    possessionMaterial.disableLighting = true;
+    possessionHalo.material = possessionMaterial;
+    possessionHalo.setEnabled(false); roots.push(possessionHalo);
     const flightLine = MeshBuilder.CreateLines('football-flight-path', {
       points: Array.from({ length: 33 }, () => Vector3.Zero()), updatable: true,
     }, scene);
@@ -480,13 +490,30 @@ export function createFootballVisuals(
           root.rotation.x = root.rotation.x * (1 - pose.fall) + Math.PI / 2 * pose.fall;
           root.position.y = root.position.y * (1 - pose.fall) + .22 * pose.fall;
         }
+        const throwEvent = !floorCalibrationToggle?.checked && seated === 0 && !pose && !snap
+          ? events.find(event => event.fromId === player.id && footballThrowPose(event, currentBeat)) : null;
+        const throwing = throwEvent ? footballThrowPose(throwEvent, currentBeat) : null;
+        const catchEvent = !floorCalibrationToggle?.checked && seated === 0 && !pose && !snap
+          ? events.find(event => event.toId === player.id && footballCatchPose(event, currentBeat)) : null;
+        const catching = catchEvent ? footballCatchPose(catchEvent, currentBeat) : null;
         human.arms.forEach((arm, side) => {
+          arm.rotation.z = 0;
           const normal = seated > 0 ? -.4 : movement.gait === 'block' ? movement.blockArm :
             Math.sin(phase + side * Math.PI) * movement.armSwing;
           arm.rotation.x = pose ? normal * (1 - pose.fall) + (.5 - pose.wrap * .9) * pose.fall : normal;
           if (snap && !pose) arm.rotation.x = arm.rotation.x * (1 - snap.crouch) + snap.arm;
           human.elbows[side].rotation.x = snap && !pose ? -.3
             : seated === 0 && movement.gait === 'block' && !pose ? movement.blockElbow : -1.1;
+          if (throwing) {
+            const targetArm = side === 1 ? throwing.arm : throwing.supportArm;
+            const targetElbow = side === 1 ? throwing.elbow : throwing.supportElbow;
+            arm.rotation.x += (targetArm - arm.rotation.x) * throwing.blend;
+            human.elbows[side].rotation.x += (targetElbow - human.elbows[side].rotation.x) * throwing.blend;
+          } else if (catching) {
+            arm.rotation.z = (side === 0 ? 1 : -1) * catching.inward * catching.blend;
+            arm.rotation.x += (catching.arm - arm.rotation.x) * catching.blend;
+            human.elbows[side].rotation.x += (catching.elbow - human.elbows[side].rotation.x) * catching.blend;
+          }
         });
         const kickEvent = events.find(event => (event.kind === 'kick' || event.kind === 'punt') &&
           event.fromId === player.id && currentBeat >= event.startCount - 1 && currentBeat <= event.startCount + 2);
@@ -532,6 +559,7 @@ export function createFootballVisuals(
         footballStatus.value = currentBeat < visibleFromCount ? 'Special teams entering the field.'
           : 'Field goal: snap to holder, kicker approach, then kick.';
       }
+      let possession: string | null = null;
       const updateBall = () => {
         ball.setEnabled(!floorCalibrationToggle?.checked && currentBeat >= visibleFromCount &&
           (!sequence || !!activeSegment || activeTackles.length > 0 || !!outcome));
@@ -557,6 +585,7 @@ export function createFootballVisuals(
           if (!endpoints) { ball.setEnabled(false); return; }
           const t = (beat - event.startCount) / (event.endCount - event.startCount);
           ball.position.copyFrom(footballFlightPoint(event, endpoints.from, endpoints.to, t));
+          if (t === 0 && !event.startPosition) possession = event.launchId ?? event.fromId;
           ball.rotation.z = beat * Math.PI * 2;
           return;
         }
@@ -578,10 +607,17 @@ export function createFootballVisuals(
             Vector3.LerpToRef(position, Vector3.TransformCoordinates(chest, inverse), fall, position);
           }
           ball.position.copyFrom(position);
+          possession = carrier ?? null;
         }
         else ball.setEnabled(false);
       };
       updateBall();
+      const carrierRobot = possession ? byId.get(possession) : null;
+      const carrierPosition = carrierRobot ? getFootballPlaybackPosition(carrierRobot, currentBeat) : null;
+      possessionHalo.setEnabled(ball.isEnabled() && !!carrierPosition);
+      if (carrierPosition) {
+        possessionHalo.position.set(carrierPosition.x, FIELD_SURFACE_Y + .025, carrierPosition.z);
+      }
       tee?.setEnabled(ball.isEnabled() && currentBeat < (openingKick?.startCount ?? 0));
       halo.setEnabled(ball.isEnabled() && !!footballBallHighlight?.checked);
       const flight = events.find(event => ['pass', 'kick', 'punt'].includes(event.kind) &&

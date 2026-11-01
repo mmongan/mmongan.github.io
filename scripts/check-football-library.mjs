@@ -97,6 +97,24 @@ for (const play of ['kickoff', 'punt', 'field-goal']) {
   assert.equal(context.footballKickPose(kick.startCount, kick.startCount + 2), 0);
 }
 assert.throws(() => context.generateFootballLibraryPlay('spread', 'invalid'), /supported/);
+const pass = { kind: 'pass', startCount: 5, endCount: 7 };
+assert.equal(context.footballThrowPose(pass, 4), null);
+assert.equal(context.footballThrowPose(pass, 7), null);
+assert.equal(context.footballCatchPose(pass, 6), null);
+assert.equal(context.footballCatchPose(pass, 8.5), null);
+assert.equal(context.footballThrowPose({ ...pass, kind: 'snap' }, 5), null);
+assert.equal(context.footballCatchPose({ ...pass, kind: 'handoff' }, 7), null);
+assert.equal(context.footballThrowPose(pass, 5).blend, 1);
+assert.ok(context.footballThrowPose(pass, 5.35).elbow > context.footballThrowPose(pass, 5).elbow,
+  'Throw straightens the cocked elbow through release');
+assert.equal(context.footballCatchPose(pass, 7).blend, 1);
+assert.ok(context.footballCatchPose(pass, 7.5).arm > context.footballCatchPose(pass, 7).arm,
+  'Receiver brings outstretched arms back toward chest after catching');
+for (const boundary of [5, 5.35, 5.8]) {
+  const a = context.footballThrowPose(pass, boundary - 1e-6);
+  const b = context.footballThrowPose(pass, boundary + 1e-6);
+  assert.ok(Math.abs(a.blend * a.arm - b.blend * b.arm) < 1e-4, 'Throw phase transitions are continuous');
+}
 for (const formation of ['shotgun', 'spread', 'i-form']) {
   for (const play of ['edge-sack', 'blitz-sack', 'four-man-rush', 'linebacker-blitz']) {
     const data = context.generateFootballLibraryPlay(formation, play);
