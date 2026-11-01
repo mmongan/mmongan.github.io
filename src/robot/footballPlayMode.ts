@@ -375,13 +375,36 @@ export function createFootballVisuals(
       }
     });
     const positionCache = new Map<number, Map<TransformNode, { x: number; z: number }>>();
+    const stepPrefixes = new Map<TransformNode, number[]>();
+    const routeSnapshots = new Map<TransformNode, Float64Array>();
     let clearanceSignature = '';
     const clearanceObserver = scene.onBeforeRenderObservable.add(() => {
-      const signature = JSON.stringify([floorCalibrationToggle?.checked, visibleFromCount, seatInsertions, tackles,
-        events, sequence, players.map(({ robot }) => [robot.isDisposed(), robot.isEnabled(),
-          robot.scaling.x, robot.scaling.z, getRobotCounts(robot)?.map(count =>
-            [count.position.x, count.position.z, count.rotationY, count.facingY])])]);
-      if (signature !== clearanceSignature) { positionCache.clear(); clearanceSignature = signature; }
+      const signature = JSON.stringify([floorCalibrationToggle?.checked, visibleFromCount, returnStart,
+        seatInsertions, tackles, events, sequence]);
+      let changed = signature !== clearanceSignature;
+      for (const { robot } of players) {
+        const counts = getRobotCounts(robot);
+        const length = 4 + (counts?.length ?? 0) * 4;
+        let snapshot = routeSnapshots.get(robot);
+        if (!snapshot || snapshot.length !== length) {
+          snapshot = new Float64Array(length);
+          routeSnapshots.set(robot, snapshot);
+          changed = true;
+        }
+        const compare = (index: number, value: number) => {
+          if (!Object.is(snapshot[index], value)) { snapshot[index] = value; changed = true; }
+        };
+        compare(0, Number(robot.isDisposed())); compare(1, Number(robot.isEnabled()));
+        compare(2, robot.scaling.x); compare(3, robot.scaling.z);
+        for (let index = 0; counts && index < counts.length; index++) {
+          const count = counts[index], offset = 4 + index * 4;
+          compare(offset, count.position.x); compare(offset + 1, count.position.z);
+          compare(offset + 2, count.rotationY ?? NaN); compare(offset + 3, count.facingY ?? NaN);
+        }
+      }
+      if (changed) {
+        positionCache.clear(); stepPrefixes.clear(); clearanceSignature = signature;
+      }
     }, -1, true);
     disposeClearance = () => scene.onBeforeRenderObservable.remove(clearanceObserver);
     const samplePositions = (beat: number) => {
@@ -461,6 +484,8 @@ export function createFootballVisuals(
         !returning && !floorCalibrationToggle?.checked);
       if (spot) scrimmageLine.position.z = spot.z;
       const activeTackles = activeTacklesAt(currentBeat);
+      const seatBeat = seatBeatAt(currentBeat);
+      const benchSeated = scrimmageSeatedBlend(seatBeat, initialVisibleFromCount, initialReturnStart);
       for (const [playerIndex, { robot, player, root, human }] of animations.entries()) {
         const counts = getRobotCounts(robot);
         const index = Math.min(Math.floor(currentBeat), Math.max(0, (counts?.length ?? 1) - 1));
@@ -470,16 +495,19 @@ export function createFootballVisuals(
           playWindows: sequence, rush: player.rush, playEnd: returnStart };
         const movement = footballMovement(motion,
           currentBeat, from && to ? to.x - from.x : 0, from && to ? to.z - from.z : 0);
-        let steps = (currentBeat - index) * movement.stepsPerCount;
-        for (let count = 0; counts && count < index; count++) {
-          const a = counts[count].position, b = counts[count + 1].position;
-          steps += footballMovement(motion,
-            count, b.x - a.x, b.z - a.z).stepsPerCount;
+        let prefix = stepPrefixes.get(robot);
+        if (!prefix) {
+          prefix = [0];
+          for (let count = 0; counts && count < counts.length - 1; count++) {
+            const a = counts[count].position, b = counts[count + 1].position;
+            prefix.push(prefix[count] + footballMovement(motion,
+              count, b.x - a.x, b.z - a.z).stepsPerCount);
+          }
+          stepPrefixes.set(robot, prefix);
         }
+        const steps = (prefix[index] ?? 0) + (currentBeat - index) * movement.stepsPerCount;
         const phase = steps * Math.PI;
         const bob = movement.stepsPerCount ? Math.abs(Math.sin(phase)) * .04 : 0;
-        const seatBeat = seatBeatAt(currentBeat);
-        const benchSeated = scrimmageSeatedBlend(seatBeat, initialVisibleFromCount, initialReturnStart);
         const holding = player.label === 'H' && currentBeat >= visibleFromCount && !returning;
         const seated = holding ? .65 : benchSeated;
         const benchSeat = scrimmageBenchSeat(playerIndex);
@@ -692,7 +720,7 @@ export function createFootballVisuals(
           positionCache.clear(); invalidTackles.clear(); update();
         });
       const shift = (at: number, amount: number) => {
-        positionCache.clear();
+        positionCache.clear(); stepPrefixes.clear();
         seatInsertions.push({ at, amount });
         for (const event of events) {
           if (event.startCount > at) event.startCount += amount;

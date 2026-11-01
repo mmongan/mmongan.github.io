@@ -56,6 +56,12 @@ for (const module of ['footballMovement', 'footballPresentation', 'footballBodyC
   vm.runInContext(transform(`../src/robot/${module}.ts`), context);
 }
 vm.runInContext(transform('../src/robot/footballPlayMode.ts'), context);
+let movementCalls = 0;
+const originalMovement = context.footballMovement;
+context.footballMovement = (...args) => {
+  movementCalls++;
+  return originalMovement(...args);
+};
 scene.onBeforeRenderObservable.add(() => {
   for (const [robot, counts] of schedules) {
     if (robot.isDisposed() || !counts.length) continue;
@@ -528,6 +534,38 @@ try {
     beat = 0;
     const dispose = context.createFootballVisuals(players, data.ballEvents, parent, 0, data.sequence, data.tackles, data.outcomes);
     const ball = scene.getMeshByName('football-ball');
+    if (play === 'drive') {
+      beat = 200.25; scene.onBeforeRenderObservable.notifyObservers(scene);
+      movementCalls = 0;
+      scene.onBeforeRenderObservable.notifyObservers(scene);
+      assert.ok(movementCalls <= 44,
+        `Warm frame evaluates only current player gaits, not all prior counts: ${movementCalls}`);
+      console.log(`Football warm-frame cadence: ${movementCalls} gait evaluations at count 200 (previous history loop: 4422).`);
+      const entry = players.find(entry => entry.player.label === 'WR1');
+      const motion = { team: entry.player.team, role: entry.player.label, playStart: 0, playWindows: data.sequence };
+      const route = schedules.get(entry.robot), index = Math.floor(beat);
+      let expectedSteps = 0;
+      for (let count = 0; count < index; count++) {
+        const a = route[count].position, b = route[count + 1].position;
+        expectedSteps += originalMovement(motion, count, b.x - a.x, b.z - a.z).stepsPerCount;
+      }
+      const a = route[index].position, b = route[index + 1].position;
+      const gait = originalMovement(motion, beat, b.x - a.x, b.z - a.z);
+      expectedSteps += (beat - index) * gait.stepsPerCount;
+      const arm = scene.getTransformNodeByName('football-shoulder-offense-WR1--1');
+      assert.ok(Math.abs(arm.rotation.x - Math.sin(expectedSteps * Math.PI) * gait.armSwing) < 1e-9,
+        'Cached cadence matches the original full-history arm phase');
+      const savedX = route[1].position.x;
+      route[1].position.x += 3;
+      movementCalls = 0; scene.onBeforeRenderObservable.notifyObservers(scene);
+      assert.ok(movementCalls > 200, 'In-place route edits rebuild cached cumulative cadence');
+      movementCalls = 0; scene.onBeforeRenderObservable.notifyObservers(scene);
+      assert.ok(movementCalls <= 44, 'Edited routes return to constant current-count gait work');
+      route[1].position.x = savedX;
+      scene.onBeforeRenderObservable.notifyObservers(scene);
+      assert.ok(Math.abs(arm.rotation.x - Math.sin(expectedSteps * Math.PI) * gait.armSwing) < 1e-9,
+        'Restoring route coordinates restores the exact original phase');
+    }
     for (const event of data.ballEvents.filter(event => event.kind === 'pass')) {
       for (let elapsed = -.75; elapsed <= 1.75; elapsed += .25) {
         for (const origin of [event.startCount, event.endCount]) {

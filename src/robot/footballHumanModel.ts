@@ -94,10 +94,7 @@ export function createFootballHumanModel(robot: TransformNode, torso: TransformN
       return { hip, knee, ankle, thigh, calf, pad, shoe };
     }) ?? [];
   const inverse = Matrix.Identity();
-  const local = (node: TransformNode) => {
-    node.computeWorldMatrix(true);
-    return Vector3.TransformCoordinates(node.getAbsolutePosition(), inverse);
-  };
+  const local = (node: TransformNode) => Vector3.TransformCoordinates(node.getAbsolutePosition(), inverse);
   const updateLegs = (seated = 0, seatYaw = 0, fall = 0, kick = 0) => {
     robot.computeWorldMatrix(true);
     rig?.computeWorldMatrix(true);
@@ -112,12 +109,17 @@ export function createFootballHumanModel(robot: TransformNode, torso: TransformN
       knee.computeWorldMatrix(true);
       ankle.computeWorldMatrix(true);
       const x = index === 0 ? -.12 : .12;
-      const a = Vector3.Lerp(local(hip), seatedPoint(x, .60, 0), seated);
-      const b = Vector3.Lerp(local(knee), seatedPoint(x, .60, .4), seated);
-      const c = Vector3.Lerp(local(ankle), seatedPoint(x, .09, .4), seated);
-      Vector3.LerpToRef(a, new Vector3(x, 0, 0), fall, a);
-      Vector3.LerpToRef(b, new Vector3(x, -.43, .03), fall, b);
-      Vector3.LerpToRef(c, new Vector3(x, -.88, .04), fall, c);
+      const a = local(hip), b = local(knee), c = local(ankle);
+      if (seated > 0) {
+        Vector3.LerpToRef(a, seatedPoint(x, .60, 0), seated, a);
+        Vector3.LerpToRef(b, seatedPoint(x, .60, .4), seated, b);
+        Vector3.LerpToRef(c, seatedPoint(x, .09, .4), seated, c);
+      }
+      if (fall > 0) {
+        Vector3.LerpToRef(a, new Vector3(x, 0, 0), fall, a);
+        Vector3.LerpToRef(b, new Vector3(x, -.43, .03), fall, b);
+        Vector3.LerpToRef(c, new Vector3(x, -.88, .04), fall, c);
+      }
       if (index === 1 && kick > 0) {
         Vector3.LerpToRef(a, new Vector3(x, 0, 0), kick, a);
         Vector3.LerpToRef(b, new Vector3(x, -.24, .35), kick, b);
@@ -130,10 +132,10 @@ export function createFootballHumanModel(robot: TransformNode, torso: TransformN
         mesh.rotationQuaternion = Quaternion.FromUnitVectorsToRef(Vector3.Up(), direction.normalize(), Quaternion.Identity());
       }
       pad.position.copyFrom(b);
-      const foot = seatedPoint(x, .05, .47);
-      shoe.position.copyFrom(Vector3.Lerp(local(ankle), foot, seated));
+      shoe.position.copyFrom(local(ankle));
+      if (seated > 0) Vector3.LerpToRef(shoe.position, seatedPoint(x, .05, .47), seated, shoe.position);
       shoe.position.z += (1 - seated) * .07;
-      Vector3.LerpToRef(shoe.position, new Vector3(x, -.91, .1), fall, shoe.position);
+      if (fall > 0) Vector3.LerpToRef(shoe.position, new Vector3(x, -.91, .1), fall, shoe.position);
       if (index === 1 && kick > 0) Vector3.LerpToRef(shoe.position, new Vector3(x, -.43, .82), kick, shoe.position);
       shoe.rotationQuaternion = ankle.absoluteRotationQuaternion.clone();
       const parentRotation = legsRoot.absoluteRotationQuaternion.conjugate();
