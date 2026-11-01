@@ -167,7 +167,6 @@ export function createHandInteraction(paths: HandPathDependencies) {
   const marcherPinchHands = new Set<string>();
   let sceneGesture: {
     startSurfaceY: number;
-    startHandHeight: number;
     startDistance: number;
     startYaw: number;
     startScale: number;
@@ -1177,7 +1176,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
         if (marcherGrabs.get(handedness)?.source === 'hand') finishMarcherGrab(handedness, false);
         handPinches.set(handedness, true);
       }
-      const { distance, midpoint, height } = getHorizontalHandSpan(left, right);
+      const { distance, midpoint } = getHorizontalHandSpan(left, right);
       if (distance < 0.05) return;
       const yaw = getControllerYaw(left, right);
       if (!sceneGesture) {
@@ -1185,17 +1184,18 @@ export function createHandInteraction(paths: HandPathDependencies) {
         const startRotation = getARRotation();
         const offset = midpoint.subtract(getARPosition());
         sceneGesture = {
-          startSurfaceY: getARSurfaceHeight(), startHandHeight: height,
+          startSurfaceY: getARSurfaceHeight(),
           startDistance: distance, startYaw: yaw, startScale, startRotation,
           localAnchor: rotateAroundY(offset, -startRotation).scale(1 / startScale),
         };
+        preserveARSurfaceHeight(sceneGesture.startSurfaceY);
       } else {
         const scale = setARScale(sceneGesture.startScale * distance / sceneGesture.startDistance);
         const yawDelta = yaw - sceneGesture.startYaw;
         const rotation = sceneGesture.startRotation + Math.atan2(Math.sin(yawDelta), Math.cos(yawDelta));
         setARRotation(rotation);
         setARPosition(getARPositionForScaleAnchor(midpoint, sceneGesture.localAnchor, scale, rotation));
-        preserveARSurfaceHeight(sceneGesture.startSurfaceY + height - sceneGesture.startHandHeight);
+        preserveARSurfaceHeight(sceneGesture.startSurfaceY);
       }
       return;
     }

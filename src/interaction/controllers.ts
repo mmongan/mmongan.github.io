@@ -27,7 +27,6 @@ const pinchState = {
   startYaw: 0,
   startRotation: 0,
   startSurfaceY: 0,
-  startHandHeight: 0,
 };
 let singleControllerMove: {
   handedness: string;
@@ -47,7 +46,6 @@ function resetPinchState() {
   pinchState.startYaw = 0;
   pinchState.startRotation = 0;
   pinchState.startSurfaceY = 0;
-  pinchState.startHandHeight = 0;
 }
 
 function getScaleExponentFor(scale: number): number {
@@ -76,7 +74,6 @@ export function getHorizontalHandSpan(left: Vector3, right: Vector3) {
   return {
     distance: Math.hypot(right.x - left.x, right.z - left.z),
     midpoint: new Vector3((left.x + right.x) / 2, 0, (left.z + right.z) / 2),
-    height: (left.y + right.y) / 2,
   };
 }
 
@@ -250,7 +247,7 @@ export function updateARResizeFromControllers(grabActive: boolean) {
   rightPose.computeWorldMatrix(true);
   const leftPosition = leftPose.getAbsolutePosition();
   const rightPosition = rightPose.getAbsolutePosition();
-  const { distance, midpoint, height } = getHorizontalHandSpan(leftPosition, rightPosition);
+  const { distance, midpoint } = getHorizontalHandSpan(leftPosition, rightPosition);
   if (distance <= 0.05) {
     resetPinchState();
     return;
@@ -265,7 +262,7 @@ export function updateARResizeFromControllers(grabActive: boolean) {
     pinchState.startYaw = currentYaw;
     pinchState.startRotation = getARRotation();
     pinchState.startSurfaceY = getARSurfaceHeight();
-    pinchState.startHandHeight = height;
+    preserveARSurfaceHeight(pinchState.startSurfaceY);
     const worldOffsetFromPivot = midpoint.subtract(getARPosition());
     pinchState.localAnchor = rotateAroundY(worldOffsetFromPivot, -pinchState.startRotation)
       .scale(1 / pinchState.startScale);
@@ -273,11 +270,10 @@ export function updateARResizeFromControllers(grabActive: boolean) {
     return;
   }
 
-  // Scale and turn around the horizontal midpoint; altitude follows only the
-  // midpoint's vertical travel, never the change in scale.
+  // Scale and turn around the horizontal midpoint at a fixed surface altitude.
   const yaw = pinchState.startRotation + (currentYaw - pinchState.startYaw);
   const scale = setARScale(getScaleFromControllerDistance(distance));
   setARPosition(getARPositionForScaleAnchor(midpoint, pinchState.localAnchor, scale, yaw));
-  preserveARSurfaceHeight(pinchState.startSurfaceY + height - pinchState.startHandHeight);
+  preserveARSurfaceHeight(pinchState.startSurfaceY);
   setARRotation(yaw);
 }

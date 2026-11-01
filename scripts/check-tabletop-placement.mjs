@@ -375,8 +375,8 @@ ${handInteractionSource.slice(twoHandStart, handBranchEnd)}
         heldAnchor.scale(shrunkScale), context.getARRotation()));
       assert.ok(Math.hypot(resizedAnchor.x - currentMidpoint.x, resizedAnchor.z - currentMidpoint.z) < 1e-6,
         `${input}: shrinking retains the horizontal midpoint anchor`);
-      assert.ok(Math.abs(context.getARSurfaceHeight() - (initialAltitude + .15)) < 1e-6,
-        `${input}: shrinking changes altitude only by the hands' midpoint travel, not by scale`);
+      assert.ok(Math.abs(context.getARSurfaceHeight() - initialAltitude) < 1e-6,
+        `${input}: shrinking locks altitude even when the hands change height`);
       const shrunkPosition = context.getARPosition();
       grips.forEach(({ grip }, index) => {
         grip.position.y += index ? .3 : -.3;
@@ -391,17 +391,31 @@ ${handInteractionSource.slice(twoHandStart, handBranchEnd)}
         `${input}: raising both hands does not change the scale`);
       near(new Vector3(context.getARPosition().x, 0, context.getARPosition().z),
         new Vector3(shrunkPosition.x, 0, shrunkPosition.z), `${input}: raising both hands keeps the horizontal position`);
-      const raisedAltitude = initialAltitude + .25;
-      assert.ok(Math.abs(context.getARSurfaceHeight() - raisedAltitude) < 1e-6,
-        `${input}: raising both hands raises the field by the same amount`);
+      assert.ok(Math.abs(context.getARSurfaceHeight() - initialAltitude) < 1e-6,
+        `${input}: raising both hands cannot change the locked surface height`);
+      const surfaceProbe = new TransformNode(`lockedSurface-${input}`, scene);
+      surfaceProbe.parent = scene.getTransformNodeByName('arRoot');
+      surfaceProbe.position.y = -.48;
+      try {
+        for (const separation of [.2, .12, .06]) {
+          grips.forEach(({ grip }, index) => grip.position.copyFrom(
+            new Vector3(1.2 + (index ? 1 : -1) * separation / 2, separation, 1.8)));
+          update();
+          const renderedSurfaceY = surfaceProbe.computeWorldMatrix(true).getTranslation().y;
+          assert.ok(Math.abs(renderedSurfaceY - initialAltitude) < 1e-6,
+            `${input}: progressively smaller fields stay at the same rendered world height`);
+        }
+      } finally {
+        surfaceProbe.dispose();
+      }
       const fullSeparation = .8 * Math.pow(1 / initialScale,
         input === 'controllers' ? 1 / scaleContext.getScaleExponentFor(initialScale) : 1) * 1.01;
       grips.forEach(({ grip }, index) => grip.position.copyFrom(
-        new Vector3((index ? 1 : -1) * fullSeparation / 2, 1.55, 2)));
+        new Vector3((index ? 1 : -1) * fullSeparation / 2, .3, 2)));
       update();
       assert.equal(context.getARScale(), 1, `${input}: expansion reaches full size`);
-      assert.ok(Math.abs(context.getARSurfaceHeight() - raisedAltitude) < 1e-6,
-        `${input}: expansion to 1:1 at constant hand height preserves altitude rather than falling to the floor`);
+      assert.ok(Math.abs(context.getARSurfaceHeight() - initialAltitude) < 1e-6,
+        `${input}: expansion to 1:1 preserves altitude even when both hands are lowered`);
       const retainedPosition = context.getARPosition();
       if (input === 'controllers') grips[0].controller.held = false;
       else handContext.left = null;
