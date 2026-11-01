@@ -8,7 +8,7 @@
       content="Babylon.js WebXR VR and AR demo for Meta Quest 3"
     />
     <title>OpenChartxr</title>
-    <script type="module" crossorigin src="/assets/index-DwnUUdTJ.js"></script>
+    <script type="module" crossorigin src="/assets/index-e7a3jg-j.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/rolldown-runtime-B0Z9INg1.js">
     <link rel="modulepreload" crossorigin href="/assets/engineStore-Bn2tApal.js">
     <link rel="modulepreload" crossorigin href="/assets/internalTexture-B3djGrls.js">
@@ -459,12 +459,13 @@
           </div>
           <output id="draftingSaveStatus" aria-live="polite"></output>
           <div class="radio-row">
-            <button id="draftingCameraButton" type="button">Camera: take field snapshot</button>
+            <button id="draftingCameraButton" type="button">Camera: copy field in 3D</button>
+            <button id="draftingPhotoCaptureButton" type="button">Take top-down PNG photo</button>
             <button id="draftingPhotoRestoreButton" type="button">Restore camera snapshot</button>
             <button id="draftingPhotoDownloadButton" type="button">Download field photo</button>
           </div>
           <img id="draftingPhotoPreview" alt="Saved top-down field snapshot" hidden style="max-width:100%; height:auto;" />
-          <p>The camera saves one top-down PNG and its drafting workspace together, separately from Save drafting locally. Restore camera snapshot restores drafting only, not marchers or routes. Download field photo saves an image only; it cannot restore drafting.</p>
+          <p>The camera shutter creates a separately positioned 3D field copy with marcher routes and committed guides. Grab an inactive copy's edge to move, turn, or resize it; Edit field switches editing and playback to that copy. Inactive fields stay paused. Copies are session-only. Take top-down PNG photo separately saves one PNG and its drafting workspace together. Restore camera snapshot restores drafting only, not marchers or routes; downloaded photos are images only.</p>
           <p>One saved drafting workspace per browser and site address. Save overwrites it; restore replaces current guides (press twice when guides exist). No automatic restore. Marchers, routes, tool poses, and live previews are not saved. Delete saved drafting removes only the stored copy, not current guides. Clearing browser data removes the save.</p>
           <button id="stencilTrayButton" type="button">Open stencil tray</button>
           <button id="cookieCutterTrayButton" type="button">Open cookie cutter tray</button>
