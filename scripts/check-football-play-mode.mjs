@@ -256,11 +256,16 @@ try {
       assert.equal(catcher[0].rotation.z, .4, 'Left hand angles inward toward the pass');
       assert.equal(catcher[1].rotation.z, -.4, 'Right hand angles inward toward the pass');
       beat = event.endCount + .5; scene.onBeforeRenderObservable.notifyObservers(scene);
-      catcher.forEach(arm => assert.ok(Math.abs(arm.rotation.x + .2) < 1e-6, 'Catch tucks both arms'));
+      catcher.forEach(arm => assert.ok(Math.abs(arm.rotation.x + .6) < 1e-6, 'Catch tucks both arms'));
       beat = event.endCount + 2; scene.onBeforeRenderObservable.notifyObservers(scene);
-      catcher.forEach(arm => assert.ok(Math.abs(arm.rotation.x + .2) < 1e-6,
+      catcher.forEach(arm => assert.ok(Math.abs(arm.rotation.x + .6) < 1e-6,
         'Receiver continues holding the ball instead of swinging carrying hands'));
       near(ball.position, positionAt(event.toId, beat), 'Caught ball is held between actual gloves');
+      const receiverTorso = scene.getTransformNodeByName(`football-player-${event.toId}`);
+      const ballWorld = Vector3.TransformCoordinates(ball.position, parent.computeWorldMatrix(true));
+      const localBall = Vector3.TransformCoordinates(ballWorld, receiverTorso.computeWorldMatrix(true).clone().invert());
+      assert.ok(localBall.z - .24 / 2 > .18,
+        `Held football clears the front of the jersey instead of entering the stomach: ${localBall.z}`);
       beat = event.endCount; scene.onBeforeRenderObservable.notifyObservers(scene);
       catcher.forEach(arm => assert.equal(arm.rotation.x, -.75, 'Reverse seeking reconstructs catch'));
       calibration.checked = true; scene.onBeforeRenderObservable.notifyObservers(scene);

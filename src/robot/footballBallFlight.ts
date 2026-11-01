@@ -73,8 +73,8 @@ export function footballCatchPose(event: FootballBallEvent, beat: number) {
   const tuck = smooth(Math.max(0, Math.min(1, elapsed / .5)));
   return {
     blend: elapsed < 0 ? smooth(elapsed + 1) : elapsed <= .5 ? 1 : 1 - smooth(elapsed - .5),
-    arm: -.75 + .55 * tuck,
-    elbow: -.85 - .85 * tuck,
-    inward: .4,
+    arm: -.75 + .15 * tuck,
+    elbow: -.85 - .45 * tuck,
+    inward: .4 + .35 * tuck,
   };
 }

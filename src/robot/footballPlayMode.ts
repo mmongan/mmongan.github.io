@@ -6,7 +6,7 @@ import { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
 import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.pure';
 import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
-import { Vector3, Matrix } from '@babylonjs/core/Maths/math.vector.pure';
+import { Vector3, Matrix, Quaternion } from '@babylonjs/core/Maths/math.vector.pure';
 import { scene } from '../scene/engine';
 import { getDrillTransportState, getRobotCounts, setRobotColor, setRobotFootballMotion,
   TOP_DOWN_MARKER_LAYER_MASK } from './robot';
@@ -594,6 +594,7 @@ export function createFootballVisuals(
       }
       let possession: string | null = null;
       const updateBall = () => {
+        ball.rotationQuaternion = null;
         ball.setEnabled(!floorCalibrationToggle?.checked && !returning && currentBeat >= visibleFromCount &&
           (!sequence || !!activeSegment || activeTackles.length > 0 || !!outcome));
         if (!ball.isEnabled()) return;
@@ -644,7 +645,10 @@ export function createFootballVisuals(
               return Vector3.TransformCoordinates(hand.getAbsolutePosition(), inverse);
             });
             position.copyFrom(Vector3.Center(hands[0], hands[1]));
-            ball.rotation.set(0, 0, 0);
+            if (torso) {
+              const heldMatrix = Matrix.RotationY(Math.PI / 2).multiply(torso.computeWorldMatrix(true).multiply(inverse));
+              ball.rotationQuaternion = Quaternion.FromRotationMatrix(heldMatrix);
+            }
           } else if (fall > 0 && torso) {
             const inverse = Matrix.Identity();
             parent.computeWorldMatrix(true).invertToRef(inverse);
