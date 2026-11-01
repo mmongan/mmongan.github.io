@@ -432,6 +432,47 @@ ${handInteractionSource.slice(twoHandStart, handBranchEnd)}
       near(context.getARPosition(), retainedPosition, `${input}: releasing preserves the resized altitude`);
     }
   }
+  const worldMovementProbe = new TransformNode('worldMovementProbe', scene);
+  context.attachToARTransform(worldMovementProbe);
+  worldMovementProbe.position.set(7, -.48, -11);
+  const trackingOrigin = new TransformNode('movementTrackingOrigin', scene);
+  trackingOrigin.position.set(3, .2, -4);
+  trackingOrigin.rotation.y = .8;
+  const movementGrip = new TransformNode('worldMovementGrip', scene);
+  movementGrip.parent = trackingOrigin;
+  const movementController = {
+    uniqueId: 'world-movement', inputSource: { handedness: 'left' },
+    motionController: { getComponentOfType: () => ({ pressed: true }) },
+    grip: movementGrip, pointer: movementGrip,
+  };
+  try {
+    for (const scale of [1, .1, .008, .002]) {
+      context.setARScale(scale);
+      context.setARRotation(.7);
+      context.setARPosition(new Vector3(2, 1.1, -3));
+      movementGrip.position.set(1, 1.4, 2);
+      scaleContext.setActiveController(movementController);
+      scaleContext.updateARResizeFromControllers(false);
+      const startWorldPosition = worldMovementProbe.computeWorldMatrix(true).getTranslation();
+      const startGripPosition = movementGrip.getAbsolutePosition().clone();
+      movementGrip.position.addInPlace(new Vector3(.2, .1, -.3));
+      scaleContext.updateARResizeFromControllers(false);
+      const worldDelta = worldMovementProbe.computeWorldMatrix(true).getTranslation()
+        .subtract(startWorldPosition);
+      const gripDelta = movementGrip.getAbsolutePosition().subtract(startGripPosition);
+      near(worldDelta, gripDelta,
+        `Scale ${scale}: rendered content moves 1:1 with the grip in world coordinates`);
+      assert.equal(context.getARScale(), scale, 'One-handed translation never changes field scale');
+      scaleContext.removeActiveController(movementController, () => {});
+      scaleContext.updateARResizeFromControllers(false);
+    }
+  } finally {
+    scaleContext.removeActiveController(movementController, () => {});
+    scaleContext.updateARResizeFromControllers(false);
+    movementGrip.dispose();
+    trackingOrigin.dispose();
+    worldMovementProbe.dispose();
+  }
   const floorStart = xrSource.indexOf('  function alignRoomScaleFloor(');
   const floorEnd = xrSource.indexOf('  function alignFieldFloorTo(', floorStart);
   Object.assign(context, {
