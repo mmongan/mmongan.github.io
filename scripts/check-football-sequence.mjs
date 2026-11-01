@@ -40,8 +40,8 @@ for (const player of data.players) {
       assert.ok(Math.hypot(b.x - a.x, b.z - a.z) <= 1.25, 'Reset is a walk, not a teleport');
     }
   }
-  assert.equal(context.scrimmagePlayerRoute(player.positions, data.players.indexOf(player)).length, 361,
-    'One entrance plus the full six-play sequence shares the timeline');
+  assert.equal(context.scrimmagePlayerRoute(player.positions, data.players.indexOf(player)).length, 459,
+    'Entrance, full six-play sequence, team return and band re-entry share the timeline');
 }
 for (const event of data.ballEvents) {
   assert.ok(data.players.some(player => player.id === event.toId));

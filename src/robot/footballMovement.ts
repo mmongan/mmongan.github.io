@@ -9,6 +9,7 @@ export interface FootballMotion {
   role: string;
   playStart: number;
   rush?: boolean;
+  playEnd?: number;
   playWindows?: ReadonlyArray<{ startCount: number; endCount: number }>;
 }
 
@@ -16,7 +17,8 @@ export function footballMovement(motion: FootballMotion, count: number, dx: numb
   const distance = Math.hypot(dx, dz);
   const travelYaw = distance > 1e-6 ? Math.atan2(dx, dz) : motion.team === 'offense' ? 0 : Math.PI;
   const window = motion.playWindows?.find(window => count >= window.startCount && count < window.endCount);
-  const play = motion.playWindows ? !!window : count >= motion.playStart;
+  const play = (motion.playEnd === undefined || count < motion.playEnd) &&
+    (motion.playWindows ? !!window : count >= motion.playStart);
   const stanceBlend = play ? Math.min(1, Math.max(0, count - (window?.startCount ?? motion.playStart))) : 1;
   const lineman = ['LT', 'LG', 'C', 'RG', 'RT', 'LS'].includes(motion.role) ||
     motion.team === 'defense' && /^(DE|DT)-/.test(motion.role);

@@ -56,8 +56,10 @@ import { executeXRSetting, setXRSettingsPanelVisible, summonXRSettingsPanel } fr
 import { generateFootballPlay, type FootballFormation, type FootballPlay } from '../robot/footballPlayGeometry';
 import { createFootballVisuals, initFootballControls, executeFootballCommand, shiftFootballTimeline } from '../robot/footballPlayMode';
 import { generateFootballLibraryPlay } from '../robot/footballPlayLibrary';
-import { SCRIMMAGE_EXIT_COUNTS, SCRIMMAGE_PLAY_START, scrimmageWalk,
-  scrimmageBandExitPosition, scrimmagePlayerRoute, scrimmageBenchSeat } from '../robot/scrimmageGeometry';
+import { SCRIMMAGE_EXIT_COUNTS, SCRIMMAGE_PLAY_START,
+  SCRIMMAGE_RETURN_COUNTS, SCRIMMAGE_SIT_COUNTS, SCRIMMAGE_BAND_RETURN_COUNTS,
+  scrimmageBandRoute, scrimmagePlayerRoute, scrimmagePlayerReturn, scrimmageWalk,
+  scrimmageBenchSeat } from '../robot/scrimmageGeometry';
 import { setRobotColor, createPresentationMarcher } from '../robot/robot';
 import { initChartPageGhostMode, isChartGhostModeEnabled, setChartGhostModeEnabled } from '../robot/chartPageGhostMode';
 import {
@@ -3375,6 +3377,7 @@ function clearAllRobots() {
   clearWaitingFootballPlayers();
   footballVisuals?.();
   footballVisuals = null;
+  endActiveScrimmage = null;
   footballPreviousState = null;
   currentShowName = "OpenChart show";
   chartPageNames.clear();
@@ -3427,6 +3430,7 @@ function clearAllRobots() {
 }
 
 let footballVisuals: (() => void) | null = null;
+let endActiveScrimmage: (() => void) | null = null;
 let footballPreviousState: ReturnType<typeof captureCameraFieldState> | null = null;
 let waitingFootballCleanup: (() => void) | null = null;
 
@@ -3528,8 +3532,15 @@ function loadFootballPlay(formation: FootballFormation, play: FootballPlay, scri
     !canUseCameraFieldCopies()) {
     throw new Error('Finish calibration and release tools, players, and panels before loading a football play.');
   }
+  if (scrimmage && endActiveScrimmage) {
+    endActiveScrimmage();
+    return true;
+  }
   const geometry = generateFootballLibraryPlay(formation, play);
   const playLength = geometry.players[0].positions.length - 1;
+  const returnStart = scrimmage ? SCRIMMAGE_PLAY_START + playLength : undefined;
+  const bandReturnStart = scrimmage ? SCRIMMAGE_PLAY_START + playLength + SCRIMMAGE_RETURN_COUNTS + SCRIMMAGE_SIT_COUNTS : 0;
+  const lastCount = scrimmage ? bandReturnStart + SCRIMMAGE_BAND_RETURN_COUNTS : playLength;
   clearWaitingFootballPlayers();
   const previous = footballPreviousState ?? captureCameraFieldState();
   openMarchRequest++;
@@ -3544,12 +3555,15 @@ function loadFootballPlay(formation: FootballFormation, play: FootballPlay, scri
         setMarcherInstrument(robot, schedule.instrument);
         setRobotColor(robot, schedule.color);
         const start = { x: schedule.position.x, z: schedule.position.z };
-        const end = scrimmageBandExitPosition(start, index);
-        const exit = scrimmageWalk(start, end, SCRIMMAGE_EXIT_COUNTS);
-        const path = [...exit, ...Array.from({ length: SCRIMMAGE_PLAY_START + playLength - SCRIMMAGE_EXIT_COUNTS },
-          () => ({ ...end }))].map(position => new Vector3(position.x, FIELD_SURFACE_Y, position.z));
+        const path = scrimmageBandRoute(start, index, playLength)
+          .map(position => new Vector3(position.x, FIELD_SURFACE_Y, position.z));
         robotPaths.set(robot, path);
-        walkRobotAlongCounts(robot, path, scene);
+        walkRobotAlongCounts(robot, path, scene, path.map((point, count) => {
+          if (count === path.length - 1) return schedule.rotationY;
+          const next = path[count + 1];
+          return Math.hypot(next.x - point.x, next.z - point.z) > 1e-6
+            ? Math.atan2(next.x - point.x, next.z - point.z) : schedule.rotationY;
+        }));
       });
     }
     const players = geometry.players.map((player, index) => {
@@ -3569,7 +3583,7 @@ function loadFootballPlay(formation: FootballFormation, play: FootballPlay, scri
     })), pathRoot, offset, geometry.sequence?.map(segment => ({
       ...segment, startCount: segment.startCount + offset, endCount: segment.endCount + offset,
     })), geometry.tackles?.map(event => ({ ...event, count: event.count + offset })),
-    geometry.outcomes?.map(event => ({ ...event, count: event.count + offset })));
+    geometry.outcomes?.map(event => ({ ...event, count: event.count + offset })), returnStart);
     setFootballEditingEnabled(true);
     if (footballDraftFrom) footballDraftFrom.value = String(offset);
     if (footballDraftTo) footballDraftTo.value = String(offset + 16);
@@ -3585,7 +3599,14 @@ function loadFootballPlay(formation: FootballFormation, play: FootballPlay, scri
           .map(count => count + offset)) ?? []),
         ...geometry.ballEvents.flatMap(event => [event.startCount + offset, event.endCount + offset]),
         ...(geometry.outcomes?.map(event => event.count + offset) ?? []),
-        playLength + offset] });
+        playLength + offset,
+        ...(returnStart !== undefined ? [returnStart + SCRIMMAGE_RETURN_COUNTS, bandReturnStart, lastCount] : [])] });
+    if (returnStart !== undefined) {
+      chartPageNames.set(returnStart, 'Return to team benches');
+      chartPageNames.set(returnStart + SCRIMMAGE_RETURN_COUNTS, 'Arrive at team benches');
+      chartPageNames.set(bandReturnStart, 'Teams seated / band returns');
+      chartPageNames.set(lastCount, 'Band restored to starting formation');
+    }
     for (const segment of geometry.sequence ?? []) {
       for (const count of [0, 4, 8, 12, 16]) {
         chartPageNames.set(segment.startCount + count + offset,
@@ -3604,7 +3625,48 @@ function loadFootballPlay(formation: FootballFormation, play: FootballPlay, scri
     refreshChartEditorPages();
     seekToCount(0);
     refreshCollisionMarkers(scene);
-    if (scrimmage) playAll();
+    if (scrimmage) {
+      let ending = false;
+      endActiveScrimmage = () => {
+        const scheduledReturn = (getRobotCounts(players[0].robot)?.length ?? 1) - 1 -
+          SCRIMMAGE_RETURN_COUNTS - SCRIMMAGE_SIT_COUNTS - SCRIMMAGE_BAND_RETURN_COUNTS;
+        if (ending || getDrillTransportState().beat >= scheduledReturn) { playAll(); return; }
+        const band = [...robotPaths.keys()].filter(robot => !players.some(entry => entry.robot === robot));
+        const playerRoutes = players.map(({ robot }, index) => scrimmagePlayerReturn(
+          { x: robot.position.x, z: robot.position.z }, index));
+        const bandRoutes = band.map((robot, index) => {
+          const start = { x: robot.position.x, z: robot.position.z };
+          const target = previous.marchers[index]?.position;
+          if (!target) throw new Error('Scrimmage band is missing its original formation position.');
+          return [...Array.from({ length: SCRIMMAGE_RETURN_COUNTS + SCRIMMAGE_SIT_COUNTS + 1 },
+            () => ({ ...start })), ...scrimmageWalk(start, target, SCRIMMAGE_BAND_RETURN_COUNTS).slice(1)];
+        });
+        pauseAll();
+        footballVisuals?.(); footballVisuals = null;
+        seekToCount(0);
+        [...players.map(entry => entry.robot), ...band].forEach((robot, index) => {
+          const points = [...playerRoutes, ...bandRoutes][index]
+            .map(point => new Vector3(point.x, FIELD_SURFACE_Y, point.z));
+          robotPaths.set(robot, points);
+          const bandIndex = index - players.length;
+          const finalFacing = bandIndex >= 0 ? previous.marchers[bandIndex].rotationY : undefined;
+          registerRobotCounts(robot, points, scene, finalFacing === undefined ? undefined
+            : points.map((_, count) => count === points.length - 1 ? finalFacing : undefined), true);
+          updateRobotPathLine(robot, points);
+        });
+        footballVisuals = createFootballVisuals(players, [], pathRoot, 1, undefined, [], [], 0);
+        setChartPageTimeline({ beatsPerPage: 4, authoredCounts: [0, 48, 50, 98] });
+        chartPageNames.clear();
+        chartPageNames.set(0, 'End scrimmage / return to benches');
+        chartPageNames.set(48, 'Arrive at benches');
+        chartPageNames.set(50, 'Teams seated / band returns');
+        chartPageNames.set(98, 'Band back in starting formation');
+        refreshChartEditorPages(); refreshCollisionMarkers(scene);
+        ending = true;
+        seekToCount(0); playAll();
+      };
+      playAll();
+    }
   } catch (error) {
     restoreCameraFieldState(previous);
     throw error;
@@ -4019,6 +4081,7 @@ export function initInteraction() {
     clearWaitingFootballPlayers();
     footballVisuals?.();
     footballVisuals = null;
+    endActiveScrimmage = null;
     footballPreviousState = null;
     setFootballEditingEnabled(false);
   });

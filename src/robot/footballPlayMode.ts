@@ -15,7 +15,8 @@ import { setFootballTeam, setFootballPositionSampler, getFootballPlaybackPositio
 import { separateFootballBodies } from './footballBodyClearance';
 import { getFootballSymbolTemplate } from './footballSymbolModel';
 import { createFootballHumanModel } from './footballHumanModel';
-import { scrimmageBenchSeat, scrimmageSeatedBlend } from './scrimmageGeometry';
+import { scrimmageBenchSeat, scrimmageSeatedBlend, SCRIMMAGE_RETURN_COUNTS,
+  SCRIMMAGE_SIT_COUNTS, SCRIMMAGE_BAND_RETURN_COUNTS } from './scrimmageGeometry';
 import { footballTacklePose, footballTackleYaw, validateFootballTackle, type FootballTackleEvent } from './footballTackles';
 import { FOOTBALL_PLAY_LIBRARY } from './footballPlayLibrary';
 import { footballFlightEndpoints, footballFlightPoint, footballKickPose, footballSnapPose,
@@ -87,7 +88,7 @@ export function executeFootballCommand(command: FootballCommand) {
 
 export function initFootballControls(load: (formation: FootballFormation, play: FootballPlay) => void,
   exit: () => void, notify: (message: string) => void,
-  scrimmage: (formation: FootballFormation, play: FootballPlay) => void) {
+  scrimmage: (formation: FootballFormation, play: FootballPlay) => boolean | void) {
   notifyFootball = message => {
     if (footballStatus) footballStatus.value = message;
     notify(message);
@@ -114,8 +115,11 @@ export function initFootballControls(load: (formation: FootballFormation, play: 
         'edge-sack', 'blitz-sack', 'four-man-rush', 'linebacker-blitz'].includes(selectedPlay);
       if (fixedFormation) formation.value = 'spread';
       const effectiveFormation = fixedFormation ? 'spread' : selectedFormation;
-      if (scrimmageMode) scrimmage(effectiveFormation, selectedPlay);
-      else load(effectiveFormation, selectedPlay);
+      if (scrimmageMode && scrimmage(effectiveFormation, selectedPlay)) {
+        notifyFootball('Ending scrimmage: players return to benches, then the band returns to formation.');
+        return;
+      }
+      if (!scrimmageMode) load(effectiveFormation, selectedPlay);
       notifyFootball(selectedPlay === 'drive' ? 'Touchdown drive ready: six completions advance from the own 20 to the end zone.'
         : selectedPlay === 'sequence' ? 'Six sourced plays ready: Slant / Flat, Stick, Smash, Flood, Mesh, Four Verticals. Players walk back between plays.'
         : ['kickoff', 'punt', 'field-goal'].includes(selectedPlay) ? `${FOOTBALL_PLAY_OPTIONS.find(option => option.value === selectedPlay)!.label} ready. Play or scrub the shared timeline.`
@@ -153,10 +157,12 @@ export function createFootballVisuals(
   inputSequence?: ReadonlyArray<{ label: string; startCount: number; endCount: number; source: string }>,
   authoredTackles: ReadonlyArray<FootballTackleEvent> = [],
   inputOutcomes: ReadonlyArray<FootballOutcome> = [],
+  returnStart?: number,
 ) {
   const events = inputEvents.map(event => ({ ...event }));
   const sequence = inputSequence?.map(segment => ({ ...segment }));
   const initialVisibleFromCount = visibleFromCount;
+  const initialReturnStart = returnStart;
   const seatInsertions: { at: number; amount: number }[] = [];
   const tackles = authoredTackles.map(event => ({ ...event }));
   const outcomes = inputOutcomes.map(event => ({ ...event }));
@@ -245,7 +251,7 @@ export function createFootballVisuals(
     for (const { robot, player } of players) {
       setFootballTeam(robot, player.team);
       setRobotFootballMotion(robot, { team: player.team, role: player.label, playStart: visibleFromCount,
-        playWindows: sequence, rush: player.rush });
+        playWindows: sequence, rush: player.rush, playEnd: returnStart });
       setRobotColor(robot, player.team === 'offense' ? offense.diffuseColor : defense.diffuseColor);
       // Human football meshes follow the existing route, selection root and leg solver.
       const body = robot.getChildren().find(node => node.name === 'marcherBody');
@@ -382,9 +388,9 @@ export function createFootballVisuals(
         const time = Math.max(0, Math.min(counts.length - 1, beat)), index = Math.floor(time);
         const from = counts[index], to = counts[Math.min(index + 1, counts.length - 1)];
         const movement = footballMovement({ team: player.team, role: player.label,
-          playStart: visibleFromCount, playWindows: sequence, rush: player.rush }, time,
+          playStart: visibleFromCount, playWindows: sequence, rush: player.rush, playEnd: returnStart }, time,
         to.position.x - from.position.x, to.position.z - from.position.z);
-        const seated = scrimmageSeatedBlend(seatBeatAt(beat), initialVisibleFromCount);
+        const seated = scrimmageSeatedBlend(seatBeatAt(beat), initialVisibleFromCount, initialReturnStart);
         const snap = seated === 0 && !floorCalibrationToggle?.checked
           ? events.find(event => event.fromId === player.id && footballSnapPose(event, beat)) : null;
         const snapPose = snap ? footballSnapPose(snap, beat) : null;
@@ -440,7 +446,9 @@ export function createFootballVisuals(
     const update = () => {
       const currentBeat = getDrillTransportState().beat;
       const spot = footballScrimmageSpot(events, currentBeat, tacklePosition);
-      scrimmageLine.setEnabled(!!spot && Number.isFinite(visibleFromCount) && !floorCalibrationToggle?.checked);
+      const returning = returnStart !== undefined && currentBeat >= returnStart;
+      scrimmageLine.setEnabled(!!spot && Number.isFinite(visibleFromCount) &&
+        !returning && !floorCalibrationToggle?.checked);
       if (spot) scrimmageLine.position.z = spot.z;
       const activeTackles = activeTacklesAt(currentBeat);
       for (const [playerIndex, { robot, player, root, human }] of animations.entries()) {
@@ -449,7 +457,7 @@ export function createFootballVisuals(
         const from = counts?.[index]?.position;
         const to = counts?.[index + 1]?.position ?? from;
         const motion = { team: player.team, role: player.label, playStart: visibleFromCount,
-          playWindows: sequence, rush: player.rush };
+          playWindows: sequence, rush: player.rush, playEnd: returnStart };
         const movement = footballMovement(motion,
           currentBeat, from && to ? to.x - from.x : 0, from && to ? to.z - from.z : 0);
         let steps = (currentBeat - index) * movement.stepsPerCount;
@@ -461,8 +469,8 @@ export function createFootballVisuals(
         const phase = steps * Math.PI;
         const bob = movement.stepsPerCount ? Math.abs(Math.sin(phase)) * .04 : 0;
         const seatBeat = seatBeatAt(currentBeat);
-        const benchSeated = scrimmageSeatedBlend(seatBeat, initialVisibleFromCount);
-        const holding = player.label === 'H' && currentBeat >= visibleFromCount;
+        const benchSeated = scrimmageSeatedBlend(seatBeat, initialVisibleFromCount, initialReturnStart);
+        const holding = player.label === 'H' && currentBeat >= visibleFromCount && !returning;
         const seated = holding ? .65 : benchSeated;
         const benchSeat = scrimmageBenchSeat(playerIndex);
         const benchYaw = holding ? 0 : benchSeat.x < 0 ? Math.PI / 2 : -Math.PI / 2;
@@ -534,7 +542,7 @@ export function createFootballVisuals(
       const outcome = outcomes.find(event => currentBeat >= event.count &&
         (event.kind === 'fieldGoal' || !!event.playerId &&
           (tacklePosition(event.playerId, event.count)?.z ?? -Infinity) >= 50));
-      score.setEnabled(!!outcome && !floorCalibrationToggle?.checked);
+      score.setEnabled(!!outcome && !returning && !floorCalibrationToggle?.checked);
       if (outcome) {
         const text = outcome.kind === 'touchdown' ? 'TOUCHDOWN!' : 'FIELD GOAL!';
         if (scoreText !== text) {
@@ -559,9 +567,17 @@ export function createFootballVisuals(
         footballStatus.value = currentBeat < visibleFromCount ? 'Special teams entering the field.'
           : 'Field goal: snap to holder, kicker approach, then kick.';
       }
+      if (returning && footballStatus) {
+        const elapsed = seatBeatAt(currentBeat) - (initialReturnStart ?? 0);
+        footballStatus.value = elapsed >= SCRIMMAGE_RETURN_COUNTS + SCRIMMAGE_SIT_COUNTS + SCRIMMAGE_BAND_RETURN_COUNTS
+          ? 'Scrimmage complete: teams seated; band back in starting formation.'
+          : elapsed >= SCRIMMAGE_RETURN_COUNTS + SCRIMMAGE_SIT_COUNTS
+            ? 'Teams seated: band marching back to starting formation.'
+            : 'Scrimmage complete: players returning to team benches.';
+      }
       let possession: string | null = null;
       const updateBall = () => {
-        ball.setEnabled(!floorCalibrationToggle?.checked && currentBeat >= visibleFromCount &&
+        ball.setEnabled(!floorCalibrationToggle?.checked && !returning && currentBeat >= visibleFromCount &&
           (!sequence || !!activeSegment || activeTackles.length > 0 || !!outcome));
         if (!ball.isEnabled()) return;
         const beat = currentBeat;
@@ -656,8 +672,10 @@ export function createFootballVisuals(
         for (const event of tackles) if (event.count > at) event.count += amount;
         for (const event of outcomes) if (event.count > at) event.count += amount;
         if (visibleFromCount > at) visibleFromCount += amount;
+        if (returnStart !== undefined && returnStart > at) returnStart += amount;
         players.forEach(({ robot, player }) => setRobotFootballMotion(robot, {
           team: player.team, role: player.label, playStart: visibleFromCount, playWindows: sequence,
+          rush: player.rush, playEnd: returnStart,
         }));
         invalidTackles.clear(); disposeTackleEditor.refresh(); update();
       };
@@ -667,8 +685,9 @@ export function createFootballVisuals(
     update();
     if (Number.isFinite(visibleFromCount)) {
       disposeFuturePreview = createFootballFuturePreview(players.map(entry => entry.robot), parent, beat => {
+        if (returnStart !== undefined && beat >= returnStart) return null;
         if (sequence) return sequence.find(segment => beat < segment.endCount) ?? null;
-        const last = Math.min(...players.map(entry => (getRobotCounts(entry.robot)?.length ?? 0) - 1));
+        const last = returnStart ?? Math.min(...players.map(entry => (getRobotCounts(entry.robot)?.length ?? 0) - 1));
         return beat < last ? { startCount: visibleFromCount, endCount: last, label: 'Selected football play' } : null;
       });
     }

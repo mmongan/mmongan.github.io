@@ -368,7 +368,25 @@ try {
     }
     const stagedDispose = context.createFootballVisuals(players, data.ballEvents.map(event => ({
       ...event, startCount: event.startCount + 96, endCount: event.endCount + 96,
-    })), parent, 96);
+    })), parent, 96, undefined, [], [], 112);
+    for (const count of [112, 136, 160, 161, 162, 210]) {
+      beat = count; scene.onBeforeRenderObservable.notifyObservers(scene);
+      assert.equal(scene.getMeshByName('football-ball').isEnabled(), false, 'Ball hides during return handover');
+      assert.equal(scene.getMeshByName('football-line-of-scrimmage').isEnabled(), false);
+      if (count >= 162) {
+        for (const { robot, player } of players) {
+          const torso = scene.getTransformNodeByName(`football-player-${player.id}`);
+          assert.ok(Math.abs(torso.position.y - .6) < 1e-9, 'Returned players sit at bench height');
+          assert.equal(robot.metadata.motion.playEnd, 112);
+        }
+      }
+    }
+    beat = 136; scene.onBeforeRenderObservable.notifyObservers(scene);
+    assert.ok(scene.getTransformNodeByName('football-player-offense-LT').position.y > .9,
+      'Return walk uses standing jog pose, not blocking crouch');
+    beat = 162; scene.onBeforeRenderObservable.notifyObservers(scene);
+    assert.ok(Math.abs(scene.getTransformNodeByName('football-player-offense-LT').position.y - .6) < 1e-9,
+      'Reverse seek recreates completed bench seating');
     beat = 49;
     scene.onBeforeRenderObservable.notifyObservers(scene);
     const standingHeight = scene.getTransformNodeByName('football-player-offense-QB').position.y;
@@ -378,6 +396,7 @@ try {
         ...counts.slice(1)]);
     }
     context.shiftFootballTimeline(0, 4);
+    assert.equal(players[0].robot.metadata.motion.playEnd, 116, 'Chart insertion retimes bench return');
     beat = 53;
     scene.onBeforeRenderObservable.notifyObservers(scene);
     assert.equal(scene.getTransformNodeByName('football-player-offense-QB').position.y, standingHeight,
