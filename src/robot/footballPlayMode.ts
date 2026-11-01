@@ -513,7 +513,12 @@ export function createFootballVisuals(
         const throwing = throwEvent ? footballThrowPose(throwEvent, currentBeat) : null;
         const catchEvent = !floorCalibrationToggle?.checked && seated === 0 && !pose && !snap
           ? events.find(event => event.toId === player.id && footballCatchPose(event, currentBeat)) : null;
-        const catching = catchEvent ? footballCatchPose(catchEvent, currentBeat) : null;
+        const heldPass = !floorCalibrationToggle?.checked && seated === 0
+          ? events.find(event => event.kind === 'pass' && event.toId === player.id &&
+            currentBeat >= event.endCount && !events.some(next =>
+              next.startCount >= event.endCount && next.startCount <= currentBeat && next !== event)) : null;
+        const catching = heldPass ? footballCatchPose(heldPass, Math.min(currentBeat, heldPass.endCount + .5))
+          : catchEvent ? footballCatchPose(catchEvent, currentBeat) : null;
         human.arms.forEach((arm, side) => {
           arm.rotation.z = 0;
           const normal = seated > 0 ? -.4 : movement.gait === 'block' ? movement.blockArm :
@@ -628,7 +633,19 @@ export function createFootballVisuals(
           const tackle = activeTackles.find(event => event.carrierId === carrier);
           const fall = tackle ? footballTacklePose(tackle, beat)?.fall ?? 0 : 0;
           const torso = animations.find(entry => entry.player.id === carrier)?.root;
-          if (fall > 0 && torso) {
+          const caughtPass = events.find(event => event.kind === 'pass' && event.toId === carrier &&
+            beat >= event.endCount && !events.some(next =>
+              next.startCount >= event.endCount && next.startCount <= beat && next !== event));
+          const human = animations.find(entry => entry.player.id === carrier)?.human;
+          if (caughtPass && human) {
+            const inverse = parent.computeWorldMatrix(true).clone().invert();
+            const hands = human.hands.map(hand => {
+              hand.computeWorldMatrix(true);
+              return Vector3.TransformCoordinates(hand.getAbsolutePosition(), inverse);
+            });
+            position.copyFrom(Vector3.Center(hands[0], hands[1]));
+            ball.rotation.set(0, 0, 0);
+          } else if (fall > 0 && torso) {
             const inverse = Matrix.Identity();
             parent.computeWorldMatrix(true).invertToRef(inverse);
             const chest = Vector3.TransformCoordinates(new Vector3(0, .3, .19), torso.computeWorldMatrix(true));

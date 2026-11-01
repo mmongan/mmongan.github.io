@@ -52,6 +52,12 @@ export function createFootballHumanModel(robot: TransformNode, torso: TransformN
     if (!(elbow instanceof TransformNode)) throw new Error('Football arm requires an elbow joint.');
     return elbow;
   });
+  const hands = elbows.map(elbow => {
+    const hand = elbow.getChildren().find(node => node instanceof TransformNode &&
+      node.name.startsWith('football-glove-'));
+    if (!(hand instanceof TransformNode)) throw new Error('Football arm requires a glove.');
+    return hand;
+  });
   const legsRoot = new TransformNode(`football-human-legs-${id}`, scene);
   legsRoot.parent = torso;
   const hidden: { node: TransformNode; enabled: boolean }[] = [];
@@ -140,7 +146,7 @@ export function createFootballHumanModel(robot: TransformNode, torso: TransformN
       }
     }
   };
-  return { arms, elbows, updateLegs, dispose() {
+  return {   arms, elbows, hands, updateLegs, dispose() {
     legsRoot.dispose();
     restore();
   } };

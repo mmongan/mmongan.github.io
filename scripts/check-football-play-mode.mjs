@@ -215,6 +215,15 @@ try {
     }
     const positionAt = (id, count) => {
       const { robot } = players.find(value => value.player.id === id);
+      if (count === beat && data.ballEvents.some(event => event.kind === 'pass' && event.toId === id &&
+        count >= event.endCount)) {
+        const inverse = parent.computeWorldMatrix(true).clone().invert();
+        const hands = [-1, 1].map(side => {
+          const hand = scene.getMeshByName(`football-glove-${id}-${side}`);
+          return Vector3.TransformCoordinates(hand.computeWorldMatrix(true).getTranslation(), inverse);
+        });
+        return Vector3.Center(hands[0], hands[1]);
+      }
       return data.ballEvents.some(event => event.kind === 'snap' && event.fromId === id && count <= event.startCount)
         ? snapAnchor(robot, count) : resolvedAnchor(robot, count);
     };
@@ -248,6 +257,10 @@ try {
       assert.equal(catcher[1].rotation.z, -.4, 'Right hand angles inward toward the pass');
       beat = event.endCount + .5; scene.onBeforeRenderObservable.notifyObservers(scene);
       catcher.forEach(arm => assert.ok(Math.abs(arm.rotation.x + .2) < 1e-6, 'Catch tucks both arms'));
+      beat = event.endCount + 2; scene.onBeforeRenderObservable.notifyObservers(scene);
+      catcher.forEach(arm => assert.ok(Math.abs(arm.rotation.x + .2) < 1e-6,
+        'Receiver continues holding the ball instead of swinging carrying hands'));
+      near(ball.position, positionAt(event.toId, beat), 'Caught ball is held between actual gloves');
       beat = event.endCount; scene.onBeforeRenderObservable.notifyObservers(scene);
       catcher.forEach(arm => assert.equal(arm.rotation.x, -.75, 'Reverse seeking reconstructs catch'));
       calibration.checked = true; scene.onBeforeRenderObservable.notifyObservers(scene);
