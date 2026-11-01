@@ -5,10 +5,17 @@ import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTextur
 import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
 import { scene } from '../scene/engine';
-import { getDrillTransportState, getRobotCounts, setRobotColor } from './robot';
+import { getDrillTransportState, getRobotCounts, setRobotColor, setRobotFootballMotion,
+  TOP_DOWN_MARKER_LAYER_MASK } from './robot';
+import { footballMovement } from './footballMovement';
+import { setFootballTeam } from './footballPresentation';
+import { getFootballSymbolTemplate } from './footballSymbolModel';
+import { createFootballHumanModel } from './footballHumanModel';
+import { scrimmageBenchSeat, scrimmageSeatedBlend } from './scrimmageGeometry';
 import { floorCalibrationToggle, footballFormationSelect, footballPlaySelect, footballLoadButton,
   footballExitButton, footballStatus, scrimmageButton } from '../ui/dom';
 import { FOOTBALL_FORMATIONS, FOOTBALL_PLAYS, FOOTBALL_FORMATION_OPTIONS, FOOTBALL_PLAY_OPTIONS,
+  FOOTBALL_SCRIMMAGE_DEFAULT,
   type FootballFormation, type FootballPlay, type FootballBallEvent, type FootballPlayer } from './footballPlayGeometry';
 
 export type FootballCommand = 'load' | 'exit' | 'formation' | 'play' | 'scrimmage';
@@ -41,6 +48,8 @@ export function initFootballControls(load: (formation: FootballFormation, play: 
   if (!formation || !play || !footballLoadButton || !footballExitButton) return;
   formation.replaceChildren(...FOOTBALL_FORMATION_OPTIONS.map(option => new Option(option.label, option.value)));
   play.replaceChildren(...FOOTBALL_PLAY_OPTIONS.map(option => new Option(option.label, option.value)));
+  formation.value = FOOTBALL_SCRIMMAGE_DEFAULT.formation;
+  play.value = FOOTBALL_SCRIMMAGE_DEFAULT.play;
   const run = (scrimmageMode = false) => {
     try {
       const selectedFormation = FOOTBALL_FORMATIONS.find(value => value === formation.value);
@@ -81,13 +90,21 @@ export function createFootballVisuals(
   const materials: StandardMaterial[] = [];
   const roots: TransformNode[] = [];
   const hiddenNodes: { node: TransformNode; enabled: boolean }[] = [];
+  const animations: { robot: TransformNode; player: FootballPlayer; root: TransformNode;
+    human: ReturnType<typeof createFootballHumanModel> }[] = [];
   const material = (name: string, color: Color3) => {
     const result = new StandardMaterial(name, scene);
     result.diffuseColor = color;
+    result.specularColor = new Color3(.12, .12, .12);
     materials.push(result);
     return result;
   };
   const cleanup = () => {
+    animations.forEach(({ human }) => human.dispose());
+    players.forEach(({ robot }) => {
+      setRobotFootballMotion(robot, null);
+      setFootballTeam(robot, null);
+    });
     roots.forEach(root => root.dispose());
     materials.forEach(value => value.dispose(false, true));
     hiddenNodes.forEach(({ node, enabled }) => { if (!node.isDisposed()) node.setEnabled(enabled); });
@@ -96,12 +113,51 @@ export function createFootballVisuals(
     const offense = material('football-offense', Color3.FromHexString('#1967d2'));
     const defense = material('football-defense', Color3.FromHexString('#c62828'));
     const white = material('football-facemask', Color3.White());
+    const dark = material('football-eyes', Color3.FromHexString('#18263b'));
+    const skins = ['#f2c7a5', '#b77c50', '#67432f'].map((color, index) =>
+      material(`football-skin-${index}`, Color3.FromHexString(color)));
+    if (visibleFromCount > 0) {
+      const benchMaterial = material('football-bench', Color3.FromHexString('#a7afb9'));
+      for (const side of [-1, 1]) {
+        const bench = new TransformNode(`football-bench-${side}`, scene);
+        bench.parent = parent;
+        bench.position.set(scrimmageBenchSeat(side < 0 ? 0 : 11).x, -.48, 0);
+        roots.push(bench);
+        const seat = MeshBuilder.CreateBox(`football-bench-seat-${side}`,
+          { width: .55, height: .08, depth: 12.2 }, scene);
+        const teamMaterial = side < 0 ? offense : defense;
+        seat.parent = bench; seat.position.y = .43; seat.material = teamMaterial; seat.isPickable = false;
+        const back = MeshBuilder.CreateBox(`football-bench-back-${side}`,
+          { width: .08, height: .55, depth: 12.2 }, scene);
+        back.parent = bench; back.position.set(side * .32, .75, 0);
+        back.material = teamMaterial; back.isPickable = false;
+        const text = new DynamicTexture(`football-bench-label-${side}`, { width: 1024, height: 128 }, scene, false);
+        text.drawText(side < 0 ? 'OFFENSE TEAM BENCH' : 'DEFENSE TEAM BENCH',
+          null, 85, 'bold 65px Arial', 'white', side < 0 ? '#1967d2' : '#c62828', true);
+        const labelMaterial = material(`football-bench-label-material-${side}`, Color3.White());
+        labelMaterial.diffuseTexture = text;
+        const label = MeshBuilder.CreatePlane(`football-bench-label-${side}`, { width: 5, height: .4 }, scene);
+        label.parent = bench;
+        label.position.set(side * .367, .75, 0);
+        label.rotation.y = -side * Math.PI / 2;
+        label.material = labelMaterial; label.isPickable = false;
+        for (const z of [-5, 0, 5]) {
+          const support = MeshBuilder.CreateBox(`football-bench-support-${side}-${z}`,
+            { width: .45, height: .39, depth: .16 }, scene);
+          support.parent = bench; support.position.set(0, .195, z);
+          support.material = benchMaterial; support.isPickable = false;
+        }
+      }
+    }
     for (const { robot, player } of players) {
+      setFootballTeam(robot, player.team);
+      setRobotFootballMotion(robot, { team: player.team, role: player.label, playStart: visibleFromCount });
       setRobotColor(robot, player.team === 'offense' ? offense.diffuseColor : defense.diffuseColor);
-      // Keep the existing leg solver and selection root, replacing only the band's upper body.
+      // Human football meshes follow the existing route, selection root and leg solver.
       const body = robot.getChildren().find(node => node.name === 'marcherBody');
       const instrument = robot.getChildren().find(node => node.name === 'marcherInstrumentRoot');
-      for (const node of [body, instrument]) {
+      const marker = robot.getChildren().find(node => node.name === 'robotTopDownMarker');
+      for (const node of [body, instrument, marker]) {
         if (node instanceof TransformNode) {
           hiddenNodes.push({ node, enabled: node.isEnabled(false) });
           node.setEnabled(false);
@@ -110,27 +166,24 @@ export function createFootballVisuals(
       const root = new TransformNode(`football-player-${player.id}`, scene);
       root.parent = robot;
       roots.push(root);
-      const jersey = MeshBuilder.CreateBox(`football-jersey-${player.id}`,
-        { width: .64, height: .65, depth: .35 }, scene);
-      jersey.parent = root; jersey.position.y = 1.04;
-      jersey.material = player.team === 'offense' ? offense : defense;
-      const helmet = MeshBuilder.CreateSphere(`football-helmet-${player.id}`, { diameter: .44, segments: 8 }, scene);
-      helmet.parent = root; helmet.position.y = 1.62; helmet.material = jersey.material;
-      const mask = MeshBuilder.CreateTorus(`football-mask-${player.id}`,
-        { diameter: .3, thickness: .025, tessellation: 8 }, scene);
-      mask.parent = root; mask.rotation.x = Math.PI / 2; mask.position.set(0, 1.56, .18); mask.material = white;
-      for (const side of [-1, 1]) {
-        const arm = MeshBuilder.CreateCapsule(`football-arm-${player.id}-${side}`,
-          { height: .55, radius: .09, tessellation: 6, subdivisions: 1 }, scene);
-        arm.parent = root; arm.position.set(side * .35, 1.02, .12); arm.rotation.x = -.4;
-        arm.material = jersey.material;
-      }
+      const symbol = getFootballSymbolTemplate(scene, player.team, TOP_DOWN_MARKER_LAYER_MASK)
+        .createInstance('robotTopDownMarker');
+      symbol.parent = robot;
+      symbol.position.y = 2;
+      symbol.layerMask = TOP_DOWN_MARKER_LAYER_MASK;
+      symbol.isPickable = false;
+      symbol.setEnabled(Number.isFinite(visibleFromCount));
+      roots.push(symbol);
+      const human = createFootballHumanModel(robot, root, player.team === 'offense' ? offense : defense,
+        skins[animations.length % skins.length], white, dark);
+      animations.push({ robot, player, root, human });
       const label = new DynamicTexture(`football-label-${player.id}`, { width: 256, height: 128 }, scene, false);
       label.drawText(player.label, null, 90, 'bold 60px Arial', 'white', '#18263b', true);
       const labelMaterial = material(`football-label-material-${player.id}`, Color3.White());
       labelMaterial.diffuseTexture = label; labelMaterial.emissiveColor = Color3.White();
       const plate = MeshBuilder.CreatePlane(`football-role-${player.id}`, { width: .6, height: .3 }, scene);
-      plate.parent = root; plate.position.set(0, 1.03, .19); plate.rotation.y = Math.PI;
+      plate.parent = root; plate.position.set(0, .3, .19); plate.rotation.y = Math.PI;
+      plate.scaling.set(.65, .65, .65);
       plate.material = labelMaterial;
     }
     const ball = MeshBuilder.CreateSphere('football-ball', { diameter: .24, segments: 8 }, scene);
@@ -149,6 +202,34 @@ export function createFootballVisuals(
         beat - index).add(new Vector3(0, 1.05, 0));
     };
     const update = () => {
+      const currentBeat = getDrillTransportState().beat;
+      for (const [playerIndex, { robot, player, root, human }] of animations.entries()) {
+        const counts = getRobotCounts(robot);
+        const index = Math.min(Math.floor(currentBeat), Math.max(0, (counts?.length ?? 1) - 1));
+        const from = counts?.[index]?.position;
+        const to = counts?.[index + 1]?.position ?? from;
+        const movement = footballMovement({ team: player.team, role: player.label, playStart: visibleFromCount },
+          currentBeat, from && to ? to.x - from.x : 0, from && to ? to.z - from.z : 0);
+        let steps = (currentBeat - index) * movement.stepsPerCount;
+        for (let count = 0; counts && count < index; count++) {
+          const a = counts[count].position, b = counts[count + 1].position;
+          steps += footballMovement({ team: player.team, role: player.label, playStart: visibleFromCount },
+            count, b.x - a.x, b.z - a.z).stepsPerCount;
+        }
+        const phase = steps * Math.PI;
+        const bob = movement.stepsPerCount ? Math.abs(Math.sin(phase)) * .04 : 0;
+        const seated = scrimmageSeatedBlend(currentBeat, visibleFromCount);
+        const benchSeat = scrimmageBenchSeat(playerIndex);
+        const benchYaw = benchSeat.x < 0 ? Math.PI / 2 : -Math.PI / 2;
+        root.position.y = .98 + (bob - movement.crouch) * (1 - seated) - .38 * seated;
+        root.rotation.x = movement.lean * (1 - seated) + .03 * seated;
+        root.rotation.y = (seated > 0 ? benchYaw : movement.bodyYaw) - robot.rotation.y;
+        human.arms.forEach((arm, side) => {
+          arm.rotation.x = seated > 0 ? -.4 : movement.gait === 'block' ? -1.15 :
+            Math.sin(phase + side * Math.PI) * movement.armSwing;
+        });
+        human.updateLegs(seated, benchYaw - robot.rotation.y);
+      }
       ball.setEnabled(!floorCalibrationToggle?.checked && getDrillTransportState().beat >= visibleFromCount);
       if (!ball.isEnabled()) return;
       const beat = getDrillTransportState().beat;

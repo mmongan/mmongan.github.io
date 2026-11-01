@@ -52,7 +52,7 @@ export const FOOTBALL_PLAYS = ['slants', 'sweep', 'four-verticals'] as const sat
 
 export const FOOTBALL_FORMATION_OPTIONS: ReadonlyArray<{ value: FootballFormation; label: string }> = [
   { value: 'shotgun', label: 'Shotgun' },
-  { value: 'spread', label: 'Spread' },
+  { value: 'spread', label: 'Shotgun Spread (2x2)' },
   { value: 'i-form', label: 'I-Formation' },
 ];
 
@@ -61,6 +61,9 @@ export const FOOTBALL_PLAY_OPTIONS: ReadonlyArray<{ value: FootballPlay; label: 
   { value: 'sweep', label: 'Sweep' },
   { value: 'four-verticals', label: 'Four Verticals' },
 ];
+
+export const FOOTBALL_SCRIMMAGE_DEFAULT = { formation: 'spread', play: 'four-verticals' } as const;
+export const FOUR_VERTICALS_SOURCE = 'https://www.footballplaybookdesigner.com/library/article/four-verticals';
 
 export const FOOTBALL_FORMATION_PRESETS: Record<FootballFormation, FootballFormationPreset> = {
   shotgun: {
@@ -74,13 +77,13 @@ export const FOOTBALL_FORMATION_PRESETS: Record<FootballFormation, FootballForma
     },
   },
   spread: {
-    label: 'Spread',
+    label: 'Shotgun Spread (2x2)',
     positions: {
       LT: { x: -2.8, z: -10 }, LG: { x: -1.4, z: -10 }, C: { x: 0, z: -10 },
       RG: { x: 1.4, z: -10 }, RT: { x: 2.8, z: -10 },
       QB: { x: 0, z: -14.5 }, RB: { x: 5, z: -18 },
-      TE: { x: 15, z: -10 }, WR1: { x: -24, z: -10 },
-      WR2: { x: -17, z: -11 }, WR3: { x: 24, z: -11 },
+      TE: { x: 9, z: -11 }, WR1: { x: -24, z: -10 },
+      WR2: { x: -9, z: -11 }, WR3: { x: 24, z: -10 },
     },
   },
   'i-form': {
@@ -232,6 +235,35 @@ function defensiveRoute(role: DefensivePlayerRole, start: FootballPosition): Rou
   ];
 }
 
+function fourVerticalsRoute(role: OffensivePlayerRole, start: FootballPosition): RouteKeyframe[] {
+  if (['LT', 'LG', 'C', 'RG', 'RT'].includes(role)) {
+    return [{ count: 0, ...start }, { count: 3, x: start.x, z: start.z - 1.5 },
+      { count: 16, x: start.x, z: start.z - 1.5 }];
+  }
+  if (role === 'QB') {
+    return [{ count: 0, ...start }, { count: 3, x: start.x, z: start.z - 2 },
+      { count: 12, x: start.x, z: start.z - 2 }, { count: 16, x: start.x, z: start.z - 1.5 }];
+  }
+  if (role === 'RB') {
+    return [{ count: 0, ...start }, { count: 3, x: 3.5, z: -15.5 },
+      { count: 7, x: 3.5, z: -15.5 }, { count: 12, x: 7, z: -9 },
+      { count: 16, x: 8, z: -5 }];
+  }
+  return [{ count: 0, ...start }, { count: 3, x: start.x, z: start.z + 4 },
+    { count: 9, x: start.x, z: start.z + 15 }, { count: 16, x: start.x, z: start.z + 28 }];
+}
+
+// Illustrative 4-3 Cover 2 response, not an adaptive coverage or blocking solver.
+function coverTwoRoute(role: DefensivePlayerRole, start: FootballPosition): RouteKeyframe[] {
+  const end = role.startsWith('DE') || role.startsWith('DT')
+    ? { x: start.x, z: -11.5 }
+    : role === 'FS' ? { x: -13, z: 19 }
+    : role === 'SS' ? { x: 13, z: 19 }
+    : role.startsWith('CB') ? { x: start.x, z: -3 }
+    : { x: role === 'LB-L' ? -8 : role === 'LB-R' ? 8 : 0, z: 1 };
+  return [{ count: 0, ...start }, { count: 8, ...end }, { count: 16, ...end }];
+}
+
 function ballEvents(play: FootballPlay): FootballBallEvent[] {
   const events: FootballBallEvent[] = [
     { startCount: 0, endCount: 1, fromId: 'offense-C', toId: 'offense-QB', kind: 'snap' },
@@ -254,12 +286,13 @@ export function generateFootballPlay(formation: FootballFormation, play: Footbal
   }
 
   const quarterback = preset.positions.QB;
+  const sourcedPlay = formation === 'spread' && play === 'four-verticals';
   if (!quarterback) throw new Error('Football formation is missing its quarterback.');
   const offense = OFFENSE_ROLES.map((originalRole): FootballPlayer => {
     const role = formation === 'i-form' && originalRole === 'WR2' ? 'FB' : originalRole;
     const start = preset.positions[role];
     if (!start) throw new Error(`Football formation is missing ${role}.`);
-    const frames = routeFrames(role, play, start, quarterback);
+    const frames = sourcedPlay ? fourVerticalsRoute(role, start) : routeFrames(role, play, start, quarterback);
     return {
       id: `offense-${role}`,
       label: role,
@@ -268,8 +301,9 @@ export function generateFootballPlay(formation: FootballFormation, play: Footbal
     };
   });
   const defense = DEFENSE_ROLES.map((role): FootballPlayer => {
-    const start = DEFENSE[role];
-    const frames = defensiveRoute(role, start);
+    const start = sourcedPlay && (role === 'FS' || role === 'SS')
+      ? { x: role === 'FS' ? -13 : 13, z: 3 } : DEFENSE[role];
+    const frames = sourcedPlay ? coverTwoRoute(role, start) : defensiveRoute(role, start);
     return {
       id: `defense-${role}`,
       label: role,

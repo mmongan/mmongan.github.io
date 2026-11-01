@@ -70,15 +70,29 @@ function partTemplate(name: string, build: (geometry: InstrumentGeometry) => voi
 }
 
 export const getMarcherTrimTemplate = partTemplate("marcherTrimTemplate", (geometry) => {
-  geometry.lathe([[0.055, 1.06], [0.055, 1.18]], 6, METAL);
+  addMarcherTrim(geometry, new Color4(.95, .75, .59, 1));
+});
+
+function addMarcherTrim(geometry: InstrumentGeometry, skin: Color4) {
+  geometry.lathe([[0, 1.06], [.055, 1.06], [.06, 1.14], [.05, 1.18], [0, 1.18]], 8, skin);
   geometry.lathe(geometry.low
     ? [[0, 1.36], [0.14, 1.36], [0.105, 1.64], [0, 1.64]]
     : [[0, 1.36], [0.125, 1.36], [0.14, 1.39], [0.13, 1.43], [0.13, 1.58], [0.105, 1.64], [0, 1.64]], 8, DARK);
   geometry.lathe(geometry.low
     ? [[0, 1.62], [0.08, 1.7], [0, 1.78]]
     : [[0, 1.62], [0.06, 1.645], [0.08, 1.7], [0.06, 1.755], [0, 1.78]], 6, GLOVE);
-  addRobotHead(geometry);
-});
+  geometry.fine(() => {
+    geometry.lathe([[0, 1.354], [.145, 1.354], [.145, 1.365], [0, 1.365]], 16, DARK,
+      ({ x, y, z }) => new Vector3(x, y, z > 0 ? z * 1.35 : z));
+  });
+  addRobotHead(geometry, skin);
+}
+
+export const MARCHER_SKIN_TEMPLATES = [
+  getMarcherTrimTemplate,
+  partTemplate("marcherTrimMediumTemplate", geometry => addMarcherTrim(geometry, new Color4(.64, .4, .25, 1))),
+  partTemplate("marcherTrimDarkTemplate", geometry => addMarcherTrim(geometry, new Color4(.35, .22, .15, 1))),
+] as const;
 
 export const getMarcherJacketTemplate = partTemplate("marcherJacketTemplate", (geometry) => {
   geometry.lathe(geometry.low
@@ -87,7 +101,14 @@ export const getMarcherJacketTemplate = partTemplate("marcherJacketTemplate", (g
     : [[0, JACKET_LEG_CLIP_HEIGHT], [0.185, JACKET_LEG_CLIP_HEIGHT], [0.16, 0.73],
       [0.175, 0.84], [0.21, 0.93], [0.25, 0.98], [0.25, 1.01], [0.225, 1.045],
       [0.17, 1.07], [0.1, 1.082], [0, 1.085]], geometry.low ? 16 : 12, TINTED,
-    ({ x, y, z }) => new Vector3(x, y, z * 0.65));
+    ({ x, y, z }) => new Vector3(x, y, z * 0.78));
+  geometry.fine(() => {
+    geometry.lathe([[.12, 1.064], [.12, 1.09]], 12, DARK,
+      ({ x, y, z }) => new Vector3(x, y, z * .85));
+    geometry.lathe([[.163, .735], [.163, .765]], 12, DARK,
+      ({ x, y, z }) => new Vector3(x, y, z * .78));
+    geometry.box(new Vector3(-.028, .737, .125), new Vector3(.028, .763, .137), METAL);
+  });
 });
 
 // Rounded ends overlap at the existing joints, keeping the clay-like silhouette

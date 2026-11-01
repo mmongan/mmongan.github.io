@@ -179,6 +179,7 @@ ${followerUpdate}`), triggerContext);
     getChartTransition: () => ({ shape: 'straight', pace: 'linear', styleIndex: 0 }),
     getChartTransitionLabels: () => ({ shape: 'Straight', pace: 'Linear', style: 'March' }),
     getRobotPositionsAtCount: count => [new Vector3(count, 0, 2), new Vector3(10, 0, 3)],
+    getChartRobots: () => [robot, second], footballChartSymbol: () => null,
     getRobotPositionAtCount: (robot, count) => new Vector3(count, 0, 2),
     getMarcherPOVRobot: () => selected, getMarcherPOVLabel: () => 'Marcher 2',
   });
@@ -198,6 +199,19 @@ globalThis.drawPage = drawPage;globalThis.signature = getPageSignature;`, chartC
   calls.length = 0;
   chartContext.drawPage(target, [0, 8], 1);
   assert.ok(!calls.some(c => c.method === 'fillText' && c.args[0] === 'ME'), 'No POV highlight when off');
+  vm.runInContext(compile(read('../src/robot/footballPresentation.ts')), chartContext);
+  const bandSignature = chartContext.signature([0, 8], 1);
+  chartContext.setFootballTeam(robot, 'offense');
+  chartContext.setFootballTeam(second, 'defense');
+  assert.notEqual(chartContext.signature([0, 8], 1), bandSignature, 'Football symbols invalidate unchanged chart positions');
+  calls.length = 0;
+  chartContext.drawPage(target, [0, 8], 1);
+  for (const symbol of ['X', 'O']) {
+    assert.ok(calls.some(call => call.method === 'fillText' && call.args[0] === symbol),
+      `Football chart draws ${symbol}`);
+  }
+  chartContext.setFootballTeam(robot, null); chartContext.setFootballTeam(second, null);
+  assert.equal(chartContext.signature([0, 8], 1), bandSignature, 'Band chart symbols return on exit');
   let autoSelections = 0;
   const startupContext = vm.createContext({
     scene, TargetCamera, MarcherPOVCamera: context.Follower, getMarcherEyePose: eyePose,

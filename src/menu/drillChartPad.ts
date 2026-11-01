@@ -18,10 +18,12 @@ import {
   getGlobalCountIndex,
   getDrillTransportState,
   getRobotPositionsAtCount,
+  getChartRobots,
   getRobotPositionAtCount,
   insertBlankChartPage,
   seekToCount,
 } from '../robot/robot';
+import { footballChartSymbol } from '../robot/footballPresentation';
 import { END_ZONE_DEPTH_YARDS, FIELD_LENGTH_YARDS, FIELD_WIDTH_YARDS, HASH_OFFSETS_YARDS } from '../field/constants';
 import { getSelectedFieldLevel } from '../ui/dom';
 import { registerMenuButton, type HandMenuHit } from './handMenu';
@@ -401,16 +403,39 @@ function drawPage(target: Pad, setCounts: number[], page: number) {
       }
     }
     ctx.strokeStyle = "rgba(63, 124, 247, 0.6)";
-    previous.forEach((from) => {
+    const chartRobots = getChartRobots();
+    previous.forEach((from, index) => {
       const p = fieldPoint(from);
+      const symbol = chartRobots[index] ? footballChartSymbol(chartRobots[index]) : null;
+      if (symbol) {
+        ctx.save();
+        ctx.fillStyle = "rgba(63, 124, 247, 0.6)";
+        ctx.font = "bold 14px Arial";
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillText(symbol, p.x, p.y);
+        ctx.restore();
+        return;
+      }
       ctx.beginPath();
       ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
       ctx.stroke();
     });
   }
   ctx.fillStyle = "#111827";
-  current.forEach((position) => {
+  const chartRobots = getChartRobots();
+  current.forEach((position, index) => {
     const p = fieldPoint(position);
+    const robot = chartRobots[index];
+    const symbol = robot ? footballChartSymbol(robot) : null;
+    if (symbol) {
+      ctx.save();
+      ctx.fillStyle = symbol === 'O' ? '#1967d2' : '#c62828';
+      ctx.font = "bold 17px Arial";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(symbol, p.x, p.y);
+      ctx.restore();
+      return;
+    }
     ctx.beginPath();
     ctx.arc(p.x, p.y, 5.5, 0, Math.PI * 2);
     ctx.fill();
@@ -467,7 +492,8 @@ function getPageSignature(setCounts: number[], page: number) {
   const transitionSignature = `${transition.shape}:${transition.pace}:${transition.styleIndex}`;
   const povRobot = getMarcherPOVRobot();
   const povSignature = povRobot ? `${povRobot.uniqueId}:${povRobot.position.x.toFixed(3)}:${povRobot.position.z.toFixed(3)}` : '';
-  return `${setCounts.join(',')}:${getChartPageTimeline().authoredCounts.join(',')}:${page}:${count}:${hash}:${getGlobalCountIndex()}:${getSelectedFieldLevel()}:${povSignature}:${transitionSignature}`;
+  const symbols = getChartRobots().map(robot => footballChartSymbol(robot) ?? '.').join('');
+  return `${setCounts.join(',')}:${getChartPageTimeline().authoredCounts.join(',')}:${page}:${count}:${hash}:${getGlobalCountIndex()}:${getSelectedFieldLevel()}:${povSignature}:${transitionSignature}:${symbols}`;
 }
 
 function refreshPage(force = false) {

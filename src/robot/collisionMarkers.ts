@@ -10,6 +10,7 @@ import { Scene } from '@babylonjs/core/scene.pure';
 
 export const COLLISION_MARKER_RADIUS_YARDS = 0.35;
 
+const COLLISION_CONES_ENABLED = false;
 const COLLISION_MARKER_RADIUS_SQUARED = COLLISION_MARKER_RADIUS_YARDS * COLLISION_MARKER_RADIUS_YARDS;
 const COLLISION_CONE_HEIGHT_YARDS = 28 / 36;
 const COLLISION_CONE_BASE_DIAMETER_YARDS = 14 / 36;
@@ -162,6 +163,11 @@ export function createCollisionMarkerManager(seekToCount: (countIndex: number) =
   }
 
   function refresh(scene: Scene, paths: Iterable<CollisionRobotPath>) {
+    if (!COLLISION_CONES_ENABLED) {
+      rebuild = null;
+      clearMarkers();
+      return;
+    }
     rebuild = rebuildMarkers(scene, Array.from(paths));
     if (rebuildScene === scene && rebuildObserver) return;
     if (rebuildScene && rebuildObserver) {

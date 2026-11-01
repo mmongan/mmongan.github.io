@@ -79,4 +79,21 @@ for (const formation of api.FOOTBALL_FORMATIONS) {
 
 assert.throws(() => api.generateFootballPlay('invalid', 'slants'), /supported/);
 assert.throws(() => api.generateFootballPlay('shotgun', 'invalid'), /supported/);
+const sourced = api.generateFootballPlay('spread', 'four-verticals');
+const player = role => sourced.players.find(player => player.label === role).positions;
+for (const role of ['WR1', 'WR2', 'TE', 'WR3']) {
+  const route = player(role);
+  assert.ok(route.every(point => point.x === route[0].x), `${role} maintains its vertical lane`);
+  assert.equal(route[16].z - route[0].z, 28, 'Four vertical threats advance downfield');
+}
+assert.equal(player('WR2')[0].x, -9, 'Left slot attacks the left seam');
+assert.equal(player('TE')[0].x, 9, 'Right slot attacks the right seam');
+for (const role of ['LT', 'LG', 'C', 'RG', 'RT']) {
+  assert.ok(player(role)[3].z < player(role)[0].z, 'Linemen pass-set rather than run-block downfield');
+}
+assert.deepEqual(player('RB')[3], player('RB')[7], 'Back checks protection before releasing');
+assert.ok(player('RB')[16].z > -10, 'Back releases as an underneath outlet');
+assert.equal(player('FS')[16].x, -13);
+assert.equal(player('SS')[16].x, 13);
+assert.equal(player('QB')[12].z, -16.5, 'Quarterback drops and sets for the pass');
 console.log('Football play geometry checks passed: all formations/plays, 22 routes, field bounds, deterministic sampling, and ball events.');

@@ -40,6 +40,7 @@ const context = vm.createContext({
   getChartPageCounts: () => [0, 8, 16], getChartPageTimeline: () => ({ authoredCounts: [0, 16] }),
   isAuthoredChartPage: value => value === 0 || value === 16,
   getRobotPositionsAtCount: value => [new Vector3(value, 0, 0)],
+  getChartRobots: () => [], footballChartSymbol: () => null,
   getMarcherPOVRobot: () => null,
   getChartTransition: () => ({ shape: 'straight', pace: 'linear', styleIndex: 0 }),
   getChartTransitionLabels: () => ({ shape: 'Straight', pace: 'Linear', style: 'March' }),

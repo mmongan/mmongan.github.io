@@ -48,7 +48,7 @@ import { executeXRSetting, setXRSettingsPanelVisible, summonXRSettingsPanel } fr
 import { generateFootballPlay, type FootballFormation, type FootballPlay } from '../robot/footballPlayGeometry';
 import { createFootballVisuals, initFootballControls, executeFootballCommand } from '../robot/footballPlayMode';
 import { SCRIMMAGE_EXIT_COUNTS, SCRIMMAGE_PLAY_START, scrimmageWalk,
-  scrimmageSideline, scrimmagePlayerRoute } from '../robot/scrimmageGeometry';
+  scrimmageBandEndZone, scrimmagePlayerRoute, scrimmageBenchSeat } from '../robot/scrimmageGeometry';
 import { setRobotColor, createPresentationMarcher } from '../robot/robot';
 import { initChartPageGhostMode, isChartGhostModeEnabled, setChartGhostModeEnabled } from '../robot/chartPageGhostMode';
 import {
@@ -3451,7 +3451,7 @@ function showWaitingFootballPlayers() {
   const players = geometry.players.map((player, index) => {
     const robot = createPresentationMarcher(scene);
     robot.parent = pathRoot;
-    const position = scrimmageSideline(player.positions[0], index);
+    const position = scrimmageBenchSeat(index);
     robot.position.set(position.x, FIELD_SURFACE_Y, position.z);
     robot.rotation.y = position.x < 0 ? Math.PI / 2 : -Math.PI / 2;
     robot.setEnabled(true);
@@ -3484,7 +3484,7 @@ function loadFootballPlay(formation: FootballFormation, play: FootballPlay, scri
         setMarcherInstrument(robot, schedule.instrument);
         setRobotColor(robot, schedule.color);
         const start = { x: schedule.position.x, z: schedule.position.z };
-        const end = scrimmageSideline(start, index);
+        const end = scrimmageBandEndZone(start, index);
         const exit = scrimmageWalk(start, end, SCRIMMAGE_EXIT_COUNTS);
         const path = [...exit, ...Array.from({ length: SCRIMMAGE_PLAY_START + 16 - SCRIMMAGE_EXIT_COUNTS },
           () => ({ ...end }))].map(position => new Vector3(position.x, FIELD_SURFACE_Y, position.z));

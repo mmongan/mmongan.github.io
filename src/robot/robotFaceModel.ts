@@ -7,28 +7,26 @@ import { buildLowPolyTemplate, cachedInstrumentTemplate, InstrumentGeometry } fr
 
 // Face and skull share the marcher's trim mesh; eyes retain their shared
 // template. +Z faces forward and the body build scale narrows X/Z.
-const SHELL = new Color4(0.84, 0.86, 0.9, 1);
-const TRIM = new Color4(0.55, 0.59, 0.65, 1);
+const SKIN = new Color4(0.95, 0.75, 0.59, 1);
+const LIPS = new Color4(0.49, 0.25, 0.22, 1);
 const FACE_DETAIL = new Color4(0.16, 0.19, 0.23, 1);
 
 const v = (x: number, y: number, z: number) => new Vector3(x, y, z);
 
-// Lathes match the body's 8 sides; at low detail lathe() halves that and
-// turns it half a step itself.
-const HEAD_SIDES = 8;
+const HEAD_SIDES = 16;
 // The face is deeper than the back of the head.
 const FRONT_DEPTH = 1.15;
 
 // Narrow chin, wider cheeks, and a rounded forehead beneath the shako.
 const SKULL_PROFILE: Array<[number, number]> = [
-  [0, 1.13], [0.065, 1.14], [0.105, 1.175], [0.14, 1.235],
+  [0, 1.13], [0.065, 1.14], [0.105, 1.175], [0.132, 1.2], [0.14, 1.235],
   [0.144, 1.285], [0.14, 1.325], [0.125, 1.355], [0, 1.372],
 ];
 const EYE_RADIUS = 0.144;
 const EAR_Y = 1.25;
 const EAR_RADIUS = 0.142;
 const MOUTH_Y = 1.195;
-const MOUTH_RADIUS = 0.116;
+const MOUTH_RADIUS = 0.132;
 
 function headSides(geometry: InstrumentGeometry) {
   return geometry.low ? Math.max(4, HEAD_SIDES / 2) : HEAD_SIDES;
@@ -57,17 +55,18 @@ function sideFaceX(geometry: InstrumentGeometry, radius: number) {
 }
 
 // Appends the smooth-shaded head. At low detail the ears and mouth are skipped.
-export function addRobotHead(geometry: InstrumentGeometry) {
+export function addRobotHead(geometry: InstrumentGeometry, skin = SKIN) {
   const place = placeHead(geometry);
   geometry.lathe(geometry.low
     ? [[0, 1.13], [0.105, 1.175], [0.14, 1.235], [0.144, 1.3], [0.125, 1.355], [0, 1.372]]
-    : SKULL_PROFILE, HEAD_SIDES, SHELL, place);
+    : SKULL_PROFILE, HEAD_SIDES, skin, place);
   const noseZ = frontFaceZ(geometry, 0.14);
-  geometry.box(v(-0.018, 1.225, noseZ - 0.005), v(0.018, 1.28, noseZ + 0.032), SHELL);
+  geometry.lathe([[0, 1.222], [.016, 1.232], [.019, 1.244], [.009, 1.275], [0, 1.282]],
+    8, skin, ({ x, y, z }) => v(x, y, noseZ + .015 + z * 1.3));
   geometry.fine(() => {
     const mouthZ = frontFaceZ(geometry, MOUTH_RADIUS);
     geometry.box(v(-0.027, MOUTH_Y - 0.003, mouthZ - 0.004),
-      v(0.027, MOUTH_Y + 0.003, mouthZ + 0.003), FACE_DETAIL);
+      v(0.027, MOUTH_Y + 0.003, mouthZ + 0.008), LIPS);
     const browZ = frontFaceZ(geometry, EYE_RADIUS);
     for (const side of [-1, 1]) {
       geometry.box(v(side * 0.043 - 0.02, 1.303, browZ - 0.002),
@@ -76,7 +75,8 @@ export function addRobotHead(geometry: InstrumentGeometry) {
     const earDepth = 0.03;
     const earX = sideFaceX(geometry, EAR_RADIUS) + earDepth / 2 - 0.004;
     for (const side of [-1, 1]) {
-      geometry.drum(v(side * earX, EAR_Y, -0.01), v(side, 0, 0), 0.042, earDepth, HEAD_SIDES, SHELL, TRIM);
+      geometry.lathe([[0, -.04], [.016, -.025], [.022, 0], [.017, .025], [0, .04]], 8,
+        skin, ({ x, y, z }) => v(side * earX + x * .65, EAR_Y + y, z - .01));
     }
   });
 }

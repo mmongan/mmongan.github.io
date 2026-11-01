@@ -43,6 +43,7 @@ const templates = load('marcherBodyModel', [
   'getMarcherShoeTemplate', 'getMarcherGloveTemplate', 'getMarcherKneeTemplate',
 ]);
 const { getMarcherTrimTemplate } = templates;
+const skinTemplates = load('marcherBodyModel', ['MARCHER_SKIN_TEMPLATES']).MARCHER_SKIN_TEMPLATES;
 const partNames = Object.keys(templates);
 const optimizedShared = {
   InstrumentGeometry: context.InstrumentGeometry,
@@ -125,6 +126,20 @@ try {
     }
   }
   for (const detail of ['high', 'low']) {
+    const skinMeshes = skinTemplates.map(template => template(scene, detail));
+    assert.equal(skinMeshes.length, 3, 'Band uses three shared human complexion templates');
+    assert.equal(new Set(skinMeshes.map(mesh => JSON.stringify(mesh.getVerticesData('color')))).size, 3);
+    for (const [index, mesh] of skinMeshes.entries()) {
+      assert.equal(mesh, skinTemplates[index](scene, detail), 'Complexion geometry is cached per detail level');
+      assert.deepEqual(mesh.getVerticesData('position'), skinMeshes[0].getVerticesData('position'),
+        'Complexions retain identical shako, face, and instrument-alignment geometry');
+      const positions = mesh.getVerticesData('position'), colors = mesh.getVerticesData('color');
+      const skin = [];
+      for (let i = 0; i < positions.length; i += 3) {
+        if (positions[i + 1] > 1.06 && positions[i + 1] < 1.15) skin.push(colors.slice(i / 3 * 4, i / 3 * 4 + 3));
+      }
+      assert.ok(skin.some(([r, g, b]) => r > g && g > b), 'Necks have natural skin tones, not metal');
+    }
     for (const [name, template] of Object.entries(templates)) {
       const part = template(scene, detail);
       const vertices = part.getVerticesData('position');
@@ -256,14 +271,14 @@ try {
       }
     }
     assert.ok(waist.length > 0, `${detail}: jacket has a tailored waist`);
-    assert.ok(Math.abs(Math.max(...waist.map(p => Math.hypot(p.x, p.z / 0.65))) - 0.16) < 1e-6,
+    assert.ok(Math.abs(Math.max(...waist.map(p => Math.hypot(p.x, p.z / 0.78))) - 0.16) < 1e-6,
       `${detail}: waist is narrowed from 0.205 to 0.16 without shortening the torso`);
-    assert.ok(Math.max(...jacket.filter((_, i) => i % 3 === 2).map(Math.abs)) <= 0.163,
-      `${detail}: jacket depth is reduced while shoulder width is retained`);
+    assert.ok(Math.max(...jacket.filter((_, i) => i % 3 === 2).map(Math.abs)) <= 0.196,
+      `${detail}: natural chest depth stays bounded while shoulder width is retained`);
     const colors = templates.getMarcherJacketTemplate(scene, detail).getVerticesData('color');
     const hemHeights = [];
     for (let i = 0; i < jacket.length / 3; i++) {
-      assert.equal(colors[i * 4], 1, `${detail}: jacket has no exposed trouser band`);
+      if (jacket[i * 3 + 1] < .71) assert.equal(colors[i * 4], 1, `${detail}: jacket has no exposed trouser band`);
       if (jacket[i * 3 + 1] < 0.71) hemHeights.push(jacket[i * 3 + 1]);
     }
     assert.ok(hemHeights.every(y => Math.abs(y - clipping.JACKET_LEG_CLIP_HEIGHT) < 1e-6),
@@ -338,10 +353,8 @@ try {
       assert.ok(mesh.getTotalVertices() <= oldMesh.getTotalVertices(), `${name}: never adds vertices`);
     }
     assert.ok(after < before, `${detail}: marcher body vertex count reduced`);
-    if (detail === 'high') assert.ok(after <= 1010, 'Full-detail body stays below the reduced vertex budget');
+    if (detail === 'high') assert.ok(after <= 1200, 'Human face and tailored uniform stay within the full-detail vertex budget');
     else assert.ok(after < previous, 'Low-detail bodies use fewer radial vertices');
-    assert.equal(previous, detail === 'high' ? 1196 : 384, 'Measured previous topology matches its documented budget');
-    if (detail === 'high') assert.equal(after, 1008);
     console.log(`Current reduction ${detail}: ${previous} -> ${after} vertices (${(100 * (1 - after / previous)).toFixed(1)}% fewer).`);
     console.log(`Marcher body ${detail}: ${before} -> ${after} vertices (${(100 * (1 - after / before)).toFixed(1)}% fewer, eyes/instrument excluded).`);
   }

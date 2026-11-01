@@ -12,6 +12,7 @@ import { Observable, Observer } from '@babylonjs/core/Misc/observable.pure';
 import { Node } from '@babylonjs/core/node';
 import { Scene } from '@babylonjs/core/scene.pure';
 import { createCollisionMarkerManager, COLLISION_MARKER_RADIUS_YARDS } from './collisionMarkers';
+import { footballMovement, type FootballMotion } from './footballMovement';
 import { buildGaitStepPhaseOffsets, DOUBLE_TIME_ABOVE_YARDS, gaitPhaseAtBeat, isAutoGaitStyle, selectAutoGait } from './gaitSelection';
 import { resolveRepeatPlayback } from './playbackRepeat';
 import { registerManualPlacementMarcher, tryManualMarcherPose, tryManualMarcherPoses } from './manualPlacement';
@@ -29,7 +30,7 @@ import { getMellophoneTemplate, MELLOPHONE_MOUTHPIECE_TIP } from './mellophoneMo
 import { getRobotEyesTemplate } from './robotFaceModel';
 import {
   getMarcherCalfTemplate, getMarcherForearmTemplate, getMarcherGloveTemplate, getMarcherJacketTemplate,
-  getMarcherShoeTemplate, getMarcherThighTemplate, getMarcherKneeTemplate, getMarcherTrimTemplate, getMarcherUpperArmTemplate,
+  getMarcherShoeTemplate, getMarcherThighTemplate, getMarcherKneeTemplate, MARCHER_SKIN_TEMPLATES, getMarcherUpperArmTemplate,
 } from './marcherBodyModel';
 import { getSaxophoneTemplate, SAXOPHONE_MOUTHPIECE_TIP } from './saxophoneModel';
 import { BARI_SAXOPHONE_MOUTHPIECE_TIP, getBariSaxophoneTemplate } from './bariSaxophoneModel';
@@ -85,7 +86,7 @@ let instrumentDetail: ModelDetail = isFieldShrunk() ? "low" : "high";
 const bodyTemplates = new Set<ModelTemplate>([
   getMarcherCalfTemplate, getMarcherForearmTemplate, getMarcherGloveTemplate,
   getMarcherJacketTemplate, getMarcherShoeTemplate, getMarcherThighTemplate,
-  getMarcherTrimTemplate, getMarcherUpperArmTemplate, getMarcherKneeTemplate, getRobotEyesTemplate,
+  ...MARCHER_SKIN_TEMPLATES, getMarcherUpperArmTemplate, getMarcherKneeTemplate, getRobotEyesTemplate,
 ]);
 
 function getTemplateDetail(template: ModelTemplate): ModelDetail {
@@ -744,8 +745,12 @@ export function cycleMarchingGait(direction: -1 | 1): number {
   return selectedMarchingGait;
 }
 
-function createMarcherModel(scene: Scene, gaitIndex: number): TransformNode {
+const marcherSkinIndices = new WeakMap<TransformNode, number>();
+
+function createMarcherModel(scene: Scene, gaitIndex: number, skinIndex?: number): TransformNode {
   const robot = new TransformNode("pathRobot", scene);
+  const skin = skinIndex ?? robot.uniqueId % MARCHER_SKIN_TEMPLATES.length;
+  marcherSkinIndices.set(robot, skin);
   allRobots.add(robot);
 
   const color = nextRobotColor();
@@ -761,7 +766,7 @@ function createMarcherModel(scene: Scene, gaitIndex: number): TransformNode {
     createModelPart(template, scene, name, parent, robot, tinted);
 
   part(getMarcherJacketTemplate, "marcherJacket", body, true);
-  part(getMarcherTrimTemplate, "marcherTrim", body);
+  part(MARCHER_SKIN_TEMPLATES[skin], "marcherTrim", body);
   part(getRobotEyesTemplate, "robotEyes", body);
 
   const appendages = ([-1, 1] as const).map((side) => {
@@ -875,7 +880,7 @@ export function duplicateMarcherSchedule(source: TransformNode, offset: Vector3)
   if (!state || !parts || state.counts.length === 0) {
     throw new Error('Cannot duplicate a marcher without a registered drill schedule');
   }
-  const robot = createLowPolyRobot(source.getScene(), parts.gaitIndex);
+  const robot = createMarcherModel(source.getScene(), parts.gaitIndex, marcherSkinIndices.get(source));
   robot.parent = source.parent;
   setMarcherInstrument(robot, parts.instrument);
   setMarcherInstrumentRestPose(robot, parts.instrumentRestPose);
@@ -912,6 +917,7 @@ export interface RobotCount {
 // Each robot keeps only its own route/table; the playback transport itself
 // (below) is shared by every robot so the whole band marches on one clock.
 interface PlayerState {
+  footballMotion?: FootballMotion;
   points: Vector3[];
   stepSizeYards: number;
   counts: RobotCount[];
@@ -1316,6 +1322,16 @@ function resamplePathIntoCounts(points: Vector3[], stepSizeYards: number): Robot
 
 const GAIT_INDEX_BY_NAME = new Map<string, number>(MARCHING_GAITS.map((gait, index) => [gait.name, index]));
 
+export function setRobotFootballMotion(robot: TransformNode, motion: FootballMotion | null) {
+  const state = players.get(robot);
+  if (!state) return;
+  state.footballMotion = motion ?? undefined;
+  clearBakedCountGaits(state);
+  state.gaitPhaseCache = undefined;
+  state.stepCache = undefined;
+  invalidateLegBake(state);
+}
+
 export interface ResolvedCountGait {
   gaitIndex: number;
   stepsPerCount: number;
@@ -1334,6 +1350,17 @@ function resolveSegmentGait(
   segmentStart: number,
   styleIndex: number
 ): ResolvedCountGait | null {
+  if (state.footballMotion) {
+    if (segmentStart < 0 || segmentStart + 1 >= state.counts.length) return null;
+    const from = state.counts[segmentStart].position;
+    const to = state.counts[segmentStart + 1].position;
+    const movement = footballMovement(state.footballMotion, segmentStart, to.x - from.x, to.z - from.z);
+    const name = movement.gait === 'shuffle' ? 'Crab Walk' :
+      movement.gait === 'backpedal' ? 'Backward March' : movement.gait === 'block' ? 'Slide' : 'Double Time';
+    return { gaitIndex: GAIT_INDEX_BY_NAME.get(name)!, stepsPerCount: movement.stepsPerCount,
+      bodyYaw: movement.bodyYaw, legYawOffset: 0, inPlace: false,
+      sideways: movement.gait === 'shuffle', label: `Football ${movement.gait}` };
+  }
   const baked = state.counts[Math.min(state.counts.length - 1, Math.max(0, segmentStart))]?.bakedGait;
   if (baked !== undefined && segmentStart >= 0 && segmentStart < state.counts.length) return baked;
   const last = state.counts.length - 1;
@@ -1536,7 +1563,7 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState,
   const parts = sample?.parts ?? marcherParts.get(robot);
   if (!parts) return;
   const clockOffset = Math.round((drillCountToMidiBeat(drillBeat, playbackCountTicks, playbackPpq) - musicBeat) * 1e8) / 1e8;
-  const bakeKey = [parts.gaitIndex, clockOffset, repeatOptions.songLength, repeatOptions.drill,
+  const bakeKey = [parts.gaitIndex, JSON.stringify(state.footballMotion), clockOffset, repeatOptions.songLength, repeatOptions.drill,
     playbackPpq, playbackCountTicks.join(",")].join(":");
   if (!sample && state.legBake &&
     (state.legBake.counts !== state.counts || state.legBake.beatUnits !== playbackBeatUnits ||
@@ -1703,7 +1730,7 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState,
   const savedPhase = from.stepPhase;
   const phase = savedPhase !== undefined
     ? gaitPhaseAtBeat(savedPhase + forwardProgress * stepsPerCount, 1)
-    : repeatOptions.songLength > 0
+    : !state.footballMotion && repeatOptions.songLength > 0
     ? gaitPhaseAtBeat(midiPulseAtBeat(musicBeat, playbackBeatUnits), stepsPerCount)
     : gaitPhaseAtBeat(
       getGaitStepPhaseOffsets(state, parts.gaitIndex)[segmentStart] + forwardProgress * stepsPerCount,
@@ -1728,7 +1755,7 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState,
   }
   const stepCache = state.stepCache;
   const beatForStep = (step: number) => {
-    if (savedPhase === undefined && repeatOptions.songLength > 0) {
+    if (savedPhase === undefined && !state.footballMotion && repeatOptions.songLength > 0) {
       return midiBeatToDrillCount(midiBeatAtPulse(step / stepsPerCount, playbackBeatUnits) + clockOffset,
         playbackCountTicks, playbackPpq);
     }
@@ -1916,7 +1943,7 @@ export function getRobotFootprintSource(robot: TransformNode) {
   if (!state || !parts || !state.counts.length) return null;
   const clockOffset = Math.round((drillCountToMidiBeat(getDrillTransportState().beat, playbackCountTicks, playbackPpq) -
     getMusicTransportState().beat) * 1e8) / 1e8;
-  const key = JSON.stringify([parts.gaitIndex, clockOffset, repeatOptions.songLength, repeatOptions.drill,
+  const key = JSON.stringify([parts.gaitIndex, state.footballMotion, clockOffset, repeatOptions.songLength, repeatOptions.drill,
     playbackBeatUnits, playbackPpq, playbackCountTicks, state.counts.map(count => [
       count.position.x, count.position.y, count.position.z, count.rotationY, count.facingY, count.styleIndex,
       count.bakedGait, count.stepPhase,
@@ -1929,10 +1956,10 @@ export function getRobotFootprintSource(robot: TransformNode) {
       const offsets = getGaitStepPhaseOffsets(sampleState, parts.gaitIndex);
       const cadence = (segment: number) => resolveSegmentGait(sampleState, segment, parts.gaitIndex)?.stepsPerCount ?? 1;
       const beats = gaitContactBeats(last,
-        (segment, beat) => state.counts[segment].stepPhase === undefined && repeatOptions.songLength > 0
+        (segment, beat) => !state.footballMotion && state.counts[segment].stepPhase === undefined && repeatOptions.songLength > 0
           ? midiPulseAtBeat(drillCountToMidiBeat(beat, playbackCountTicks, playbackPpq) - clockOffset, playbackBeatUnits) * cadence(segment)
           : offsets[segment] + (beat - segment) * cadence(segment),
-        (segment, step) => state.counts[segment].stepPhase === undefined && repeatOptions.songLength > 0
+        (segment, step) => !state.footballMotion && state.counts[segment].stepPhase === undefined && repeatOptions.songLength > 0
           ? midiBeatToDrillCount(midiBeatAtPulse(step / cadence(segment), playbackBeatUnits) + clockOffset,
             playbackCountTicks, playbackPpq)
           : segment + (step - offsets[segment]) / cadence(segment));
@@ -2078,7 +2105,8 @@ export function registerRobotPath(
   const fixedFacingY = players.get(robot)?.fixedFacingY;
   const oldState = players.get(robot);
   if (oldState) invalidateLegBake(oldState);
-  players.set(robot, { points, stepSizeYards: resolvedStepSize, counts, fixedFacingY });
+  players.set(robot, { points, stepSizeYards: resolvedStepSize, counts, fixedFacingY,
+    footballMotion: oldState?.footballMotion });
   applyFixedFacing(players.get(robot)!);
   applyGlobalCount(robot, players.get(robot)!);
   recalculateCollisionMarkers(scene);
@@ -2132,7 +2160,8 @@ export function registerRobotCounts(
   }
   const oldState = players.get(robot);
   if (oldState) invalidateLegBake(oldState);
-  players.set(robot, { points: positions, stepSizeYards: DEFAULT_STEP_SIZE_YARDS, counts });
+  players.set(robot, { points: positions, stepSizeYards: DEFAULT_STEP_SIZE_YARDS, counts,
+    footballMotion: oldState?.footballMotion });
   applyGlobalCount(robot, players.get(robot)!);
   if (!skipCollisionRefresh) recalculateCollisionMarkers(scene);
 }
@@ -3057,7 +3086,7 @@ export function restoreMarcherSchedule(
   }
   players.set(robot, {
     points: counts.map((count) => count.position.clone()), stepSizeYards: snapshot.stepSizeYards,
-    counts, fixedFacingY: snapshot.fixedFacingY,
+    counts, fixedFacingY: snapshot.fixedFacingY, footballMotion: oldState?.footballMotion,
   });
   robot.setEnabled(true);
   applyGlobalCount(robot, players.get(robot)!);
@@ -3442,6 +3471,10 @@ export function getRobotPositionsAtCount(countIndex: number): Vector3[] {
     if (!players.has(robot) && robot.isEnabled()) positions.push(robot.position);
   });
   return positions;
+}
+
+export function getChartRobots(): TransformNode[] {
+  return [...players.keys(), ...[...allRobots].filter(robot => !players.has(robot) && robot.isEnabled())];
 }
 
 export function getGlobalProgress(): number | null {

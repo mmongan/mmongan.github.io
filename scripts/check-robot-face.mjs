@@ -40,6 +40,9 @@ try {
       assert.equal(mesh.isEnabled(), false);
     }
     const positions = head.getVerticesData('position');
+    const skinColors = head.getVerticesData('color');
+    assert.ok(skinColors[0] > skinColors[1] && skinColors[1] > skinColors[2],
+      'Head has warm human skin instead of a silver robot shell');
     const nose = [];
     for (let i = 0; i < positions.length; i += 3) {
       if (Math.abs(positions[i]) <= .019 && positions[i + 1] >= 1.225 &&
