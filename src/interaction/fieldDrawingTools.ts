@@ -14,11 +14,11 @@ import { registerMenuButton, type HandMenuHit } from '../menu/handMenu';
 import { drawPanelButton } from '../menu/panelStyle';
 import { FIELD_SURFACE_Y } from '../field/constants';
 import { buildLaserGuide, buildToolGuide, guideTouchesSweep, isGuideOnField, type FieldDrawingTool,
-  type DrawingToolCommand } from './fieldDrawingGeometry';
+  type CameraFieldCommand, type DrawingToolCommand } from './fieldDrawingGeometry';
 import { drawingToolsButton, stencilTrayButton, cookieCutterTrayButton, floorCalibrationToggle,
   draftingToolsButton, draftingSpacing, draftingAngle, draftingText } from '../ui/dom';
 import { draftingSaveButton, draftingRestoreButton, draftingDeleteButton, draftingSaveStatus,
-  fieldGridToggle, fieldGridInterval, draftingCameraButton, draftingPhotoRestoreButton,
+  fieldGridToggle, fieldGridInterval, draftingCameraButton, draftingPhotoCaptureButton, draftingPhotoRestoreButton,
   draftingPhotoDownloadButton, draftingPhotoPreview } from '../ui/dom';
 import { createMemoryWire } from './memoryWire';
 import { getARScale, getARScaleRange, onARScaleChangedObservable } from '../xr/ar';
@@ -35,7 +35,7 @@ import { DRAFTING_WORKSPACE_KEY, parseDraftingWorkspace, serializeDraftingWorksp
   type DraftingWorkspace, type WorkspaceGuide } from './draftingWorkspace';
 import { captureDraftingPhoto, DRAFTING_CAMERA_KEY, parseDraftingPhoto, type DraftingPhoto } from './draftingCamera';
 import { getGuideMarcherSettings, sampleGuideMarchers, type GuideMarcherSettings } from './guideMarcherLayout';
-import { setDraftingToolsEnabled } from './editingMode';
+import { setDraftingToolsEnabled, isCameraFieldCommand } from './editingMode';
 import { createDraftingToolbox } from './draftingToolbox';
 
 interface DrawingDependencies {
@@ -45,6 +45,7 @@ interface DrawingDependencies {
   createFormation(points: Vector3[], settings?: GuideMarcherSettings): boolean;
   createPath(points: Vector3[]): boolean;
   createSynchronizedRoutes(points: Vector3[]): boolean;
+  cameraFieldAction(command: CameraFieldCommand): void;
 }
 interface GuideOptions extends Partial<GuideMarcherSettings> {
   editable?: 'yarn' | 'spline';
@@ -92,6 +93,7 @@ export function handleDrawingPointer(type: 'down' | 'move' | 'up', point: Vector
 export function isDrawingPointerActive() { return drawing?.pointerActive() ?? false; }
 export function isFieldDrawingToolActive() { return drawing?.active() ?? false; }
 export function isDraftingTableMode() { return drawing?.tableMode() ?? false; }
+export function canUseCameraFieldCopies() { return drawing?.cameraCopiesAllowed() ?? false; }
 /** Toggles selection of the guide nearest a root-local point. `vertical` also requires the point near the yarn height. */
 export function selectDrawingGuideNear(point: Vector3, radius: number, vertical = false) {
   return drawing?.selectNear(point, radius, vertical) ?? false;
@@ -362,6 +364,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
   button('Restore saved', 0, -0.48, 0.36, 'restoreDrafting', draftingRoot);
   button('Delete saved', 0.4, -0.48, 0.36, 'deleteDrafting', draftingRoot);
   button('Take photo', -0.4, -0.57, 0.36, 'takePhoto', draftingRoot);
+  button('3D copy', 0.4, -0.68, 0.36, 'take3DSnapshot', draftingRoot);
   button('Restore photo', 0, -0.57, 0.36, 'restorePhoto', draftingRoot);
   button('Download PNG', 0.4, -0.57, 0.36, 'downloadPhoto', draftingRoot);
   const draftingTray = new FloatingPanel(draftingRoot, draftingMeshes, draftingRoot,
@@ -958,7 +961,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
       lens.material = metal; parts.add(lens);
       const shutter = MeshBuilder.CreateSphere('draftingCameraShutter', { diameter: 0.025, segments: 8 }, scene);
       shutter.parent = root; shutter.position.set(0.05, 0.05, 0); shutter.material = divisionMarkMaterial;
-      const shutterAction: HandMenuHit = { action: 'drawingTool', tool: 'takePhoto' };
+      const shutterAction: HandMenuHit = { action: 'drawingTool', tool: 'take3DSnapshot' };
       registerMenuButton(shutter, shutterAction);
       new FloatingPanel(root, new Set([shutter]), root, Vector3.Zero(), new Map([[shutter, shutterAction]]));
     } else if (kind === 'tSquare' || kind === 'setSquare' || kind === 'offset') {
@@ -1415,6 +1418,12 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
   }
   function action(value: DrawingToolCommand) {
     if (takingPhoto) { workspaceMessage('Wait for the field snapshot to finish.'); return; }
+    if (isCameraFieldCommand(value)) {
+      try {
+        deps.cameraFieldAction(value);
+      } catch (error) { workspaceMessage(`Camera field action failed: ${String(error)}`); }
+      return;
+    }
     if (value === 'toolboxStore') {
       if (guidesBusy()) {
         deps.notify('Finish the stroke before storing tools.'); return;
@@ -1882,9 +1891,11 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
   draftingRestoreButton?.addEventListener('click', restoreWorkspace);
   draftingDeleteButton?.addEventListener('click', deleteWorkspace);
   const capturePhoto = () => action('takePhoto');
+  const capture3D = () => action('take3DSnapshot');
   const restorePhoto = () => action('restorePhoto');
   const downloadPhoto = () => action('downloadPhoto');
-  draftingCameraButton?.addEventListener('click', capturePhoto);
+  draftingCameraButton?.addEventListener('click', capture3D);
+  draftingPhotoCaptureButton?.addEventListener('click', capturePhoto);
   draftingPhotoRestoreButton?.addEventListener('click', restorePhoto);
   draftingPhotoDownloadButton?.addEventListener('click', downloadPhoto);
   try {
@@ -2028,7 +2039,8 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     draftingSaveButton?.removeEventListener('click', saveWorkspace);
     draftingRestoreButton?.removeEventListener('click', restoreWorkspace);
     draftingDeleteButton?.removeEventListener('click', deleteWorkspace);
-    draftingCameraButton?.removeEventListener('click', capturePhoto);
+    draftingCameraButton?.removeEventListener('click', capture3D);
+    draftingPhotoCaptureButton?.removeEventListener('click', capturePhoto);
     draftingPhotoRestoreButton?.removeEventListener('click', restorePhoto);
     draftingPhotoDownloadButton?.removeEventListener('click', downloadPhoto);
     preview?.dispose();
@@ -2050,7 +2062,13 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     return pointerStroke !== null || takingPhoto ||
       tools.some(tool => tool.stroke !== null || tool.compassRadiusPanel?.grabbed());
   }
-  return { action, pointer, updateTableStatus, tableMode: () => tableMode,
+  function cameraCopiesAllowed() {
+    return !floorCalibrationToggle?.checked && !pointerStroke && !takingPhoto &&
+      !tools.some(tool => tool.kind !== 'camera' && (tool.stroke !== null || tool.panel.grabbed() ||
+        tool.compassRadiusPanel?.grabbed())) &&
+      !memoryWire.instances().some(wire => wire.panel.grabbed() || wire.handles.some(handle => handle.grabbed()));
+  }
+  return { action, pointer, cameraCopiesAllowed, updateTableStatus, tableMode: () => tableMode,
     pointerActive: () => pointerStroke !== null, active: () => selected !== null || tableMode,
     selectNear, snapToSelected, snapToNearby,
     clearGuides: () => {

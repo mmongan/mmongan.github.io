@@ -11,9 +11,13 @@ export type DrawingToolCommand = FieldDrawingTool | 'show' | 'stencils' | 'cutte
   'formation' | 'path' | 'synchronizedRoutes' | 'undo' | 'clear' | 'wireReset' | 'laserPin' | 'drafting' |
   'draftSpacingLess' | 'draftSpacingMore' | 'draftAngle' | 'draftSide' | 'draftReference' |
   'saveDrafting' | 'restoreDrafting' | 'deleteDrafting' | 'takePhoto' | 'restorePhoto' | 'downloadPhoto' |
+  CameraFieldCommand |
   'table' | 'tableExit' | 'toolboxStore' | 'tablePreview' | 'tableSnap' | 'tableGrid' | 'guideSelect' | 'guideLeft' | 'guideRight' |
   'guideForward' | 'guideBack' | 'guideRotateLeft' | 'guideRotateRight' | 'guideDuplicate' | 'guideDelete' |
   'guideSpacingLess' | 'guideSpacingMore' | 'guideSpacingApply' | 'guideFacing' | 'guideFacingLeft' | 'guideFacingRight';
+
+export type CameraFieldCommand = 'take3DSnapshot' | `cameraFieldEdit:${number}` | `cameraFieldDelete:${number}` |
+  `cameraFieldSmaller:${number}` | `cameraFieldLarger:${number}`;
 
 export function buildLaserGuide(origin: Vector3, direction: Vector3): Vector3[] {
   if (![origin.x, origin.z, direction.x, direction.z].every(Number.isFinite)) return [];

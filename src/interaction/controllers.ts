@@ -9,8 +9,7 @@ import {
   getARScaleRange,
   getARRotation,
   getARSurfaceHeight,
-  setARSurfaceHeight,
-  getScaleGestureSurfaceHeight,
+  preserveARSurfaceHeight,
 } from '../xr/ar';
 import { scene } from '../scene/engine';
 import { floorCalibrationToggle } from '../ui/dom';
@@ -28,7 +27,6 @@ const pinchState = {
   startYaw: 0,
   startRotation: 0,
   startSurfaceY: 0,
-  startMidpointY: 0,
 };
 let singleControllerMove: {
   handedness: string;
@@ -45,7 +43,6 @@ function resetPinchState() {
   pinchState.startYaw = 0;
   pinchState.startRotation = 0;
   pinchState.startSurfaceY = 0;
-  pinchState.startMidpointY = 0;
 }
 
 function getScaleExponentFor(scale: number): number {
@@ -242,22 +239,18 @@ export function updateARResizeFromControllers(grabActive: boolean) {
     pinchState.startYaw = currentYaw;
     pinchState.startRotation = getARRotation();
     pinchState.startSurfaceY = getARSurfaceHeight();
-    pinchState.startMidpointY = midpoint.y;
     const worldOffsetFromPivot = midpoint.subtract(getARPosition());
-    worldOffsetFromPivot.y = 0;
     pinchState.localAnchor = rotateAroundY(worldOffsetFromPivot, -pinchState.startRotation)
       .scale(1 / pinchState.startScale);
     setARRotation(pinchState.startRotation);
     return;
   }
 
-  // Scale around the hands horizontally while transitioning the field surface
-  // between its configured table and floor heights.
+  // Resize around the horizontal midpoint without changing surface altitude.
   const scale = getScaleFromControllerDistance(distance);
   const yaw = pinchState.startRotation + (currentYaw - pinchState.startYaw);
   setARScale(scale);
   setARPosition(getARPositionForScaleAnchor(midpoint, pinchState.localAnchor, scale, yaw));
-  setARSurfaceHeight(getScaleGestureSurfaceHeight(pinchState.startSurfaceY,
-    midpoint.y - pinchState.startMidpointY, pinchState.startScale, scale));
+  preserveARSurfaceHeight(pinchState.startSurfaceY);
   setARRotation(yaw);
 }

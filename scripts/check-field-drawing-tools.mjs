@@ -82,7 +82,7 @@ const context = vm.createContext({
   draftingModeToggle: null, draftingTableControls: null, draftingTableStatus: null,
   draftingText: draftTextInput,
   draftingSaveButton: null, draftingRestoreButton: null, draftingDeleteButton: null, draftingSaveStatus: null,
-  draftingCameraButton: null, draftingPhotoRestoreButton: null, draftingPhotoDownloadButton: null, draftingPhotoPreview: null,
+  draftingCameraButton: null, draftingPhotoCaptureButton: null, draftingPhotoRestoreButton: null, draftingPhotoDownloadButton: null, draftingPhotoPreview: null,
   fieldGridToggle: gridToggle, fieldGridInterval: gridInterval, Event,
   localStorage: {
     getItem: key => { if (storageFailure) throw new Error('Storage blocked'); return savedWorkspaceData.get(key) ?? null; },
@@ -141,6 +141,7 @@ try {
   camera.attachControl = () => { cameraControlsAttached = true; };
   scene.activeCamera = camera;
   context.initFieldDrawingTools({
+    cameraFieldAction: command => { conversions.push(['cameraField', command]); },
     root, notify: message => messages.push(message), prepare() {},
     createFormation: (points, settings) => { conversions.push(['formation', points, settings]); return true; },
     createPath: points => { conversions.push(['path', points]); return true; },
@@ -727,7 +728,9 @@ try {
   const physicalCamera = scene.getTransformNodeByName('fieldTool-camera');
   context.beginFloatingPanelGrab('left', Matrix.Identity(), excludedTray, undefined, 0.03, true);
   assert.equal(physicalCamera.parent, null, 'Camera is a grabbable physical implement');
-  assert.ok([...actions.values()].some(hit => hit.tool === 'takePhoto'), 'Physical shutter exposes capture action');
+  assert.ok([...actions.values()].some(hit => hit.tool === 'take3DSnapshot'), 'Physical shutter exposes 3D copy capture');
+  act('take3DSnapshot');
+  assert.equal(conversions.at(-1)[1], 'take3DSnapshot', 'Shutter dispatches the independent field copy action');
   act('takePhoto');
   act('clear');
   assert.equal(guideCount(), 3, 'Edits are blocked while capture is pending');

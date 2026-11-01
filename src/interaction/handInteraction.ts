@@ -15,8 +15,7 @@ import {
   getARScaleRange,
   getARRotation,
   getARSurfaceHeight,
-  setARSurfaceHeight,
-  getScaleGestureSurfaceHeight,
+  preserveARSurfaceHeight,
 } from '../xr/ar';
 import { scene } from '../scene/engine';
 import { isDraftingTableMode, selectDrawingGuideNear, getNearbyDrawingGuidePose } from './fieldDrawingTools';
@@ -168,7 +167,6 @@ export function createHandInteraction(paths: HandPathDependencies) {
   const marcherPinchHands = new Set<string>();
   let sceneGesture: {
     startSurfaceY: number;
-    startMidpointY: number;
     startDistance: number;
     startYaw: number;
     startScale: number;
@@ -1184,9 +1182,8 @@ export function createHandInteraction(paths: HandPathDependencies) {
         const startScale = getARScale();
         const startRotation = getARRotation();
         const offset = midpoint.subtract(getARPosition());
-        offset.y = 0;
         sceneGesture = {
-          startSurfaceY: getARSurfaceHeight(), startMidpointY: midpoint.y,
+          startSurfaceY: getARSurfaceHeight(),
           startDistance: distance, startYaw: yaw, startScale, startRotation,
           localAnchor: rotateAroundY(offset, -startRotation).scale(1 / startScale),
         };
@@ -1196,9 +1193,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
         const rotation = sceneGesture.startRotation + Math.atan2(Math.sin(yawDelta), Math.cos(yawDelta));
         setARRotation(rotation);
         setARPosition(getARPositionForScaleAnchor(midpoint, sceneGesture.localAnchor, scale, rotation));
-        // Transition the field surface between configured table and floor heights while zooming.
-        setARSurfaceHeight(getScaleGestureSurfaceHeight(sceneGesture.startSurfaceY,
-          midpoint.y - sceneGesture.startMidpointY, sceneGesture.startScale, scale));
+        preserveARSurfaceHeight(sceneGesture.startSurfaceY);
       }
       return;
     }

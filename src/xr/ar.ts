@@ -39,6 +39,7 @@ const globalScaleRoot = new TransformNode("globalScaleRoot", scene);
 let arTabletopModeActive = false;
 let immersiveFieldScaling = false;
 let fieldHeightMode: "floor" | "table" = "floor";
+let surfaceHeightPreserved = false;
 const fieldHeights = { floor: 0, table: AR_TABLE_HEIGHT };
 let contentRootMeshes: AbstractMesh[] = [];
 
@@ -100,6 +101,14 @@ export function isARTabletopModeActive() {
 
 export function setARScale(scale: number) {
   const clampedScale = immersiveFieldScaling ? clampScale(scale) : AR_SCALE_MAX;
+  return applyARScale(clampedScale);
+}
+
+export function setARFieldCopyScale(scale: number) {
+  return applyARScale(clampScale(scale));
+}
+
+function applyARScale(clampedScale: number) {
   arRoot.scaling.setAll(clampedScale);
   globalScaleRoot.scaling.setAll(clampedScale);
   updateGroundFootprint(clampedScale);
@@ -191,28 +200,15 @@ export function getScaleAwareSurfaceHeight(scale: number) {
   return fieldHeights.table + (fieldHeights.floor - fieldHeights.table) * eased;
 }
 
-// Hands naturally rise while spreading apart, so vertical hand motion stops
-// moving the field once it has grown 4x during the gesture.
-const GESTURE_LIFT_FADE_RATIO = 4;
-export function getScaleGestureSurfaceHeight(startSurfaceY: number, verticalDelta: number,
-  startScale: number, scale: number) {
-  const growth = scale > startScale
-    ? Math.min(1, Math.log(scale / startScale) / Math.log(GESTURE_LIFT_FADE_RATIO)) : 0;
-  if (scale >= AR_SCALE_MAX) return fieldHeights.floor;
-  if (scale <= AR_SCALE_DEFAULT) {
-    return fieldHeights.table + verticalDelta * (1 - growth);
-  }
-  const targetScale = scale > startScale ? AR_SCALE_MAX : AR_SCALE_DEFAULT;
-  const scaleSpan = Math.abs(Math.log(targetScale / startScale));
-  const progress = scaleSpan > 0
-    ? Math.min(1, Math.abs(Math.log(scale / startScale)) / scaleSpan) : 1;
-  const offsetFade = 1 - progress * progress * (3 - 2 * progress);
-  const startTarget = getScaleAwareSurfaceHeight(startScale);
-  return getScaleAwareSurfaceHeight(scale) +
-    (startSurfaceY - startTarget) * offsetFade + verticalDelta * (1 - growth);
+export function preserveARSurfaceHeight(height: number) {
+  surfaceHeightPreserved = true;
+  setARSurfaceHeight(height);
 }
 
+export function isARSurfaceHeightPreserved() { return surfaceHeightPreserved; }
+
 export function setFieldHeightMode(mode: "floor" | "table") {
+  surfaceHeightPreserved = false;
   fieldHeightMode = mode;
   setARHeight(fieldHeights[mode] - FIELD_SURFACE_Y * getARScale());
 }

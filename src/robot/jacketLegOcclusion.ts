@@ -4,6 +4,7 @@ import { Matrix, Vector4 } from '@babylonjs/core/Maths/math.vector.pure';
 import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
 import { InstancedMesh } from '@babylonjs/core/Meshes/instancedMesh';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
+import { RegisterClass } from '@babylonjs/core/Misc/typeStore';
 import type { SubMesh } from '@babylonjs/core/Meshes/subMesh';
 import type { UniformBuffer } from '@babylonjs/core/Materials/uniformBuffer';
 import type { Scene } from '@babylonjs/core/scene.pure';
@@ -44,6 +45,7 @@ export function registerJacketLegSource(source: Mesh) {
 }
 
 export class JacketLegOcclusion extends MaterialPluginBase {
+  override getClassName() { return 'JacketLegOcclusion'; }
   constructor(material: StandardMaterial) {
     super(material, 'JacketLegOcclusion', 200, {}, true, true);
     this.registerForExtraEvents = true;
@@ -86,3 +88,5 @@ export class JacketLegOcclusion extends MaterialPluginBase {
     };
   }
 }
+
+RegisterClass('BABYLON.JacketLegOcclusion', JacketLegOcclusion);

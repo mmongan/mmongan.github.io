@@ -50,7 +50,7 @@ import { drillCountToMidiBeat, midiBeatToDrillCount, midiBeatsPerDrillCount } fr
 import type { OpenChartTiming } from './openChartFormat';
 import { BakedLegAnimation, SharedLegBakePool, getBakedLegAnimationBytes, getStepCycleCacheStatus,
   type BakedLegPose } from './bakedLegAnimation';
-import { midiBeatAtPulse, midiPulseAtBeat, type MidiBeatUnit } from '../audio/midiBeatPulse';
+import { midiBeatAtPulse, midiMeasureAtBeat, midiPulseAtBeat, type MidiBeatUnit } from '../audio/midiBeatPulse';
 import { sharedMarcherStepPose } from './marcherStepCycles';
 import { getGuardFlagTemplate, getGuardRifleTemplate, getGuardSabreTemplate,
   FLAG_GRIPS, RIFLE_GRIPS, SABRE_GRIPS } from './colorGuardModels';
@@ -977,6 +977,29 @@ let playbackBeatUnits: ReadonlyArray<MidiBeatUnit> = [];
 let playbackPpq = 480;
 let playbackCountTicks: number[] = [];
 
+export function captureFieldPlayback() {
+  return {
+    playback: { ...globalPlayback, playing: false },
+    repeatElapsed, repeatOptions: { ...repeatOptions },
+    tempoMap: playbackTempoMap?.map(event => ({ ...event })) ?? null,
+    beatUnits: playbackBeatUnits.map(unit => ({ ...unit })),
+    ppq: playbackPpq, countTicks: [...playbackCountTicks],
+  };
+}
+
+export function restoreFieldPlayback(snapshot: ReturnType<typeof captureFieldPlayback>) {
+  Object.assign(globalPlayback, snapshot.playback, { playing: false });
+  repeatElapsed = snapshot.repeatElapsed;
+  repeatOptions = { ...snapshot.repeatOptions };
+  playbackTempoMap = snapshot.tempoMap?.map(event => ({ ...event })) ?? null;
+  playbackBeatUnits = snapshot.beatUnits.map(unit => ({ ...unit }));
+  playbackPpq = snapshot.ppq;
+  playbackCountTicks = [...snapshot.countTicks];
+  transportRevision++;
+  players.forEach(state => { invalidateLegBake(state); state.stepCache = undefined; state.gaitPhaseCache = undefined; });
+  applyGlobalCountToAllRobots();
+}
+
 export function captureDrillMidiTiming(lastCount: number): OpenChartTiming {
   const tempos = playbackTempoMap?.map(event => ({
     tick: Math.round(drillCountToMidiBeat(event.beat, playbackCountTicks, playbackPpq) * playbackPpq),
@@ -1149,6 +1172,25 @@ export function getDrillTransportState(): DrillTransportState {
     lastBeat,
     revision: transportRevision,
   };
+}
+
+export function getDrillTimelinePosition() {
+  return { count: getDrillTransportState().beat, ...midiMeasureAtBeat(getMusicTransportState().beat, playbackBeatUnits) };
+}
+
+// Pauses on the nearest whole meter beat (MIDI time-signature pulse) that lies within the drill.
+export function snapDrillToWholeBeat(): number {
+  const { beat, lastBeat } = getDrillTransportState();
+  const pulse = midiPulseAtBeat(drillCountToMidiBeat(beat, playbackCountTicks, playbackPpq), playbackBeatUnits);
+  const toCount = (value: number) =>
+    midiBeatToDrillCount(midiBeatAtPulse(value, playbackBeatUnits), playbackCountTicks, playbackPpq);
+  const lowest = clampToBlankChartPageSpan(0);
+  const highest = clampToBlankChartPageSpan(lastBeat);
+  const target = [Math.round(pulse), Math.floor(pulse), Math.ceil(pulse)]
+    .map(toCount)
+    .find(count => count >= lowest - 1e-9 && count <= highest + 1e-9) ?? beat;
+  seekToCount(target);
+  return target;
 }
 
 function notifyDrillTransport(discontinuity = false) {
@@ -2921,6 +2963,7 @@ export interface MarcherScheduleSnapshot {
   stepSizeYards: number;
   fixedFacingY?: number;
   counts: RobotCount[];
+  scheduled?: boolean;
 }
 
 export interface BlankChartPageSnapshot {
@@ -2938,12 +2981,14 @@ export function captureMarcherSchedules(): MarcherScheduleSnapshot[] {
     const state = players.get(robot);
     if (!state && !robot.isEnabled()) return;
     const counts = state?.counts.length
-      ? state.counts.map((count) => ({ ...count, position: count.position.clone() }))
+      ? state.counts.map((count) => ({ ...count, position: count.position.clone(),
+        ...(count.bakedGait && { bakedGait: { ...count.bakedGait } }) }))
       : [{ position: robot.position.clone(), rotationY: robot.rotation.y }];
     snapshots.push({
       robot, gaitIndex: parts.gaitIndex, instrument: parts.instrument, instrumentRestPose: parts.instrumentRestPose,
       color: getRobotColor(robot).clone(), stepSizeYards: state?.stepSizeYards ?? DEFAULT_STEP_SIZE_YARDS,
       fixedFacingY: state?.fixedFacingY, counts,
+      scheduled: !!state,
     });
   });
   return snapshots;
@@ -2993,9 +3038,17 @@ export function restoreMarcherSchedule(
   setMarcherInstrument(robot, snapshot.instrument);
   setMarcherInstrumentRestPose(robot, snapshot.instrumentRestPose);
   setRobotColor(robot, snapshot.color);
-  const counts = snapshot.counts.map((count) => ({ ...count, position: count.position.clone() }));
+  const counts = snapshot.counts.map((count) => ({ ...count, position: count.position.clone(),
+    ...(count.bakedGait && { bakedGait: { ...count.bakedGait } }) }));
   const oldState = players.get(robot);
   if (oldState) invalidateLegBake(oldState);
+  if (snapshot.scheduled === false) {
+    players.delete(robot);
+    robot.position.copyFrom(counts[0].position);
+    robot.rotation.y = counts[0].facingY ?? counts[0].rotationY;
+    robot.setEnabled(true);
+    return;
+  }
   players.set(robot, {
     points: counts.map((count) => count.position.clone()), stepSizeYards: snapshot.stepSizeYards,
     counts, fixedFacingY: snapshot.fixedFacingY,

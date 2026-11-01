@@ -50,6 +50,7 @@ import {
   executeDrawingToolAction, handleDrawingPointer, initFieldDrawingTools,
   isDrawingPointerActive, isFieldDrawingToolActive, isDraftingTableMode, selectDrawingGuideNear, snapToSelectedDrawingGuide,
   clearDrawingGuides, getSelectedDrawingGuidePoints, exportDrawingWorkspace, importDrawingWorkspace,
+  canUseCameraFieldCopies,
 } from './fieldDrawingTools';
 import {
   captureChartPageGuides, canSwapChartPageGuides, forgetOtherChartPageGuides, initChartPageGuides,
@@ -113,9 +114,14 @@ import {
   setMarcherInstrument,
   setMarchTempo,
   playAll,
+  pauseAll,
   registerRobotCounts,
   onMarcherStrideLimited,
   captureMarcherSchedules,
+  captureFieldPlayback,
+  restoreFieldPlayback,
+  getDrillTimelinePosition,
+  snapDrillToWholeBeat,
   captureBakedMarcherSchedules,
   captureDrillMidiTiming,
   restoreDrillMidiTiming,
@@ -144,7 +150,8 @@ import { encodeOpenChart, getOpenChartLastCount, getOpenChartTiming, OPEN_CHART_
 import { packOpenChartPerformance, unpackOpenChartPerformance } from '../robot/openChartPerformance';
 import { openChartFileInput, saveOpenChartButton } from '../ui/dom';
 import { clearDrillLabels, getDrillLabel, setDrillLabels, setDrillLabelsVisible } from '../robot/drillLabels';
-import { clearShowInfo, setShowInfo } from '../menu/showInfoPanel';
+import { clearShowInfo, setShowInfo, captureShowInfo, restoreShowInfo } from '../menu/showInfoPanel';
+import { createCameraFieldCopies } from './cameraFieldCopies';
 import { cycleMusicStandStaff, setMusicStandVisible, summonMusicStand } from '../menu/musicStand';
 import {
   isMarcherPOVActive, setMarcherPOVEnabled, toggleMarcherDrumGame,
@@ -583,9 +590,96 @@ chartBeatsPerPage?.addEventListener('change', () => {
   showPlacementNotice(`Chart pages now use ${beatsPerPage} beats; authored formations and drafted pages are preserved.`);
 });
 
-// Saves the chart page draft in progress (every marcher's schedule, the open
-// blank page with its waiting ghosts, the transition and the drafted guides)
-// to this browser so it can be resumed after a reload.
+function captureCameraFieldState() {
+  if (marcherGrabs.size > 0) throw new Error('Release grabbed marchers before capturing or switching fields.');
+  const schedules = captureMarcherSchedules();
+  const page = captureBlankChartPage();
+  const indices = new Map(schedules.map((schedule, index) => [schedule.robot, index]));
+  return {
+    marchers: schedules.map(({ robot, ...schedule }) => ({
+      ...schedule, label: getDrillLabel(robot),
+      position: robot.position.clone(), rotationY: robot.rotation.y,
+    })),
+    page: page && { ...page, waiting: page.waiting.map(robot => {
+      const index = indices.get(robot);
+      if (index === undefined) throw new Error('A waiting marcher is missing its captured schedule.');
+      return index;
+    }) },
+    playback: captureFieldPlayback(),
+    transition: { ...getChartTransition() },
+    workspace: exportDrawingWorkspace(),
+    guides: captureChartPageGuides(),
+    timeline: getChartPageTimeline(),
+    name: currentShowName,
+    pageNames: [...chartPageNames],
+    pageNotes: [...chartPageNotes],
+    info: captureShowInfo(),
+    segments: segments.map(segment => ({
+      kind: segment.kind, controlPoints: segment.controlPoints.map(point => point.clone()),
+      robots: segment.robots.map(robot => indices.get(robot)).filter((index): index is number => index !== undefined),
+      anchor: segment.anchorRobot ? indices.get(segment.anchorRobot) : undefined,
+      fitClosedCircle: segment.fitClosedCircle, linear: segment.linear, spacing: segment.spacing,
+      guideLayout: segment.guideLayout && { ...segment.guideLayout },
+      erased: segment.erasedFormationIndices ? [...segment.erasedFormationIndices] : [],
+    })),
+  };
+}
+
+function restoreCameraFieldState(state: ReturnType<typeof captureCameraFieldState>) {
+  // Validate guides before replacing live marcher/editor state.
+  if (state.workspace) parseDraftingWorkspace(state.workspace);
+  state.guides.pages.forEach(page => parseDraftingWorkspace(page.drafting));
+  pauseAll();
+  clearAllRobots();
+  const robots = state.marchers.map(schedule => {
+    const robot = createLowPolyRobot(scene, schedule.gaitIndex);
+    robot.parent = pathRoot;
+    restoreMarcherSchedule(robot, schedule, scene);
+    robot.position.copyFrom(schedule.position);
+    robot.rotation.y = schedule.rotationY;
+    const path = schedule.counts.map(count => count.position.clone());
+    robotPaths.set(robot, schedule.scheduled === false ? [] : path);
+    if (schedule.scheduled !== false && path.length > 1) updateRobotPathLine(robot, path);
+    return robot;
+  });
+  state.segments.forEach(saved => {
+    const segment = createSegment(saved.kind, saved.controlPoints.map(point => point.clone()),
+      saved.robots.map(index => robots[index]), saved.anchor === undefined ? undefined : robots[saved.anchor],
+      saved.fitClosedCircle, saved.linear, saved.guideLayout, false);
+    segment.spacing = saved.spacing;
+    segment.erasedFormationIndices = new Set(saved.erased);
+    if (segment.kind === 'formation') {
+      acceptedFormationControls.set(segment, segment.controlPoints.map(point => point.clone()));
+      rebuildFormationConnections(segment);
+    }
+  });
+  setChartTransition(state.transition);
+  setChartPageTimeline(state.timeline);
+  currentShowName = state.name;
+  state.pageNames.forEach(([count, name]) => chartPageNames.set(count, name));
+  state.pageNotes.forEach(([count, note]) => chartPageNotes.set(count, note));
+  setDrillLabels(scene, pathRoot, state.marchers.flatMap((marcher, index) =>
+    marcher.label ? [{ robot: robots[index], label: marcher.label }] : []));
+  clearDrawingGuides();
+  if (state.workspace) {
+    const result = importDrawingWorkspace(state.workspace);
+    if (result !== true) throw new Error(result);
+  }
+  const restored = restoreChartPageGuides(state.guides.shown, state.guides.pages);
+  if (restored !== true) throw new Error(restored);
+  if (state.page) resumeBlankChartPage({
+    ...state.page, waiting: state.page.waiting.map(index => robots[index]),
+  }, scene);
+  restoreFieldPlayback(state.playback);
+  restoreShowInfo(state.info);
+  refreshFormationEditor();
+  refreshChartEditorPages();
+  if (chartBeatsPerPage) chartBeatsPerPage.value = String(state.timeline.beatsPerPage);
+  refreshCollisionMarkers(scene);
+  redrawDrillChartPad();
+}
+
+// Saves every marcher, the open chart page, and drafting to this browser.
 function saveChartPageDraft() {
   if (marcherGrabs.size > 0) {
     showPlacementNotice("Release the grabbed marcher before saving the chart page draft.");
@@ -1695,7 +1789,8 @@ function createSegment(
   anchorRobot?: TransformNode,
   fitClosedCircle = true,
   linear = false,
-  guideLayout?: import('./guideMarcherLayout').GuideMarcherSettings
+  guideLayout?: import('./guideMarcherLayout').GuideMarcherSettings,
+  rebuild = true,
 ): Segment {
   const line = createTubeLine("segmentLine", controlPoints, SEGMENT_COLORS[kind]);
 
@@ -1730,7 +1825,7 @@ function createSegment(
   rotationHandles.forEach((handle) => segmentRotationHandleOwner.set(handle, segment));
   if (copyHandle) segmentCopyHandleOwner.set(copyHandle, segment);
 
-  rebuildSegmentContent(segment);
+  if (rebuild) rebuildSegmentContent(segment);
   refreshSegmentVisuals(segment);
   segments.push(segment);
   refreshFormationEditor();
@@ -3561,8 +3656,31 @@ export function initInteraction() {
     },
     notify: showPlacementNotice,
   });
+  const cameraFields = createCameraFieldCopies({
+    field: pathRoot,
+    capture: captureCameraFieldState,
+    restore: restoreCameraFieldState,
+    allowed: () => canUseCameraFieldCopies() && marcherGrabs.size === 0 && !isMarcherPOVActive(),
+    notify: showPlacementNotice,
+    beforeCapture: () => { snapDrillToWholeBeat(); },
+    timeLabel: () => {
+      const { count, measure, beat } = getDrillTimelinePosition();
+      const round = (value: number) => String(Math.floor(value * 100 + 1e-6) / 100);
+      return `Count ${round(count)} · Measure ${measure} · Beat ${round(beat)}`;
+    },
+  });
+  scene.onDisposeObservable.addOnce(() => cameraFields.dispose());
   initFieldDrawingTools({
     root: pathRoot,
+    cameraFieldAction: command => {
+      if (command === 'take3DSnapshot') { cameraFields.capture(); return; }
+      const [action, id] = command.split(':');
+      if (action === 'cameraFieldEdit') cameraFields.edit(Number(id));
+      else if (action === 'cameraFieldSmaller' || action === 'cameraFieldLarger') {
+        cameraFields.resize(Number(id), action === 'cameraFieldSmaller' ? .8 : 1.25);
+      }
+      else cameraFields.delete(Number(id));
+    },
     notify: showPlacementNotice,
     prepare: () => {
       stopMarcherPainting();

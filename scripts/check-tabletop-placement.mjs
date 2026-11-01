@@ -310,20 +310,110 @@ try {
     assert.ok(blended <= previous + 1e-9 && blended >= -1e-9, 'Floor blend descends smoothly while scaling up');
     previous = blended;
   }
-  assert.equal(context.getScaleGestureSurfaceHeight(0.83, 0.4, 1 / 240, 1 / 240), 1.23,
-    'Hands can still lift a tabletop field when its size is unchanged');
-  assert.equal(context.getScaleGestureSurfaceHeight(0.75, 0.4, 1 / 480, 1 / 120), 0.83,
-    'Hand lift fades when spreading reaches tabletop scale');
   context.setFieldHeightSetting('floor', 0.05);
-  assert.equal(context.getScaleGestureSurfaceHeight(1.2, 0.8, 1 / 120, 1), 0.05,
-    'Expanding to 1:1 puts the field surface at configured floor height');
-  assert.equal(context.getScaleGestureSurfaceHeight(0.05, 0, 1, 1 / 120), 0.83,
-    'Shrinking from 1:1 raises the field to configured table height');
-  assert.ok(context.getScaleGestureSurfaceHeight(0.83, 0.6, 1 / 120, 0.05) < 0.83,
-    'Growing from tabletop blends toward the floor despite raised hands');
   assert.ok(Math.abs(context.getScaleAwareSurfaceHeight(1) - 0.05) < 1e-9,
     'Full-size scaling honours a calibrated floor height');
   context.setFieldHeightSetting('floor', 0);
+  context.setImmersiveFieldScaling(true);
+  const resizeAPI = Object.fromEntries([
+    'getARPosition', 'getARRotation', 'getARScale', 'getARScaleRange',
+    'getARSurfaceHeight', 'setARPosition', 'setARRotation', 'setARScale',
+    'setARSurfaceHeight', 'preserveARSurfaceHeight',
+  ].map(name => [name, context[name]]));
+  Object.assign(scaleContext, resizeAPI);
+  Object.assign(handContext, resizeAPI, {
+    getControllerYaw: scaleContext.getControllerYaw,
+    getARPositionForScaleAnchor: scaleContext.getARPositionForScaleAnchor,
+    rotateAroundY: scaleContext.rotateAroundY,
+    pinchesOutsideField: true, finishFingerPath() {}, finishMarcherGrab() {},
+    marcherGrabs: new Map(), handPinches: new Map(),
+  });
+  const twoHandStart = handInteractionSource.indexOf('    if (!isSceneManipulationLocked() && left && right && pinchesOutsideField');
+  vm.runInContext(stripTypeScriptTypes(`function resizeHands() {
+${handInteractionSource.slice(twoHandStart, handBranchStart)}
+sceneGesture = null;
+}`, { mode: 'transform' }), handContext);
+  for (const input of ['controllers', 'hands']) {
+    for (const initialScale of [1, .1, .008]) {
+      context.setARScale(initialScale);
+      context.setARRotation(.4);
+      const initialAltitude = .87;
+      context.setARPosition(new Vector3(3, initialAltitude + .48 * initialScale, -4));
+      const initialMidpoint = new Vector3(1, 1.3, 2);
+      const heldAnchor = scaleContext.rotateAroundY(initialMidpoint.subtract(context.getARPosition()), -.4)
+        .scale(1 / initialScale);
+      const grips = ['left', 'right'].map((side, index) => {
+        const grip = new TransformNode(`resize-${side}`, scene);
+        grip.position.copyFrom(initialMidpoint.add(new Vector3(index ? .4 : -.4, 0, 0)));
+        const controller = { uniqueId: side, inputSource: { handedness: side }, grip, pointer: grip,
+          motionController: { getComponentOfType: () => ({ pressed: true }) } };
+        if (input === 'controllers') scaleContext.setActiveController(controller);
+        else handContext[side] = grip.position;
+        return { grip, controller };
+      });
+      const update = () => {
+        grips.forEach(({ grip }) => grip.computeWorldMatrix(true));
+        if (input === 'controllers') scaleContext.updateARResizeFromControllers(false);
+        else handContext.resizeHands();
+      };
+      update();
+      near(context.getARPosition().add(scaleContext.rotateAroundY(
+        heldAnchor.scale(context.getARScale()), context.getARRotation())), initialMidpoint,
+      `${input}: starting resize does not jump vertically`);
+      const currentMidpoint = new Vector3(1.2, 1.45, 1.8);
+      grips.forEach(({ grip }, index) => grip.position.copyFrom(
+        currentMidpoint.add(new Vector3(index ? .15 : -.15, 0, 0))));
+      update();
+      const shrunkScale = context.getARScale();
+      assert.ok(shrunkScale < initialScale, `${input}: input actually shrinks the field`);
+      const resizedAnchor = context.getARPosition().add(scaleContext.rotateAroundY(
+        heldAnchor.scale(shrunkScale), context.getARRotation()));
+      assert.ok(Math.hypot(resizedAnchor.x - currentMidpoint.x, resizedAnchor.z - currentMidpoint.z) < 1e-6,
+        `${input}: shrinking retains the horizontal midpoint anchor`);
+      assert.ok(Math.abs(context.getARSurfaceHeight() - initialAltitude) < 1e-6,
+        `${input}: shrinking ignores vertical hand movement and preserves surface altitude`);
+      const fullSeparation = .8 * Math.pow(1 / initialScale,
+        input === 'controllers' ? 1 / scaleContext.getScaleExponentFor(initialScale) : 1) * 1.01;
+      grips.forEach(({ grip }, index) => grip.position.copyFrom(
+        new Vector3((index ? 1 : -1) * fullSeparation / 2, .3, 2)));
+      update();
+      assert.equal(context.getARScale(), 1, `${input}: expansion reaches full size`);
+      assert.ok(Math.abs(context.getARSurfaceHeight() - initialAltitude) < 1e-6,
+        `${input}: expansion to 1:1 also preserves altitude rather than falling to the floor`);
+      const retainedPosition = context.getARPosition();
+      grips.forEach(({ grip, controller }) => {
+        if (input === 'controllers') scaleContext.removeActiveController(controller, () => {});
+        grip.dispose();
+      });
+      if (input === 'controllers') scaleContext.updateARResizeFromControllers(false);
+      else { handContext.left = null; handContext.right = null; handContext.resizeHands(); }
+      near(context.getARPosition(), retainedPosition, `${input}: releasing preserves the resized altitude`);
+    }
+  }
+  const floorStart = xrSource.indexOf('  function alignRoomScaleFloor(');
+  const floorEnd = xrSource.indexOf('  function alignFieldFloorTo(', floorStart);
+  Object.assign(context, {
+    giantModeActive: true,
+    getHeadsetFloorY: () => 0,
+  });
+  vm.runInContext(stripTypeScriptTypes(xrSource.slice(floorStart, floorEnd), { mode: 'transform' }), context);
+  context.setFieldHeightMode('floor');
+  context.setARScale(.08);
+  context.setARSurfaceHeight(1);
+  context.alignRoomScaleFloor({ realWorldHeight: 1.7 }, 1 / 60);
+  assert.ok(context.getARSurfaceHeight() < 1, 'Unmodified room-sized Giant mode still sinks toward the floor');
+  context.setARScale(.02);
+  context.preserveARSurfaceHeight(1.3);
+  context.alignRoomScaleFloor({ realWorldHeight: 1.7 }, 1 / 60);
+  assert.ok(Math.abs(context.getARSurfaceHeight() - 1.3) < 1e-6,
+    'Giant-mode floor following cannot pull a resized field back down after release');
+  context.setARScale(1);
+  context.preserveARSurfaceHeight(1.3);
+  context.alignRoomScaleFloor({ realWorldHeight: 1.7 }, 1 / 60);
+  assert.ok(Math.abs(context.getARSurfaceHeight() - 1.3) < 1e-6,
+    'Height ownership also blocks Giant floor following at full size');
+  context.setFieldHeightMode('floor');
+  assert.equal(context.isARSurfaceHeightPreserved(), false, 'Explicit floor placement restores floor ownership');
   let followedHeight = 0;
   const firstFollowStep = context.getARSurfaceHeightFollowStep(followedHeight, 1, 1 / 60);
   assert.ok(firstFollowStep > followedHeight && firstFollowStep < 1,
@@ -337,8 +427,8 @@ try {
     'Giant-mode floor following uses frame time for smooth altitude changes');
   for (const file of ['controllers.ts', 'handInteraction.ts']) {
     const interaction = readFileSync(new URL(`../src/interaction/${file}`, import.meta.url), 'utf8');
-    assert.match(interaction, /setARSurfaceHeight\(getScaleGestureSurfaceHeight\(/,
-      'Both resize inputs use the scale-aware surface-height transition');
+    assert.match(interaction, /preserveARSurfaceHeight\(/,
+      'Both resize inputs preserve surface altitude');
     assert.doesNotMatch(interaction, /setARSurfaceHeightForScaleGesture/, 'No threshold height resets remain');
   }
   console.log('Tabletop placement passed: viewer-relative entry, AR re-entry, both coordinate systems, vertical gaze, height transitions, and anchored one-handed translation/rotation for both controllers and tracked hands.');

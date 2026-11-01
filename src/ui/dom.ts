@@ -67,6 +67,7 @@ export const draftingRestoreButton = document.getElementById("draftingRestoreBut
 export const draftingDeleteButton = document.getElementById("draftingDeleteButton") as HTMLButtonElement | null;
 export const draftingSaveStatus = document.getElementById("draftingSaveStatus") as HTMLOutputElement | null;
 export const draftingCameraButton = document.getElementById("draftingCameraButton") as HTMLButtonElement | null;
+export const draftingPhotoCaptureButton = document.getElementById("draftingPhotoCaptureButton") as HTMLButtonElement | null;
 export const draftingPhotoRestoreButton = document.getElementById("draftingPhotoRestoreButton") as HTMLButtonElement | null;
 export const draftingPhotoDownloadButton = document.getElementById("draftingPhotoDownloadButton") as HTMLButtonElement | null;
 export const draftingPhotoPreview = document.getElementById("draftingPhotoPreview") as HTMLImageElement | null;

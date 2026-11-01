@@ -13,11 +13,12 @@ import { Ray } from '@babylonjs/core/Culling/ray.js';
 import { MaterialPluginBase } from '@babylonjs/core/Materials/materialPluginBase.js';
 import { InstancedMesh } from '@babylonjs/core/Meshes/instancedMesh.js';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.js';
+import { RegisterClass } from '@babylonjs/core/Misc/typeStore.js';
 
 const engine = new NullEngine();
 const scene = new Scene(engine);
 const context = vm.createContext({
-  Mesh, InstancedMesh, Matrix, Vector4, MaterialPluginBase,
+  Mesh, InstancedMesh, Matrix, Vector4, MaterialPluginBase, RegisterClass,
   VertexData, StandardMaterial, Color3, Color4, Vector3,
 });
 function load(file, names, transform = source => source) {

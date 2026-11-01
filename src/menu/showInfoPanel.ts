@@ -7,6 +7,13 @@ import { marcherInstrumentRadios, showInfo, showInfoMarchers, showInfoPages, sho
 
 let pageCounts: number[] = [];
 let highlightTimer: number | undefined;
+let currentInfo: { showName: string; drill: OpenChartShow; instruments: string[]; tempoBpm: number } | null = null;
+
+export function captureShowInfo() { return currentInfo; }
+export function restoreShowInfo(info: ReturnType<typeof captureShowInfo>) {
+  if (info) setShowInfo(info.showName, info.drill, info.instruments, info.tempoBpm);
+  else clearShowInfo();
+}
 
 function instrumentName(value: string): string {
   const radio = marcherInstrumentRadios.find((input) => input.value === value);
@@ -43,6 +50,7 @@ function updateHighlightTimer() {
 showInfo?.addEventListener("toggle", updateHighlightTimer);
 
 export function clearShowInfo() {
+  currentInfo = null;
   pageCounts = [];
   if (showInfo) showInfo.hidden = true;
   showInfoPages?.replaceChildren();
@@ -53,6 +61,7 @@ export function clearShowInfo() {
 // `instruments` holds the OpenChartxr instrument given to each marcher.
 export function setShowInfo(showName: string, drill: OpenChartShow, instruments: string[], tempoBpm: number) {
   clearShowInfo();
+  currentInfo = { showName, drill, instruments: [...instruments], tempoBpm };
   if (!showInfo || !showInfoPages || !showInfoMarchers) return;
   const pagesBody = showInfoPages;
   const marchersBody = showInfoMarchers;

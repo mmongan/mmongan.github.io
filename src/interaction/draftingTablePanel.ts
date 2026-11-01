@@ -29,7 +29,7 @@ export function createDraftingTablePanel() {
     [['Step -', 'draftSpacingLess'], ['Step +', 'draftSpacingMore'], ['Angle', 'draftAngle'], ['Put tools away', 'stop']],
     [['Formation', 'formation'], ['Path', 'path'], ['Route form', 'synchronizedRoutes'], ['Undo guide', 'undo']],
     [['Save locally', 'saveDrafting'], ['Restore saved', 'restoreDrafting'], ['Take photo', 'takePhoto'], ['Clear guides', 'clear']],
-    [['Full-size view', 'tablePreview']],
+    [['Full-size view', 'tablePreview'], ['3D camera copy', 'take3DSnapshot']],
     [['Guide space -', 'guideSpacingLess'], ['Guide space +', 'guideSpacingMore'], ['Use spacing', 'guideSpacingApply'], ['Guide facing', 'guideFacing']],
     [['Facing -15', 'guideFacingLeft'], ['Facing +15', 'guideFacingRight']],
   ];

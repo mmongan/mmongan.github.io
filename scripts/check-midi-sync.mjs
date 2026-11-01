@@ -174,9 +174,19 @@ const bandTracks = example.tracks.filter(track => track.notes.length);
 const pulseSource = readFileSync(new URL('../src/audio/midiBeatPulse.ts', import.meta.url), 'utf8');
 vm.runInContext(`${stripTypeScriptTypes(pulseSource, { mode: 'transform' }).replace(/export /g, '')}
 globalThis.units = midiBeatUnits;
-globalThis.pulse = midiPulseAtBeat;`, context);
+globalThis.pulse = midiPulseAtBeat;
+globalThis.measureAt = midiMeasureAtBeat;`, context);
 const units = context.units(example.header.timeSignatures, example.header.ppq);
 assert.equal(units[0].quarterNotesPerPulse, 1.5, 'Bundled 6/8 march uses dotted-quarter pulses');
+assert.equal(units[0].pulsesPerMeasure, 2, '6/8 has two dotted-quarter pulses per measure');
+const position = (beat, meter) => ({ ...context.measureAt(beat, meter) });
+assert.deepEqual(position(3, units), { measure: 2, beat: 1 }, '6/8 measure 2 starts after six eighths');
+assert.deepEqual(position(4.5, units), { measure: 2, beat: 2 });
+assert.deepEqual(position(0, []), { measure: 1, beat: 1 }, 'Without MIDI meter, timeline defaults to 4/4');
+assert.deepEqual(position(9.5, []), { measure: 3, beat: 2.5 });
+const changing = context.units([{ ticks: 0, timeSignature: [4, 4] }, { ticks: 8 * 480, timeSignature: [3, 4] }], 480);
+assert.deepEqual(position(8, changing), { measure: 3, beat: 1 }, 'Meter changes start a new measure');
+assert.deepEqual(position(13, changing), { measure: 4, beat: 3 }, 'Measures after a meter change use the new length');
 assert.equal(context.pulse(3, units), 2);
 assert.equal(context.pulse(2, [{ beat: 0, quarterNotesPerPulse: 1 },
   { beat: 1, quarterNotesPerPulse: 0.5 }]), 3, 'Meter changes preserve cumulative pulse position');

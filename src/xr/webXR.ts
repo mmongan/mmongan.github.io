@@ -26,7 +26,7 @@ import { setTableHeightForPosture } from '../menu/settings';
 import { placeAutomaticFloatingPanels } from '../menu/floatingPanel';
 import { xrModeInputs, getSelectedXRMode, floorCalibrationToggle, fullScaleVRButton, tabletopScaleButton, giantModeButton, roomWidthInput, roomLengthInput, sittingModeToggle } from '../ui/dom';
 import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS } from '../field/constants';
-import { enterARTabletopMode, exitARTabletopMode, getARPosition, getARScale, getARScaleRange, setARPosition, setARScale, setFieldHeightMode, getFieldHeightMode, getARSurfaceHeight, getARSurfaceHeightFollowStep, setARSurfaceHeight, placeTabletopInFrontOfCamera, setImmersiveFieldScaling } from './ar';
+import { enterARTabletopMode, exitARTabletopMode, getARPosition, getARScale, getARScaleRange, setARPosition, setARScale, setFieldHeightMode, getFieldHeightMode, getARSurfaceHeight, getARSurfaceHeightFollowStep, setARSurfaceHeight, isARSurfaceHeightPreserved, placeTabletopInFrontOfCamera, setImmersiveFieldScaling } from './ar';
 import { getGloveHandTrackingOptions } from './gloveMeshes';
 import { setActiveController, removeActiveController, setHandTracking, getActiveControllers, consumeFloorCalibrationGesture, setHandFloorContact, isControllerGrabbing } from '../interaction/pathInteraction';
 
@@ -473,6 +473,7 @@ export function initXR(teleportGrid: Mesh) {
 
   function alignRoomScaleFloor(camera: WebXRCamera, deltaSeconds?: number) {
     if (!giantModeActive || getFieldHeightMode() !== "floor") return;
+    if (isARSurfaceHeightPreserved()) return;
     if (!Number.isFinite(camera.realWorldHeight) || camera.realWorldHeight <= 0) return;
     const targetHeight = getHeadsetFloorY(camera);
     setARSurfaceHeight(deltaSeconds === undefined
