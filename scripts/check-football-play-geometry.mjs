@@ -18,7 +18,8 @@ globalThis.api = {
 const api = context.api;
 assert.deepEqual(Array.from(api.FOOTBALL_FORMATIONS), ['shotgun', 'spread', 'i-form']);
 assert.deepEqual(Array.from(api.FOOTBALL_PLAYS), ['slants', 'sweep', 'four-verticals', 'sequence',
-  'drive', 'slant-flat', 'stick', 'smash', 'flood', 'mesh', 'kickoff', 'punt', 'field-goal']);
+  'drive', 'slant-flat', 'stick', 'smash', 'flood', 'mesh', 'kickoff', 'punt', 'field-goal',
+  'edge-sack', 'blitz-sack', 'four-man-rush', 'linebacker-blitz']);
 assert.equal(api.FOOTBALL_FORMATION_OPTIONS.length, 3);
 assert.equal(api.FOOTBALL_PLAY_OPTIONS.length, api.FOOTBALL_PLAYS.length);
 assert.deepEqual(Object.keys(api.FOOTBALL_FORMATION_PRESETS).sort(), ['i-form', 'shotgun', 'spread']);

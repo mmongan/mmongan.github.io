@@ -8,6 +8,8 @@ export interface FootballBodyFootprint extends FootballPosition {
   fall: number;
   scale: number;
   lean?: number;
+  minZ?: number;
+  maxZ?: number;
 }
 
 function segment(body: FootballBodyFootprint) {
@@ -17,6 +19,14 @@ function segment(body: FootballBodyFootprint) {
   const dx = Math.sin(body.yaw) * reach, dz = Math.cos(body.yaw) * reach;
   const x = body.x + Math.sin(body.yaw) * offset, z = body.z + Math.cos(body.yaw) * offset;
   return [{ x: x - dx, z: z - dz }, { x: x + dx, z: z + dz }] as const;
+}
+
+export function footballBodyZRange(body: FootballBodyFootprint) {
+  const [a, b] = segment(body);
+  // Planted cleats extend farther than the torso capsule at a pre-snap gait boundary.
+  const footReach = .85 * body.scale;
+  return { min: Math.min(a.z - .53 * body.scale, b.z - .53 * body.scale, body.z - footReach),
+    max: Math.max(a.z + .53 * body.scale, b.z + .53 * body.scale, body.z + footReach) };
 }
 
 function nearest(point: FootballPosition, a: FootballPosition, b: FootballPosition) {
@@ -50,6 +60,9 @@ export function separateFootballBodies(input: readonly FootballBodyFootprint[]):
   const bodies = input.map(body => ({ ...body }));
   if (bodies.some(body => ![body.x, body.z, body.yaw, body.fall, body.scale].every(Number.isFinite) ||
     !Number.isFinite(body.lean ?? 0) ||
+    body.minZ !== undefined && !Number.isFinite(body.minZ) ||
+    body.maxZ !== undefined && !Number.isFinite(body.maxZ) ||
+    body.minZ !== undefined && body.maxZ !== undefined && body.minZ > body.maxZ ||
     body.scale <= 0 || body.fall < 0 || body.fall > 1)) {
     throw new Error('Football body clearance requires finite poses and positive player scales.');
   }
@@ -58,6 +71,10 @@ export function separateFootballBodies(input: readonly FootballBodyFootprint[]):
     return (.53 + (.05 + Math.abs(lean) * .5) * (1 - body.fall) + .9 * body.fall +
       Math.abs(-.03 + lean * .5) * (1 - body.fall)) * body.scale;
   });
+  const constrain = (body: FootballBodyFootprint) => {
+    body.z = Math.max(body.minZ ?? -Infinity, Math.min(body.maxZ ?? Infinity, body.z));
+  };
+  bodies.forEach(constrain);
   for (let iteration = 0; iteration < 2048; iteration++) {
     let separated = true;
     for (let i = 0; i < bodies.length; i++) {
@@ -93,6 +110,7 @@ export function separateFootballBodies(input: readonly FootballBodyFootprint[]):
         const length = Math.hypot(dx, dz);
         dx *= push / length; dz *= push / length;
         a.x -= dx; a.z -= dz; b.x += dx; b.z += dz;
+        constrain(a); constrain(b);
       }
     }
     if (separated) return bodies.map(({ x, z }) => ({ x, z }));

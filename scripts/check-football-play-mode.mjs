@@ -72,7 +72,12 @@ const resolvedAnchor = (robot, count, height = 1.05) => {
   if (resolved) { position.x = resolved.x; position.z = resolved.z; }
   return position.add(new Vector3(0, height, 0));
 };
-const assertRenderedClearance = (players, tackles = []) => {
+const snapAnchor = (robot, count) => {
+  const position = resolvedAnchor(robot, count, .22);
+  position.z = schedules.get(robot)[count].position.z;
+  return position;
+};
+const assertRenderedClearance = (players, tackles = [], scrimmageZ) => {
   const inverse = parent.computeWorldMatrix(true).clone().invert();
   const bodies = players.map(({ robot, player }) => {
     const torso = scene.getTransformNodeByName(`football-player-${player.id}`);
@@ -92,6 +97,11 @@ const assertRenderedClearance = (players, tackles = []) => {
       const matrix = mesh.computeWorldMatrix(true).multiply(inverse);
       for (let index = 0; index < vertices.length; index += 3) {
         const point = Vector3.TransformCoordinates(new Vector3(vertices[index], vertices[index + 1], vertices[index + 2]), matrix);
+        if (scrimmageZ !== undefined) {
+          assert.ok(player.team === 'offense' ? point.z <= scrimmageZ - .08 + 1e-5
+            : point.z >= scrimmageZ + .08 - 1e-5,
+          `${mesh.name}: the whole player, not just the route root, must start on its own side of the TV line`);
+        }
         const t = reach ? Math.max(0, Math.min(1,
           ((point.x - centerX + dx) * 2 * dx + (point.z - centerZ + dz) * 2 * dz) / (4 * reach * reach))) : 0;
         const distance = Math.hypot(point.x - (centerX - dx + 2 * dx * t), point.z - (centerZ - dz + 2 * dz * t));
@@ -106,8 +116,11 @@ const assertRenderedClearance = (players, tackles = []) => {
   }
 };
 try {
-  for (const play of ['slants', 'sweep', 'four-verticals']) {
-    const data = geometry.generateFootballPlay('shotgun', play);
+  for (const [formation, play] of [
+    ['shotgun', 'slants'], ['spread', 'slants'], ['i-form', 'slants'],
+    ['shotgun', 'sweep'], ['shotgun', 'four-verticals'],
+  ]) {
+    const data = geometry.generateFootballPlay(formation, play);
     const players = data.players.map(player => {
       const robot = new TransformNode(player.id, scene);
       robot.parent = parent;
@@ -150,7 +163,7 @@ try {
     }
     for (const count of [0, 3.5, 7, 10.5, 16]) {
       beat = count; scene.onBeforeRenderObservable.notifyObservers(scene);
-      assertRenderedClearance(players);
+      assertRenderedClearance(players, [], count === 0 ? scrimmageLine.position.z : undefined);
     }
     const ball = scene.getMeshByName('football-ball');
     assert.equal(scene.meshes.filter(mesh => mesh.name.startsWith('football-helmet-')).length, 22);
@@ -177,8 +190,8 @@ try {
     }
     const positionAt = (id, count) => {
       const { robot } = players.find(value => value.player.id === id);
-      return resolvedAnchor(robot, count,
-        data.ballEvents.some(event => event.kind === 'snap' && event.fromId === id && count <= event.startCount) ? .22 : 1.05);
+      return data.ballEvents.some(event => event.kind === 'snap' && event.fromId === id && count <= event.startCount)
+        ? snapAnchor(robot, count) : resolvedAnchor(robot, count);
     };
     for (const event of data.ballEvents) {
       beat = (event.startCount + event.endCount) / 2;
@@ -319,9 +332,11 @@ try {
         assert.equal(scene.getMeshByName('football-line-of-scrimmage').position.z,
           schedules.get(players.find(entry => entry.player.label === 'C').robot)[beat].position.z,
         'TV line follows each play snap count');
+        assertRenderedClearance(players, sequence.tackles,
+          scene.getMeshByName('football-line-of-scrimmage').position.z);
         assert.ok(sequenceBall.isEnabled(), 'Ball returns for each snap');
-        near(sequenceBall.position, resolvedAnchor(players.find(value => value.player.label === 'C').robot, beat, .22),
-          'Each snap begins at the separated center');
+        near(sequenceBall.position, snapAnchor(players.find(value => value.player.label === 'C').robot, beat),
+          'Each snap begins on the line in front of the separated center');
         assert.ok(context.footballStatus.value.includes(segment.label), 'Status names current concept');
         beat = segment.endCount + 2;
         scene.onBeforeRenderObservable.notifyObservers(scene);
@@ -365,8 +380,10 @@ try {
       assert.equal(scene.getMeshByName('football-line-of-scrimmage').position.z,
         schedules.get(players.find(entry => entry.player.label === 'C').robot)[52].position.z,
       'TV line retimes with inserted chart pages');
+      assertRenderedClearance(players, sequence.tackles,
+        scene.getMeshByName('football-line-of-scrimmage').position.z);
       assert.ok(context.footballStatus.value.includes('Stick'), 'Play names follow inserted counts');
-      near(sequenceBall.position, resolvedAnchor(players.find(value => value.player.label === 'C').robot, 52, .22),
+      near(sequenceBall.position, snapAnchor(players.find(value => value.player.label === 'C').robot, 52),
         'Next snap and separated ball endpoints shift with chart insertion');
       beat = 22;
       scene.onBeforeRenderObservable.notifyObservers(scene);
@@ -380,7 +397,8 @@ try {
     players.forEach(({ robot }) => robot.dispose());
     schedules.clear();
   }
-  for (const play of ['drive', 'kickoff', 'punt', 'field-goal']) {
+  for (const play of ['drive', 'kickoff', 'punt', 'field-goal',
+    'edge-sack', 'blitz-sack', 'four-man-rush', 'linebacker-blitz']) {
     const data = geometry.generateFootballLibraryPlay('spread', play);
     const players = data.players.map(player => {
       const robot = new TransformNode(player.id, scene); robot.parent = parent;
@@ -396,6 +414,24 @@ try {
     beat = 0;
     const dispose = context.createFootballVisuals(players, data.ballEvents, parent, 0, data.sequence, data.tackles, data.outcomes);
     const ball = scene.getMeshByName('football-ball');
+    if (data.players.some(player => player.rush)) {
+      scene.onBeforeRenderObservable.notifyObservers(scene);
+      assertRenderedClearance(players, [], scene.getMeshByName('football-line-of-scrimmage').position.z);
+      for (const count of [4, 6, 8, 10, 12, 13, 14, 16, 18, 20]) {
+        beat = count; scene.onBeforeRenderObservable.notifyObservers(scene);
+        assertRenderedClearance(players, data.tackles);
+        if (data.tackles.length ? count < 20 : count <= 16) {
+          assert.ok(ball.isEnabled(), 'Rush and sack retain the visible possession ball');
+        }
+        if (data.tackles.length && count === 14) {
+          const qb = scene.getTransformNodeByName('football-player-offense-QB');
+          assert.equal(qb.rotation.x, Math.PI / 2, 'Quarterback falls during sack');
+        }
+      }
+      beat = 0; scene.onBeforeRenderObservable.notifyObservers(scene);
+      assert.equal(scene.getTransformNodeByName('football-player-offense-QB').rotation.x, 0,
+        'Reverse seek restores quarterback pre-snap pose');
+    }
     const kick = data.ballEvents.find(event => event.kind === 'kick' || event.kind === 'punt');
     if (kick) {
       if (play === 'kickoff') {

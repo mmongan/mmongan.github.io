@@ -55,6 +55,9 @@ for (const [role, count, dx, dz, team, expected] of [
   assert.equal(state.footballMotion, undefined, 'Exit removes the gait override');
 }
 assert.equal(invalidations, 18);
+const rushing = context.footballMovement({ team: 'defense', role: 'DE-R', playStart: 0, rush: true }, 5, -.6, -1);
+assert.equal(rushing.gait, 'sprint', 'Explicit rushers run to the pocket instead of retaining a blocking stance');
+assert.ok(Math.abs(rushing.bodyYaw - Math.atan2(-.6, -1)) < 1e-10);
 assert.equal(movement('offense', 'LT', 96, 0, -.5).lean, 0, 'Neutral snap formation has no premature blocking lean');
 assert.equal(movement('offense', 'LT', 97, 0, -.5).blockElbow, -.3500000000000001,
   'Blocking hands extend with visibly bent elbows after snap');

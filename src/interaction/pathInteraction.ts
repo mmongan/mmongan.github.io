@@ -57,7 +57,7 @@ import { generateFootballPlay, type FootballFormation, type FootballPlay } from 
 import { createFootballVisuals, initFootballControls, executeFootballCommand, shiftFootballTimeline } from '../robot/footballPlayMode';
 import { generateFootballLibraryPlay } from '../robot/footballPlayLibrary';
 import { SCRIMMAGE_EXIT_COUNTS, SCRIMMAGE_PLAY_START, scrimmageWalk,
-  scrimmageBandEndZone, scrimmagePlayerRoute, scrimmageBenchSeat } from '../robot/scrimmageGeometry';
+  scrimmageBandExitPosition, scrimmagePlayerRoute, scrimmageBenchSeat } from '../robot/scrimmageGeometry';
 import { setRobotColor, createPresentationMarcher } from '../robot/robot';
 import { initChartPageGhostMode, isChartGhostModeEnabled, setChartGhostModeEnabled } from '../robot/chartPageGhostMode';
 import {
@@ -3544,7 +3544,7 @@ function loadFootballPlay(formation: FootballFormation, play: FootballPlay, scri
         setMarcherInstrument(robot, schedule.instrument);
         setRobotColor(robot, schedule.color);
         const start = { x: schedule.position.x, z: schedule.position.z };
-        const end = scrimmageBandEndZone(start, index);
+        const end = scrimmageBandExitPosition(start, index);
         const exit = scrimmageWalk(start, end, SCRIMMAGE_EXIT_COUNTS);
         const path = [...exit, ...Array.from({ length: SCRIMMAGE_PLAY_START + playLength - SCRIMMAGE_EXIT_COUNTS },
           () => ({ ...end }))].map(position => new Vector3(position.x, FIELD_SURFACE_Y, position.z));

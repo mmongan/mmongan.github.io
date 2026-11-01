@@ -31,12 +31,14 @@ for (const formation of ['shotgun', 'spread', 'i-form']) {
     }
   });
 }
-for (const start of [{ x: -15, z: -20 }, { x: 12, z: 5 }, { x: 0, z: 0 }, { x: 8, z: 59 }]) {
-  const end = context.scrimmageBandEndZone(start, 3);
+for (const start of [{ x: -15, z: -20 }, { x: 12, z: 5 }, { x: 0, z: 0 },
+  { x: 8, z: 59 }, { x: -8, z: -59 }, { x: 3, z: 70 }, { x: -3, z: -70 }]) {
+  const end = context.scrimmageBandExitPosition(start, 3);
   const exit = context.scrimmageWalk(start, end, 48);
   assert.equal(exit.length, 49);
-  assert.equal(end.x, start.x, 'Band walks toward the end zone without sideline travel');
-  assert.ok(Math.abs(end.z) >= 50 && Math.abs(end.z) <= 60, 'Band finishes inside an end zone');
+  assert.equal(end.x, start.x, 'Band exits through the end zone without sideline travel');
+  assert.ok(Math.abs(end.z) >= 62.5, 'Band finishes completely beyond the end zone and end line');
+  assert.ok(Math.abs(end.z) >= Math.abs(start.z), 'Already off-field marchers never move back onto the field');
   assert.equal(Math.sign(end.z), start.z < 0 ? -1 : 1, 'Band uses the nearest end zone');
   assert.ok(exit.every(point => Math.abs(point.z) >= Math.abs(start.z)),
     'Marchers already in an end zone do not walk back toward midfield');
@@ -53,4 +55,4 @@ assert.equal(new Set(Array.from({ length: 22 }, (_, index) => JSON.stringify(con
   22, 'Players have distinct, evenly spaced bench seats');
 assert.ok(Math.abs(context.scrimmageBenchSeat(0).x) + .55 / 2 < 53.333 / 2 + 4,
   'Bench remains in the sideline aisle ahead of the bleachers, not inside the audience');
-console.log('Scrimmage passed: team benches, nearest-end-zone band exit, sequential player entry, continuous routes and delayed play.');
+console.log('Scrimmage passed: team benches, band exits beyond the nearest end line, sequential player entry, continuous routes and delayed play.');

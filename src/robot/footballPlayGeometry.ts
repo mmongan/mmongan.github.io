@@ -6,7 +6,8 @@ import type { FootballTackleEvent } from './footballTackles';
 export type FootballTeam = 'offense' | 'defense';
 export type FootballFormation = 'shotgun' | 'spread' | 'i-form';
 export type FootballPlay = 'slants' | 'sweep' | 'four-verticals' | 'sequence' |
-  'drive' | 'slant-flat' | 'stick' | 'smash' | 'flood' | 'mesh' | 'kickoff' | 'punt' | 'field-goal';
+  'drive' | 'slant-flat' | 'stick' | 'smash' | 'flood' | 'mesh' | 'kickoff' | 'punt' | 'field-goal' |
+  'edge-sack' | 'blitz-sack' | 'four-man-rush' | 'linebacker-blitz';
 export type FootballBallEventKind = 'snap' | 'handoff' | 'pass' | 'kick' | 'punt';
 
 export interface FootballPosition {
@@ -38,6 +39,7 @@ export interface FootballPlayer {
   label: OffensivePlayerRole | DefensivePlayerRole | 'KR' | 'PR';
   team: FootballTeam;
   positions: FootballPosition[];
+  rush?: boolean;
 }
 
 export interface FootballBallEvent {
@@ -70,7 +72,8 @@ export interface FootballPlayGeometry {
 
 export const FOOTBALL_FORMATIONS = ['shotgun', 'spread', 'i-form'] as const satisfies readonly FootballFormation[];
 export const FOOTBALL_PLAYS = ['slants', 'sweep', 'four-verticals', 'sequence', 'drive',
-  'slant-flat', 'stick', 'smash', 'flood', 'mesh', 'kickoff', 'punt', 'field-goal'] as const satisfies readonly FootballPlay[];
+  'slant-flat', 'stick', 'smash', 'flood', 'mesh', 'kickoff', 'punt', 'field-goal',
+  'edge-sack', 'blitz-sack', 'four-man-rush', 'linebacker-blitz'] as const satisfies readonly FootballPlay[];
 
 export const FOOTBALL_FORMATION_OPTIONS: ReadonlyArray<{ value: FootballFormation; label: string }> = [
   { value: 'shotgun', label: 'Shotgun' },
@@ -92,6 +95,10 @@ export const FOOTBALL_PLAY_OPTIONS: ReadonlyArray<{ value: FootballPlay; label: 
   { value: 'kickoff', label: 'Kickoff and return' },
   { value: 'punt', label: 'Punt and return' },
   { value: 'field-goal', label: 'Field goal (kicker and holder)' },
+  { value: 'edge-sack', label: 'Edge rush sack' },
+  { value: 'blitz-sack', label: 'Linebacker blitz sack' },
+  { value: 'four-man-rush', label: 'Four-man rush / quick pass' },
+  { value: 'linebacker-blitz', label: 'Linebacker blitz / hot pass' },
 ];
 
 export const FOOTBALL_SCRIMMAGE_DEFAULT = { formation: 'spread', play: 'drive' } as const;
@@ -144,6 +151,10 @@ export const FOOTBALL_PLAY_PRESETS: Record<FootballPlay, FootballPlayPreset> = {
   kickoff: { label: 'Kickoff and return', target: 'WR3' },
   punt: { label: 'Punt and return', target: 'WR3' },
   'field-goal': { label: 'Field goal', target: 'WR3' },
+  'edge-sack': { label: 'Edge rush sack', target: 'WR1' },
+  'blitz-sack': { label: 'Linebacker blitz sack', target: 'WR1' },
+  'four-man-rush': { label: 'Four-man rush / quick pass', target: 'WR1' },
+  'linebacker-blitz': { label: 'Linebacker blitz / hot pass', target: 'WR1' },
 };
 
 const DEFENSE: Record<DefensivePlayerRole, FootballPosition> = {

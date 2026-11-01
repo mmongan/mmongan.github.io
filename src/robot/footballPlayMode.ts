@@ -19,7 +19,7 @@ import { scrimmageBenchSeat, scrimmageSeatedBlend } from './scrimmageGeometry';
 import { footballTacklePose, footballTackleYaw, validateFootballTackle, type FootballTackleEvent } from './footballTackles';
 import { FOOTBALL_PLAY_LIBRARY } from './footballPlayLibrary';
 import { footballFlightEndpoints, footballFlightPoint, footballKickPose, footballSnapPose } from './footballBallFlight';
-import { footballScrimmageSpot } from './footballLineOfScrimmage';
+import { footballPresnapBody, footballPresnapSpot, footballScrimmageSpot } from './footballLineOfScrimmage';
 import { createFootballFuturePreview } from './footballFuturePreview';
 import { initFootballTackleEditor, executeFootballTackleCommand, type FootballTackleCommand } from './footballTackleEditor';
 import { floorCalibrationToggle, footballFormationSelect, footballPlaySelect, footballLoadButton,
@@ -28,7 +28,7 @@ import { floorCalibrationToggle, footballFormationSelect, footballPlaySelect, fo
   footballBallHighlight, footballFlightPath, footballFutureGhosts } from '../ui/dom';
 import { FIELD_SURFACE_Y, FIELD_WIDTH_YARDS } from '../field/constants';
 import { FOOTBALL_FORMATIONS, FOOTBALL_PLAYS, FOOTBALL_FORMATION_OPTIONS, FOOTBALL_PLAY_OPTIONS,
-  FOOTBALL_SCRIMMAGE_DEFAULT,
+  FOOTBALL_SCRIMMAGE_DEFAULT, FOOTBALL_PLAY_PRESETS,
   type FootballFormation, type FootballPlay, type FootballBallEvent, type FootballPlayer,
   type FootballOutcome } from './footballPlayGeometry';
 
@@ -95,7 +95,7 @@ export function initFootballControls(load: (formation: FootballFormation, play: 
   const play = footballPlaySelect;
   if (!formation || !play || !footballLoadButton || !footballExitButton) return;
   formation.replaceChildren(...FOOTBALL_FORMATION_OPTIONS.map(option => new Option(option.label, option.value)));
-  play.replaceChildren(...['Sequences', 'Offense', 'Special teams'].map(category => {
+  play.replaceChildren(...['Sequences', 'Offense', 'Defense', 'Special teams'].map(category => {
     const group = document.createElement('optgroup');
     group.label = category;
     group.append(...FOOTBALL_PLAY_LIBRARY.filter(option => option.category === category)
@@ -109,7 +109,8 @@ export function initFootballControls(load: (formation: FootballFormation, play: 
       const selectedFormation = FOOTBALL_FORMATIONS.find(value => value === formation.value);
       const selectedPlay = FOOTBALL_PLAYS.find(value => value === play.value);
       if (!selectedFormation || !selectedPlay) throw new Error('Select a valid football formation and play.');
-      const fixedFormation = !['slants', 'sweep', 'four-verticals'].includes(selectedPlay);
+      const fixedFormation = !['slants', 'sweep', 'four-verticals',
+        'edge-sack', 'blitz-sack', 'four-man-rush', 'linebacker-blitz'].includes(selectedPlay);
       if (fixedFormation) formation.value = 'spread';
       const effectiveFormation = fixedFormation ? 'spread' : selectedFormation;
       if (scrimmageMode) scrimmage(effectiveFormation, selectedPlay);
@@ -117,6 +118,8 @@ export function initFootballControls(load: (formation: FootballFormation, play: 
       notifyFootball(selectedPlay === 'drive' ? 'Touchdown drive ready: six completions advance from the own 20 to the end zone.'
         : selectedPlay === 'sequence' ? 'Six sourced plays ready: Slant / Flat, Stick, Smash, Flood, Mesh, Four Verticals. Players walk back between plays.'
         : ['kickoff', 'punt', 'field-goal'].includes(selectedPlay) ? `${FOOTBALL_PLAY_OPTIONS.find(option => option.value === selectedPlay)!.label} ready. Play or scrub the shared timeline.`
+        : ['edge-sack', 'blitz-sack', 'four-man-rush', 'linebacker-blitz'].includes(selectedPlay)
+          ? `${FOOTBALL_PLAY_PRESETS[selectedPlay].label} ready. ${scrimmageMode ? 'Band exits and teams enter before the snap. ' : ''}Play or scrub the shared timeline.`
         : scrimmageMode ? 'Scrimmage: band walks off, players walk on, then the play runs.'
         : '22 players ready. Use the timeline to play/scrub; select players to edit routes and set endpoints.');
     } catch (error) {
@@ -241,7 +244,7 @@ export function createFootballVisuals(
     for (const { robot, player } of players) {
       setFootballTeam(robot, player.team);
       setRobotFootballMotion(robot, { team: player.team, role: player.label, playStart: visibleFromCount,
-        playWindows: sequence });
+        playWindows: sequence, rush: player.rush });
       setRobotColor(robot, player.team === 'offense' ? offense.diffuseColor : defense.diffuseColor);
       // Human football meshes follow the existing route, selection root and leg solver.
       const body = robot.getChildren().find(node => node.name === 'marcherBody');
@@ -361,13 +364,15 @@ export function createFootballVisuals(
       const cached = positionCache.get(beat);
       if (cached) return cached;
       const activeTackles = activeTacklesAt(beat);
+      const presnap = !floorCalibrationToggle?.checked && Number.isFinite(visibleFromCount)
+        ? footballPresnapSpot(events, beat, tacklePosition) : null;
       const entries = players.flatMap(({ robot, player }, playerIndex) => {
         const counts = getRobotCounts(robot);
         if (robot.isDisposed() || !robot.isEnabled() || !counts?.length) return [];
         const time = Math.max(0, Math.min(counts.length - 1, beat)), index = Math.floor(time);
         const from = counts[index], to = counts[Math.min(index + 1, counts.length - 1)];
         const movement = footballMovement({ team: player.team, role: player.label,
-          playStart: visibleFromCount, playWindows: sequence }, time,
+          playStart: visibleFromCount, playWindows: sequence, rush: player.rush }, time,
         to.position.x - from.position.x, to.position.z - from.position.z);
         const seated = scrimmageSeatedBlend(seatBeatAt(beat), initialVisibleFromCount);
         const snap = seated === 0 && !floorCalibrationToggle?.checked
@@ -383,9 +388,11 @@ export function createFootballVisuals(
           yaw += Math.atan2(Math.sin(target - yaw), Math.cos(target - yaw)) * fall;
         }
         const position = Vector3.Lerp(from.position, to.position, time - index);
-        return [{ robot, body: { x: position.x, z: position.z, yaw, fall,
+        const body = { x: position.x, z: position.z, yaw, fall,
           lean: seated > 0 ? .4 : snapPose ? movement.lean * (1 - snapPose.crouch) + snapPose.lean : movement.lean,
-          scale: Math.max(Math.abs(robot.scaling.x), Math.abs(robot.scaling.z)) } }];
+          scale: Math.max(Math.abs(robot.scaling.x), Math.abs(robot.scaling.z)) };
+        return [{ robot, body: presnap && seated === 0 && fall === 0
+          ? footballPresnapBody(body, player.team, presnap, beat) : body }];
       });
       let positions: ReturnType<typeof separateFootballBodies>;
       try {
@@ -413,6 +420,10 @@ export function createFootballVisuals(
       const resolved = getFootballPlaybackPosition(robot, beat);
       if (resolved) { position.x = resolved.x; position.z = resolved.z; }
       const opening = events.find(event => event.kind === 'snap' && event.fromId === id && beat <= event.startCount);
+      if (opening) {
+        const spot = tacklePosition(id, opening.startCount);
+        if (spot) position.z = spot.z;
+      }
       return position.add(new Vector3(0, opening ? opening.startHeight ?? .22
         : players.find(entry => entry.player.id === id)?.player.label === 'H' ? .14 : 1.05, 0));
     };
@@ -427,7 +438,8 @@ export function createFootballVisuals(
         const index = Math.min(Math.floor(currentBeat), Math.max(0, (counts?.length ?? 1) - 1));
         const from = counts?.[index]?.position;
         const to = counts?.[index + 1]?.position ?? from;
-        const motion = { team: player.team, role: player.label, playStart: visibleFromCount, playWindows: sequence };
+        const motion = { team: player.team, role: player.label, playStart: visibleFromCount,
+          playWindows: sequence, rush: player.rush };
         const movement = footballMovement(motion,
           currentBeat, from && to ? to.x - from.x : 0, from && to ? to.z - from.z : 0);
         let steps = (currentBeat - index) * movement.stepsPerCount;
@@ -506,7 +518,10 @@ export function createFootballVisuals(
       }
       if (sequence && footballStatus && invalidTackles.size === 0) {
         footballStatus.value = outcome ? 'TOUCHDOWN! Drive complete.'
-          : activeTackles.length ? 'Scripted tackle: both players fall and recover.'
+          : activeTackles.length ? activeTackles.some(event =>
+            players.find(entry => entry.player.id === event.carrierId)?.player.label === 'QB')
+            ? 'Quarterback sack: defender and quarterback fall and recover.'
+            : 'Scripted tackle: both players fall and recover.'
           : activeSegment ? `Play ${sequence.indexOf(activeSegment) + 1}/${sequence.length}: ${activeSegment.label}`
           : currentBeat < visibleFromCount ? 'Scrimmage entrance: band exits, teams enter.'
           : currentBeat >= sequence[sequence.length - 1].endCount + 8 ? 'Play sequence complete.'

@@ -8,6 +8,7 @@ export interface FootballMotion {
   team: FootballTeam;
   role: string;
   playStart: number;
+  rush?: boolean;
   playWindows?: ReadonlyArray<{ startCount: number; endCount: number }>;
 }
 
@@ -21,6 +22,7 @@ export function footballMovement(motion: FootballMotion, count: number, dx: numb
     motion.team === 'defense' && /^(DE|DT)-/.test(motion.role);
   let gait: FootballGait;
   if (!play) gait = distance > 1e-6 ? 'jog' : 'ready';
+  else if (motion.rush && distance > 1e-6) gait = distance > .8 ? 'sprint' : 'jog';
   else if (lineman) gait = 'block';
   else if (distance < 1e-6) gait = 'ready';
   else if (motion.role === 'QB' && dz < 0 || motion.team === 'defense' && dz > Math.abs(dx)) gait = 'backpedal';

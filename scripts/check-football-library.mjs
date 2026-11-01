@@ -14,9 +14,9 @@ for (const file of ['footballPlayGeometry', 'footballPlaySequence', 'footballSpe
     { mode: 'transform' }).replace(/^import[\s\S]*?;\r?$/gm, '').replace(/export /g, ''), context);
 }
 const library = vm.runInContext('FOOTBALL_PLAY_LIBRARY', context);
-assert.equal(library.length, 13);
-assert.equal(new Set(library.map(play => play.value)).size, 13);
-assert.deepEqual([...new Set(library.map(play => play.category))].sort(), ['Offense', 'Sequences', 'Special teams']);
+assert.equal(library.length, 17);
+assert.equal(new Set(library.map(play => play.value)).size, 17);
+assert.deepEqual([...new Set(library.map(play => play.category))].sort(), ['Defense', 'Offense', 'Sequences', 'Special teams']);
 for (const entry of library) {
   const play = context.generateFootballLibraryPlay('spread', entry.value);
   assert.equal(play.players.length, 22, `${entry.value}: shared 11-on-11 roster`);
@@ -97,4 +97,31 @@ for (const play of ['kickoff', 'punt', 'field-goal']) {
   assert.equal(context.footballKickPose(kick.startCount, kick.startCount + 2), 0);
 }
 assert.throws(() => context.generateFootballLibraryPlay('spread', 'invalid'), /supported/);
-console.log('Football library passed: 13 selectable plays, six advancing dead-ball spots, touchdown crossing, five tackles, kicker/punter/holder roles, kickoff/punt returns, field goal, flight apex/endpoints, continuous routes and deterministic generation.');
+for (const formation of ['shotgun', 'spread', 'i-form']) {
+  for (const play of ['edge-sack', 'blitz-sack', 'four-man-rush', 'linebacker-blitz']) {
+    const data = context.generateFootballLibraryPlay(formation, play);
+    const rushers = data.players.filter(player => player.rush);
+    assert.equal(rushers.length, play.includes('blitz') ? 5 : 4);
+    const sack = play.endsWith('sack');
+    assert.equal(data.tackles.length, sack ? 1 : 0);
+    assert.deepEqual(Array.from(data.ballEvents, event => event.kind), sack ? ['snap'] : ['snap', 'pass']);
+    for (const player of data.players) {
+      for (let count = 1; count < player.positions.length; count++) {
+        const a = player.positions[count - 1], b = player.positions[count];
+        assert.ok(Math.hypot(a.x - b.x, a.z - b.z) < 2.6, `${play}: continuous authored rush routes`);
+      }
+    }
+    for (const tackle of data.tackles) {
+      assert.equal(tackle.carrierId, 'offense-QB', 'A sack tackles the quarterback with possession');
+      context.validateFootballTackle(tackle, data.players,
+        (id, count) => data.players.find(player => player.id === id)?.positions[count] ?? null,
+        24, [], data.ballEvents);
+    }
+    const qb = data.players.find(player => player.label === 'QB');
+    rushers.forEach(player => assert.ok(
+      Math.hypot(player.positions[12].x - qb.positions[12].x, player.positions[12].z - qb.positions[12].z) <
+      Math.hypot(player.positions[0].x - qb.positions[0].x, player.positions[0].z - qb.positions[0].z),
+      'Rushers close on the pocket, rather than dropping into coverage'));
+  }
+}
+console.log('Football library passed: 17 plays, sacks with QB possession/contact/recovery, four/five-man pressure, quick/hot passes, advancing drive, special teams and deterministic routes.');

@@ -10,7 +10,7 @@ import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 const context = vm.createContext({ Vector3, FIELD_SURFACE_Y: -.48,
   FIELD_WIDTH_YARDS: 53.333, FIELD_LENGTH_YARDS: 120, END_ZONE_DEPTH_YARDS: 10 });
 for (const file of ['footballPlayGeometry', 'footballPlaySequence', 'footballSpecialTeams', 'footballPlayLibrary',
-  'footballMovement', 'footballTackles', 'footballBodyClearance', 'footballBallFlight']) {
+  'footballMovement', 'footballTackles', 'footballBodyClearance', 'footballBallFlight', 'footballLineOfScrimmage']) {
   vm.runInContext(stripTypeScriptTypes(readFileSync(new URL(`../src/robot/${file}.ts`, import.meta.url), 'utf8'),
     { mode: 'transform' }).replace(/^import[\s\S]*?;\r?$/gm, '').replace(/export /g, ''), context);
 }
@@ -18,6 +18,10 @@ const check = bodies => {
   const before = JSON.stringify(bodies), positions = context.separateFootballBodies(bodies);
   assert.equal(JSON.stringify(bodies), before, 'Clearance never mutates authored input poses');
   const resolved = bodies.map((body, i) => ({ ...body, ...positions[i] }));
+  resolved.forEach(body => {
+    assert.ok(body.z >= (body.minZ ?? -Infinity) - 1e-6 && body.z <= (body.maxZ ?? Infinity) + 1e-6,
+      'Body clearance preserves pre-snap team-side limits');
+  });
   for (let i = 0; i < bodies.length; i++) for (let j = i + 1; j < bodies.length; j++) {
     assert.ok(context.footballBodyGap(resolved[i], resolved[j]).distance >=
       .53 * (bodies[i].scale + bodies[j].scale) - 1.01e-6,
@@ -27,15 +31,18 @@ const check = bodies => {
 };
 let samples = 0;
 for (const play of ['slants', 'sweep', 'four-verticals', 'sequence', 'drive', 'slant-flat',
-  'stick', 'smash', 'flood', 'mesh', 'kickoff', 'punt', 'field-goal']) {
+  'stick', 'smash', 'flood', 'mesh', 'kickoff', 'punt', 'field-goal',
+  'edge-sack', 'blitz-sack', 'four-man-rush', 'linebacker-blitz']) {
   const data = context.generateFootballLibraryPlay('spread', play);
   const saved = JSON.stringify(data);
   for (let beat = 0; beat <= data.players[0].positions.length - 1; beat += .25) {
+    const spot = context.footballPresnapSpot(data.ballEvents, beat,
+      (id, count) => data.players.find(player => player.id === id)?.positions[count] ?? null);
     const bodies = data.players.map(player => {
       const index = Math.floor(beat), from = player.positions[index];
       const to = player.positions[Math.min(index + 1, player.positions.length - 1)];
       const movement = context.footballMovement({ team: player.team, role: player.label, playStart: 0,
-        playWindows: data.sequence }, beat, to.x - from.x, to.z - from.z);
+        playWindows: data.sequence, rush: player.rush }, beat, to.x - from.x, to.z - from.z);
       let yaw = movement.bodyYaw;
       const tackle = data.tackles?.find(event => [event.defenderId, event.carrierId].includes(player.id) &&
         context.footballTacklePose(event, beat));
@@ -48,17 +55,20 @@ for (const play of ['slants', 'sweep', 'four-verticals', 'sequence', 'drive', 's
         const target = context.footballTackleYaw(a, b);
         yaw += Math.atan2(Math.sin(target - yaw), Math.cos(target - yaw)) * fall;
       }
-      return { x: from.x + (to.x - from.x) * (beat - index),
+      const body = { x: from.x + (to.x - from.x) * (beat - index),
         z: from.z + (to.z - from.z) * (beat - index), yaw, fall,
         lean: snap ? movement.lean * (1 - snap.crouch) + snap.lean : movement.lean, scale: 1 };
+      return spot && fall === 0 ? context.footballPresnapBody(body, player.team, spot, beat) : body;
     });
     let positions;
     try { positions = check(bodies); }
     catch (error) { console.error(play, beat); throw error; }
-    if (beat === 0 || data.sequence?.some(segment => segment.startCount === beat)) {
+    if (spot && beat === spot.count) {
       positions.forEach((position, index) => {
-        assert.ok(Math.hypot(position.x - bodies[index].x, position.z - bodies[index].z) < 1e-8,
-          `${play}/${beat}: valid snap formations must not be displaced by body clearance`);
+        const range = context.footballBodyZRange({ ...bodies[index], ...position });
+        assert.ok(data.players[index].team === 'offense' ? range.max <= spot.z - .08 + 1e-6
+          : range.min >= spot.z + .08 - 1e-6,
+        `${play}/${beat}: full bodies start on opposite sides of the snap line`);
       });
     }
     for (const formation of ['shotgun', 'spread', 'i-form']) {
@@ -93,4 +103,5 @@ for (let step = 0; step <= 80; step++) {
   previous = positions;
 }
 assert.throws(() => check([{ x: NaN, z: 0, yaw: 0, fall: 0, scale: 1 }]), /finite poses/);
+assert.throws(() => check([{ x: 0, z: 0, yaw: 0, fall: 0, scale: 1, minZ: 2, maxZ: 1 }]), /finite poses/);
 console.log(`Football body clearance passed: ${samples} fractional library poses, standing/blocking/route crossings, fall/recovery, exact coincidence, mixed scales, deterministic seeks and immutable routes.`);

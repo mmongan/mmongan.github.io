@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS, END_ZONE_DEPTH_YARDS } from '../field/constants';
+import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS } from '../field/constants';
 import type { FootballPosition } from './footballPlayGeometry';
 
 export const SCRIMMAGE_EXIT_COUNTS = 48;
@@ -18,8 +18,8 @@ export function scrimmageWalk(start: FootballPosition, end: FootballPosition, co
   });
 }
 
-export function scrimmageBandEndZone(position: FootballPosition, index: number): FootballPosition {
-  const depth = FIELD_LENGTH_YARDS / 2 - END_ZONE_DEPTH_YARDS / 2 + index % 4 * .8;
+export function scrimmageBandExitPosition(position: FootballPosition, index: number): FootballPosition {
+  const depth = FIELD_LENGTH_YARDS / 2 + 2.5 + index % 4 * .8;
   return { x: position.x, z: (position.z < 0 ? -1 : 1) * Math.max(Math.abs(position.z), depth) };
 }
 
