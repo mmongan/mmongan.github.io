@@ -131,7 +131,8 @@ const stroke = (tool, a, b) => {
   act(tool);
   assert.equal(context.handleDrawingPointer('down', a), true);
   context.handleDrawingPointer('move', b);
-  context.handleDrawingPointer('up', b);
+  const end = tool === 'compass' ? a.add(new Vector3(-(b.z - a.z), 0, b.x - a.x)) : b;
+  context.handleDrawingPointer('up', end);
 };
 try {
   const camera = new FreeCamera('drawingCamera', new Vector3(0, 2, -3), scene);
@@ -300,8 +301,13 @@ try {
     assert.equal(conversions.at(-1)[0], 'formation');
     const points = conversions.at(-1)[1];
     assert.ok(context.isGuideOnField(points));
-    if (kind.includes('Stencil') || kind === 'compass') {
+    if (kind.includes('Stencil')) {
       assert.ok(Vector3.Distance(points[0], points.at(-1)) < 1e-6, `${kind} closes exactly`);
+    }
+    if (kind === 'compass') {
+      assert.ok(points.length > 20, 'Sparse desktop input samples the curved sweep rather than a chord');
+      assert.ok(points.every(p => p.x >= -1e-6 && p.z >= -1e-6), 'Compass draws only the swept quarter arc');
+      assert.ok(Vector3.Distance(points[0], points.at(-1)) > 0.05, 'An arc is not closed automatically');
     }
     act('path');
     assert.equal(conversions.at(-1)[0], 'path');
@@ -325,11 +331,24 @@ try {
   context.handleDrawingPointer('down', point(0, 0));
   context.handleDrawingPointer('move', point(2, 0));
   context.handleDrawingPointer('move', point(4, 0));
-  context.handleDrawingPointer('up', point(4, 0));
+  context.handleDrawingPointer('up', point(0, 4));
   act('path');
   assert.ok(Math.abs(conversions.at(-1)[1][0].x - fixedCompassRadius * 1.25) < 1e-7,
     'Span sets the compass radius, and dragging preserves that radius and original center');
+  context.handleDrawingPointer('down', point(1, 1));
+  context.handleDrawingPointer('move', point(1, 3));
+  const desktopPreview = scene.getMeshByName('drawingGuidePreview').getVerticesData('position');
+  const desktopRadius = Math.hypot(desktopPreview[0] - 1, desktopPreview[2] - 1);
+  act('larger');
+  assert.equal(guideCount(), 2, 'Live desktop radius changes do not finish the arc');
+  assert.ok(scene.getMeshByName('drawingGuidePreview'), 'Resizing retains the desktop preview immediately');
+  context.handleDrawingPointer('up', point(-1, 1));
+  act('path');
+  assert.ok(conversions.at(-1)[1].every(p =>
+    Math.abs(Math.hypot(p.x - 1, p.z - 1) - desktopRadius * 1.25) < 1e-6),
+  'A live desktop span change rescales both the earlier and later sweep about the same center');
   act('smaller');
+  act('undo');
   act('undo');
   assert.equal(guideCount(), 1);
   stroke('eraser', point(-5, 0), point(5, 0));
@@ -956,7 +975,9 @@ try {
       `${kind} working surface stays on the field`);
     const fieldUp = Vector3.TransformNormal(Vector3.Up(), fieldWorld).normalize();
     const toolUp = Vector3.TransformNormal(Vector3.Up(), toolWorld).normalize();
-    assert.ok(Vector3.Dot(fieldUp, toolUp) > .99999, `${kind} rejects controller pitch and roll`);
+    if (kind !== 'compass') {
+      assert.ok(Vector3.Dot(fieldUp, toolUp) > .99999, `${kind} rejects controller pitch and roll`);
+    }
     if (kind === 'compass') {
       assert.ok(needle.equalsWithEpsilon(needleBefore, 1e-5), 'Compass pivot does not slide during rotation');
       const pencilTip = Vector3.TransformCoordinates(new Vector3(.12, -.12, 0), toolWorld);
@@ -987,6 +1008,205 @@ try {
     act('stop');
     act('show');
   }
+  const compassCamera = new FreeCamera('compassXRCamera', camera.position.clone(), scene);
+  compassCamera.getClassName = () => 'WebXRCamera';
+  scene.activeCamera = compassCamera;
+  let compassLocalRadius = .12;
+  for (const fieldScale of [1, 0.08, 2]) {
+    testARScale = fieldScale / 120;
+    act('clear');
+    act('compass');
+    root.scaling.setAll(fieldScale);
+    root.rotationQuaternion = Quaternion.FromEulerAngles(.15, .7, -.1);
+    root.position.set(2, .6, -3);
+    const field = root.computeWorldMatrix(true).clone();
+    const inverse = field.clone().invert();
+    const fieldRotation = Quaternion.Identity();
+    field.decompose(new Vector3(), fieldRotation, new Vector3());
+    const implement = scene.getTransformNodeByName('fieldTool-compass');
+    const initialRadius = compassLocalRadius * implement.scaling.x / fieldScale;
+    implement.rotationQuaternion.copyFrom(fieldRotation);
+    const needleTip = new Vector3(0, -.12, 0);
+    const leadTip = new Vector3(compassLocalRadius, -.12, 0);
+    const anchor = new Vector3(0, -.48, 0);
+    implement.position.copyFrom(Vector3.TransformCoordinates(anchor, field)
+      .subtract(Vector3.TransformNormal(needleTip, implement.computeWorldMatrix(true))));
+    const sourceAt = (angle, yaw = 0, tilt = 0, distance = .4) => Matrix.Compose(Vector3.One(),
+      fieldRotation.multiply(Quaternion.RotationAxis(Vector3.Up(), yaw))
+        .multiply(Quaternion.RotationAxis(new Vector3(0, 0, 1), tilt)),
+      Vector3.TransformCoordinates(new Vector3(Math.cos(angle) * distance, -.15,
+        -Math.sin(angle) * distance), field));
+    const tipLocal = tip => Vector3.TransformCoordinates(
+      Vector3.TransformCoordinates(tip, implement.computeWorldMatrix(true)), inverse);
+    const body = implement.getChildMeshes().find(mesh => mesh.isPickable);
+    context.beginFloatingPanelGrab('right', sourceAt(0), body, undefined, .03, true);
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    assert.equal(guideCount(), 0, 'Stationary contact does not stamp a whole circle');
+    context.updateFloatingPanelGrab('right', sourceAt(Math.PI / 4));
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    let lead = tipLocal(leadTip);
+    assert.ok(Math.abs(Math.atan2(-lead.z, lead.x) - Math.PI / 4) < 1e-4,
+      'Moving the held source around the needle turns the compass without wrist rotation');
+    context.updateFloatingPanelGrab('right', sourceAt(Math.PI / 4, Math.PI / 4));
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    lead = tipLocal(leadTip);
+    assert.ok(Math.abs(Math.atan2(-lead.z, lead.x) - Math.PI / 2) < 1e-4,
+      `Wrist rotation adds to orbital movement at scale ${fieldScale}: ${Math.atan2(-lead.z, lead.x)}`);
+    assert.ok(tipLocal(needleTip).equalsWithEpsilon(anchor, 1e-5), 'Turning keeps the needle field-local and pinned');
+    assert.ok(Math.abs(Vector3.Distance(tipLocal(needleTip), lead) - initialRadius) < 1e-5,
+      'Drawing preserves the configured radius at every field scale');
+    act('larger');
+    assert.equal(guideCount(), 0, 'Changing a held compass radius does not finish its current arc');
+    assert.ok(tipLocal(needleTip).equalsWithEpsilon(anchor, 1e-5), 'Live resizing preserves the pinned needle');
+    let expandedRadius = initialRadius * 1.25;
+    assert.ok(Math.abs(Vector3.Distance(tipLocal(needleTip), tipLocal(leadTip)) - expandedRadius) < 1e-5,
+      'The physical pencil moves to the new radius immediately');
+    const previewPositions = scene.getMeshByName('drawingGuidePreview').getVerticesData('position');
+    for (let index = 0; index < previewPositions.length; index += 3) {
+      assert.ok(Math.abs(Math.hypot(previewPositions[index], previewPositions[index + 2]) - expandedRadius) < 1e-5,
+        'All already drawn preview points resize to the new radius');
+    }
+    const pencilLeg = implement.getChildMeshes().find(mesh => mesh.name.startsWith('fieldCompassPencilLeg'));
+    const radiusGrip = implement.getChildren().find(node => node.name.startsWith('fieldCompassRadiusGrip'));
+    const gripPoint = radiusGrip.computeWorldMatrix(true).getTranslation();
+    assert.equal(context.getFloatingPanelNear(gripPoint, .03).root, radiusGrip,
+      'Near hand pinches and controller grips prioritize the pencil leg over the main compass');
+    const radiusSource = Matrix.Translation(gripPoint.x, gripPoint.y, gripPoint.z);
+    const bodyPose = implement.computeWorldMatrix(true).clone();
+    context.beginFloatingPanelGrab('left', radiusSource, null, gripPoint, .03, true);
+    assert.equal(context.getFloatingPanelNear(gripPoint, .03).grabbed('left'), true,
+      `Pencil radius panel holds the secondary source: ${messages.at(-1)}`);
+    assert.equal(context.isFloatingPanelGrabbed('right'), true, 'The primary hand keeps holding the compass');
+    assert.equal(context.isFloatingPanelGrabbed('left'), true, 'The other hand holds the pencil leg independently');
+    const radiusMotion = delta => {
+      const position = gripPoint.add(Vector3.TransformNormal(delta, bodyPose));
+      return Matrix.Translation(position.x, position.y, position.z);
+    };
+    context.updateFloatingPanelGrab('left', radiusMotion(new Vector3(.06, .2, .1)));
+    leadTip.x = compassLocalRadius + .06;
+    expandedRadius *= leadTip.x / compassLocalRadius;
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    assert.ok(implement.computeWorldMatrix(true).equals(bodyPose),
+      'Pencil-leg adjustment moves neither the needle, hinge, nor held body');
+    assert.equal(guideCount(), 0, 'Pulling the pencil leg resizes the unfinished arc without committing it');
+    assert.ok(Math.abs(Vector3.Distance(tipLocal(needleTip), tipLocal(leadTip)) - expandedRadius) < 1e-5,
+      'Outward pencil-leg motion changes radius; vertical and sideways motion do not');
+    assert.ok(pencilLeg.getVerticesData('position').some((value, index) =>
+      index % 3 === 0 && value > compassLocalRadius + .05),
+      'The visible pencil leg opens independently instead of resizing the entire compass');
+    const resizedPreview = scene.getMeshByName('drawingGuidePreview').getVerticesData('position');
+    for (let index = 0; index < resizedPreview.length; index += 3) {
+      assert.ok(Math.abs(Math.hypot(resizedPreview[index], resizedPreview[index + 2]) - expandedRadius) < 1e-5,
+        'The gesture resizes every point of the live arc');
+    }
+    const originalLead = tipLocal(leadTip);
+    context.endFloatingPanelGrab('left');
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    assert.ok(tipLocal(leadTip).equalsWithEpsilon(originalLead, 1e-5),
+      'Releasing the pencil leg preserves its radius and the primary grab');
+    context.beginFloatingPanelGrab('left', radiusMotion(new Vector3(.06, .2, .1)), pencilLeg, undefined, .03, true);
+    context.updateFloatingPanelGrab('left', radiusMotion(new Vector3(.03, .2, .1)));
+    expandedRadius *= (compassLocalRadius + .03) / (compassLocalRadius + .06);
+    compassLocalRadius += .03;
+    leadTip.x = compassLocalRadius;
+    context.endFloatingPanelGrab('left');
+    assert.ok(Math.abs(Vector3.Distance(tipLocal(needleTip), tipLocal(leadTip)) - expandedRadius) < 1e-5,
+      'Regrabbing the actual pencil mesh and pulling inward narrows the compass without a jump');
+    context.updateFloatingPanelGrab('right', sourceAt(Math.PI / 4, Math.PI / 4, .7));
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    assert.equal(guideCount(), 1, 'Tilting the pencil up finishes the swept arc without releasing');
+    assert.ok(tipLocal(leadTip).y > -.48 + expandedRadius * .5, 'The pencil visibly lifts clear of the field');
+    assert.ok(tipLocal(needleTip).equalsWithEpsilon(anchor, 1e-5), 'Lifting does not unpin the needle');
+    const liftedPose = implement.computeWorldMatrix(true).clone();
+    context.updateFloatingPanelGrab('left', sourceAt(-Math.PI / 2, -Math.PI / 2));
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    assert.ok(implement.computeWorldMatrix(true).equals(liftedPose),
+      'The unheld controller/hand cannot rotate or lower the compass');
+    act('path');
+    const firstArc = conversions.at(-1)[1];
+    assert.ok(firstArc.every(p => Math.abs(Math.hypot(p.x, p.z) - expandedRadius) < 1e-5),
+      'The resized current arc is committed at the new radius');
+    assert.ok(firstArc.length > 20 && Vector3.Distance(firstArc[0], firstArc.at(-1)) > expandedRadius,
+      'Physical drawing samples an open quarter arc');
+    context.updateFloatingPanelGrab('right', sourceAt(Math.PI / 2, Math.PI / 4, .7));
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    assert.equal(guideCount(), 1, 'Turning while lifted draws nothing');
+    context.updateFloatingPanelGrab('right', sourceAt(Math.PI / 2, Math.PI / 4));
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    act('smaller');
+    context.updateFloatingPanelGrab('right', sourceAt(3 * Math.PI / 4, Math.PI / 4));
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    context.endFloatingPanelGrab('right');
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    assert.equal(guideCount(), 2, 'Lowering and turning starts a separate arc; release commits it');
+    act('path');
+    const secondArc = conversions.at(-1)[1];
+    const reducedRadius = expandedRadius * .8;
+    assert.ok(secondArc.every(p => Math.abs(Math.hypot(p.x, p.z) - reducedRadius) < 1e-5),
+      'Shrinking while drawing updates the new arc');
+    const committed = JSON.parse(context.exportDrawingWorkspace());
+    assert.ok(committed.guides[0].points.every(p => Math.abs(Math.hypot(p.x, p.z) - expandedRadius) < 1e-5),
+      'Live radius changes leave previously committed arcs unchanged');
+    assert.ok(Vector3.Distance(firstArc.at(-1), secondArc[0]) > reducedRadius * .5,
+      'No line is drawn across the lifted gap');
+    context.beginFloatingPanelGrab('left', sourceAt(0), body, undefined, .03, true);
+    const regrabNeedle = tipLocal(needleTip);
+    context.updateFloatingPanelGrab('left', sourceAt(0, 0, 0, .8));
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    assert.ok(tipLocal(needleTip).equalsWithEpsilon(regrabNeedle, 1e-5),
+      'Regrabbing rebases turning without carrying a previous grab offset');
+    const beforeCenter = tipLocal(leadTip);
+    context.updateFloatingPanelGrab('left', sourceAt(0, 0, 0, 0));
+    context.updateFloatingPanelGrab('left', sourceAt(Math.PI, 0, 0, .005));
+    context.updateFloatingPanelGrab('left', sourceAt(Math.PI, 0, 0, .4));
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    assert.ok(tipLocal(leadTip).equalsWithEpsilon(beforeCenter, 1e-5),
+      'Crossing the needle rebases the orbit instead of flipping the compass');
+    const limitPose = implement.computeWorldMatrix(true).clone();
+    const limitOrigin = radiusGrip.computeWorldMatrix(true).getTranslation();
+    const limitSource = distance => {
+      const p = limitOrigin.add(Vector3.TransformNormal(new Vector3(distance, 0, 0), limitPose));
+      return Matrix.Translation(p.x, p.y, p.z);
+    };
+    context.beginFloatingPanelGrab('right', limitSource(0), pencilLeg, undefined, .03, true);
+    context.updateFloatingPanelGrab('right', limitSource(10));
+    const maxPencil = pencilLeg.getVerticesData('position').filter((_, index) => index % 3 === 0);
+    assert.ok(Math.max(...maxPencil) < .37 && Math.max(...maxPencil) > .35,
+      'Pulling far outward clamps the compass to its supported maximum opening');
+    context.updateFloatingPanelGrab('right', limitSource(9.99));
+    const reversePencil = pencilLeg.getVerticesData('position').filter((_, index) => index % 3 === 0);
+    assert.ok(Math.max(...reversePencil) < .36,
+      'Reversing after a radius limit responds immediately without a dead zone');
+    context.updateFloatingPanelGrab('right', limitSource(-10));
+    const minPencil = pencilLeg.getVerticesData('position').filter((_, index) => index % 3 === 0);
+    assert.ok(Math.max(...minPencil) < .07,
+      'Pulling inward cannot invert the compass or produce a zero radius');
+    context.updateFloatingPanelGrab('right', limitSource(-10 + compassLocalRadius - .06));
+    context.endFloatingPanelGrab('left');
+    const afterPrimaryRelease = pencilLeg.getVerticesData('position').slice();
+    assert.equal(context.isFloatingPanelGrabbed('right'), false,
+      'Releasing the primary hand also ends the secondary pencil-leg grab');
+    context.updateFloatingPanelGrab('right', limitSource(0));
+    assert.deepEqual(pencilLeg.getVerticesData('position'), afterPrimaryRelease,
+      'The released secondary hand cannot keep changing the radius');
+    context.beginFloatingPanelGrab('left', sourceAt(0), body, undefined, .03, true);
+    calibration.checked = true;
+    const beforeCalibration = pencilLeg.getVerticesData('position').slice();
+    context.beginFloatingPanelGrab('right', limitSource(0), pencilLeg, undefined, .03, true);
+    context.updateFloatingPanelGrab('right', limitSource(1));
+    context.updateFloatingPanelGrab('left', sourceAt(.3));
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    assert.equal(guideCount(), 2, 'Calibration discards unfinished compass strokes');
+    assert.deepEqual(pencilLeg.getVerticesData('position'), beforeCalibration,
+      'Calibration blocks pencil-leg radius adjustment');
+    context.endFloatingPanelGrab('left');
+    calibration.checked = false;
+    act('stop');
+    act('show');
+  }
+  scene.activeCamera = camera;
+  compassCamera.dispose();
+  testARScale = 1 / 120;
   act('wire');
   act('wire');
   const wireCopies = scene.transformNodes.filter(node => node.name === 'fieldTool-wire');

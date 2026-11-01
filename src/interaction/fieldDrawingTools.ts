@@ -71,6 +71,9 @@ interface Tool {
   dockRotation: Quaternion;
   dockIndex: number;
   compassAnchor?: Vector3;
+  compassControl?: { position: Vector3; yaw?: number; angle: number; lift: number };
+  compassRadiusPanel?: FloatingPanel;
+  setCompassRadius?: (radius: number) => void;
   fieldPose?: Matrix;
 }
 
@@ -760,6 +763,28 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
   function append(stroke: Vector3[], point: Vector3) {
     if (Vector3.Distance(stroke[stroke.length - 1], point) >= 0.05 && stroke.length < 512) stroke.push(point.clone());
   }
+  function angleDelta(angle: number, previous: number) {
+    return Math.atan2(Math.sin(angle - previous), Math.cos(angle - previous));
+  }
+  function sweepCompass(stroke: Vector3[], center: Vector3, edge: Vector3) {
+    const previous = stroke[stroke.length - 1];
+    const radius = Math.hypot(edge.x - center.x, edge.z - center.z);
+    const start = Math.atan2(previous.z - center.z, previous.x - center.x);
+    const delta = angleDelta(Math.atan2(edge.z - center.z, edge.x - center.x), start);
+    if (Math.abs(delta) < 1e-6) return;
+    const samples = Math.min(512 - stroke.length, Math.max(1, Math.ceil(Math.abs(delta) / (Math.PI / 64))));
+    for (let index = 1; index <= samples && stroke.length < 512; index++) {
+      const angle = start + delta * index / samples;
+      stroke.push(new Vector3(center.x + radius * Math.cos(angle), FIELD_SURFACE_Y + 0.025,
+        center.z + radius * Math.sin(angle)));
+    }
+  }
+  function resizeCompassStroke(stroke: Vector3[], center: Vector3, ratio: number) {
+    for (const point of stroke) {
+      point.x = center.x + (point.x - center.x) * ratio;
+      point.z = center.z + (point.z - center.z) * ratio;
+    }
+  }
   const pencilExtensions = new WeakMap<Vector3[], {
     guide: Guide; index: number; endpoint: Vector3; direction: Vector3;
   }>();
@@ -881,7 +906,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
       pencil: 'Pencil: draw freehand or along a ruler. Start within 0.25 yards of a straight guide endpoint and draw outward to extend that guide along its original direction.',
       ruler: 'Ruler: slide and rotate the flat straightedge on the field. Draw along its edge with a pencil. Desktop field drags still create straight guides.',
       protractor: 'Protractor: slide and rotate it flat on the field. Desktop field drags still create semicircular guides.',
-      compass: 'Compass: set the radius with Span -/+, then touch the needle to the field. The needle stays pinned while the pencil rotates around it. Release to finish the circle. Desktop: drag to rotate about the starting point at the preset radius.',
+      compass: 'Compass: hold the needle leg or knob; use your other grip/pinch to pull the pencil leg inward/outward and adjust the current arc radius. Touch the needle to pin it. Move your hand around the needle or turn your wrist to rotate. Tilt the pencil up to stop drawing; lower it to start a separate arc. Release unpins the needle. Desktop: drag around the starting point to draw only the swept arc; Span -/+ adjusts its size.',
       tSquare: 'T-square: drag or touch its edge to draw field-axis lines. Parallel ref switches to the newest guide direction.',
       setSquare: `Set square: drag or touch its edge to draw at multiples of ${getDraftAngle()} degrees. Angle cycles 30/45/60/90.`,
       dividers: 'Dividers: drag or touch/lift to mark equal intervals along the newest guide (or the drawn segment). Spacing +/- sets yards.',
@@ -899,6 +924,9 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     const parts = new Set<AbstractMesh>();
     const tip = new Vector3(0, -0.12, 0);
     const edge = new Vector3(0.24, -0.12, 0);
+    let compassPencil: AbstractMesh | undefined;
+    let compassLead: AbstractMesh | undefined;
+    let updateCompassRadius: ((radius: number) => void) | undefined;
     function rod(name: string, a: Vector3, b: Vector3, radius: number) {
       const mesh = MeshBuilder.CreateTube(name, { path: [a, b], radius, tessellation: 6, cap: 3 }, scene);
       mesh.parent = root; mesh.material = kind === 'pencil' ? pencilMaterial : metal;
@@ -1026,10 +1054,26 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     } else if (kind === 'compass') {
       edge.x = 0.12;
       rod('fieldCompassPivotLeg', new Vector3(0.06, 0.08, 0), tip, 0.006);
-      const pencil = rod('fieldCompassPencilLeg', new Vector3(0.06, 0.08, 0), edge, 0.006);
+      const hinge = new Vector3(0.06, 0.08, 0);
+      const pencil = MeshBuilder.CreateTube('fieldCompassPencilLeg', {
+        path: [hinge, edge], radius: 0.006, tessellation: 6, cap: 3, updatable: true,
+      }, scene);
+      pencil.parent = root;
       pencil.material = pencilMaterial;
+      compassPencil = pencil;
       rod('fieldCompassNeedle', new Vector3(0, -0.1, 0), tip, 0.002).material = graphite;
-      rod('fieldCompassLead', new Vector3(0.114, -0.1, 0), edge, 0.002).material = graphite;
+      const lead = MeshBuilder.CreateTube('fieldCompassLead', {
+        path: [new Vector3(0.114, -0.1, 0), edge], radius: 0.002, tessellation: 6, cap: 3, updatable: true,
+      }, scene);
+      lead.parent = root; lead.material = graphite;
+      compassLead = lead;
+      updateCompassRadius = radius => {
+        edge.x = radius;
+        MeshBuilder.CreateTube('fieldCompassPencilLeg', { path: [hinge, edge], instance: pencil });
+        MeshBuilder.CreateTube('fieldCompassLead', {
+          path: [new Vector3(radius - 0.006, -0.1, 0), edge], instance: lead,
+        });
+      };
       rod('fieldCompassHinge', new Vector3(0.045, 0.08, 0), new Vector3(0.075, 0.08, 0), 0.01);
       rod('fieldCompassKnob', new Vector3(0.06, 0.08, 0), new Vector3(0.06, 0.115, 0), 0.009);
     } else {
@@ -1061,19 +1105,32 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
         return super.beginPointer(ray);
       }
       override update(source: string, world: Matrix) {
+        if (!this.grabbed(source)) return;
         super.update(source, world);
         if (isSlidingTool(kind) && root.parent === null) flattenTool(tool);
-        if (kind === 'compass') constrainCompass(tool);
+        if (kind === 'compass') constrainCompass(tool, world);
       }
       override updatePointer(ray: Ray) {
+        if (!this.grabbed('pointer')) return;
         super.updatePointer(ray);
         if (isSlidingTool(kind) && root.parent === null) flattenTool(tool);
-        if (kind === 'compass') constrainCompass(tool);
+        if (kind === 'compass') constrainCompass(tool, root.computeWorldMatrix(true));
       }
       override end(source: string) {
         super.end(source);
-        if (!this.grabbed()) tool.compassAnchor = undefined;
+        if (!this.grabbed()) {
+          if (kind === 'compass') finishTool(tool);
+          tool.compassAnchor = undefined;
+          tool.compassControl = undefined;
+        }
         if (isSlidingTool(kind) && root.parent === null) flattenTool(tool);
+      }
+      override release() {
+        super.release();
+        if (kind === 'compass') finishTool(tool);
+        tool.compassRadiusPanel?.release();
+        tool.compassAnchor = undefined;
+        tool.compassControl = undefined;
       }
       override begin(source: string, world: Matrix) {
         if (floorCalibrationToggle?.checked || takingPhoto) {
@@ -1095,7 +1152,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
         } else span = heldSpan(root);
         super.begin(source, world);
         if (isSlidingTool(kind)) flattenTool(tool);
-        if (kind === 'compass') constrainCompass(tool);
+        if (kind === 'compass') constrainCompass(tool, world);
         deps.notify(toolInstructions(kind) ?? (kind === 'laser'
           ? 'Laser: rotate the held level to project a green line across the field. Use Save laser line on the Tools tray to save a guide. Desktop: drag on the field to aim.'
           : `${kind}: touch the working edge to the field, then lift. Desktop: drag on the field after picking up the tool.`));
@@ -1133,6 +1190,59 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
       plaque.onDisposeObservable.addOnce(() => material.dispose(false, true));
     }
     const tool: Tool = { kind, root, panel, tip, edge, stroke: null, dock, dockPosition, dockRotation, dockIndex: index };
+    if (compassPencil && compassLead && updateCompassRadius) {
+      const radiusRoot = new TransformNode('fieldCompassRadiusGrip', scene);
+      radiusRoot.parent = root;
+      const placeRadiusGrip = () => radiusRoot.position.set((0.06 + edge.x) / 2, -0.02, 0);
+      placeRadiusGrip();
+      const updateRadius = updateCompassRadius;
+      tool.setCompassRadius = radius => {
+        const next = Math.max(0.06, Math.min(0.36, radius));
+        const ratio = next / edge.x;
+        if (Math.abs(ratio - 1) < 1e-6) return;
+        updateRadius(next);
+        placeRadiusGrip();
+        if (tool.stroke && tool.compassAnchor) resizeCompassStroke(tool.stroke, tool.compassAnchor, ratio);
+        poseCompass(tool, deps.root.computeWorldMatrix(true));
+        if (activeTool === tool) display(tool.stroke ?? []);
+      };
+      class CompassRadiusGrip extends FloatingPanel {
+        private adjustment: { origin: Vector3; source: string } | null = null;
+        override get hasPanelChrome() { return false; }
+        override get canGrab() {
+          return panel.grabbed() && !floorCalibrationToggle?.checked && !takingPhoto;
+        }
+        override beginPointer(_ray: Ray) { return false; }
+        override begin(source: string, world: Matrix) {
+          if (!this.canGrab || this.grabbed(source)) return;
+          if (panel.grabbed(source)) {
+            deps.notify('Hold the compass with one hand; grab the pencil leg with the other to adjust its radius.');
+            return;
+          }
+          if (this.grabbed()) {
+            deps.notify('The compass pencil leg is already held.');
+            return;
+          }
+          super.begin(source, world);
+          this.adjustment = { origin: world.getTranslation(), source };
+          deps.notify('Compass radius: pull the pencil leg outward to widen it, or inward to narrow it.');
+        }
+        override update(source: string, world: Matrix) {
+          if (!this.adjustment || this.adjustment.source !== source || !this.grabbed(source)) return;
+          if (!this.canGrab) { this.release(); return; }
+          const delta = Vector3.TransformNormal(world.getTranslation().subtract(this.adjustment.origin),
+            root.computeWorldMatrix(true).clone().invert());
+          this.adjustment.origin = world.getTranslation();
+          tool.setCompassRadius?.(edge.x + delta.x);
+        }
+        override release() {
+          super.release();
+          this.adjustment = null;
+        }
+      }
+      tool.compassRadiusPanel = new CompassRadiusGrip(radiusRoot,
+        new Set([compassPencil, compassLead]), radiusRoot, new Vector3(0.02, 0.095, 0.012));
+    }
     if (!label) {
       for (const node of [root, ...root.getDescendants()]) node.name += `-copy-${root.uniqueId}`;
     }
@@ -1142,16 +1252,56 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
   function isSlidingTool(kind: FieldDrawingTool) {
     return kind === 'ruler' || kind === 'protractor';
   }
-  function constrainCompass(tool: Tool) {
-    if (!tool.panel.grabbed()) return;
+  function constrainCompass(tool: Tool, source: Matrix) {
+    if (!tool.panel.grabbed() || floorCalibrationToggle?.checked) return;
+    const field = deps.root.computeWorldMatrix(true);
+    const inverse = field.clone().invert();
+    const world = tool.root.computeWorldMatrix(true);
+    const tip = Vector3.TransformCoordinates(Vector3.TransformCoordinates(tool.tip, world), inverse);
+    const edge = Vector3.TransformCoordinates(Vector3.TransformCoordinates(tool.edge, world), inverse);
+    const direction = edge.subtract(tip);
+    const radius = direction.length();
+    if (radius < 1e-8) return;
+    const position = Vector3.TransformCoordinates(source.getTranslation(), inverse);
+    const yaw = -Math.atan2(direction.z, direction.x);
     if (!tool.compassAnchor) {
-      const tip = local(Vector3.TransformCoordinates(tool.tip, tool.root.computeWorldMatrix(true)));
       if (!isGuideOnField([tip, tip])) return;
-      const scale = Vector3.TransformNormal(Vector3.Up(), deps.root.computeWorldMatrix(true)).length();
+      const scale = Vector3.TransformNormal(Vector3.Up(), field).length();
       if (Math.abs(tip.y - FIELD_SURFACE_Y) * scale > 0.025 * fieldToolScale()) return;
       tool.compassAnchor = tip.clone();
+      tool.compassAnchor.y = FIELD_SURFACE_Y;
+      tool.compassControl = { position, yaw, angle: yaw, lift: 0 };
     }
-    flattenTool(tool);
+    const control = tool.compassControl;
+    const anchor = tool.compassAnchor;
+    if (!control || !anchor) return;
+    const previous = control.position.subtract(anchor);
+    const current = position.subtract(anchor);
+    // Near the needle, translation has no stable orbital angle.
+    if (Math.hypot(previous.x, previous.z) > radius * 0.15 &&
+      Math.hypot(current.x, current.z) > radius * 0.15) {
+      control.angle += angleDelta(-Math.atan2(current.z, current.x), -Math.atan2(previous.z, previous.x));
+    }
+    if (Math.hypot(direction.x, direction.z) > radius * 0.1) {
+      if (control.yaw !== undefined) control.angle += angleDelta(yaw, control.yaw);
+      control.yaw = yaw;
+    } else control.yaw = undefined;
+    control.position = position;
+    control.lift = Math.asin(Math.max(0, Math.min(1, direction.y / radius)));
+    poseCompass(tool, field);
+  }
+  function poseCompass(tool: Tool, field: Matrix) {
+    const control = tool.compassControl;
+    if (!control || !tool.compassAnchor) return;
+    const fieldRotation = Quaternion.Identity();
+    field.decompose(new Vector3(), fieldRotation, new Vector3());
+    tool.root.rotationQuaternion!.copyFrom(fieldRotation
+      .multiply(Quaternion.RotationAxis(Vector3.Up(), control.angle))
+      .multiply(Quaternion.RotationAxis(new Vector3(0, 0, 1), control.lift)));
+    tool.root.computeWorldMatrix(true);
+    const offset = Vector3.TransformNormal(tool.tip, tool.root.getWorldMatrix());
+    tool.root.position.copyFrom(Vector3.TransformCoordinates(tool.compassAnchor, field).subtract(offset));
+    tool.root.computeWorldMatrix(true);
   }
   function flattenTool(tool: Tool) {
     const field = deps.root.computeWorldMatrix(true);
@@ -1160,16 +1310,12 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     const tip = Vector3.TransformCoordinates(Vector3.TransformCoordinates(tool.tip, world), inverse);
     const edge = Vector3.TransformCoordinates(Vector3.TransformCoordinates(tool.edge, world), inverse);
     const yaw = -Math.atan2(edge.z - tip.z, edge.x - tip.x);
-    if (tool.kind === 'compass' && tool.compassAnchor) {
-      tip.x = tool.compassAnchor.x;
-      tip.z = tool.compassAnchor.z;
-    }
     const fieldRotation = Quaternion.Identity();
     field.decompose(new Vector3(), fieldRotation, new Vector3());
     tool.root.rotationQuaternion!.copyFrom(fieldRotation.multiply(Quaternion.RotationAxis(Vector3.Up(), yaw)));
     tool.root.computeWorldMatrix(true);
     const offset = Vector3.TransformNormal(tool.tip, tool.root.getWorldMatrix());
-    tip.y = FIELD_SURFACE_Y + (tool.kind === 'compass' ? 0 : 0.008);
+    tip.y = FIELD_SURFACE_Y + 0.008;
     tool.root.position.copyFrom(Vector3.TransformCoordinates(tip, field).subtract(offset));
     tool.root.computeWorldMatrix(true);
     if (isSlidingTool(tool.kind) && !tool.panel.grabbed()) {
@@ -1214,7 +1360,15 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     },
   });
   function finishTool(tool: Tool) {
-    if (tool.stroke && tool.kind !== 'eraser') finishStroke(tool.kind, tool.stroke);
+    if (tool.kind === 'compass' && floorCalibrationToggle?.checked) {
+      tool.stroke = null;
+      display([]);
+      return;
+    }
+    if (tool.stroke && tool.kind !== 'eraser') {
+      if (tool.kind === 'compass' && tool.stroke.length < 2) display([]);
+      else finishStroke(tool.kind, tool.stroke);
+    }
     tool.stroke = null;
   }
   function finishStroke(kind: FieldDrawingTool, points: Vector3[]) {
@@ -1449,12 +1603,25 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     if (value === 'smaller' || value === 'larger') {
       span = Math.max(0.5, Math.min(3, span * (value === 'larger' ? 1.25 : 0.8)));
       if (activeTool?.kind === selected && activeTool.root.parent === null) {
-        activeTool.stroke = null;
-        activeTool.fieldPose = undefined;
+        const oldScale = activeTool.root.scaling.x;
         sizeHeld(activeTool.root, span);
+        const ratio = activeTool.root.scaling.x / oldScale;
+        if (selected === 'compass') {
+          if (activeTool.stroke && activeTool.compassAnchor) {
+            resizeCompassStroke(activeTool.stroke, activeTool.compassAnchor, ratio);
+          }
+          poseCompass(activeTool, deps.root.computeWorldMatrix(true));
+          if (pointerStroke && pointerAnchor) {
+            pointerCompassRadius *= ratio;
+            resizeCompassStroke(pointerStroke, pointerAnchor, ratio);
+          }
+        } else {
+          activeTool.stroke = null;
+          activeTool.fieldPose = undefined;
+        }
       }
       if (selected === 'wire' && activeWire?.parent === null) sizeHeld(activeWire, span);
-      display([]);
+      display(selected === 'compass' ? pointerStroke ?? activeTool?.stroke ?? [] : []);
       deps.notify(`Tool span: ${Math.round(span * 100)}%.`);
       return;
     }
@@ -1536,6 +1703,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
         pointerCompassRadius = Vector3.Distance(
           local(Vector3.TransformCoordinates(activeTool.tip, world)),
           local(Vector3.TransformCoordinates(activeTool.edge, world)));
+        pointerStroke = [new Vector3(point.x + pointerCompassRadius, FIELD_SURFACE_Y + 0.025, point.z)];
       }
       if (!pointerCamera) {
         pointerCamera = scene.activeCamera;
@@ -1554,7 +1722,8 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
           if (direction.lengthSquared() < 1e-10) direction.set(1, 0, 0);
           point = pointerAnchor.add(direction.normalize().scale(pointerCompassRadius));
         }
-        pointerStroke = selected === 'wire'
+        if (selected === 'compass') sweepCompass(pointerStroke, pointerAnchor, point);
+        else pointerStroke = selected === 'wire'
           ? memoryWire.shapeAt(pointerAnchor, point) : makeStroke(selected, pointerAnchor, point);
       }
       if (selected === 'laser') {
@@ -1746,7 +1915,9 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
       }
       if (!tool.root.isEnabled()) continue;
       if (floorCalibrationToggle?.checked) {
-        tool.stroke = null; cancelPointer();
+        tool.stroke = null;
+        tool.compassAnchor = undefined; tool.compassControl = undefined;
+        cancelPointer();
         continue;
       }
       if (isSlidingTool(tool.kind) && tool.root.parent === null) {
@@ -1759,8 +1930,28 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
         continue;
       }
       if (!tool.panel.grabbed()) { finishTool(tool); continue; }
-      if (tool.kind === 'compass') constrainCompass(tool);
+      if (tool.kind === 'compass') poseCompass(tool, deps.root.computeWorldMatrix(true));
       const world = tool.root.computeWorldMatrix(true);
+      if (tool.kind === 'compass') {
+        if (!tool.compassAnchor) continue;
+        const edge = local(Vector3.TransformCoordinates(tool.edge, world));
+        const scaleY = Vector3.TransformNormal(Vector3.Up(), deps.root.computeWorldMatrix(true)).length();
+        const contact = (tool.stroke ? 0.015 : 0.008) * fieldToolScale();
+        if (Math.abs(edge.y - FIELD_SURFACE_Y) * scaleY > contact) {
+          finishTool(tool);
+          continue;
+        }
+        edge.y = FIELD_SURFACE_Y + 0.025;
+        tool.stroke ??= [edge.clone()];
+        if (tool.stroke.length >= 512) {
+          const last = tool.stroke[tool.stroke.length - 1].clone();
+          finishTool(tool);
+          tool.stroke = [last];
+        }
+        sweepCompass(tool.stroke, tool.compassAnchor, edge);
+        display(tool.stroke);
+        continue;
+      }
       if (tool.kind !== 'pencil' && tool.kind !== 'eraser') {
         const toolUp = Vector3.TransformNormal(Vector3.Up(), world).normalize();
         const fieldUp = Vector3.TransformNormal(Vector3.Up(), deps.root.computeWorldMatrix(true)).normalize();
@@ -1772,7 +1963,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
       const contact = 0.025 * fieldToolScale();
       if (Math.abs(tip.y - FIELD_SURFACE_Y) * scaleY > contact) { finishTool(tool); continue; }
       tip.y = FIELD_SURFACE_Y + 0.025;
-      if (tool.kind !== 'eraser' && tool.kind !== 'compass') tip = snapForDrafting(tip);
+      if (tool.kind !== 'eraser') tip = snapForDrafting(tip);
       if (tool.kind === 'pencil') {
         let nearest = Infinity;
         const pencilTip = tip.clone();
@@ -1806,7 +1997,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
         display(tool.stroke);
       } else {
         const rawEdge = local(Vector3.TransformCoordinates(tool.edge, world));
-        const edge = tool.kind === 'compass' ? rawEdge : snapForDrafting(rawEdge);
+        const edge = snapForDrafting(rawEdge);
         tool.stroke = makeStroke(tool.kind, tip, edge);
         display(tool.stroke);
       }
@@ -1856,7 +2047,8 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     drawing = null;
   });
   function guidesBusy() {
-    return pointerStroke !== null || takingPhoto || tools.some(tool => tool.stroke !== null);
+    return pointerStroke !== null || takingPhoto ||
+      tools.some(tool => tool.stroke !== null || tool.compassRadiusPanel?.grabbed());
   }
   return { action, pointer, updateTableStatus, tableMode: () => tableMode,
     pointerActive: () => pointerStroke !== null, active: () => selected !== null || tableMode,
