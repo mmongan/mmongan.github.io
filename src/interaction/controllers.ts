@@ -65,6 +65,15 @@ export function getARPositionForScaleAnchor(
   return midpoint.subtract(rotateAroundY(localAnchor.scale(scale), rotation));
 }
 
+// Two-handed scene sizing is a floor-plane gesture: vertical hand movement
+// neither changes the scale nor moves the shrink point.
+export function getHorizontalHandSpan(left: Vector3, right: Vector3) {
+  return {
+    distance: Math.hypot(right.x - left.x, right.z - left.z),
+    midpoint: new Vector3((left.x + right.x) / 2, 0, (left.z + right.z) / 2),
+  };
+}
+
 export function getARPositionForSingleHandMovement(
   startARPosition: Vector3,
   startHandPosition: Vector3,
@@ -221,15 +230,18 @@ export function updateARResizeFromControllers(grabActive: boolean) {
   }
 
   if (!left || !right) return;
-  const leftPosition = getControllerPosition(left).getAbsolutePosition();
-  const rightPosition = getControllerPosition(right).getAbsolutePosition();
-  const distance = Vector3.Distance(leftPosition, rightPosition);
+  const leftPose = getControllerPosition(left);
+  const rightPose = getControllerPosition(right);
+  leftPose.computeWorldMatrix(true);
+  rightPose.computeWorldMatrix(true);
+  const leftPosition = leftPose.getAbsolutePosition();
+  const rightPosition = rightPose.getAbsolutePosition();
+  const { distance, midpoint } = getHorizontalHandSpan(leftPosition, rightPosition);
   if (distance <= 0.05) {
     resetPinchState();
     return;
   }
 
-  const midpoint = leftPosition.add(rightPosition).scale(0.5);
   const currentYaw = getControllerYaw(leftPosition, rightPosition);
   if (!pinchState.active || pinchState.startDistance <= 0.02) {
     pinchState.active = true;
@@ -247,9 +259,8 @@ export function updateARResizeFromControllers(grabActive: boolean) {
   }
 
   // Resize around the horizontal midpoint without changing surface altitude.
-  const scale = getScaleFromControllerDistance(distance);
   const yaw = pinchState.startRotation + (currentYaw - pinchState.startYaw);
-  setARScale(scale);
+  const scale = setARScale(getScaleFromControllerDistance(distance));
   setARPosition(getARPositionForScaleAnchor(midpoint, pinchState.localAnchor, scale, yaw));
   preserveARSurfaceHeight(pinchState.startSurfaceY);
   setARRotation(yaw);

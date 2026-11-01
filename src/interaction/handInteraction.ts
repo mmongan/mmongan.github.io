@@ -41,7 +41,7 @@ import {
 import { getHandMenuHit, getHandMenuHitNearPoint, pickMenuControl } from '../menu/handMenu';
 import type { MarcherInstrument } from '../robot/robot';
 import {
-  getARPositionForScaleAnchor, beginSingleHandFieldMovement, updateSingleHandFieldMovement,
+  getARPositionForScaleAnchor, getHorizontalHandSpan, beginSingleHandFieldMovement, updateSingleHandFieldMovement,
   getSingleHandYaw, type SingleHandFieldMovement, getControllerYaw,
   isControllerSceneManipulationActive, isSceneManipulationLocked, rotateAroundY,
 } from './controllers';
@@ -1174,9 +1174,8 @@ export function createHandInteraction(paths: HandPathDependencies) {
         if (marcherGrabs.get(handedness)?.source === 'hand') finishMarcherGrab(handedness, false);
         handPinches.set(handedness, true);
       }
-      const distance = Vector3.Distance(left, right);
+      const { distance, midpoint } = getHorizontalHandSpan(left, right);
       if (distance < 0.05) return;
-      const midpoint = left.add(right).scale(0.5);
       const yaw = getControllerYaw(left, right);
       if (!sceneGesture) {
         const startScale = getARScale();

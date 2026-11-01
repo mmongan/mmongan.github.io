@@ -324,6 +324,7 @@ try {
   Object.assign(handContext, resizeAPI, {
     getControllerYaw: scaleContext.getControllerYaw,
     getARPositionForScaleAnchor: scaleContext.getARPositionForScaleAnchor,
+    getHorizontalHandSpan: scaleContext.getHorizontalHandSpan,
     rotateAroundY: scaleContext.rotateAroundY,
     pinchesOutsideField: true, finishFingerPath() {}, finishMarcherGrab() {},
     marcherGrabs: new Map(), handPinches: new Map(),
@@ -372,6 +373,14 @@ sceneGesture = null;
         `${input}: shrinking retains the horizontal midpoint anchor`);
       assert.ok(Math.abs(context.getARSurfaceHeight() - initialAltitude) < 1e-6,
         `${input}: shrinking ignores vertical hand movement and preserves surface altitude`);
+      const shrunkPosition = context.getARPosition();
+      grips.forEach(({ grip }, index) => {
+        grip.position.y += index ? .6 : -.4;
+      });
+      update();
+      assert.ok(Math.abs(context.getARScale() - shrunkScale) < 1e-9,
+        `${input}: vertical hand separation does not change the scale`);
+      near(context.getARPosition(), shrunkPosition, `${input}: vertical hand movement does not move the field`);
       const fullSeparation = .8 * Math.pow(1 / initialScale,
         input === 'controllers' ? 1 / scaleContext.getScaleExponentFor(initialScale) : 1) * 1.01;
       grips.forEach(({ grip }, index) => grip.position.copyFrom(
