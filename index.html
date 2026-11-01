@@ -13,7 +13,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       content="Babylon.js WebXR VR and AR demo for Meta Quest 3"
     />
     <title>OpenChartxr</title>
-    <script type="module" crossorigin src="/assets/index-C2P8iuci.js"></script>
+    <script type="module" crossorigin src="/assets/index-CddIZj6w.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/rolldown-runtime-B0Z9INg1.js">
     <link rel="modulepreload" crossorigin href="/assets/engineStore-Bn2tApal.js">
     <link rel="modulepreload" crossorigin href="/assets/internalTexture-B3djGrls.js">
@@ -59,7 +59,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <link rel="modulepreload" crossorigin href="/assets/flowGraphExecutionBlockWithOutSignal-Dkj7gfkW.js">
     <link rel="modulepreload" crossorigin href="/assets/flowGraphAsyncExecutionBlock-BG68nGzX.js">
     <link rel="modulepreload" crossorigin href="/assets/flowGraphRichTypes.pure-D2WqOeRI.js">
-    <link rel="stylesheet" crossorigin href="/assets/index-BcaCf3bJ.css">
+    <link rel="stylesheet" crossorigin href="/assets/index-yrgQ-Njg.css">
   </head>
   <body>
     <canvas id="renderCanvas"></canvas>
@@ -164,12 +164,42 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <label class="settings-label">Football plays</label>
           <label for="footballFormation">Offensive formation</label>
           <select id="footballFormation" aria-label="Football formation"></select>
-          <label for="footballPlay">Play</label>
+          <label for="footballPlay">Play library</label>
           <select id="footballPlay" aria-label="Football play"></select>
           <button id="footballLoad" type="button" class="xr-button secondary">Load 11-on-11 football play</button>
           <button id="runScrimmage" type="button" class="xr-button secondary">Run scrimmage (band off, players on)</button>
           <button id="footballExit" type="button" class="xr-button secondary">Exit football (restore band)</button>
           <output id="footballStatus" aria-live="polite"></output>
+          <label><input id="footballBallHighlight" type="checkbox"> Highlight football</label>
+          <label><input id="footballFlightPath" type="checkbox"> Show ball flight path</label>
+          <label><input id="footballFutureGhosts" type="checkbox"> Preview future ghosts for all players</label>
+          <output id="footballFutureStatus" aria-live="polite"></output>
+          <button id="footballChartEdit" type="button" class="xr-button secondary">Edit football chart</button>
+          <label for="footballDraftTeam">Draft lineup</label>
+          <select id="footballDraftTeam">
+            <option value="offense">Offense (11 existing players)</option>
+            <option value="defense">Defense (11 existing players)</option>
+            <option value="selected">Selected football players</option>
+          </select>
+          <label for="footballDraftFrom">Route start count</label>
+          <input id="footballDraftFrom" type="number" min="0" step="1" value="0">
+          <label for="footballDraftTo">Destination count</label>
+          <input id="footballDraftTo" type="number" min="0" step="1" value="16">
+          <output id="footballDraftStatus" aria-live="polite"></output>
+          <p>Draw with the existing drafting tools. Formation places this lineup on the guide at the destination set. Path replaces the selected player's route between these counts. Route selected form routes this lineup to the guide. No extra players are created.</p>
+          <label for="footballTackleDefender">Scripted tackler</label>
+          <select id="footballTackleDefender" aria-label="Defensive tackler"></select>
+          <label for="footballTackleCarrier">Ball carrier</label>
+          <select id="footballTackleCarrier" aria-label="Tackle ball carrier"></select>
+          <label for="footballTackleCount">Tackle timeline count</label>
+          <input id="footballTackleCount" type="number" min="0" step="1" value="16">
+          <button id="footballTackleNow" type="button" class="xr-button secondary">Use current count</button>
+          <button id="footballTackleAdd" type="button" class="xr-button secondary">Save scripted tackle</button>
+          <label for="footballTackleEvents">Authored tackles</label>
+          <select id="footballTackleEvents" aria-label="Authored tackles"></select>
+          <button id="footballTackleRemove" type="button" class="xr-button secondary">Remove selected tackle</button>
+          <output id="footballTackleStatus" aria-live="polite"></output>
+          <p>Select New tackle to add, or an authored event to update. Edit routes so the defender reaches the carrier, then both hold for eight counts. Tackles are scripted, not automatic collision or injury simulation. Both fall and recover before moving again. Events are session-only.</p>
           <p>Uses the existing timeline and player route editor. Loading replaces the visible band until Exit. Blue is offense, red is defense. Ball snaps, handoffs and passes follow the play timeline and edited routes. Demonstration movement, not a physics/contact simulation. Football appearance and ball events are session-only; exported routes do not retain them.</p>
         </div>
 
