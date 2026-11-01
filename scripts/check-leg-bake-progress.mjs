@@ -104,6 +104,7 @@ const scheduler = vm.createContext({
   repeatElapsed: null,
   getMaxCountIndex: () => 20,
   globalPlayback: { playing: false, speedMultiplier: 1 },
+  playbackStartGuard: null, pendingPlaybackStart: false,
   notifyDrillTransport() {},
   performance: { now() { time += 2; return time; } },
   setTimeout(callback, milliseconds) { timer = callback; delay = milliseconds; return 1; },

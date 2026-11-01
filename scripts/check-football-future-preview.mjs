@@ -30,7 +30,7 @@ const players = Array.from({ length: 22 }, (_, index) => {
   })));
   return robot;
 });
-let beat = 0, playing = false, blank = null;
+let beat = 0, playing = false, blank = null, clearanceOffset = 0;
 const listeners = new Set();
 const toggle = { checked: false, addEventListener: (_, callback) => listeners.add(callback),
   removeEventListener: (_, callback) => listeners.delete(callback) };
@@ -40,6 +40,10 @@ const context = vm.createContext({
   FIELD_SURFACE_Y: -.48, footballFutureGhosts: toggle, footballFutureStatus: status,
   floorCalibrationToggle: calibration, getRobotCounts: robot => schedules.get(robot),
   getDrillTransportState: () => ({ beat, playing }), getBlankChartPageState: () => blank,
+  getFootballPlaybackPosition: (robot, count) => {
+    const position = schedules.get(robot)?.[count]?.position;
+    return clearanceOffset && position ? { x: position.x + clearanceOffset, z: position.z } : null;
+  },
 });
 const compile = source => stripTypeScriptTypes(source, { mode: 'transform' })
   .replace(/^import[\s\S]*?;\r?$/gm, '').replace(/export /g, '');
@@ -70,6 +74,10 @@ try {
   schedules.get(players[1])[16].position.x += 2; refresh();
   assert.equal(ghosts().length, 22);
   assert.equal(ghosts()[1].position.x, schedules.get(players[1])[16].position.x, 'Live endpoint changes refresh');
+  clearanceOffset = .3; refresh();
+  assert.equal(ghosts()[1].position.x, schedules.get(players[1])[16].position.x + .3,
+    'Future ghosts and route geometry use the same separated positions as football playback');
+  clearanceOffset = 0;
   playing = true; refresh(); assert.equal(ghosts().length, 0);
   assert.equal(toggle.checked, true, 'Play hides previews without changing toggle preference');
   playing = false; beat = 8; refresh(); assert.equal(ghosts().length, 22);

@@ -16,6 +16,7 @@ import { Node } from '@babylonjs/core/node';
 import { Scene } from '@babylonjs/core/scene.pure';
 import { createCollisionMarkerManager, COLLISION_MARKER_RADIUS_YARDS } from './collisionMarkers';
 import { footballMovement, type FootballMotion } from './footballMovement';
+import { getFootballPlaybackPosition } from './footballPresentation';
 import { buildGaitStepPhaseOffsets, DOUBLE_TIME_ABOVE_YARDS, gaitPhaseAtBeat, isAutoGaitStyle, selectAutoGait } from './gaitSelection';
 import { resolveRepeatPlayback } from './playbackRepeat';
 import { registerManualPlacementMarcher, tryManualMarcherPose, tryManualMarcherPoses } from './manualPlacement';
@@ -1645,6 +1646,8 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState,
     : count).position.clone();
   if (!inPlace) Vector3.LerpToRef(from.position, to.position, forwardProgress, rootPosition);
   if (!sample) {
+    const footballPosition = state.footballMotion ? getFootballPlaybackPosition(robot, segmentStart + forwardProgress) : null;
+    if (footballPosition) { rootPosition.x = footballPosition.x; rootPosition.z = footballPosition.z; }
     robot.position.copyFrom(rootPosition);
     robot.rotation.y = bodyRotation;
   }
@@ -3357,21 +3360,40 @@ export function refreshCollisionMarkers(scene: Scene) {
 // --- The transport below controls every registered robot at once, so the
 // whole band always marches together on the same synchronized count clock.
 
+let playbackStartGuard: (() => boolean) | null = null;
+let pendingPlaybackStart = false;
+
+export function setPlaybackStartGuard(guard: (() => boolean) | null) {
+  playbackStartGuard = guard;
+}
+
+export function retryPendingPlaybackStart() {
+  if (pendingPlaybackStart && (!playbackStartGuard || playbackStartGuard())) playAll();
+}
+
 export function playAll() {
   prebakingLegAnimation = false;
   globalPlayback.speedMultiplier = Math.abs(globalPlayback.speedMultiplier) || 1;
+  if (playbackStartGuard && !playbackStartGuard()) {
+    pendingPlaybackStart = true;
+    globalPlayback.playing = false;
+    notifyDrillTransport();
+    return;
+  }
+  pendingPlaybackStart = false;
   globalPlayback.playing = true;
   notifyDrillTransport();
 }
 
 export function pauseAll() {
   prebakingLegAnimation = false;
+  pendingPlaybackStart = false;
   globalPlayback.playing = false;
   notifyDrillTransport();
 }
 
 export function toggleAllPlayback() {
-  if (globalPlayback.playing) {
+  if (globalPlayback.playing || pendingPlaybackStart) {
     pauseAll();
   } else {
     playAll();
@@ -3398,6 +3420,7 @@ export function setMarchTempo(beatsPerMinute: number): number {
 
 export function rewindAll() {
   prebakingLegAnimation = false;
+  pendingPlaybackStart = false;
   globalPlayback.speedMultiplier = -2;
   globalPlayback.playing = true;
   notifyDrillTransport();
@@ -3406,11 +3429,11 @@ export function rewindAll() {
 export function fastForwardAll() {
   prebakingLegAnimation = false;
   globalPlayback.speedMultiplier = 2;
-  globalPlayback.playing = true;
-  notifyDrillTransport();
+  playAll();
 }
 
 export function stepAll(direction: 1 | -1) {
+  pendingPlaybackStart = false;
   transportRevision++;
   globalPlayback.playing = false;
   globalPlayback.stepAccumulatorSeconds = 0;
@@ -3422,6 +3445,7 @@ export function stepAll(direction: 1 | -1) {
 
 // Seeks to a 0..1 fraction along the full drill (e.g. tapping a point on the progress bar).
 export function seekAll(fraction: number) {
+  pendingPlaybackStart = false;
   transportRevision++;
   globalPlayback.stepAccumulatorSeconds = 0;
   globalPlayback.countIndex = Math.round(Math.min(1, Math.max(0, fraction)) * getMaxCountIndex());
@@ -3432,6 +3456,7 @@ export function seekAll(fraction: number) {
 // Seeks to an absolute count index (e.g. clicking a specific footstep handle)
 // and pauses there, so the clicked moment stays put instead of playing on.
 export function seekToCount(countIndex: number) {
+  pendingPlaybackStart = false;
   prebakingLegAnimation = false;
   transportRevision++;
   const beat = Math.min(getMaxCountIndex(), Math.max(0, countIndex));

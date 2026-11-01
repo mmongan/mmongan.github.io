@@ -56,6 +56,10 @@ assert.equal(instruments[0].events[0].velocity, 102);
 assert.notEqual(instruments[0].events[0].stopId, instruments[0].events[1].stopId);
 synth.stop();
 assert.equal(instruments[0].cancelled, 2);
+synth.start({ ...event, startTimeSeconds: 5.75 });
+assert.equal(instruments[0].events.at(-1).time, 5.75,
+  'All notes in a scheduler batch retain their absolute audio-clock start, not per-voice construction time');
+synth.stop();
 for (let i = 0; i < 65; i++) synth.start(event);
 assert.match(messages.at(-1), /64-voice limit/);
 synth.dispose();

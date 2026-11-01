@@ -46,6 +46,12 @@ export function createFootballHumanModel(robot: TransformNode, torso: TransformN
     sphere(`football-glove-${id}-${side}`, elbow, 0, -.25, 0, .095, .13, .08, white);
     return shoulder;
   });
+  const elbows = arms.map(arm => {
+    const elbow = arm.getChildren().find(node => node instanceof TransformNode &&
+      node.name.startsWith('football-elbow-'));
+    if (!(elbow instanceof TransformNode)) throw new Error('Football arm requires an elbow joint.');
+    return elbow;
+  });
   const legsRoot = new TransformNode(`football-human-legs-${id}`, scene);
   legsRoot.parent = torso;
   const hidden: { node: TransformNode; enabled: boolean }[] = [];
@@ -87,12 +93,18 @@ export function createFootballHumanModel(robot: TransformNode, torso: TransformN
     return Vector3.TransformCoordinates(node.getAbsolutePosition(), inverse);
   };
   const updateLegs = (seated = 0, seatYaw = 0, fall = 0, kick = 0) => {
+    robot.computeWorldMatrix(true);
+    rig?.computeWorldMatrix(true);
+    torso.computeWorldMatrix(true);
     legsRoot.computeWorldMatrix(true).invertToRef(inverse);
     const seatedPoint = (x: number, y: number, z: number) =>
       Vector3.TransformCoordinates(Vector3.TransformCoordinates(
         Vector3.TransformCoordinates(new Vector3(x, y, z), Matrix.RotationY(seatYaw)),
         robot.computeWorldMatrix(true)), inverse);
     for (const [index, { hip, knee, ankle, thigh, calf, pad, shoe }] of legs.entries()) {
+      hip.computeWorldMatrix(true);
+      knee.computeWorldMatrix(true);
+      ankle.computeWorldMatrix(true);
       const x = index === 0 ? -.12 : .12;
       const a = Vector3.Lerp(local(hip), seatedPoint(x, .60, 0), seated);
       const b = Vector3.Lerp(local(knee), seatedPoint(x, .60, .4), seated);
@@ -128,7 +140,7 @@ export function createFootballHumanModel(robot: TransformNode, torso: TransformN
       }
     }
   };
-  return { arms, updateLegs, dispose() {
+  return { arms, elbows, updateLegs, dispose() {
     legsRoot.dispose();
     restore();
   } };

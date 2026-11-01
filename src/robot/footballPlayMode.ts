@@ -11,20 +11,22 @@ import { scene } from '../scene/engine';
 import { getDrillTransportState, getRobotCounts, setRobotColor, setRobotFootballMotion,
   TOP_DOWN_MARKER_LAYER_MASK } from './robot';
 import { footballMovement } from './footballMovement';
-import { setFootballTeam } from './footballPresentation';
+import { setFootballTeam, setFootballPositionSampler, getFootballPlaybackPosition } from './footballPresentation';
+import { separateFootballBodies } from './footballBodyClearance';
 import { getFootballSymbolTemplate } from './footballSymbolModel';
 import { createFootballHumanModel } from './footballHumanModel';
 import { scrimmageBenchSeat, scrimmageSeatedBlend } from './scrimmageGeometry';
-import { footballTacklePose, validateFootballTackle, type FootballTackleEvent } from './footballTackles';
+import { footballTacklePose, footballTackleYaw, validateFootballTackle, type FootballTackleEvent } from './footballTackles';
 import { FOOTBALL_PLAY_LIBRARY } from './footballPlayLibrary';
-import { footballFlightEndpoints, footballFlightPoint, footballKickPose } from './footballBallFlight';
+import { footballFlightEndpoints, footballFlightPoint, footballKickPose, footballSnapPose } from './footballBallFlight';
+import { footballScrimmageSpot } from './footballLineOfScrimmage';
 import { createFootballFuturePreview } from './footballFuturePreview';
 import { initFootballTackleEditor, executeFootballTackleCommand, type FootballTackleCommand } from './footballTackleEditor';
 import { floorCalibrationToggle, footballFormationSelect, footballPlaySelect, footballLoadButton,
   footballExitButton, footballStatus, scrimmageButton,
   footballDraftTeam, footballDraftFrom, footballDraftTo, footballChartEdit,
   footballBallHighlight, footballFlightPath, footballFutureGhosts } from '../ui/dom';
-import { FIELD_SURFACE_Y } from '../field/constants';
+import { FIELD_SURFACE_Y, FIELD_WIDTH_YARDS } from '../field/constants';
 import { FOOTBALL_FORMATIONS, FOOTBALL_PLAYS, FOOTBALL_FORMATION_OPTIONS, FOOTBALL_PLAY_OPTIONS,
   FOOTBALL_SCRIMMAGE_DEFAULT,
   type FootballFormation, type FootballPlay, type FootballBallEvent, type FootballPlayer,
@@ -159,6 +161,7 @@ export function createFootballVisuals(
   let disposeTackleEditor: ReturnType<typeof initFootballTackleEditor> = Object.assign(() => {}, { refresh: () => {} });
   let disposeObserver = () => {};
   let releaseTimeline = () => {};
+  let disposeClearance = () => {};
   const materials: StandardMaterial[] = [];
   const roots: TransformNode[] = [];
   const hiddenNodes: { node: TransformNode; enabled: boolean }[] = [];
@@ -177,10 +180,12 @@ export function createFootballVisuals(
     releaseTimeline();
     disposeFlightLine();
     disposeFuturePreview();
+    disposeClearance();
     animations.forEach(({ human }) => human.dispose());
     players.forEach(({ robot }) => {
       setRobotFootballMotion(robot, null);
       setFootballTeam(robot, null);
+      setFootballPositionSampler(robot, null);
     });
     roots.forEach(root => root.dispose());
     materials.forEach(value => value.dispose(false, true));
@@ -191,6 +196,13 @@ export function createFootballVisuals(
     const defense = material('football-defense', Color3.FromHexString('#c62828'));
     const white = material('football-facemask', Color3.White());
     const dark = material('football-eyes', Color3.FromHexString('#18263b'));
+    const scrimmageLine = MeshBuilder.CreateBox('football-line-of-scrimmage',
+      { width: FIELD_WIDTH_YARDS, height: .006, depth: .16 }, scene);
+    scrimmageLine.parent = parent; scrimmageLine.isPickable = false; scrimmageLine.checkCollisions = false;
+    scrimmageLine.position.y = FIELD_SURFACE_Y + .016;
+    const lineMaterial = material('football-scrimmage-blue', Color3.FromHexString('#168cff'));
+    lineMaterial.emissiveColor = lineMaterial.diffuseColor.clone(); lineMaterial.disableLighting = true;
+    lineMaterial.alpha = .8; scrimmageLine.material = lineMaterial; roots.push(scrimmageLine);
     const skins = ['#f2c7a5', '#b77c50', '#67432f'].map((color, index) =>
       material(`football-skin-${index}`, Color3.FromHexString(color)));
     if (visibleFromCount > 0) {
@@ -313,6 +325,83 @@ export function createFootballVisuals(
     };
     tackles.forEach(event => validateTackle(event, tackles.filter(other => other !== event)));
     const invalidTackles = new Set<FootballTackleEvent>();
+    const seatBeatAt = (beat: number) => {
+      for (let index = seatInsertions.length - 1; index >= 0; index--) {
+        const insertion = seatInsertions[index];
+        if (beat > insertion.at) beat -= Math.min(insertion.amount, beat - insertion.at);
+      }
+      return beat;
+    };
+    const activeTacklesAt = (beat: number) => tackles.filter(event => {
+      if (floorCalibrationToggle?.checked || !footballTacklePose(event, beat)) return false;
+      try {
+        validateTackle(event, tackles.filter(other => other !== event));
+        invalidTackles.delete(event);
+        return true;
+      } catch (error) {
+        if (!invalidTackles.has(event)) {
+          invalidTackles.add(event);
+          console.error('Scripted tackle no longer matches edited routes:', error);
+          notifyFootball(error instanceof Error ? error.message : String(error));
+        }
+        return false;
+      }
+    });
+    const positionCache = new Map<number, Map<TransformNode, { x: number; z: number }>>();
+    let clearanceSignature = '';
+    const clearanceObserver = scene.onBeforeRenderObservable.add(() => {
+      const signature = JSON.stringify([floorCalibrationToggle?.checked, visibleFromCount, seatInsertions, tackles,
+        events, sequence, players.map(({ robot }) => [robot.isDisposed(), robot.isEnabled(),
+          robot.scaling.x, robot.scaling.z, getRobotCounts(robot)?.map(count =>
+            [count.position.x, count.position.z, count.rotationY, count.facingY])])]);
+      if (signature !== clearanceSignature) { positionCache.clear(); clearanceSignature = signature; }
+    }, -1, true);
+    disposeClearance = () => scene.onBeforeRenderObservable.remove(clearanceObserver);
+    const samplePositions = (beat: number) => {
+      const cached = positionCache.get(beat);
+      if (cached) return cached;
+      const activeTackles = activeTacklesAt(beat);
+      const entries = players.flatMap(({ robot, player }, playerIndex) => {
+        const counts = getRobotCounts(robot);
+        if (robot.isDisposed() || !robot.isEnabled() || !counts?.length) return [];
+        const time = Math.max(0, Math.min(counts.length - 1, beat)), index = Math.floor(time);
+        const from = counts[index], to = counts[Math.min(index + 1, counts.length - 1)];
+        const movement = footballMovement({ team: player.team, role: player.label,
+          playStart: visibleFromCount, playWindows: sequence }, time,
+        to.position.x - from.position.x, to.position.z - from.position.z);
+        const seated = scrimmageSeatedBlend(seatBeatAt(beat), initialVisibleFromCount);
+        const snap = seated === 0 && !floorCalibrationToggle?.checked
+          ? events.find(event => event.fromId === player.id && footballSnapPose(event, beat)) : null;
+        const snapPose = snap ? footballSnapPose(snap, beat) : null;
+        let yaw = seated > 0 ? scrimmageBenchSeat(playerIndex).x < 0 ? Math.PI / 2 : -Math.PI / 2
+          : movement.gait === 'ready' ? from.facingY ?? from.rotationY ?? movement.bodyYaw : movement.bodyYaw;
+        const tackle = activeTackles.find(event => event.defenderId === player.id || event.carrierId === player.id);
+        const fall = tackle ? footballTacklePose(tackle, beat)!.fall : 0;
+        if (tackle) {
+          const target = footballTackleYaw(tacklePosition(tackle.defenderId, tackle.count)!,
+            tacklePosition(tackle.carrierId, tackle.count)!);
+          yaw += Math.atan2(Math.sin(target - yaw), Math.cos(target - yaw)) * fall;
+        }
+        const position = Vector3.Lerp(from.position, to.position, time - index);
+        return [{ robot, body: { x: position.x, z: position.z, yaw, fall,
+          lean: seated > 0 ? .4 : snapPose ? movement.lean * (1 - snapPose.crouch) + snapPose.lean : movement.lean,
+          scale: Math.max(Math.abs(robot.scaling.x), Math.abs(robot.scaling.z)) } }];
+      });
+      let positions: ReturnType<typeof separateFootballBodies>;
+      try {
+        positions = separateFootballBodies(entries.map(entry => entry.body));
+      } catch (error) {
+        console.error('Football body clearance failed:', error);
+        notifyFootball(error instanceof Error ? error.message : String(error));
+        throw error;
+      }
+      const resolved = new Map(entries.map((entry, index) => [entry.robot, positions[index]]));
+      const oldest = positionCache.keys().next().value;
+      if (positionCache.size >= 128 && oldest !== undefined) positionCache.delete(oldest);
+      positionCache.set(beat, resolved);
+      return resolved;
+    };
+    players.forEach(({ robot }) => setFootballPositionSampler(robot, beat => samplePositions(beat).get(robot) ?? null));
     const anchor = (id: string, count: number) => {
       const robot = byId.get(id);
       if (!robot || robot.isDisposed() || !robot.isEnabled()) return null;
@@ -320,27 +409,19 @@ export function createFootballVisuals(
       if (!counts?.length) return null;
       const beat = Math.max(0, Math.min(counts.length - 1, count));
       const index = Math.floor(beat);
-      return Vector3.Lerp(counts[index].position, counts[Math.min(index + 1, counts.length - 1)].position,
-        beat - index).add(new Vector3(0, players.find(entry => entry.player.id === id)?.player.label === 'H' ? .14 : 1.05, 0));
+      const position = Vector3.Lerp(counts[index].position, counts[Math.min(index + 1, counts.length - 1)].position, beat - index);
+      const resolved = getFootballPlaybackPosition(robot, beat);
+      if (resolved) { position.x = resolved.x; position.z = resolved.z; }
+      const opening = events.find(event => event.kind === 'snap' && event.fromId === id && beat <= event.startCount);
+      return position.add(new Vector3(0, opening ? opening.startHeight ?? .22
+        : players.find(entry => entry.player.id === id)?.player.label === 'H' ? .14 : 1.05, 0));
     };
     const update = () => {
       const currentBeat = getDrillTransportState().beat;
-      const activeTackles = tackles.filter(event => {
-        if (floorCalibrationToggle?.checked) return false;
-        if (!footballTacklePose(event, currentBeat)) return false;
-        try {
-          validateTackle(event, tackles.filter(other => other !== event));
-          invalidTackles.delete(event);
-          return true;
-        } catch (error) {
-          if (!invalidTackles.has(event)) {
-            invalidTackles.add(event);
-            console.error('Scripted tackle no longer matches edited routes:', error);
-            notifyFootball(error instanceof Error ? error.message : String(error));
-          }
-          return false;
-        }
-      });
+      const spot = footballScrimmageSpot(events, currentBeat, tacklePosition);
+      scrimmageLine.setEnabled(!!spot && Number.isFinite(visibleFromCount) && !floorCalibrationToggle?.checked);
+      if (spot) scrimmageLine.position.z = spot.z;
+      const activeTackles = activeTacklesAt(currentBeat);
       for (const [playerIndex, { robot, player, root, human }] of animations.entries()) {
         const counts = getRobotCounts(robot);
         const index = Math.min(Math.floor(currentBeat), Math.max(0, (counts?.length ?? 1) - 1));
@@ -357,11 +438,7 @@ export function createFootballVisuals(
         }
         const phase = steps * Math.PI;
         const bob = movement.stepsPerCount ? Math.abs(Math.sin(phase)) * .04 : 0;
-        let seatBeat = currentBeat;
-        for (let index = seatInsertions.length - 1; index >= 0; index--) {
-          const insertion = seatInsertions[index];
-          if (seatBeat > insertion.at) seatBeat -= Math.min(insertion.amount, seatBeat - insertion.at);
-        }
+        const seatBeat = seatBeatAt(currentBeat);
         const benchSeated = scrimmageSeatedBlend(seatBeat, initialVisibleFromCount);
         const holding = player.label === 'H' && currentBeat >= visibleFromCount;
         const seated = holding ? .65 : benchSeated;
@@ -369,6 +446,13 @@ export function createFootballVisuals(
         const benchYaw = holding ? 0 : benchSeat.x < 0 ? Math.PI / 2 : -Math.PI / 2;
         root.position.y = .98 + (bob - movement.crouch) * (1 - seated) - .38 * seated;
         root.rotation.x = movement.lean * (1 - seated) + .03 * seated;
+        const snapEvent = !floorCalibrationToggle?.checked && benchSeated === 0
+          ? events.find(event => event.fromId === player.id && footballSnapPose(event, currentBeat)) : null;
+        const snap = snapEvent ? footballSnapPose(snapEvent, currentBeat) : null;
+        if (snap) {
+          root.position.y -= .2 * snap.crouch;
+          root.rotation.x = root.rotation.x * (1 - snap.crouch) + snap.lean;
+        }
         const bodyYaw = movement.gait === 'ready'
           ? counts?.[index]?.facingY ?? counts?.[index]?.rotationY ?? movement.bodyYaw : movement.bodyYaw;
         root.rotation.y = (seated > 0 ? benchYaw : bodyYaw) - robot.rotation.y;
@@ -377,7 +461,7 @@ export function createFootballVisuals(
         if (pose && tackle) {
           const a = tacklePosition(tackle.defenderId, tackle.count)!;
           const b = tacklePosition(tackle.carrierId, tackle.count)!;
-          const contactYaw = Math.atan2(b.x - a.x, b.z - a.z);
+          const contactYaw = footballTackleYaw(a, b);
           const currentYaw = root.rotation.y + robot.rotation.y;
           const turn = Math.atan2(Math.sin(contactYaw - currentYaw), Math.cos(contactYaw - currentYaw));
           root.rotation.y += turn * pose.fall;
@@ -385,9 +469,12 @@ export function createFootballVisuals(
           root.position.y = root.position.y * (1 - pose.fall) + .22 * pose.fall;
         }
         human.arms.forEach((arm, side) => {
-          const normal = seated > 0 ? -.4 : movement.gait === 'block' ? -1.15 :
+          const normal = seated > 0 ? -.4 : movement.gait === 'block' ? movement.blockArm :
             Math.sin(phase + side * Math.PI) * movement.armSwing;
           arm.rotation.x = pose ? normal * (1 - pose.fall) + (.5 - pose.wrap * .9) * pose.fall : normal;
+          if (snap && !pose) arm.rotation.x = arm.rotation.x * (1 - snap.crouch) + snap.arm;
+          human.elbows[side].rotation.x = snap && !pose ? -.3
+            : seated === 0 && movement.gait === 'block' && !pose ? movement.blockElbow : -1.1;
         });
         const kickEvent = events.find(event => (event.kind === 'kick' || event.kind === 'punt') &&
           event.fromId === player.id && currentBeat >= event.startCount - 1 && currentBeat <= event.startCount + 2);
@@ -501,8 +588,11 @@ export function createFootballVisuals(
     disposeObserver = () => { scene.onBeforeRenderObservable.remove(observer); };
     if (Number.isFinite(visibleFromCount)) {
       disposeTackleEditor = initFootballTackleEditor(players.map(entry => entry.player), tackles,
-        (event, others) => validateTackle(event, others), () => { invalidTackles.clear(); update(); });
+        (event, others) => validateTackle(event, others), () => {
+          positionCache.clear(); invalidTackles.clear(); update();
+        });
       const shift = (at: number, amount: number) => {
+        positionCache.clear();
         seatInsertions.push({ at, amount });
         for (const event of events) {
           if (event.startCount > at) event.startCount += amount;

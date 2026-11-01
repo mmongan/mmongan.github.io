@@ -49,12 +49,62 @@ const context = vm.createContext({
   initFootballTackleEditor: () => Object.assign(() => {}, { refresh() {} }),
   createFootballFuturePreview: () => () => {},
 });
-for (const module of ['footballMovement', 'footballPresentation', 'footballSymbolModel', 'footballHumanModel', 'scrimmageGeometry', 'footballTackles', 'footballBallFlight']) {
+for (const module of ['footballMovement', 'footballPresentation', 'footballBodyClearance', 'footballSymbolModel', 'footballHumanModel', 'scrimmageGeometry', 'footballTackles', 'footballBallFlight', 'footballLineOfScrimmage']) {
   vm.runInContext(transform(`../src/robot/${module}.ts`), context);
 }
 vm.runInContext(transform('../src/robot/footballPlayMode.ts'), context);
+scene.onBeforeRenderObservable.add(() => {
+  for (const [robot, counts] of schedules) {
+    if (robot.isDisposed() || !counts.length) continue;
+    const time = Math.max(0, Math.min(counts.length - 1, beat)), index = Math.floor(time);
+    robot.position.copyFrom(Vector3.Lerp(counts[index].position,
+      counts[Math.min(index + 1, counts.length - 1)].position, time - index));
+    const resolved = context.getFootballPlaybackPosition(robot, beat);
+    if (resolved) { robot.position.x = resolved.x; robot.position.z = resolved.z; }
+    robot.computeWorldMatrix(true);
+  }
+});
 const near = (actual, expected, message) =>
   assert.ok(Vector3.Distance(actual, expected) < 1e-6, `${message}: ${actual} versus ${expected}`);
+const resolvedAnchor = (robot, count, height = 1.05) => {
+  const position = schedules.get(robot)[count].position.clone();
+  const resolved = context.getFootballPlaybackPosition(robot, count);
+  if (resolved) { position.x = resolved.x; position.z = resolved.z; }
+  return position.add(new Vector3(0, height, 0));
+};
+const assertRenderedClearance = (players, tackles = []) => {
+  const inverse = parent.computeWorldMatrix(true).clone().invert();
+  const bodies = players.map(({ robot, player }) => {
+    const torso = scene.getTransformNodeByName(`football-player-${player.id}`);
+    const tackle = tackles.find(event => [event.defenderId, event.carrierId].includes(player.id) &&
+      context.footballTacklePose(event, beat));
+    const fall = tackle ? context.footballTacklePose(tackle, beat)?.fall ?? 0 : 0;
+    const lean = fall < 1 ? (torso.rotation.x - Math.PI / 2 * fall) / (1 - fall) : 0;
+    const body = { x: robot.position.x, z: robot.position.z, yaw: torso.rotation.y + robot.rotation.y, fall, lean, scale: 1 };
+    const reach = (.05 + Math.abs(lean) * .5) * (1 - fall) + .9 * fall;
+    const offset = (-.03 + lean * .5) * (1 - fall);
+    const centerX = body.x + Math.sin(body.yaw) * offset, centerZ = body.z + Math.cos(body.yaw) * offset;
+    const dx = Math.sin(body.yaw) * reach, dz = Math.cos(body.yaw) * reach;
+    for (const mesh of torso.getChildMeshes()) {
+      if (mesh.name.startsWith('football-role')) continue;
+      const vertices = mesh.getVerticesData('position');
+      if (!vertices) continue;
+      const matrix = mesh.computeWorldMatrix(true).multiply(inverse);
+      for (let index = 0; index < vertices.length; index += 3) {
+        const point = Vector3.TransformCoordinates(new Vector3(vertices[index], vertices[index + 1], vertices[index + 2]), matrix);
+        const t = reach ? Math.max(0, Math.min(1,
+          ((point.x - centerX + dx) * 2 * dx + (point.z - centerZ + dz) * 2 * dz) / (4 * reach * reach))) : 0;
+        const distance = Math.hypot(point.x - (centerX - dx + 2 * dx * t), point.z - (centerZ - dz + 2 * dz * t));
+        assert.ok(distance <= .53 + 1e-5, `${mesh.name}: actual geometry must fit its clearance capsule at beat ${beat}: ${distance}, fall=${fall}, yaw=${body.yaw}, lean=${lean}, point=${point}, body=${JSON.stringify(body)}`);
+      }
+    }
+    return body;
+  });
+  for (let i = 0; i < bodies.length; i++) for (let j = i + 1; j < bodies.length; j++) {
+    assert.ok(context.footballBodyGap(bodies[i], bodies[j]).distance >= 1.06 - 1e-6,
+      `Actual bodies ${i}/${j} must not overlap at beat ${beat}`);
+  }
+};
 try {
   for (const play of ['slants', 'sweep', 'four-verticals']) {
     const data = geometry.generateFootballPlay('shotgun', play);
@@ -82,6 +132,26 @@ try {
     beat = 0;
     const observerCount = scene.onBeforeRenderObservable.observers.length;
     const dispose = context.createFootballVisuals(players, data.ballEvents, parent);
+    const scrimmageLine = scene.getMeshByName('football-line-of-scrimmage');
+    assert.ok(scrimmageLine && !scrimmageLine.isPickable && !scrimmageLine.checkCollisions,
+      'TV line is a non-interacting field overlay');
+    assert.equal(scrimmageLine.position.z, data.players.find(player => player.label === 'C').positions[0].z);
+    const centerTorso = scene.getTransformNodeByName('football-player-offense-C');
+    assert.equal(centerTorso.rotation.x, .35, 'Center is bent forward for the snap');
+    assert.ok(centerTorso.position.y < .8, 'Center lowers hips into snap stance');
+    const snapArm = scene.getTransformNodeByName('football-shoulder-offense-C--1');
+    const readyArm = snapArm.rotation.x;
+    beat = .5; scene.onBeforeRenderObservable.notifyObservers(scene);
+    assert.ok(snapArm.rotation.x > readyArm, 'Center moves arms backward through snap release');
+    for (const { robot, player } of players) {
+      const point = context.getFootballPlaybackPosition(robot, 0);
+      assert.ok(player.team === 'offense' ? point.z <= scrimmageLine.position.z + 1e-6
+        : point.z >= scrimmageLine.position.z - 1e-6, 'Players start on their own side of TV line');
+    }
+    for (const count of [0, 3.5, 7, 10.5, 16]) {
+      beat = count; scene.onBeforeRenderObservable.notifyObservers(scene);
+      assertRenderedClearance(players);
+    }
     const ball = scene.getMeshByName('football-ball');
     assert.equal(scene.meshes.filter(mesh => mesh.name.startsWith('football-helmet-')).length, 22);
     assert.equal(scene.meshes.filter(mesh => mesh.name.startsWith('football-face-')).length, 22,
@@ -107,7 +177,8 @@ try {
     }
     const positionAt = (id, count) => {
       const { robot } = players.find(value => value.player.id === id);
-      return schedules.get(robot)[count].position.add(new Vector3(0, 1.05, 0));
+      return resolvedAnchor(robot, count,
+        data.ballEvents.some(event => event.kind === 'snap' && event.fromId === id && count <= event.startCount) ? .22 : 1.05);
     };
     for (const event of data.ballEvents) {
       beat = (event.startCount + event.endCount) / 2;
@@ -127,6 +198,7 @@ try {
     calibration.checked = true;
     scene.onBeforeRenderObservable.notifyObservers(scene);
     assert.equal(ball.isEnabled(), false, 'Calibration hides the ball');
+    assert.equal(scrimmageLine.isEnabled(), false, 'Calibration hides the TV line');
     calibration.checked = false;
     beat = 5.25;
     scene.onBeforeRenderObservable.notifyObservers(scene);
@@ -174,6 +246,8 @@ try {
       assert.equal(line.isEnabled(), false); assert.equal(halo.isEnabled(), false);
     }
     dispose();
+    assert.ok(players.every(({ robot }) => context.getFootballPlaybackPosition(robot, beat) === null),
+      'Football exit removes body-clearance samplers from shared marcher playback');
     await new Promise(resolve => setTimeout(resolve, 0));
     assert.equal(scene.getMeshByName('football-ball'), null);
     assert.equal(scene.meshes.filter(mesh => mesh.name.startsWith('football-helmet-')).length, 0);
@@ -236,11 +310,18 @@ try {
       const sequenceDispose = context.createFootballVisuals(players, sequence.ballEvents, parent, 0, sequence.sequence, sequence.tackles);
       const sequenceBall = scene.getMeshByName('football-ball');
       for (const segment of sequence.sequence) {
+        for (const elapsed of [0, .5, 1, 1.5, 2, 4, 5, 6, 7, 8]) {
+          beat = segment.endCount + elapsed; scene.onBeforeRenderObservable.notifyObservers(scene);
+          assertRenderedClearance(players, sequence.tackles);
+        }
         beat = segment.startCount;
         scene.onBeforeRenderObservable.notifyObservers(scene);
+        assert.equal(scene.getMeshByName('football-line-of-scrimmage').position.z,
+          schedules.get(players.find(entry => entry.player.label === 'C').robot)[beat].position.z,
+        'TV line follows each play snap count');
         assert.ok(sequenceBall.isEnabled(), 'Ball returns for each snap');
-        near(sequenceBall.position, schedules.get(players.find(value => value.player.label === 'C').robot)[beat]
-          .position.add(new Vector3(0, 1.05, 0)), 'Each snap begins at center');
+        near(sequenceBall.position, resolvedAnchor(players.find(value => value.player.label === 'C').robot, beat, .22),
+          'Each snap begins at the separated center');
         assert.ok(context.footballStatus.value.includes(segment.label), 'Status names current concept');
         beat = segment.endCount + 2;
         scene.onBeforeRenderObservable.notifyObservers(scene);
@@ -250,6 +331,14 @@ try {
           assert.ok(Math.abs(torso.rotation.x - Math.PI / 2) < 1e-9, 'Both players fall horizontally');
           assert.equal(torso.position.y, .22, 'Fallen players are on the turf');
         }
+        const defender = players.find(entry => entry.player.id === event.defenderId).robot;
+        const carrier = players.find(entry => entry.player.id === event.carrierId).robot;
+        const yaw = scene.getTransformNodeByName(`football-player-${event.carrierId}`).rotation.y + carrier.rotation.y;
+        const otherYaw = scene.getTransformNodeByName(`football-player-${event.defenderId}`).rotation.y + defender.rotation.y;
+        assert.ok(Math.abs(Math.sin(yaw - otherYaw)) < 1e-9, 'Tackled players fall alongside one another');
+        assert.ok(context.footballBodyGap({ x: defender.position.x, z: defender.position.z, yaw: otherYaw, fall: 1, scale: 1 },
+          { x: carrier.position.x, z: carrier.position.z, yaw, fall: 1, scale: 1 }).distance >= 1.06 - 1e-6,
+        'Fallen bodies including helmets and feet have disjoint clearance capsules');
         assert.equal(sequenceBall.isEnabled(), true, 'Ball stays with tackled carrier while falling');
         const saved = scene.getTransformNodeByName(`football-player-${event.carrierId}`).rotation.x;
         beat = segment.endCount + 6;
@@ -273,9 +362,12 @@ try {
       assert.equal(sequence.sequence[1].startCount, 48, 'Timeline insertion does not mutate input geometry');
       beat = 52;
       scene.onBeforeRenderObservable.notifyObservers(scene);
+      assert.equal(scene.getMeshByName('football-line-of-scrimmage').position.z,
+        schedules.get(players.find(entry => entry.player.label === 'C').robot)[52].position.z,
+      'TV line retimes with inserted chart pages');
       assert.ok(context.footballStatus.value.includes('Stick'), 'Play names follow inserted counts');
-      near(sequenceBall.position, schedules.get(players.find(value => value.player.label === 'C').robot)[52]
-        .position.add(new Vector3(0, 1.05, 0)), 'Next snap and ball endpoints shift with chart insertion');
+      near(sequenceBall.position, resolvedAnchor(players.find(value => value.player.label === 'C').robot, 52, .22),
+        'Next snap and separated ball endpoints shift with chart insertion');
       beat = 22;
       scene.onBeforeRenderObservable.notifyObservers(scene);
       assert.equal(scene.getTransformNodeByName('football-player-offense-WR3').rotation.x, Math.PI / 2,
@@ -354,7 +446,7 @@ try {
   }
   assert.ok(materials.filter(material => !material.name?.startsWith('footballSymbol-'))
     .every(material => material.disposed), 'All non-shared owned materials are disposed');
-  console.log('Football mode passed: 22 player appearances, snap/handoff/pass, scrub, edited targets, tabletop transforms, calibration, and cleanup.');
+  console.log('Football mode passed: 22 human appearances, actual vertex/capsule body clearance, alongside fall/recovery, separated ball anchors, scrub, edits, tabletop transforms, calibration and cleanup.');
 } finally {
   scene.dispose();
   engine.dispose();

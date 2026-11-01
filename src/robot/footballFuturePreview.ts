@@ -12,6 +12,7 @@ import { scene } from '../scene/engine';
 import { footballFutureGhosts, footballFutureStatus, floorCalibrationToggle } from '../ui/dom';
 import { getDrillTransportState, getRobotCounts, getBlankChartPageState } from './robot';
 import { createMarcherDragGhost } from './marcherGhost';
+import { getFootballPlaybackPosition } from './footballPresentation';
 import { buildChartArrowGeometry } from './fieldChartMode';
 import { FIELD_SURFACE_Y } from '../field/constants';
 
@@ -50,7 +51,11 @@ export function createFootballFuturePreview(players: readonly TransformNode[], r
       const first = Math.max(window.startCount, Math.floor(transport.beat));
       const route = counts?.slice(first, window.endCount + 1);
       return !robot.isDisposed() && robot.isEnabled() && route?.length &&
-        counts?.[window.endCount] ? [{ robot, route, end: counts[window.endCount] }] : [];
+        counts?.[window.endCount] ? [{ robot, route: route.map((count, index) => {
+          const position = count.position.clone(), resolved = getFootballPlaybackPosition(robot, first + index);
+          if (resolved) { position.x = resolved.x; position.z = resolved.z; }
+          return { ...count, position };
+        }), end: counts[window.endCount] }] : [];
     });
     const nextSignature = JSON.stringify([window, Math.floor(transport.beat), entries.map(entry => [
       entry.robot.uniqueId, entry.route.map(count => [count.position.x, count.position.y, count.position.z]),
@@ -63,7 +68,7 @@ export function createFootballFuturePreview(players: readonly TransformNode[], r
       const color = new Color3(.35, .8, 1);
       const ghost = createMarcherDragGhost(robot, robot, color);
       ghost.name = 'footballFutureGhost'; ghost.parent = root;
-      ghost.position.copyFrom(end.position);
+      ghost.position.copyFrom(route[route.length - 1].position);
       ghost.rotationQuaternion = Quaternion.FromEulerAngles(0, end.facingY ?? end.rotationY, 0);
       ghost.scaling.copyFrom(robot.scaling); ghosts.push(ghost);
       const path = route.map(count => new Vector3(count.position.x, FIELD_SURFACE_Y + .07, count.position.z));

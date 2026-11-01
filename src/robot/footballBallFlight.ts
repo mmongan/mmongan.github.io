@@ -33,3 +33,11 @@ export function footballKickPose(kickCount: number, beat: number) {
   if (t < -1 || t > 2) return 0;
   return t < 0 ? (t + 1) * .5 : t < .5 ? .5 + t : Math.max(0, (2 - t) / 1.5);
 }
+
+export function footballSnapPose(event: FootballBallEvent, beat: number) {
+  if (event.kind !== 'snap' || beat < event.startCount - 1 || beat >= event.endCount + 1) return null;
+  const progress = Math.max(0, Math.min(1, (beat - event.startCount) / (event.endCount - event.startCount)));
+  const recovery = Math.max(0, Math.min(1, beat - event.endCount));
+  const crouch = 1 - recovery * recovery * (3 - 2 * recovery);
+  return { crouch, lean: .35 * crouch, arm: (.5 + .65 * Math.sin(progress * Math.PI / 2)) * crouch };
+}

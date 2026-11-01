@@ -52,6 +52,34 @@ assert.equal(result.reset, true);
 assert.ok(result.scheduled[0].durationSeconds < 0.5);
 timeline.reset();
 assert.equal(timeline.update(state, 4).scheduled.length, 1);
+const clockNotes = Array.from({ length: 20 }, (_, i) => ({
+  beat: i * .125, duration: .1, pitch: 60 + i % 8, velocity: .7, program: 56, percussion: false,
+}));
+const clockTimeline = new context.MidiTimeline(clockNotes);
+const opening = clockTimeline.synchronize(state, 10);
+const seen = new Set(opening.scheduled.map(event => event.note));
+assert.ok(opening.scheduled.length >= 5, 'Opening schedules a useful buffer before the first heavy render');
+assert.ok(opening.scheduled.every(event => event.startTimeSeconds >= 10.03),
+  'Opening attacks reserve a short shared lead for constructing all instrument voices');
+for (let i = 1; i <= 20; i++) {
+  const tick = clockTimeline.tick(10 + i * .025);
+  assert.equal(tick.reset, false, 'Audio-clock scheduling survives a half-second without rendered frames');
+  tick.scheduled.forEach(event => {
+    assert.ok(!seen.has(event.note), 'Timer must not restart already queued opening notes');
+    assert.ok(event.delaySeconds >= 0, 'Timer queues future notes rather than skipping expired notes');
+    seen.add(event.note);
+  });
+}
+const frame = clockTimeline.synchronize({ ...state, beat: 1 }, 10.5);
+assert.equal(frame.reset, false, 'A resumed matching visual clock does not restart the music');
+const pause = clockTimeline.synchronize({ ...state, beat: 1, playing: false }, 10.51);
+assert.equal(pause.reset, true);
+assert.equal(clockTimeline.tick(10.6).scheduled.length, 0, 'Audio timer respects pause immediately');
+const seek = clockTimeline.synchronize({ ...state, beat: 0, revision: 1 }, 10.7);
+assert.equal(seek.reset, true, 'Seek discards the previous audio-clock anchor');
+assert.ok(seek.scheduled.some(event => event.note.beat === 0), 'Rewind plays the opening notes again');
+clockTimeline.reset();
+assert.equal(clockTimeline.tick(11).scheduled.length, 0, 'Mute/clear removes the clock anchor');
 const robotSource = readFileSync(new URL('../src/robot/robot.ts', import.meta.url), 'utf8');
 const snapshotSource = robotSource.slice(robotSource.indexOf('function getTempoBpmAtBeat'),
   robotSource.indexOf('function notifyDrillTransport'));

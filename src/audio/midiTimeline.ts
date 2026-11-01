@@ -16,9 +16,11 @@ export interface ScheduledMidiNote {
   note: MidiNote;
   delaySeconds: number;
   durationSeconds: number;
+  startTimeSeconds?: number;
 }
 
-const LOOKAHEAD_SECONDS = 0.08;
+const LOOKAHEAD_SECONDS = 0.3;
+const SCHEDULING_LEAD_SECONDS = 0.03;
 const MAX_CLOCK_DRIFT_SECONDS = 0.1;
 
 // Note times are quarter-note beats, shared with the MIDI-driven playback tempo.
@@ -26,12 +28,29 @@ export class MidiTimeline {
   private previous: DrillTransportState | null = null;
   private previousTime = 0;
   private cursor = 0;
+  private clockState: DrillTransportState | null = null;
+  private clockTime = 0;
 
   constructor(private readonly notes: readonly MidiNote[]) {}
 
   reset() {
     this.previous = null;
     this.cursor = 0;
+    this.clockState = null;
+  }
+
+  synchronize(state: DrillTransportState, audioTime: number) {
+    this.clockState = { ...state };
+    this.clockTime = audioTime;
+    return this.update(state, audioTime);
+  }
+
+  tick(audioTime: number) {
+    const state = this.clockState;
+    if (!state) return { reset: false, scheduled: [] as ScheduledMidiNote[] };
+    const elapsed = state.playing ? Math.max(0, audioTime - this.clockTime) : 0;
+    return this.update({ ...state, beat: Math.max(0, Math.min(state.lastBeat,
+      state.beat + elapsed * state.beatsPerSecond)) }, audioTime);
   }
 
   update(state: DrillTransportState, audioTime: number) {
@@ -58,6 +77,7 @@ export class MidiTimeline {
       scheduled.push({
         note,
         delaySeconds: (start - state.beat) / state.beatsPerSecond,
+        startTimeSeconds: audioTime + SCHEDULING_LEAD_SECONDS + (start - state.beat) / state.beatsPerSecond,
         durationSeconds: (end - start) / state.beatsPerSecond,
       });
     }

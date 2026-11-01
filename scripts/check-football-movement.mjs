@@ -31,6 +31,8 @@ for (const [role, count, dx, dz, team, expected] of [
   ['CB-L', 98, 0, 1, 'defense', 'backpedal'],
   ['LB-L', 98, 1, .1, 'defense', 'shuffle'],
   ['LT', 98, 0, -.5, 'offense', 'block'],
+  ['DT-L', 98, 0, -.3, 'defense', 'block'],
+  ['LS', 98, 0, 0, 'offense', 'block'],
   ['QB', 98, 0, -.3, 'offense', 'backpedal'],
 ]) {
   const actual = movement(team, role, count, dx, dz);
@@ -52,7 +54,10 @@ for (const [role, count, dx, dz, team, expected] of [
   context.setRobotFootballMotion(robot, null);
   assert.equal(state.footballMotion, undefined, 'Exit removes the gait override');
 }
-assert.equal(invalidations, 14);
+assert.equal(invalidations, 18);
+assert.equal(movement('offense', 'LT', 96, 0, -.5).lean, 0, 'Neutral snap formation has no premature blocking lean');
+assert.equal(movement('offense', 'LT', 97, 0, -.5).blockElbow, -.3500000000000001,
+  'Blocking hands extend with visibly bent elbows after snap');
 assert.equal(movement('defense', 'CB-L', 100, 0, 1).bodyYaw, Math.PI, 'Backpedaling faces the offense');
 assert.equal(movement('offense', 'QB', 100, 0, -.3).bodyYaw, 0, 'Quarterback keeps looking downfield');
 console.log('Football movement passed: role/route gaits, entry jog, bounded cadence, actual leg resolver, cache invalidation and exit.');

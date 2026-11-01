@@ -12,7 +12,7 @@ const enableSource = source.slice(source.indexOf('async function enableAudio('),
 const initSource = source.slice(source.indexOf('  const audioButton = midiAudioButton;'),
   source.indexOf("  fileInput?.addEventListener('change'"));
 const buttonSource = source.slice(source.indexOf("  audioButton?.addEventListener('click'"),
-  source.indexOf('  onDrillTransportChangedObservable.add(updatePlayback)'));
+  source.indexOf('  onDrillTransportChangedObservable.add('));
 const events = {};
 const buttonEvents = {};
 let resumes = 0;
@@ -52,6 +52,7 @@ const context = vm.createContext({
   stopVoices: () => { stopped++; },
   updatePlayback: () => { updated++; },
   prepareSynth: async () => {},
+  retryPendingPlaybackStart() {},
 });
 vm.runInContext(`${stripTypeScriptTypes(`
 let context: AudioContext | null = null;

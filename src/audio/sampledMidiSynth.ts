@@ -62,7 +62,7 @@ export class SampledMidiSynth {
     }
   }
 
-  start({ note, delaySeconds, durationSeconds }: ScheduledMidiNote) {
+  start({ note, delaySeconds, durationSeconds, startTimeSeconds }: ScheduledMidiNote) {
     const instrument = this.instruments.get(instrumentKey(note));
     if (!instrument || this.disposed) throw new Error("MIDI instrument samples are not ready.");
     if (this.voices.size >= MAX_VOICES) {
@@ -72,7 +72,7 @@ export class SampledMidiSynth {
     const stop = instrument.start({
       note: note.pitch,
       velocity: Math.max(1, Math.round(note.velocity * 127)),
-      time: this.context.currentTime + delaySeconds,
+      time: startTimeSeconds ?? this.context.currentTime + delaySeconds,
       duration: durationSeconds,
       ampRelease: 0.015,
       stopId: ++this.nextVoiceId,

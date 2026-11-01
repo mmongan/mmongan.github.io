@@ -8,6 +8,8 @@ import {
   setPlaybackTempoMap,
   setPlaybackBeatUnits,
   onDrillTransportChangedObservable,
+  setPlaybackStartGuard,
+  retryPendingPlaybackStart,
 } from '../robot/robot';
 import {
   midiFileInput, midiAudioButton, midiClearButton, midiVolumeInput, midiStatus,
@@ -80,6 +82,7 @@ function initializeAudioContext() {
       status(synthLoading ? 'Preloading MIDI instrument samples…'
         : timeline && synth ? `${loadedDescription}. Following drill playback.` : "Audio enabled. Loading MIDI.");
       updatePlayback();
+      retryPendingPlaybackStart();
     } else {
       stopVoices();
       timeline?.reset();
@@ -120,9 +123,9 @@ async function enableAudio(automatic = false) {
     if (midiAudioButton) midiAudioButton.textContent = "Mute MIDI audio";
     status(synthLoading ? 'Preloading MIDI instrument samples…'
       : timeline && synth ? `${loadedDescription}. Following drill playback.` : "Audio enabled. Loading or importing MIDI will play with the drill.");
-    timeline?.reset();
     if (!synth && midiNotes.length && !synthLoading) await prepareSynth();
     else updatePlayback();
+    retryPendingPlaybackStart();
   } catch (error) {
     if (!automatic) audioEnabled = false;
     if (midiAudioButton) midiAudioButton.textContent = audioEnabled ? "Mute MIDI audio" : "Enable MIDI audio";
@@ -161,16 +164,18 @@ async function prepareSynth() {
     status(`Could not load instrument samples: ${error instanceof Error ? error.message : String(error)}. Check your connection and enable audio to retry.`, true);
   } finally {
     if (request === synthRequest) synthLoading = false;
+    retryPendingPlaybackStart();
   }
 }
 
-function updatePlayback() {
+function updatePlayback(fromClock = false) {
   if (!context || context.state !== "running" || !audioEnabled || !timeline || !synth) {
     stopVoices();
     timeline?.reset();
     return;
   }
-  const plan = timeline.update(getMusicTransportState(), context.currentTime);
+  const plan = fromClock ? timeline.tick(context.currentTime)
+    : timeline.synchronize(getMusicTransportState(), context.currentTime);
   if (plan.reset) stopVoices();
   plan.scheduled.forEach(note => synth!.start(note));
 }
@@ -280,6 +285,7 @@ async function loadMidi(name: string, read: () => Promise<ArrayBuffer>, failureH
     if (request === loadRequest) {
       midiLoading = false;
       updatePlaybackHint();
+      retryPendingPlaybackStart();
     }
   }
 }
@@ -289,6 +295,13 @@ function loadMidiFromUrl(input: string, name = input) {
 }
 
 export function initMidiPlayback() {
+  setPlaybackStartGuard(() => {
+    if (isMidiPlaybackReady()) return true;
+    const message = 'Play is waiting for music: finish sample preloading and click, trigger, or pinch to enable browser audio.';
+    status(message);
+    if (midiPlaybackHint) { midiPlaybackHint.hidden = false; midiPlaybackHint.textContent = message; }
+    return false;
+  });
   const repeatDrill = document.getElementById('repeatDrill') as HTMLInputElement | null;
   const repeatSong = document.getElementById('repeatSong') as HTMLInputElement | null;
   const updateRepeat = () => setPlaybackRepeat(!!repeatDrill?.checked, !!repeatSong?.checked);
@@ -346,6 +359,7 @@ export function initMidiPlayback() {
     if (midiUrlInput) midiUrlInput.value = "";
     clearButton.disabled = true;
     status("No MIDI loaded.");
+    retryPendingPlaybackStart();
   });
   midiVolumeInput?.addEventListener('input', () => {
     if (master && context && midiVolumeInput) {
@@ -359,11 +373,13 @@ export function initMidiPlayback() {
       timeline?.reset();
       audioButton.textContent = "Enable MIDI audio";
       status("MIDI audio muted.");
+      retryPendingPlaybackStart();
       return;
     }
     void enableAudio();
   });
-  onDrillTransportChangedObservable.add(updatePlayback);
+  onDrillTransportChangedObservable.add(() => updatePlayback());
+  window.setInterval(() => updatePlayback(true), 25);
   const sharedUrl = new URLSearchParams(window.location.search).get("midi");
   if (midiUrlInput) midiUrlInput.value = sharedUrl || new URL(exampleMidiUrl, window.location.href).href;
   void loadMidiFromUrl(sharedUrl || exampleMidiUrl,

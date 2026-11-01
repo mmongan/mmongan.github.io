@@ -123,7 +123,7 @@ export const FOOTBALL_FORMATION_PRESETS: Record<FootballFormation, FootballForma
     positions: {
       LT: { x: -2.8, z: -10 }, LG: { x: -1.4, z: -10 }, C: { x: 0, z: -10 },
       RG: { x: 1.4, z: -10 }, RT: { x: 2.8, z: -10 },
-      QB: { x: 0, z: -11 }, FB: { x: 0, z: -14 }, RB: { x: 0, z: -18 },
+      QB: { x: 0, z: -11.2 }, FB: { x: 0, z: -14 }, RB: { x: 0, z: -18 },
       TE: { x: 4.2, z: -10 }, WR1: { x: -22, z: -10 },
       WR3: { x: 22, z: -11 },
     },
