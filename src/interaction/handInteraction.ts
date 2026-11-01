@@ -15,6 +15,7 @@ import {
   getARScaleRange,
   getARRotation,
   getARSurfaceHeight,
+  getFieldHeightSetting,
   preserveARSurfaceHeight,
 } from '../xr/ar';
 import { scene } from '../scene/engine';
@@ -43,6 +44,7 @@ import type { MarcherInstrument } from '../robot/robot';
 import {
   getARPositionForScaleAnchor, getHorizontalHandSpan, beginSingleHandFieldMovement, updateSingleHandFieldMovement,
   getSingleHandYaw, type SingleHandFieldMovement, getControllerYaw, getScaleForHandSeparation,
+  getSurfaceHeightForHandScale,
   isControllerSceneManipulationActive, isSceneManipulationLocked, rotateAroundY,
 } from './controllers';
 import { canPlaceManualMarcherPose, tryManualMarcherPose } from '../robot/manualPlacement';
@@ -167,6 +169,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
   const marcherPinchHands = new Set<string>();
   let sceneGesture: {
     startSurfaceY: number;
+    floorY: number;
     startDistance: number;
     startYaw: number;
     startScale: number;
@@ -1176,7 +1179,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
         if (marcherGrabs.get(handedness)?.source === 'hand') finishMarcherGrab(handedness, false);
         handPinches.set(handedness, true);
       }
-      const { distance, midpoint } = getHorizontalHandSpan(left, right);
+      const { distance, midpoint, height } = getHorizontalHandSpan(left, right);
       if (distance < 0.05) return;
       const yaw = getControllerYaw(left, right);
       if (!sceneGesture) {
@@ -1185,6 +1188,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
         const offset = midpoint.subtract(getARPosition());
         sceneGesture = {
           startSurfaceY: getARSurfaceHeight(),
+          floorY: startScale === getARScaleRange().max ? getARSurfaceHeight() : getFieldHeightSetting('floor'),
           startDistance: distance, startYaw: yaw, startScale, startRotation,
           localAnchor: rotateAroundY(offset, -startRotation).scale(1 / startScale),
         };
@@ -1197,7 +1201,9 @@ export function createHandInteraction(paths: HandPathDependencies) {
         const rotation = sceneGesture.startRotation + Math.atan2(Math.sin(yawDelta), Math.cos(yawDelta));
         setARRotation(rotation);
         setARPosition(getARPositionForScaleAnchor(midpoint, sceneGesture.localAnchor, scale, rotation));
-        preserveARSurfaceHeight(sceneGesture.startSurfaceY);
+        preserveARSurfaceHeight(getSurfaceHeightForHandScale(
+          sceneGesture.startScale, sceneGesture.startSurfaceY, scale, height, sceneGesture.floorY,
+        ));
       }
       return;
     }

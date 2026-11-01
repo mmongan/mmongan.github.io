@@ -1,5 +1,11 @@
 // Shared DOM references for the canvas and application controls.
 export const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
+export const footballFormationSelect = document.getElementById('footballFormation') as HTMLSelectElement | null;
+export const footballPlaySelect = document.getElementById('footballPlay') as HTMLSelectElement | null;
+export const footballLoadButton = document.getElementById('footballLoad') as HTMLButtonElement | null;
+export const scrimmageButton = document.getElementById('runScrimmage') as HTMLButtonElement | null;
+export const footballExitButton = document.getElementById('footballExit') as HTMLButtonElement | null;
+export const footballStatus = document.getElementById('footballStatus') as HTMLOutputElement | null;
 export const enterVRButton = document.getElementById("enterVRButton") as HTMLButtonElement | null;
 export const enterARButton = document.getElementById("enterARButton") as HTMLButtonElement | null;
 export const openChartFileInput = document.getElementById("openChartFile") as HTMLInputElement | null;

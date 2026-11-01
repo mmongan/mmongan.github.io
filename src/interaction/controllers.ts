@@ -9,6 +9,7 @@ import {
   getARScaleRange,
   getARRotation,
   getARSurfaceHeight,
+  getFieldHeightSetting,
   preserveARSurfaceHeight,
 } from '../xr/ar';
 import { scene } from '../scene/engine';
@@ -25,6 +26,7 @@ const pinchState = {
   startYaw: 0,
   startRotation: 0,
   startSurfaceY: 0,
+  floorY: 0,
 };
 let singleControllerMove: {
   handedness: string;
@@ -43,6 +45,7 @@ function resetPinchState() {
   pinchState.startYaw = 0;
   pinchState.startRotation = 0;
   pinchState.startSurfaceY = 0;
+  pinchState.floorY = 0;
 }
 
 export function getScaleForHandSeparation(startScale: number, startDistance: number, distance: number): number {
@@ -50,6 +53,20 @@ export function getScaleForHandSeparation(startScale: number, startDistance: num
   const logScale = Math.log(startScale) + (distance - startDistance) *
     Math.log(max / tabletopScale) / TABLETOP_TO_FULL_SCALE_TRAVEL;
   return Math.exp(Math.min(Math.log(max), Math.max(Math.log(min), logScale)));
+}
+
+export function getSurfaceHeightForHandScale(
+  startScale: number, startHeight: number, scale: number, handHeight: number, floorHeight: number,
+): number {
+  const { min, max, default: tabletopScale } = getARScaleRange();
+  if (scale === startScale) return startHeight;
+  if (scale < startScale) {
+    const targetScale = startScale > tabletopScale ? tabletopScale : min;
+    const blend = Math.min(1, Math.log(startScale / scale) / Math.log(startScale / targetScale));
+    return startHeight + (handHeight - startHeight) * blend;
+  }
+  const blend = Math.min(1, Math.log(scale / startScale) / Math.log(max / startScale));
+  return startHeight + (floorHeight - startHeight) * blend;
 }
 
 export function rotateAroundY(vector: Vector3, angle: number): Vector3 {
@@ -65,12 +82,12 @@ export function getARPositionForScaleAnchor(
   return midpoint.subtract(rotateAroundY(localAnchor.scale(scale), rotation));
 }
 
-// Two-handed scene sizing is a floor-plane gesture: vertical hand movement
-// neither changes the scale nor moves the shrink point.
+// Separation controls size in the floor plane; height is a separate target.
 export function getHorizontalHandSpan(left: Vector3, right: Vector3) {
   return {
     distance: Math.hypot(right.x - left.x, right.z - left.z),
     midpoint: new Vector3((left.x + right.x) / 2, 0, (left.z + right.z) / 2),
+    height: (left.y + right.y) / 2,
   };
 }
 
@@ -241,7 +258,7 @@ export function updateARResizeFromControllers(grabActive: boolean) {
   rightPose.computeWorldMatrix(true);
   const leftPosition = leftPose.getAbsolutePosition();
   const rightPosition = rightPose.getAbsolutePosition();
-  const { distance, midpoint } = getHorizontalHandSpan(leftPosition, rightPosition);
+  const { distance, midpoint, height } = getHorizontalHandSpan(leftPosition, rightPosition);
   if (distance <= 0.05) {
     resetPinchState();
     return;
@@ -255,6 +272,8 @@ export function updateARResizeFromControllers(grabActive: boolean) {
     pinchState.startYaw = currentYaw;
     pinchState.startRotation = getARRotation();
     pinchState.startSurfaceY = getARSurfaceHeight();
+    pinchState.floorY = pinchState.startScale === getARScaleRange().max
+      ? pinchState.startSurfaceY : getFieldHeightSetting('floor');
     preserveARSurfaceHeight(pinchState.startSurfaceY);
     const worldOffsetFromPivot = midpoint.subtract(getARPosition());
     pinchState.localAnchor = rotateAroundY(worldOffsetFromPivot, -pinchState.startRotation)
@@ -263,10 +282,12 @@ export function updateARResizeFromControllers(grabActive: boolean) {
     return;
   }
 
-  // Scale and turn around the horizontal midpoint at a fixed surface altitude.
+  // Shrinking lifts the surface into the hands; expansion returns it to the floor.
   const yaw = pinchState.startRotation + (currentYaw - pinchState.startYaw);
   const scale = setARScale(getScaleFromControllerDistance(distance));
   setARPosition(getARPositionForScaleAnchor(midpoint, pinchState.localAnchor, scale, yaw));
-  preserveARSurfaceHeight(pinchState.startSurfaceY);
+  preserveARSurfaceHeight(getSurfaceHeightForHandScale(
+    pinchState.startScale, pinchState.startSurfaceY, scale, height, pinchState.floorY,
+  ));
   setARRotation(yaw);
 }

@@ -863,6 +863,12 @@ export function createLowPolyRobot(scene: Scene, gaitIndex = selectedMarchingGai
   return createMarcherModel(scene, gaitIndex);
 }
 
+export function createPresentationMarcher(scene: Scene): TransformNode {
+  const robot = createMarcherModel(scene, selectedMarchingGait);
+  allRobots.delete(robot);
+  return robot;
+}
+
 export function duplicateMarcherSchedule(source: TransformNode, offset: Vector3): TransformNode {
   const state = players.get(source);
   const parts = marcherParts.get(source);

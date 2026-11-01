@@ -27,6 +27,7 @@ export type HandMenuHit =
   | { action: "drillChartPad" | "recallPanels" | "xrSettings" | "xrSettingsHide" }
   | { action: "marcherDrumGame" }
   | { action: "xrSetting"; setting: "fullScale" | "tabletop" | "giant" | "seated" | "grid" | "snap" }
+  | { action: 'football'; command: 'load' | 'exit' | 'formation' | 'play' | 'scrimmage' }
   | { action: "musicStandSummon" }
   | { action: "marcherPOV" }
   | { action: "drillChartHide" | "musicStandHide" | "drillChartInsertPage" }

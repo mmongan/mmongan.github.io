@@ -28,6 +28,8 @@ const engine = new NullEngine(), scene = new Scene(engine);
 const labels = [];
 const context = vm.createContext({
   scene, Mesh, MeshBuilder, TransformNode, StandardMaterial, Matrix, Quaternion, Vector3, Plane, Color3, Ray, Observable, ...controls,
+  footballFormationSelect: { selectedOptions: [{ text: 'Shotgun' }] },
+  footballPlaySelect: { selectedOptions: [{ text: 'Slants' }] },
   document: { createElement: () => ({ getContext: () => ({ fillText: label => labels.push(label) }) }) },
   DynamicTexture: class { update() {} dispose() {} },
   Texture: { TRILINEAR_SAMPLINGMODE: 3 },
@@ -80,6 +82,7 @@ try {
   }
   scene.onBeforeRenderObservable.notifyObservers(scene);
   assert.ok(labels.includes('Seated: on') && labels.includes('Grid snap: on'), 'Panel reflects current checkbox states');
+  assert.ok(labels.includes('Shotgun') && labels.includes('Slants'), 'Football choices are visible in XR');
   backing.computeWorldMatrix(true);
   const bounds = backing.getBoundingInfo().boundingBox;
   const actions = new Set();
@@ -101,7 +104,7 @@ try {
   }
   for (const action of ['drillChartPad', 'musicStandSummon', 'instrumentPanelSummon', 'drawingTool',
     'marcherPaint', 'fieldProjector', 'marcherPOV', 'recallPanels', 'xrSettingsHide', 'commitFormation',
-    'undoErase', 'redoErase']) assert.ok(actions.has(action));
+    'undoErase', 'redoErase', 'football']) assert.ok(actions.has(action));
   context.setXRSettingsPanelVisible(false);
   assert.equal(context.beginFloatingPanelGrab('left', Matrix.Identity(), backing), false);
   const iconParts = root.getChildMeshes().filter(mesh => mesh.name.startsWith('settingsIcon-'));

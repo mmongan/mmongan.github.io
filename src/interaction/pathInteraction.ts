@@ -45,6 +45,12 @@ import { getMediaControllerHand, swapControllerRolesToggle, handThumbJogToggle }
 import { resetThumbJog, updateThumbJog } from './thumbJogGesture';
 import { hideInstrumentPanel, summonInstrumentPanel } from '../menu/instrumentPanel';
 import { executeXRSetting, setXRSettingsPanelVisible, summonXRSettingsPanel } from '../menu/xrSettingsPanel';
+import { generateFootballPlay, type FootballFormation, type FootballPlay } from '../robot/footballPlayGeometry';
+import { createFootballVisuals, initFootballControls, executeFootballCommand } from '../robot/footballPlayMode';
+import { SCRIMMAGE_EXIT_COUNTS, SCRIMMAGE_PLAY_START, scrimmageWalk,
+  scrimmageSideline, scrimmagePlayerRoute } from '../robot/scrimmageGeometry';
+import { initScrimmageSign } from '../menu/scrimmageSign';
+import { setRobotColor, createPresentationMarcher } from '../robot/robot';
 import { initChartPageGhostMode, isChartGhostModeEnabled, setChartGhostModeEnabled } from '../robot/chartPageGhostMode';
 import {
   executeDrawingToolAction, handleDrawingPointer, initFieldDrawingTools,
@@ -592,6 +598,7 @@ chartBeatsPerPage?.addEventListener('change', () => {
 
 function captureCameraFieldState() {
   if (marcherGrabs.size > 0) throw new Error('Release grabbed marchers before capturing or switching fields.');
+  clearWaitingFootballPlayers();
   const schedules = captureMarcherSchedules();
   const page = captureBlankChartPage();
   const indices = new Map(schedules.map((schedule, index) => [schedule.robot, index]));
@@ -2561,6 +2568,9 @@ function executeMenuAction(hit: NonNullable<ReturnType<typeof getHandMenuHit>>) 
     case "xrSetting":
       executeXRSetting(hit.setting);
       break;
+    case 'football':
+      executeFootballCommand(hit.command);
+      break;
     case "chartGhostMode":
       setChartGhostModeEnabled(!isChartGhostModeEnabled());
       redrawDrillChartPad();
@@ -3373,6 +3383,10 @@ function spawnRandomRobots(count: number) {
 // lines, segments/handles, formation connections) so a fresh drill starts on
 // an empty field instead of piling onto whatever was already there.
 function clearAllRobots() {
+  clearWaitingFootballPlayers();
+  footballVisuals?.();
+  footballVisuals = null;
+  footballPreviousState = null;
   currentShowName = "OpenChart show";
   chartPageNames.clear();
   chartPageNotes.clear();
@@ -3421,6 +3435,100 @@ function clearAllRobots() {
   clearShowInfo();
   disposeAllRobots();
   refreshFormationEditor();
+}
+
+let footballVisuals: (() => void) | null = null;
+let footballPreviousState: ReturnType<typeof captureCameraFieldState> | null = null;
+let waitingFootballCleanup: (() => void) | null = null;
+
+function clearWaitingFootballPlayers() {
+  waitingFootballCleanup?.();
+  waitingFootballCleanup = null;
+}
+
+function showWaitingFootballPlayers() {
+  if (footballVisuals || waitingFootballCleanup || !robotPaths.size) return;
+  const geometry = generateFootballPlay('shotgun', 'slants');
+  const players = geometry.players.map((player, index) => {
+    const robot = createPresentationMarcher(scene);
+    robot.parent = pathRoot;
+    const position = scrimmageSideline(player.positions[0], index);
+    robot.position.set(position.x, FIELD_SURFACE_Y, position.z);
+    robot.rotation.y = position.x < 0 ? Math.PI / 2 : -Math.PI / 2;
+    robot.setEnabled(true);
+    return { robot, player };
+  });
+  const disposeVisuals = createFootballVisuals(players, [], pathRoot, Infinity);
+  waitingFootballCleanup = () => {
+    disposeVisuals();
+    players.forEach(({ robot }) => robot.dispose());
+  };
+}
+
+function loadFootballPlay(formation: FootballFormation, play: FootballPlay, scrimmage = false) {
+  if (floorCalibrationToggle?.checked || marcherGrabs.size || isFloatingPanelGrabbed() || isMarcherPOVActive() ||
+    !canUseCameraFieldCopies()) {
+    throw new Error('Finish calibration and release tools, players, and panels before loading a football play.');
+  }
+  const geometry = generateFootballPlay(formation, play);
+  clearWaitingFootballPlayers();
+  const previous = footballPreviousState ?? captureCameraFieldState();
+  openMarchRequest++;
+  clearAllRobots();
+  forgetOtherChartPageGuides();
+  footballPreviousState = previous;
+  try {
+    if (scrimmage) {
+      previous.marchers.forEach((schedule, index) => {
+        const robot = createLowPolyRobot(scene, schedule.gaitIndex);
+        robot.parent = pathRoot;
+        setMarcherInstrument(robot, schedule.instrument);
+        setRobotColor(robot, schedule.color);
+        const start = { x: schedule.position.x, z: schedule.position.z };
+        const end = scrimmageSideline(start, index);
+        const exit = scrimmageWalk(start, end, SCRIMMAGE_EXIT_COUNTS);
+        const path = [...exit, ...Array.from({ length: SCRIMMAGE_PLAY_START + 16 - SCRIMMAGE_EXIT_COUNTS },
+          () => ({ ...end }))].map(position => new Vector3(position.x, FIELD_SURFACE_Y, position.z));
+        robotPaths.set(robot, path);
+        walkRobotAlongCounts(robot, path, scene);
+      });
+    }
+    const players = geometry.players.map((player, index) => {
+      const robot = createLowPolyRobot(scene);
+      robot.parent = pathRoot;
+      const positions = scrimmage ? scrimmagePlayerRoute(player.positions, index) : player.positions;
+      const path = positions.map(position => new Vector3(position.x, FIELD_SURFACE_Y, position.z));
+      robotPaths.set(robot, path);
+      updateRobotPathLine(robot, path);
+      walkRobotAlongCounts(robot, path, scene,
+        path.map(() => player.team === 'offense' ? 0 : Math.PI));
+      return { robot, player };
+    });
+    const offset = scrimmage ? SCRIMMAGE_PLAY_START : 0;
+    footballVisuals = createFootballVisuals(players, geometry.ballEvents.map(event => ({
+      ...event, startCount: event.startCount + offset, endCount: event.endCount + offset,
+    })), pathRoot, offset);
+    setDrillLabels(scene, pathRoot, players.map(({ robot, player }) => ({ robot, label: player.label })));
+    currentShowName = `Football: ${formation} / ${play}`;
+    setChartPageTimeline({ beatsPerPage: 4,
+      authoredCounts: [...(scrimmage ? [0, SCRIMMAGE_EXIT_COUNTS] : []), ...[0, 4, 8, 12, 16].map(count => count + offset)] });
+    refreshChartEditorPages();
+    seekToCount(0);
+    refreshCollisionMarkers(scene);
+    if (scrimmage) playAll();
+  } catch (error) {
+    restoreCameraFieldState(previous);
+    throw error;
+  }
+}
+
+function exitFootballPlay() {
+  if (!footballPreviousState) throw new Error('No football play is active.');
+  if (floorCalibrationToggle?.checked || marcherGrabs.size || isFloatingPanelGrabbed() || !canUseCameraFieldCopies()) {
+    throw new Error('Finish calibration and release tools, players, and panels before exiting football mode.');
+  }
+  const previous = footballPreviousState;
+  restoreCameraFieldState(previous);
 }
 
 // True when the viewer is looking at the +Z half of the field: where their
@@ -3660,7 +3768,7 @@ export function initInteraction() {
     field: pathRoot,
     capture: captureCameraFieldState,
     restore: restoreCameraFieldState,
-    allowed: () => canUseCameraFieldCopies() && marcherGrabs.size === 0 && !isMarcherPOVActive(),
+    allowed: () => !footballVisuals && canUseCameraFieldCopies() && marcherGrabs.size === 0 && !isMarcherPOVActive(),
     notify: showPlacementNotice,
     beforeCapture: () => { snapDrillToWholeBeat(); },
     timeLabel: () => {
@@ -3808,6 +3916,17 @@ export function initInteraction() {
   };
   marcherCountInput?.addEventListener("input", updateMarcherCountValue);
   updateMarcherCountValue();
+  initFootballControls(loadFootballPlay, exitFootballPlay, publishFormationEdit,
+    (formation, play) => loadFootballPlay(formation, play, true));
+  initScrimmageSign();
+  const waitingObserver = scene.onBeforeRenderObservable.add(showWaitingFootballPlayers);
+  scene.onDisposeObservable.addOnce(() => {
+    scene.onBeforeRenderObservable.remove(waitingObserver);
+    clearWaitingFootballPlayers();
+    footballVisuals?.();
+    footballVisuals = null;
+    footballPreviousState = null;
+  });
   addRandomRobotsButton?.addEventListener("click", () => spawnRandomRobots(getMarcherCount()));
   generateDrillButton?.addEventListener("click", () => {
     openMarchRequest++;

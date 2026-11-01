@@ -10,6 +10,7 @@ import { scene } from '../scene/engine';
 import {
   xrSettingsPanelButton, xrSettingsPanelToggle, fullScaleVRButton, tabletopScaleButton,
   giantModeButton, sittingModeToggle, fieldGridToggle, gridSnapToggle,
+  footballFormationSelect, footballPlaySelect,
 } from '../ui/dom';
 import { FloatingPanel } from './floatingPanel';
 import { registerMenuButton, type HandMenuHit } from './handMenu';
@@ -59,9 +60,9 @@ export function initXRSettingsPanel() {
   root = panelRoot;
   const meshes = new Set<AbstractMesh>();
   const buttons = new Map<AbstractMesh, HandMenuHit>();
-  const backing = MeshBuilder.CreateBox('xrSettingsBacking', { width: 0.84, height: 1.08, depth: 0.02 }, scene);
+  const backing = MeshBuilder.CreateBox('xrSettingsBacking', { width: 0.84, height: 1.32, depth: 0.02 }, scene);
   backing.parent = panelRoot;
-  backing.position.y = -0.08;
+  backing.position.y = -0.20;
   const backingMaterial = new StandardMaterial('xrSettingsBackingMaterial', scene);
   backingMaterial.diffuseColor = Color3.FromHexString(PANEL_FRAME_COLOR);
   backingMaterial.alpha = 0.45;
@@ -108,16 +109,23 @@ export function initXRSettingsPanel() {
   button('X', 0.365, 0.39, 0.065, { action: 'xrSettingsHide' });
   SETTINGS_PANEL_ROWS.forEach((row, y) => row.forEach(([label, action, toggle], x) =>
     button(label, (x - 1) * 0.27, 0.27 - y * 0.12, 0.25, action, toggle)));
-  panel = new FloatingPanel(panelRoot, meshes, backing, new Vector3(0.42, 0.54, 0.025), buttons);
+  button('Formation', -.27, -.65, .25, { action: 'football', command: 'formation' });
+  button('Play preset', 0, -.65, .25, { action: 'football', command: 'play' });
+  button('Load football', .27, -.65, .25, { action: 'football', command: 'load' });
+  button('Restore band', 0, -.77, .52, { action: 'football', command: 'exit' });
+  panel = new FloatingPanel(panelRoot, meshes, backing, new Vector3(0.42, 0.66, 0.025), buttons);
   panelRoot.setEnabled(false);
   const update = () => {
     if (!panelRoot.isEnabled()) return;
     for (const label of labels) {
-      if (!label.toggle) continue;
-      const text = `${label.label}: ${label.toggle.checked ? 'on' : 'off'}`;
+      const select = label.label === 'Formation' ? footballFormationSelect
+        : label.label === 'Play preset' ? footballPlaySelect : null;
+      if (!label.toggle && !select) continue;
+      const text = select ? select.selectedOptions[0]?.text ?? label.label
+        : `${label.label}: ${label.toggle!.checked ? 'on' : 'off'}`;
       if (label.signature === text) continue;
       label.signature = text;
-      draw(label.ctx, text, label.toggle.checked);
+      draw(label.ctx, text, label.toggle?.checked ?? false);
       label.texture.update();
     }
   };
