@@ -8,7 +8,7 @@
       content="Babylon.js WebXR VR and AR demo for Meta Quest 3"
     />
     <title>OpenChartxr</title>
-    <script type="module" crossorigin src="/assets/index-lenihx3W.js"></script>
+    <script type="module" crossorigin src="/assets/index-CcPOiy-E.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/rolldown-runtime-B0Z9INg1.js">
     <link rel="modulepreload" crossorigin href="/assets/engineStore-Bn2tApal.js">
     <link rel="modulepreload" crossorigin href="/assets/internalTexture-B3djGrls.js">
@@ -153,6 +153,19 @@
             <input type="checkbox" id="floorCalibrationToggle" />
             <span>Floor calibration</span>
           </label>
+        </div>
+
+        <div class="settings-group">
+          <label class="settings-label">Football plays</label>
+          <label for="footballFormation">Offensive formation</label>
+          <select id="footballFormation" aria-label="Football formation"></select>
+          <label for="footballPlay">Play</label>
+          <select id="footballPlay" aria-label="Football play"></select>
+          <button id="footballLoad" type="button" class="xr-button secondary">Load 11-on-11 football play</button>
+          <button id="runScrimmage" type="button" class="xr-button secondary">Run scrimmage (band off, players on)</button>
+          <button id="footballExit" type="button" class="xr-button secondary">Exit football (restore band)</button>
+          <output id="footballStatus" aria-live="polite"></output>
+          <p>Uses the existing timeline and player route editor. Loading replaces the visible band until Exit. Blue is offense, red is defense. Ball snaps, handoffs and passes follow the play timeline and edited routes. Demonstration movement, not a physics/contact simulation. Football appearance and ball events are session-only; exported routes do not retain them.</p>
         </div>
 
         <div class="settings-group">
