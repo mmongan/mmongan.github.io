@@ -5,13 +5,16 @@ import vm from 'node:vm';
 import { NullEngine } from '@babylonjs/core/Engines/nullEngine.js';
 import { Scene } from '@babylonjs/core/scene.js';
 import { FreeCamera } from '@babylonjs/core/Cameras/freeCamera.js';
-import { Vector3, Quaternion } from '@babylonjs/core/Maths/math.vector.js';
+import { Matrix, Vector3, Quaternion } from '@babylonjs/core/Maths/math.vector.js';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.js';
 import { Observable } from '@babylonjs/core/Misc/observable.js';
 
 const source = readFileSync(new URL('../src/xr/ar.ts', import.meta.url), 'utf8');
 const transformed = stripTypeScriptTypes(source, { mode: 'transform' })
   .replace(/^import .*?;\r?$/gm, '').replace(/export /g, '');
+const controllerSource = readFileSync(new URL('../src/interaction/controllers.ts', import.meta.url), 'utf8');
+const controllerTransformed = stripTypeScriptTypes(controllerSource, { mode: 'transform' })
+  .replace(/^import[\s\S]*?;\r?$/gm, '').replace(/export /g, '');
 const xrSource = readFileSync(new URL('../src/xr/webXR.ts', import.meta.url), 'utf8');
 const buttonHandler = xrSource.slice(
   xrSource.indexOf('  tabletopScaleButton?.addEventListener'),
@@ -47,6 +50,37 @@ vm.runInContext(stripTypeScriptTypes(buttonHandler, { mode: 'transform' }), cont
 const near = (actual, expected, label) => assert.ok(
   Vector3.Distance(actual, expected) < 1e-6, `${label}: ${actual.toString()} vs ${expected.toString()}`
 );
+
+const scaleContext = vm.createContext({ Matrix, Vector3 });
+vm.runInContext(controllerTransformed, scaleContext);
+const startPosition = new Vector3(3, 0, -4);
+const midpoint = new Vector3(1, 0, 2);
+const startScale = 0.8;
+const startRotation = 0.4;
+const nextScale = 0.2;
+const nextRotation = 0.9;
+const localAnchor = scaleContext.rotateAroundY(midpoint.subtract(startPosition), -startRotation)
+  .scale(1 / startScale);
+const resizedPosition = scaleContext.getARPositionForScaleAnchor(
+  midpoint, localAnchor, nextScale, nextRotation
+);
+const resizedAnchor = resizedPosition.add(
+  scaleContext.rotateAroundY(localAnchor.scale(nextScale), nextRotation)
+);
+near(resizedAnchor, midpoint, 'Shrinking keeps the field point under the hand midpoint');
+const centeredAnchor = midpoint.subtract(startPosition).scale(1 / startScale);
+const centeredPosition = scaleContext.getARPositionForScaleAnchor(
+  midpoint, centeredAnchor, nextScale, 0
+);
+assert.ok(Vector3.Distance(centeredPosition, midpoint) < Vector3.Distance(startPosition, midpoint),
+  'Shrinking moves the field center toward the controllers/hands midpoint');
+const handInteractionSource = readFileSync(
+  new URL('../src/interaction/handInteraction.ts', import.meta.url), 'utf8'
+);
+assert.match(controllerSource, /setARPosition\(getARPositionForScaleAnchor\(/,
+  'Controller scaling uses the shared midpoint anchor');
+assert.match(handInteractionSource, /setARPosition\(getARPositionForScaleAnchor\(/,
+  'Tracked-hand scaling uses the shared midpoint anchor');
 
 try {
   context.setFieldHeightSetting('table', 0.83);
@@ -152,32 +186,48 @@ try {
     assert.equal(context.setARScale(.2), 1, 'Later desktop scaling requests cannot shrink the field');
   }
   for (const scale of [0.002, 1 / 240, 1 / 120]) {
-    assert.equal(context.getScaleAwareSurfaceHeight(1.2, scale), 1.2, 'Tabletop scales keep the gesture height');
+    assert.equal(context.getScaleAwareSurfaceHeight(scale), 0.83,
+      'Tabletop scales use the configured table height');
   }
-  assert.ok(context.getScaleAwareSurfaceHeight(1.2, 0.1) < 0.7,
-    'A field grown well past tabletop size is pulled most of the way to the floor');
-  assert.ok(Math.abs(context.getScaleAwareSurfaceHeight(1.6, 1)) < 1e-9,
+  assert.ok(context.getScaleAwareSurfaceHeight(0.1) < 0.7,
+    'Intermediate scales blend toward the floor');
+  assert.ok(Math.abs(context.getScaleAwareSurfaceHeight(1)) < 1e-9,
     'Full-size scaling puts the ground on the floor, not at eye level');
   let previous = Infinity;
   for (let scale = 1 / 120; scale <= 1.0001; scale *= 1.1) {
-    const blended = context.getScaleAwareSurfaceHeight(1.6, scale);
+    const blended = context.getScaleAwareSurfaceHeight(scale);
     assert.ok(blended <= previous + 1e-9 && blended >= -1e-9, 'Floor blend descends smoothly while scaling up');
     previous = blended;
   }
-  assert.equal(context.getScaleGestureSurfaceHeight(0.75, 0.4, 1 / 240, 1 / 240), 1.15,
-    'Hands still lift a tabletop field when its size is unchanged');
-  assert.equal(context.getScaleGestureSurfaceHeight(0.75, 0.4, 1 / 480, 1 / 120), 0.75,
-    'Hands rising while spreading do not lift a growing field toward eye level');
-  assert.ok(context.getScaleGestureSurfaceHeight(0.75, 0.6, 1 / 120, 0.05) < 0.75,
-    'Growing from tabletop settles toward the floor even with raised hands');
+  assert.equal(context.getScaleGestureSurfaceHeight(0.83, 0.4, 1 / 240, 1 / 240), 1.23,
+    'Hands can still lift a tabletop field when its size is unchanged');
+  assert.equal(context.getScaleGestureSurfaceHeight(0.75, 0.4, 1 / 480, 1 / 120), 0.83,
+    'Hand lift fades when spreading reaches tabletop scale');
   context.setFieldHeightSetting('floor', 0.05);
-  assert.ok(Math.abs(context.getScaleAwareSurfaceHeight(1.6, 1) - 0.05) < 1e-9,
+  assert.equal(context.getScaleGestureSurfaceHeight(1.2, 0.8, 1 / 120, 1), 0.05,
+    'Expanding to 1:1 puts the field surface at configured floor height');
+  assert.equal(context.getScaleGestureSurfaceHeight(0.05, 0, 1, 1 / 120), 0.83,
+    'Shrinking from 1:1 raises the field to configured table height');
+  assert.ok(context.getScaleGestureSurfaceHeight(0.83, 0.6, 1 / 120, 0.05) < 0.83,
+    'Growing from tabletop blends toward the floor despite raised hands');
+  assert.ok(Math.abs(context.getScaleAwareSurfaceHeight(1) - 0.05) < 1e-9,
     'Full-size scaling honours a calibrated floor height');
   context.setFieldHeightSetting('floor', 0);
+  let followedHeight = 0;
+  const firstFollowStep = context.getARSurfaceHeightFollowStep(followedHeight, 1, 1 / 60);
+  assert.ok(firstFollowStep > followedHeight && firstFollowStep < 1,
+    'Giant-mode floor following moves smoothly instead of snapping');
+  for (let frame = 0; frame < 300; frame++) {
+    followedHeight = context.getARSurfaceHeightFollowStep(followedHeight, 1, 1 / 60);
+  }
+  assert.ok(Math.abs(followedHeight - 1) < 1e-6,
+    'Giant-mode floor following settles at the changing floor altitude');
+  assert.match(xrSource, /alignRoomScaleFloor\(baseExperience\.camera,\s*scene\.getEngine\(\)\.getDeltaTime\(\)\s*\/\s*1000\)/,
+    'Giant-mode floor following uses frame time for smooth altitude changes');
   for (const file of ['controllers.ts', 'handInteraction.ts']) {
     const interaction = readFileSync(new URL(`../src/interaction/${file}`, import.meta.url), 'utf8');
     assert.match(interaction, /setARSurfaceHeight\(getScaleGestureSurfaceHeight\(/,
-      'Both resize inputs preserve gesture height at tabletop scale and settle to the floor at full size');
+      'Both resize inputs use the scale-aware surface-height transition');
     assert.doesNotMatch(interaction, /setARSurfaceHeightForScaleGesture/, 'No threshold height resets remain');
   }
   console.log('Tabletop placement passed: viewer-relative entry, AR re-entry, both coordinate systems, vertical gaze, button-only height reset, resize threshold crossings, preserved custom height, and vertical movement.');

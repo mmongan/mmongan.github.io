@@ -54,6 +54,15 @@ export function rotateAroundY(vector: Vector3, angle: number): Vector3 {
   return Vector3.TransformCoordinates(vector, Matrix.RotationY(angle));
 }
 
+export function getARPositionForScaleAnchor(
+  midpoint: Vector3,
+  localAnchor: Vector3,
+  scale: number,
+  rotation: number,
+): Vector3 {
+  return midpoint.subtract(rotateAroundY(localAnchor.scale(scale), rotation));
+}
+
 function isGripPressed(controller: WebXRInputSource): boolean {
   const motionController = controller.motionController;
   if (!motionController) return false;
@@ -133,14 +142,12 @@ export function updateARResizeFromControllers(grabActive: boolean) {
     return;
   }
 
-  // Scale around the hands horizontally only; the field surface keeps its
-  // height (following vertical hand motion 1:1) so zooming to full size
-  // doesn't push the field far above or below the viewer.
+  // Scale around the hands horizontally while transitioning the field surface
+  // between its configured table and floor heights.
   const scale = getScaleFromControllerDistance(distance);
   const yaw = pinchState.startRotation + (currentYaw - pinchState.startYaw);
-  const anchorWorldOffset = rotateAroundY(pinchState.localAnchor.scale(scale), yaw);
   setARScale(scale);
-  setARPosition(midpoint.subtract(anchorWorldOffset));
+  setARPosition(getARPositionForScaleAnchor(midpoint, pinchState.localAnchor, scale, yaw));
   setARSurfaceHeight(getScaleGestureSurfaceHeight(pinchState.startSurfaceY,
     midpoint.y - pinchState.startMidpointY, pinchState.startScale, scale));
   setARRotation(yaw);

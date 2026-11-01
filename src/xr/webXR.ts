@@ -26,7 +26,7 @@ import { setTableHeightForPosture } from '../menu/settings';
 import { placeAutomaticFloatingPanels } from '../menu/floatingPanel';
 import { xrModeInputs, getSelectedXRMode, floorCalibrationToggle, fullScaleVRButton, tabletopScaleButton, giantModeButton, roomWidthInput, roomLengthInput, sittingModeToggle } from '../ui/dom';
 import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS } from '../field/constants';
-import { enterARTabletopMode, exitARTabletopMode, getARPosition, getARScale, getARScaleRange, setARPosition, setARScale, setFieldHeightMode, getFieldHeightMode, setARSurfaceHeight, placeTabletopInFrontOfCamera, setImmersiveFieldScaling } from './ar';
+import { enterARTabletopMode, exitARTabletopMode, getARPosition, getARScale, getARScaleRange, setARPosition, setARScale, setFieldHeightMode, getFieldHeightMode, getARSurfaceHeight, getARSurfaceHeightFollowStep, setARSurfaceHeight, placeTabletopInFrontOfCamera, setImmersiveFieldScaling } from './ar';
 import { getGloveHandTrackingOptions } from './gloveMeshes';
 import { setActiveController, removeActiveController, setHandTracking, getActiveControllers, consumeFloorCalibrationGesture, setHandFloorContact, isControllerGrabbing } from '../interaction/pathInteraction';
 
@@ -471,10 +471,13 @@ export function initXR(teleportGrid: Mesh) {
     return camera.globalPosition.y - camera.realWorldHeight - postureHeightOffset;
   }
 
-  function alignRoomScaleFloor(camera: WebXRCamera) {
+  function alignRoomScaleFloor(camera: WebXRCamera, deltaSeconds?: number) {
     if (!giantModeActive || getFieldHeightMode() !== "floor") return;
     if (!Number.isFinite(camera.realWorldHeight) || camera.realWorldHeight <= 0) return;
-    setARSurfaceHeight(getHeadsetFloorY(camera));
+    const targetHeight = getHeadsetFloorY(camera);
+    setARSurfaceHeight(deltaSeconds === undefined
+      ? targetHeight
+      : getARSurfaceHeightFollowStep(getARSurfaceHeight(), targetHeight, deltaSeconds));
   }
 
   function alignFieldFloorTo(floor: AbstractMesh, floorY: number) {
@@ -878,7 +881,7 @@ export function initXR(teleportGrid: Mesh) {
       if ((giantModeActive || getFieldHeightMode() === "table") && postureHeightOffset !== 0) {
         applyPostureHeight(baseExperience.camera);
       }
-      alignRoomScaleFloor(baseExperience.camera);
+      alignRoomScaleFloor(baseExperience.camera, scene.getEngine().getDeltaTime() / 1000);
       updateDetectedPosture(baseExperience.camera);
       const calibratingFloor = preferredMode === "immersive-vr" && !!floorCalibrationToggle?.checked;
       if (calibratingFloor && !fullScaleNoticeShown) {

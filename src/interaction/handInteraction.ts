@@ -41,7 +41,7 @@ import {
 } from '../menu/floatingPanel';
 import { getHandMenuHit, getHandMenuHitNearPoint, pickMenuControl } from '../menu/handMenu';
 import type { MarcherInstrument } from '../robot/robot';
-import { getControllerYaw, rotateAroundY } from './controllers';
+import { getARPositionForScaleAnchor, getControllerYaw, rotateAroundY } from './controllers';
 import { canPlaceManualMarcherPose, tryManualMarcherPose } from '../robot/manualPlacement';
 import { createMarcherDragGhost } from '../robot/marcherGhost';
 
@@ -1166,8 +1166,8 @@ export function createHandInteraction(paths: HandPathDependencies) {
         const yawDelta = yaw - sceneGesture.startYaw;
         const rotation = sceneGesture.startRotation + Math.atan2(Math.sin(yawDelta), Math.cos(yawDelta));
         setARRotation(rotation);
-        setARPosition(midpoint.subtract(rotateAroundY(sceneGesture.localAnchor.scale(scale), rotation)));
-        // Keep the field surface at its height so zooming in can't bury or lift it out of view.
+        setARPosition(getARPositionForScaleAnchor(midpoint, sceneGesture.localAnchor, scale, rotation));
+        // Transition the field surface between configured table and floor heights while zooming.
         setARSurfaceHeight(getScaleGestureSurfaceHeight(sceneGesture.startSurfaceY,
           midpoint.y - sceneGesture.startMidpointY, sceneGesture.startScale, scale));
       }

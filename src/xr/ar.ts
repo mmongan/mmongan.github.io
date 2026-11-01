@@ -171,15 +171,24 @@ export function setARSurfaceHeight(height: number) {
   arPivot.position.y = height - FIELD_SURFACE_Y * getARScale();
 }
 
-// While scaling, a tabletop-size field keeps the requested surface height,
-// but as it grows past the tabletop it settles onto the floor so a large
-// field or life-size marchers stand on the ground instead of at eye level.
-export function getScaleAwareSurfaceHeight(height: number, scale: number) {
-  if (scale <= AR_SCALE_DEFAULT) return height;
-  const t = Math.min(1, Math.log(scale / AR_SCALE_DEFAULT) /
-    Math.log(AR_SCALE_MAX / AR_SCALE_DEFAULT));
+const AR_SURFACE_FOLLOW_TIME_SECONDS = 0.25;
+const MAX_SURFACE_FOLLOW_STEP_SECONDS = 1 / 30;
+
+export function getARSurfaceHeightFollowStep(currentHeight: number, targetHeight: number, deltaSeconds: number) {
+  const step = Math.min(MAX_SURFACE_FOLLOW_STEP_SECONDS, Math.max(0, deltaSeconds));
+  const blend = 1 - Math.exp(-step / AR_SURFACE_FOLLOW_TIME_SECONDS);
+  return currentHeight + (targetHeight - currentHeight) * blend;
+}
+
+// Scaling transitions the field surface between its configured table and
+// floor heights, with a smooth logarithmic blend between tabletop and 1:1.
+export function getScaleAwareSurfaceHeight(scale: number) {
+  if (scale <= AR_SCALE_DEFAULT) return fieldHeights.table;
+  if (scale >= AR_SCALE_MAX) return fieldHeights.floor;
+  const t = Math.log(scale / AR_SCALE_DEFAULT) /
+    Math.log(AR_SCALE_MAX / AR_SCALE_DEFAULT);
   const eased = t * t * (3 - 2 * t);
-  return height + (fieldHeights.floor - height) * eased;
+  return fieldHeights.table + (fieldHeights.floor - fieldHeights.table) * eased;
 }
 
 // Hands naturally rise while spreading apart, so vertical hand motion stops
@@ -189,7 +198,18 @@ export function getScaleGestureSurfaceHeight(startSurfaceY: number, verticalDelt
   startScale: number, scale: number) {
   const growth = scale > startScale
     ? Math.min(1, Math.log(scale / startScale) / Math.log(GESTURE_LIFT_FADE_RATIO)) : 0;
-  return getScaleAwareSurfaceHeight(startSurfaceY + verticalDelta * (1 - growth), scale);
+  if (scale >= AR_SCALE_MAX) return fieldHeights.floor;
+  if (scale <= AR_SCALE_DEFAULT) {
+    return fieldHeights.table + verticalDelta * (1 - growth);
+  }
+  const targetScale = scale > startScale ? AR_SCALE_MAX : AR_SCALE_DEFAULT;
+  const scaleSpan = Math.abs(Math.log(targetScale / startScale));
+  const progress = scaleSpan > 0
+    ? Math.min(1, Math.abs(Math.log(scale / startScale)) / scaleSpan) : 1;
+  const offsetFade = 1 - progress * progress * (3 - 2 * progress);
+  const startTarget = getScaleAwareSurfaceHeight(startScale);
+  return getScaleAwareSurfaceHeight(scale) +
+    (startSurfaceY - startTarget) * offsetFade + verticalDelta * (1 - growth);
 }
 
 export function setFieldHeightMode(mode: "floor" | "table") {
