@@ -1,20 +1,27 @@
 // Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { Soundfont, getSoundfontNames, type StopFn, type Storage } from 'smplr';
+import { Sampler, getSoundfontNames, type StopFn } from 'smplr';
 import { instrumentByPatchID } from '@tonejs/midi/dist/InstrumentMaps';
 import type { MidiNote, ScheduledMidiNote } from './midiTimeline';
+import type { SoundfontRequest, SoundfontResponse, SoundfontSample } from './soundfontWorker';
 
 const SAMPLE_BASE_URL = "https://paulrosen.github.io/midi-js-soundfonts/FluidR3_GM/";
 const MAX_VOICES = 64;
+// Matches the extraGain the Soundfont loader applies to MIDI.js samples.
+const SOUNDFONT_EXTRA_GAIN = 5;
 
-// Parsing a soundfont blocks the main thread on a multi-megabyte JSON.parse
-// plus per-note base64 decodes, so wait for idle time between instruments to
-// keep startup scene rendering responsive while samples preload.
+// Decoded samples are assembled between idle periods so preloading cannot
+// starve scene rendering of main-thread time while it runs.
 const whenIdle = () => new Promise<void>(resolve => {
   if (typeof requestIdleCallback === 'function') requestIdleCallback(() => resolve(), { timeout: 500 });
   else setTimeout(resolve, 50);
 });
+
+const createSoundfontWorker = () => new Worker(new URL('./soundfontWorker.ts', import.meta.url), { type: 'module' });
+
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const midiNoteName = (midi: number) => `${NOTE_NAMES[midi % 12]}${Math.floor(midi / 12) - 1}`;
 
 const compactName = (name: string) => name.replace(/[^a-z0-9]/g, "");
 const sampleNames = new Map(getSoundfontNames().map(name => [compactName(name), name]));
@@ -30,11 +37,12 @@ export function instrumentKey(note: MidiNote): string {
 }
 
 export class SampledMidiSynth {
-  private instruments = new Map<string, Soundfont>();
+  private instruments = new Map<string, Sampler>();
   private voices = new Set<StopFn>();
   private disposed = false;
   private nextVoiceId = 0;
-  private readonly downloadAbort = new AbortController();
+  private boost: GainNode | null = null;
+  private cancelLoad: ((error: Error) => void) | null = null;
 
   constructor(private readonly context: AudioContext, private readonly destination: AudioNode,
     private readonly report: (message: string) => void) {}
@@ -48,54 +56,72 @@ export class SampledMidiSynth {
       required.add(note.pitch);
       pitches.set(key, required);
     }
+    // The worker downloads, parses, and base64-decodes soundfonts off the
+    // main thread; only the required samples return here as binary audio.
+    // Multi-megabyte JSON.parse on the main thread freezes standalone XR
+    // browsers, so it must never happen here.
+    const worker = createSoundfontWorker();
+    const cancellation = new Promise<never>((_, reject) => { this.cancelLoad = reject; });
+    cancellation.catch(() => {}); // surfaced through the racing awaits below
     try {
-      // Download every required soundfont in parallel so network transfers
-      // overlap, but keep the main-thread-heavy parse/decode sequential below.
-      const downloads = new Map<string, Promise<string>>();
-      for (const name of pitches.keys()) {
-        const download = fetch(`${SAMPLE_BASE_URL}${name}-mp3.js`, { signal: this.downloadAbort.signal })
-          .then(response => {
-            if (!response.ok) throw new Error(`Soundfont download failed (HTTP ${response.status}) for ${name}.`);
-            return response.text();
-          });
-        download.catch(() => {}); // surfaced when awaited below
-        downloads.set(name, download);
-      }
+      const pending = new Map<number, { resolve: (samples: SoundfontSample[]) => void; reject: (error: Error) => void }>();
+      worker.onmessage = (event: MessageEvent<SoundfontResponse>) => {
+        const { id, samples, error } = event.data;
+        const request = pending.get(id);
+        pending.delete(id);
+        if (!request) return;
+        if (samples) request.resolve(samples);
+        else request.reject(new Error(error ?? "Soundfont loading failed."));
+      };
+      worker.onerror = (event) => {
+        const error = new Error(event.message || "The soundfont worker failed.");
+        pending.forEach(request => request.reject(error));
+        pending.clear();
+      };
+      // Request every instrument up front so downloads overlap in the worker.
+      const requests = new Map<string, Promise<SoundfontSample[]>>();
+      let nextRequestId = 0;
       for (const [name, required] of pitches) {
+        const id = ++nextRequestId;
+        const request = new Promise<SoundfontSample[]>((resolve, reject) => pending.set(id, { resolve, reject }));
+        request.catch(() => {}); // surfaced when awaited below
+        requests.set(name, request);
+        const message: SoundfontRequest = { id, url: `${SAMPLE_BASE_URL}${name}-mp3.js`, pitches: [...required] };
+        worker.postMessage(message);
+      }
+      for (const name of pitches.keys()) {
         await whenIdle();
         if (this.disposed) throw new Error("Sample loading was cancelled.");
         this.report(`Loading sampled instrument: ${name.replace(/_/g, ' ')}…`);
-        const instrumentUrl = `${SAMPLE_BASE_URL}${name}-mp3.js`;
-        const sourceText = await downloads.get(name)!;
+        const samples = await Promise.race([requests.get(name)!, cancellation]);
         if (this.disposed) throw new Error("Sample loading was cancelled.");
-        // Serve the already-downloaded file to smplr instead of refetching.
-        const storage: Storage = {
-          fetch: requested => requested === instrumentUrl
-            ? Promise.resolve({
-              status: 200,
-              text: async () => sourceText,
-              json: async () => JSON.parse(sourceText),
-              arrayBuffer: async (): Promise<ArrayBuffer> => { throw new Error(`Unexpected binary read of ${requested}.`); },
-            })
-            : fetch(requested),
-        };
-        const instrument = Soundfont(this.context, {
-          instrumentUrl,
-          storage,
-          loadLoopData: false,
-          destination: this.destination,
-          volume: 100,
-          notesToLoad: { notes: [...required], fallback: "none" },
-        });
+        const buffers: Record<string, AudioBuffer> = {};
+        for (const sample of samples) {
+          try {
+            buffers[midiNoteName(sample.pitch)] = await this.context.decodeAudioData(sample.data);
+          } catch (error) {
+            console.warn(`Failed to decode ${name} sample ${midiNoteName(sample.pitch)}`, error);
+          }
+        }
+        if (this.disposed) throw new Error("Sample loading was cancelled.");
+        if (!Object.keys(buffers).length) throw new Error(`No samples loaded for ${name}.`);
+        if (!this.boost) {
+          this.boost = this.context.createGain();
+          this.boost.gain.value = SOUNDFONT_EXTRA_GAIN;
+          this.boost.connect(this.destination);
+        }
+        const instrument = Sampler(this.context, { buffers, destination: this.boost, volume: 100 });
         this.instruments.set(name, instrument);
-        await instrument.ready;
+        await Promise.race([instrument.ready, cancellation]);
         if (this.disposed) throw new Error("Sample loading was cancelled.");
-        if (instrument.loadProgress.total === 0) throw new Error(`No samples loaded for ${name}.`);
       }
       this.report('All required MIDI instruments preloaded.');
     } catch (error) {
       this.dispose();
       throw error;
+    } finally {
+      this.cancelLoad = null;
+      worker.terminate();
     }
   }
 
@@ -126,9 +152,11 @@ export class SampledMidiSynth {
 
   dispose() {
     this.disposed = true;
-    this.downloadAbort.abort();
+    this.cancelLoad?.(new Error("Sample loading was cancelled."));
     this.stop();
     this.instruments.forEach(instrument => instrument.dispose());
     this.instruments.clear();
+    this.boost?.disconnect();
+    this.boost = null;
   }
 }
