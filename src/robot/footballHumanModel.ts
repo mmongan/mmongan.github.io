@@ -5,6 +5,9 @@ import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
 import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
 import type { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
+import type { BakedLegPose } from './bakedLegAnimation';
+import type { FootballUpperPose } from './footballAnimationPose';
+import type { PreparedRobotAnimationFrame } from './robot';
 
 export function createFootballHumanModel(robot: TransformNode, torso: TransformNode,
   jerseyMaterial: StandardMaterial, skin: StandardMaterial, white: StandardMaterial, dark: StandardMaterial) {
@@ -148,7 +151,88 @@ export function createFootballHumanModel(robot: TransformNode, torso: TransformN
       }
     }
   };
-  return {   arms, elbows, hands, updateLegs, dispose() {
+  const torsoMatrix = (pose: FootballUpperPose) => Matrix.Compose(Vector3.One(),
+    Quaternion.FromEulerAngles(pose.pitch, pose.yaw, 0), new Vector3(0, pose.height, 0));
+  const sampleLegs = (pose: FootballUpperPose, solved: BakedLegPose) => {
+    if (!(rig instanceof TransformNode) || legs.length !== 2) throw new Error('Football preparation requires two complete legs.');
+    const inverseTorso = torsoMatrix(pose).invert();
+    const rigMatrix = Matrix.Compose(rig.scaling, rig.rotationQuaternion ?? Quaternion.FromEulerVector(rig.rotation), Vector3.Zero());
+    const parentRotation = Quaternion.FromEulerAngles(pose.pitch, pose.yaw, 0).conjugate();
+    const rigRotation = rig.rotationQuaternion ?? Quaternion.FromEulerVector(rig.rotation);
+    const result: number[] = [];
+    for (const [index, { ankle }] of legs.entries()) {
+      const leg = solved.legs[index], x = index === 0 ? -.12 : .12;
+      const hipMatrix = Matrix.Compose(Vector3.One(), leg.legRotation,
+        new Vector3((index === 0 ? -1 : 1) * solved.hipHalfSpacing, .69, 0)).multiply(rigMatrix);
+      const kneeMatrix = Matrix.Compose(Vector3.One(), leg.kneeRotation,
+        new Vector3(0, -leg.thighLength, 0)).multiply(hipMatrix);
+      const ankleMatrix = Matrix.Compose(Vector3.One(), leg.ankleRotation, ankle.position).multiply(kneeMatrix);
+      const point = (matrix: Matrix) => Vector3.TransformCoordinates(Vector3.Zero(), matrix.multiply(inverseTorso));
+      const seatedPoint = (y: number, z: number) => Vector3.TransformCoordinates(
+        Vector3.TransformCoordinates(new Vector3(x, y, z), Matrix.RotationY(pose.seatYaw)), inverseTorso);
+      const a = point(hipMatrix), b = point(kneeMatrix), c = point(ankleMatrix);
+      if (pose.seated > 0) {
+        Vector3.LerpToRef(a, seatedPoint(.60, 0), pose.seated, a);
+        Vector3.LerpToRef(b, seatedPoint(.60, .4), pose.seated, b);
+        Vector3.LerpToRef(c, seatedPoint(.09, .4), pose.seated, c);
+      }
+      if (pose.fall > 0) {
+        Vector3.LerpToRef(a, new Vector3(x, 0, 0), pose.fall, a);
+        Vector3.LerpToRef(b, new Vector3(x, -.43, .03), pose.fall, b);
+        Vector3.LerpToRef(c, new Vector3(x, -.88, .04), pose.fall, c);
+      }
+      if (index === 1 && pose.kick > 0) {
+        Vector3.LerpToRef(a, new Vector3(x, 0, 0), pose.kick, a);
+        Vector3.LerpToRef(b, new Vector3(x, -.24, .35), pose.kick, b);
+        Vector3.LerpToRef(c, new Vector3(x, -.42, .75), pose.kick, c);
+      }
+      for (const [from, to] of [[a, b], [b, c]]) {
+        const direction = to.subtract(from), length = direction.length();
+        const rotation = Quaternion.FromUnitVectorsToRef(Vector3.Up(), direction.normalize(), Quaternion.Identity());
+        result.push(...Vector3.Center(from, to).asArray(), length, ...rotation.asArray());
+      }
+      result.push(...b.asArray());
+      const shoe = point(ankleMatrix);
+      if (pose.seated > 0) Vector3.LerpToRef(shoe, seatedPoint(.05, .47), pose.seated, shoe);
+      shoe.z += (1 - pose.seated) * .07;
+      if (pose.fall > 0) Vector3.LerpToRef(shoe, new Vector3(x, -.91, .1), pose.fall, shoe);
+      if (index === 1 && pose.kick > 0) Vector3.LerpToRef(shoe, new Vector3(x, -.43, .82), pose.kick, shoe);
+      let rotation = parentRotation.multiply(rigRotation).multiply(leg.legRotation)
+        .multiply(leg.kneeRotation).multiply(leg.ankleRotation);
+      rotation = Quaternion.Slerp(rotation, Quaternion.Identity(), pose.fall);
+      if (pose.seated > 0) rotation = Quaternion.Slerp(rotation,
+        parentRotation.multiply(Quaternion.FromEulerAngles(0, pose.seatYaw, 0)), pose.seated);
+      result.push(...shoe.asArray(), ...rotation.asArray());
+    }
+    return result;
+  };
+  const applyLegs = (values: ArrayLike<number>, start = 0) => {
+    let offset = start;
+    for (const { thigh, calf, pad, shoe } of legs) {
+      for (const mesh of [thigh, calf]) {
+        mesh.position.copyFromFloats(values[offset], values[offset + 1], values[offset + 2]);
+        mesh.scaling.y = values[offset + 3];
+        mesh.rotationQuaternion = Quaternion.FromArray(values, offset + 4);
+        offset += 8;
+      }
+      pad.position.copyFromFloats(values[offset], values[offset + 1], values[offset + 2]); offset += 3;
+      shoe.position.copyFromFloats(values[offset], values[offset + 1], values[offset + 2]);
+      shoe.rotationQuaternion = Quaternion.FromArray(values, offset + 3); offset += 7;
+    }
+  };
+  const sampleHands = (pose: FootballUpperPose, frame: PreparedRobotAnimationFrame) => {
+    const world = torsoMatrix(pose).multiply(Matrix.Compose(robot.scaling,
+      Quaternion.FromEulerAngles(0, frame.yaw, 0), frame.position));
+    const points = arms.map((arm, side) => {
+      const shoulder = Matrix.Compose(Vector3.One(),
+        Quaternion.FromEulerAngles(pose.arms[side * 3], 0, pose.arms[side * 3 + 1]), arm.position).multiply(world);
+      const elbow = Matrix.Compose(Vector3.One(), Quaternion.FromEulerAngles(pose.arms[side * 3 + 2], 0, 0),
+        elbows[side].position).multiply(shoulder);
+      return Vector3.TransformCoordinates(hands[side].position, elbow);
+    });
+    return { position: Vector3.Center(points[0], points[1]), torso: world };
+  };
+  return { arms, elbows, hands, updateLegs, sampleLegs, applyLegs, sampleHands, dispose() {
     legsRoot.dispose();
     restore();
   } };

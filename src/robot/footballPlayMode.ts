@@ -9,7 +9,13 @@ import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
 import { Vector3, Matrix, Quaternion } from '@babylonjs/core/Maths/math.vector.pure';
 import { scene } from '../scene/engine';
 import { getDrillTransportState, getRobotCounts, setRobotColor, setRobotFootballMotion,
+  createRobotAnimationSampler, getRobotAnimationSignature, setRobotPreparedAnimation,
+  addPlaybackPreparationGuard, retryPendingPlaybackStart,
+  type PreparedRobotAnimationFrame,
   TOP_DOWN_MARKER_LAYER_MASK } from './robot';
+import { FootballAnimationCache } from './footballAnimationCache';
+import { sampleFootballUpperPose, type FootballUpperPose } from './footballAnimationPose';
+import { MARCHER_THIGH_LENGTH } from './marcherLegPose';
 import { footballMovement } from './footballMovement';
 import { setFootballTeam, setFootballPositionSampler, getFootballPlaybackPosition } from './footballPresentation';
 import { separateFootballBodies } from './footballBodyClearance';
@@ -20,7 +26,7 @@ import { scrimmageBenchSeat, scrimmageSeatedBlend, SCRIMMAGE_RETURN_COUNTS,
 import { footballTacklePose, footballTackleYaw, validateFootballTackle, type FootballTackleEvent } from './footballTackles';
 import { FOOTBALL_PLAY_LIBRARY } from './footballPlayLibrary';
 import { footballFlightEndpoints, footballFlightPoint, footballKickPose, footballSnapPose,
-  footballThrowPose, footballCatchPose, footballReturnThrowYaw } from './footballBallFlight';
+  footballThrowPose, footballReturnThrowYaw } from './footballBallFlight';
 import { footballPresnapBody, footballPresnapSpot, footballScrimmageSpot } from './footballLineOfScrimmage';
 import { createFootballFuturePreview } from './footballFuturePreview';
 import { initFootballSnapPauses } from './footballSnapPauses';
@@ -182,6 +188,9 @@ export function createFootballVisuals(
   let disposeSnapPauses = () => {};
   let releaseTimeline = () => {};
   let disposeClearance = () => {};
+  let disposePreparation = () => {};
+  let disposeScene = () => {};
+  let cleanedUp = false;
   const materials: StandardMaterial[] = [];
   const roots: TransformNode[] = [];
   const hiddenNodes: { node: TransformNode; enabled: boolean }[] = [];
@@ -195,6 +204,9 @@ export function createFootballVisuals(
     return result;
   };
   const cleanup = () => {
+    if (cleanedUp) return;
+    cleanedUp = true;
+    disposeScene();
     updateScrimmageButton(false);
     disposeTackleEditor();
     disposeObserver();
@@ -203,11 +215,13 @@ export function createFootballVisuals(
     disposeFlightLine();
     disposeFuturePreview();
     disposeClearance();
+    disposePreparation();
     animations.forEach(({ human }) => human.dispose());
     players.forEach(({ robot }) => {
       setRobotFootballMotion(robot, null);
       setFootballTeam(robot, null);
       setFootballPositionSampler(robot, null);
+      setRobotPreparedAnimation(robot, null);
     });
     roots.forEach(root => root.dispose());
     materials.forEach(value => value.dispose(false, true));
@@ -382,13 +396,20 @@ export function createFootballVisuals(
     const stepPrefixes = new Map<TransformNode, number[]>();
     const routeSnapshots = new Map<TransformNode, Float64Array>();
     let clearanceSignature = '';
-    const clearanceObserver = scene.onBeforeRenderObservable.add(() => {
-      const signature = JSON.stringify([floorCalibrationToggle?.checked, visibleFromCount, returnStart,
-        seatInsertions, tackles, events, sequence]);
+    let animationCache: FootballAnimationCache | null = null;
+    let preparationError: Error | null = null;
+    let preparationTimer: ReturnType<typeof setTimeout> | undefined;
+    let preparing = false;
+    let disposed = false;
+    let invalidateAnimation = () => {};
+    const PLAYER_CHANNELS = 93;
+    const checkAnimationInputs = () => {
+      const signature = JSON.stringify([visibleFromCount, returnStart, seatInsertions, tackles, events, sequence,
+        players.map(({ robot }) => getRobotAnimationSignature(robot, false))]);
       let changed = signature !== clearanceSignature;
       for (const { robot } of players) {
         const counts = getRobotCounts(robot);
-        const length = 4 + (counts?.length ?? 0) * 4;
+        const length = 5 + (counts?.length ?? 0) * 13;
         let snapshot = routeSnapshots.get(robot);
         if (!snapshot || snapshot.length !== length) {
           snapshot = new Float64Array(length);
@@ -399,17 +420,25 @@ export function createFootballVisuals(
           if (!Object.is(snapshot[index], value)) { snapshot[index] = value; changed = true; }
         };
         compare(0, Number(robot.isDisposed())); compare(1, Number(robot.isEnabled()));
-        compare(2, robot.scaling.x); compare(3, robot.scaling.z);
+        compare(2, robot.scaling.x); compare(3, robot.scaling.z); compare(4, robot.scaling.y);
         for (let index = 0; counts && index < counts.length; index++) {
-          const count = counts[index], offset = 4 + index * 4;
+          const count = counts[index], offset = 5 + index * 13;
           compare(offset, count.position.x); compare(offset + 1, count.position.z);
           compare(offset + 2, count.rotationY ?? NaN); compare(offset + 3, count.facingY ?? NaN);
+          compare(offset + 4, count.position.y); compare(offset + 5, count.styleIndex ?? NaN);
+          compare(offset + 6, count.stepPhase ?? NaN);
+          const gait = count.bakedGait;
+          compare(offset + 7, gait?.gaitIndex ?? NaN); compare(offset + 8, gait?.stepsPerCount ?? NaN);
+          compare(offset + 9, gait?.bodyYaw ?? NaN); compare(offset + 10, gait?.legYawOffset ?? NaN);
+          compare(offset + 11, gait ? Number(gait.inPlace) : NaN); compare(offset + 12, gait ? Number(gait.sideways) : NaN);
         }
       }
       if (changed) {
         positionCache.clear(); stepPrefixes.clear(); clearanceSignature = signature;
+        invalidateAnimation();
       }
-    }, -1, true);
+    };
+    const clearanceObserver = scene.onBeforeRenderObservable.add(checkAnimationInputs, -1, true);
     disposeClearance = () => scene.onBeforeRenderObservable.remove(clearanceObserver);
     const samplePositions = (beat: number) => {
       const cached = positionCache.get(beat);
@@ -462,7 +491,6 @@ export function createFootballVisuals(
       positionCache.set(beat, resolved);
       return resolved;
     };
-    players.forEach(({ robot }) => setFootballPositionSampler(robot, beat => samplePositions(beat).get(robot) ?? null));
     const anchor = (id: string, count: number) => {
       const robot = byId.get(id);
       if (!robot || robot.isDisposed() || !robot.isEnabled()) return null;
@@ -471,7 +499,7 @@ export function createFootballVisuals(
       const beat = Math.max(0, Math.min(counts.length - 1, count));
       const index = Math.floor(beat);
       const position = Vector3.Lerp(counts[index].position, counts[Math.min(index + 1, counts.length - 1)].position, beat - index);
-      const resolved = getFootballPlaybackPosition(robot, beat);
+      const resolved = preparing ? samplePositions(beat).get(robot) : getFootballPlaybackPosition(robot, beat);
       if (resolved) { position.x = resolved.x; position.z = resolved.z; }
       const opening = events.find(event => event.kind === 'snap' && event.fromId === id && beat <= event.startCount);
       if (opening) {
@@ -481,8 +509,190 @@ export function createFootballVisuals(
       return position.add(new Vector3(0, opening ? opening.startHeight ?? .22
         : players.find(entry => entry.player.id === id)?.player.label === 'H' ? .14 : 1.05, 0));
     };
+    const unpackRobot = (values: ArrayLike<number>, offset: number): PreparedRobotAnimationFrame => ({
+      position: new Vector3(values[offset], values[offset + 1], values[offset + 2]), yaw: values[offset + 3],
+      pose: {
+        legs: [0, 1].map(side => ({
+          thighLength: MARCHER_THIGH_LENGTH, kneeAngle: values[offset + 28 + side],
+          legRotation: Quaternion.FromArray(values, offset + 4 + side * 12),
+          kneeRotation: Quaternion.FromArray(values, offset + 8 + side * 12),
+          ankleRotation: Quaternion.FromArray(values, offset + 12 + side * 12),
+        })) as PreparedRobotAnimationFrame['pose']['legs'],
+        hipHalfSpacing: values[offset + 30], limited: !!values[offset + 31],
+      },
+    });
+    const cachedRobot = (robot: TransformNode, beat: number) => {
+      const index = players.findIndex(entry => entry.robot === robot);
+      const values = animationCache?.frameAt(beat);
+      return values && index >= 0 ? unpackRobot(values, index * PLAYER_CHANNELS) : null;
+    };
+    for (const { robot } of players) {
+      setRobotPreparedAnimation(robot, beat => cachedRobot(robot, beat));
+      setFootballPositionSampler(robot, beat => cachedRobot(robot, beat)?.position ?? null);
+    }
+    const flightPoints = new Map<FootballBallEvent, Vector3[]>();
+    const failPreparation = (error: unknown) => {
+      animationCache?.dispose(); animationCache = null;
+      preparationError = error instanceof Error ? error : new Error(String(error));
+      preparing = false;
+      console.error('Football animation preparation failed:', preparationError);
+      notifyFootball(`Preparation failed: ${preparationError.message} Edit the play to rebuild; playback is blocked.`);
+    };
+    const buildAnimation = () => {
+      if (events.some(event => !Number.isFinite(event.startCount) || !Number.isFinite(event.endCount) ||
+        event.startCount < 0 || event.endCount <= event.startCount)) {
+        throw new Error('Football ball flights require finite ordered counts.');
+      }
+      tackles.forEach(event => validateTackle(event, tackles.filter(other => other !== event)));
+      invalidTackles.clear();
+      const samplers = players.map(({ robot }) => createRobotAnimationSampler(robot));
+      const last = Math.max(0, ...players.map(({ robot }) => (getRobotCounts(robot)?.length ?? 1) - 1));
+      const sample = (beat: number) => {
+        const resolved = samplePositions(beat);
+        const activeTackles = activeTacklesAt(beat);
+        const returning = returnStart !== undefined && beat >= returnStart;
+        const seated = scrimmageSeatedBlend(seatBeatAt(beat), initialVisibleFromCount, initialReturnStart);
+        const upperPoses: FootballUpperPose[] = [];
+        const robotFrames: PreparedRobotAnimationFrame[] = [];
+        const result: number[] = [];
+        for (const [index, { robot, player, human }] of animations.entries()) {
+          const frame = samplers[index](beat);
+          const point = resolved.get(robot);
+          if (point) { frame.position.x = point.x; frame.position.z = point.z; }
+          const counts = getRobotCounts(robot) ?? [{ position: frame.position, rotationY: frame.yaw }];
+          const motion = { team: player.team, role: player.label, playStart: visibleFromCount,
+            playWindows: sequence, rush: player.rush, playEnd: returnStart };
+          let prefix = stepPrefixes.get(robot);
+          if (!prefix) {
+            prefix = [0];
+            for (let count = 0; count < counts.length - 1; count++) {
+              const a = counts[count].position, b = counts[count + 1].position;
+              prefix.push(prefix[count] + footballMovement(motion, count, b.x - a.x, b.z - a.z).stepsPerCount);
+            }
+            stepPrefixes.set(robot, prefix);
+          }
+          const upper = sampleFootballUpperPose(player, index, counts, prefix, motion, beat,
+            frame.yaw, seated, returning, events, activeTackles, tacklePosition);
+          upperPoses.push(upper); robotFrames.push(frame);
+          result.push(...frame.position.asArray(), frame.yaw,
+            ...frame.pose.legs.flatMap(leg => [...leg.legRotation.asArray(), ...leg.kneeRotation.asArray(), ...leg.ankleRotation.asArray()]),
+            frame.pose.legs[0].kneeAngle, frame.pose.legs[1].kneeAngle, frame.pose.hipHalfSpacing, Number(frame.pose.limited),
+            upper.height, upper.pitch, upper.yaw, ...upper.arms, ...human.sampleLegs(upper, frame.pose));
+        }
+        let enabled = !returning && beat >= visibleFromCount &&
+          (!sequence || beat < sequence[sequence.length - 1].endCount + 8 || outcomes.some(event => beat >= event.count));
+        let point = Vector3.Zero(), rotation = Quaternion.Identity(), possession = -1;
+        const sampleBall = () => {
+          if (!enabled) return;
+          let carrier = events[0]?.fromId;
+          for (const event of events) {
+            if (beat < event.startCount) {
+              if (event.startPosition && event === events[0]) {
+                point.set(event.startPosition.x, FIELD_SURFACE_Y + event.startPosition.height, event.startPosition.z);
+                return;
+              }
+              break;
+            }
+            if (beat >= event.endCount) {
+              if (event.targetPosition && !events.some(next => next.startCount > event.startCount && beat >= next.startCount)) {
+                point.set(event.targetPosition.x, FIELD_SURFACE_Y + event.targetPosition.height, event.targetPosition.z);
+                return;
+              }
+              carrier = event.toId; continue;
+            }
+            const endpoints = footballFlightEndpoints(event, anchor);
+            if (!endpoints) throw new Error(`Ball flight at count ${event.startCount} has no valid player anchors.`);
+            const t = (beat - event.startCount) / (event.endCount - event.startCount);
+            point = footballFlightPoint(event, endpoints.from, endpoints.to, t);
+            if (t === 0 && !event.startPosition) possession = players.findIndex(entry => entry.player.id === (event.launchId ?? event.fromId));
+            rotation = Quaternion.FromEulerAngles(0, 0, beat * Math.PI * 2);
+            return;
+          }
+          const position = carrier ? anchor(carrier, beat) : null;
+          if (!position) { enabled = false; return; }
+          const drop = events.find(event => event.kind === 'punt' && event.fromId === carrier &&
+            beat >= event.startCount - 1 && beat < event.startCount);
+          if (drop) position.y += (FIELD_SURFACE_Y + (drop.startHeight ?? .3) - position.y) * (beat - drop.startCount + 1);
+          const index = players.findIndex(entry => entry.player.id === carrier);
+          const caughtPass = events.find(event => event.kind === 'pass' && event.toId === carrier && beat >= event.endCount &&
+            !events.some(next => next.startCount >= event.endCount && next.startCount <= beat && next !== event));
+          if (caughtPass && index >= 0) {
+            const hands = animations[index].human.sampleHands(upperPoses[index], robotFrames[index]);
+            position.copyFrom(hands.position);
+            rotation = Quaternion.FromRotationMatrix(Matrix.RotationY(Math.PI / 2).multiply(hands.torso));
+          } else if (index >= 0 && upperPoses[index].fall > 0) {
+            const torso = animations[index].human.sampleHands(upperPoses[index], robotFrames[index]).torso;
+            Vector3.LerpToRef(position, Vector3.TransformCoordinates(new Vector3(0, .3, .19), torso),
+              upperPoses[index].fall, position);
+          }
+          point = position; possession = index;
+        };
+        sampleBall();
+        result.push(...point.asArray(), ...rotation.asArray(), Number(enabled), possession);
+        return result;
+      };
+      animationCache = new FootballAnimationCache(last, players.length * PLAYER_CHANNELS + 9, sample,
+        events.flatMap(event => [event.startCount - 1, event.startCount, event.startCount + .175,
+          event.startCount + .35, event.startCount + .5, event.startCount + .8, event.startCount + 2,
+          event.endCount - 1, event.endCount, event.endCount + .5, event.endCount + 1, event.endCount + 1.5]));
+      flightPoints.clear();
+      for (const event of events.filter(event => ['pass', 'kick', 'punt', 'return'].includes(event.kind))) {
+        const endpoints = footballFlightEndpoints(event, anchor);
+        if (!endpoints) throw new Error('Football preparation requires valid ball flight anchors.');
+        flightPoints.set(event, Array.from({ length: 33 }, (_, index) => footballFlightPoint(event, endpoints.from, endpoints.to, index / 32)));
+      }
+    };
+    const prepareChunk = () => {
+      preparationTimer = undefined;
+      if (disposed || preparationError) return;
+      checkAnimationInputs();
+      if (floorCalibrationToggle?.checked) {
+        preparationTimer = setTimeout(prepareChunk, 50); return;
+      }
+      preparing = true;
+      try {
+        if (!animationCache) buildAnimation();
+        const deadline = performance.now() + 6;
+        do { animationCache!.advance(1); } while (!animationCache!.ready && performance.now() < deadline);
+        if (animationCache!.ready) {
+          preparing = false;
+          notifyFootball(`Football animation ready (${Math.ceil(animationCache!.byteLength / 1024 / 1024)} MiB).`);
+          retryPendingPlaybackStart();
+          return;
+        }
+        notifyFootball(`Preparing complete football animation: ${Math.floor(animationCache!.progress * 100)}%`);
+        preparationTimer = setTimeout(prepareChunk, 0);
+      } catch (error) { failPreparation(error); }
+    };
+    invalidateAnimation = () => {
+      animationCache?.dispose(); animationCache = null;
+      preparationError = null; preparing = true;
+      flightPoints.clear();
+      flightSignature = '';
+      if (preparationTimer === undefined) preparationTimer = setTimeout(prepareChunk, 0);
+    };
+    const releaseGuard = addPlaybackPreparationGuard(() => {
+      checkAnimationInputs();
+      return !floorCalibrationToggle?.checked && !!animationCache?.ready && !preparationError;
+    });
+    disposePreparation = () => {
+      disposed = true;
+      if (preparationTimer !== undefined) clearTimeout(preparationTimer);
+      animationCache?.dispose(); animationCache = null;
+      positionCache.clear(); stepPrefixes.clear(); routeSnapshots.clear(); flightPoints.clear();
+      releaseGuard();
+    };
+    checkAnimationInputs();
     const update = () => {
-      const currentBeat = getDrillTransportState().beat;
+      const values = animationCache?.frameAt(getDrillTransportState().beat);
+      const hidden = !!floorCalibrationToggle?.checked || !values;
+      for (const { root } of animations) root.setEnabled(!hidden);
+      if (hidden) {
+        ball.setEnabled(false); possessionHalo.setEnabled(false); halo.setEnabled(false);
+        tee?.setEnabled(false); flightLine.setEnabled(false); score.setEnabled(false); scrimmageLine.setEnabled(false);
+        return;
+      }
+      const currentBeat = animationCache!.sampledBeat(getDrillTransportState().beat);
       const lastCount = Math.max(...players.map(({ robot }) => (getRobotCounts(robot)?.length ?? 1) - 1));
       updateScrimmageButton(returnStart !== undefined && currentBeat < lastCount);
       const spot = footballScrimmageSpot(events, currentBeat, tacklePosition);
@@ -490,108 +700,17 @@ export function createFootballVisuals(
       scrimmageLine.setEnabled(!!spot && Number.isFinite(visibleFromCount) &&
         !returning && !floorCalibrationToggle?.checked);
       if (spot) scrimmageLine.position.z = spot.z;
-      const activeTackles = activeTacklesAt(currentBeat);
+      const activeTackles = tackles.filter(event => footballTacklePose(event, currentBeat));
       const seatBeat = seatBeatAt(currentBeat);
-      const benchSeated = scrimmageSeatedBlend(seatBeat, initialVisibleFromCount, initialReturnStart);
-      for (const [playerIndex, { robot, player, root, human }] of animations.entries()) {
-        const counts = getRobotCounts(robot);
-        const index = Math.min(Math.floor(currentBeat), Math.max(0, (counts?.length ?? 1) - 1));
-        const from = counts?.[index]?.position;
-        const to = counts?.[index + 1]?.position ?? from;
-        const motion = { team: player.team, role: player.label, playStart: visibleFromCount,
-          playWindows: sequence, rush: player.rush, playEnd: returnStart };
-        const movement = footballMovement(motion,
-          currentBeat, from && to ? to.x - from.x : 0, from && to ? to.z - from.z : 0);
-        let prefix = stepPrefixes.get(robot);
-        if (!prefix) {
-          prefix = [0];
-          for (let count = 0; counts && count < counts.length - 1; count++) {
-            const a = counts[count].position, b = counts[count + 1].position;
-            prefix.push(prefix[count] + footballMovement(motion,
-              count, b.x - a.x, b.z - a.z).stepsPerCount);
-          }
-          stepPrefixes.set(robot, prefix);
-        }
-        const steps = (prefix[index] ?? 0) + (currentBeat - index) * movement.stepsPerCount;
-        const phase = steps * Math.PI;
-        const bob = movement.stepsPerCount ? Math.abs(Math.sin(phase)) * .04 : 0;
-        const holding = player.label === 'H' && currentBeat >= visibleFromCount && !returning;
-        const seated = holding ? .65 : benchSeated;
-        const benchSeat = scrimmageBenchSeat(playerIndex);
-        const benchYaw = holding ? 0 : benchSeat.x < 0 ? Math.PI / 2 : -Math.PI / 2;
-        root.position.y = .98 + (bob - movement.crouch) * (1 - seated) - .38 * seated;
-        root.rotation.x = movement.lean * (1 - seated) + .03 * seated;
-        const snapEvent = !floorCalibrationToggle?.checked && benchSeated === 0
-          ? events.find(event => event.fromId === player.id && footballSnapPose(event, currentBeat)) : null;
-        const snap = snapEvent ? footballSnapPose(snapEvent, currentBeat) : null;
-        if (snap) {
-          root.position.y -= .2 * snap.crouch;
-          root.rotation.x = root.rotation.x * (1 - snap.crouch) + snap.lean;
-        }
-        const bodyYaw = movement.gait === 'ready'
-          ? counts?.[index]?.facingY ?? counts?.[index]?.rotationY ?? movement.bodyYaw : movement.bodyYaw;
-        root.rotation.y = (seated > 0 ? benchYaw : bodyYaw) - robot.rotation.y;
-        const tackle = activeTackles.find(event => event.defenderId === player.id || event.carrierId === player.id);
-        const pose = tackle ? footballTacklePose(tackle, currentBeat) : null;
-        if (pose && tackle) {
-          const a = tacklePosition(tackle.defenderId, tackle.count)!;
-          const b = tacklePosition(tackle.carrierId, tackle.count)!;
-          const contactYaw = footballTackleYaw(a, b);
-          const currentYaw = root.rotation.y + robot.rotation.y;
-          const turn = Math.atan2(Math.sin(contactYaw - currentYaw), Math.cos(contactYaw - currentYaw));
-          root.rotation.y += turn * pose.fall;
-          root.rotation.x = root.rotation.x * (1 - pose.fall) + Math.PI / 2 * pose.fall;
-          root.position.y = root.position.y * (1 - pose.fall) + .22 * pose.fall;
-        }
-        const throwEvent = !floorCalibrationToggle?.checked && seated === 0 && !pose && !snap
-          ? events.find(event => event.fromId === player.id && footballThrowPose(event, currentBeat)) : null;
-        const throwing = throwEvent ? footballThrowPose(throwEvent, currentBeat) : null;
-        if (throwEvent?.kind === 'return' && from && to) {
-          const fraction = currentBeat - index;
-          root.rotation.y = footballReturnThrowYaw(throwEvent, currentBeat, bodyYaw,
-            from.x + (to.x - from.x) * fraction, from.z + (to.z - from.z) * fraction) - robot.rotation.y;
-        }
-        const catchEvent = !floorCalibrationToggle?.checked && seated === 0 && !pose && !snap
-          ? events.find(event => event.toId === player.id && footballCatchPose(event, currentBeat)) : null;
-        const heldPass = !floorCalibrationToggle?.checked && seated === 0
-          ? events.find(event => event.kind === 'pass' && event.toId === player.id &&
-            currentBeat >= event.endCount && !events.some(next =>
-              next.startCount >= event.endCount && next.startCount <= currentBeat && next !== event)) : null;
-        const catching = heldPass ? footballCatchPose(heldPass, Math.min(currentBeat, heldPass.endCount + .5))
-          : catchEvent ? footballCatchPose(catchEvent, currentBeat) : null;
+      for (const [playerIndex, { root, human }] of animations.entries()) {
+        const offset = playerIndex * PLAYER_CHANNELS;
+        root.position.y = values![offset + 32];
+        root.rotation.set(values![offset + 33], values![offset + 34], 0);
         human.arms.forEach((arm, side) => {
-          arm.rotation.z = 0;
-          const normal = seated > 0 ? -.4 : movement.gait === 'block' ? movement.blockArm :
-            Math.sin(phase + side * Math.PI) * movement.armSwing;
-          arm.rotation.x = pose ? normal * (1 - pose.fall) + (.5 - pose.wrap * .9) * pose.fall : normal;
-          if (snap && !pose) arm.rotation.x = arm.rotation.x * (1 - snap.crouch) + snap.arm;
-          human.elbows[side].rotation.x = snap && !pose ? -.3
-            : seated === 0 && movement.gait === 'block' && !pose ? movement.blockElbow : -1.1;
-          if (throwing) {
-            const targetArm = side === 1 ? throwing.arm : throwing.supportArm;
-            const targetElbow = side === 1 ? throwing.elbow : throwing.supportElbow;
-            arm.rotation.x += (targetArm - arm.rotation.x) * throwing.blend;
-            human.elbows[side].rotation.x += (targetElbow - human.elbows[side].rotation.x) * throwing.blend;
-          } else if (catching) {
-            arm.rotation.z = (side === 0 ? 1 : -1) * catching.inward * catching.blend;
-            arm.rotation.x += (catching.arm - arm.rotation.x) * catching.blend;
-            human.elbows[side].rotation.x += (catching.elbow - human.elbows[side].rotation.x) * catching.blend;
-          }
+          arm.rotation.set(values![offset + 35 + side * 3], 0, values![offset + 36 + side * 3]);
+          human.elbows[side].rotation.x = values![offset + 37 + side * 3];
         });
-        const kickEvent = events.find(event => (event.kind === 'kick' || event.kind === 'punt') &&
-          event.fromId === player.id && currentBeat >= event.startCount - 1 && currentBeat <= event.startCount + 2);
-        const kick = !floorCalibrationToggle?.checked && benchSeated === 0 && kickEvent
-          ? footballKickPose(kickEvent.startCount, currentBeat) : 0;
-        if (kick > 0) {
-          const turn = Math.atan2(Math.sin(-root.rotation.y - robot.rotation.y),
-            Math.cos(-root.rotation.y - robot.rotation.y));
-          root.rotation.y += turn * kick;
-          root.rotation.x = root.rotation.x * (1 - kick) - .12 * kick;
-          human.arms.forEach((arm, index) => {
-            arm.rotation.x = arm.rotation.x * (1 - kick) + (index === 0 ? .7 : -.4) * kick;
-          });
-        }
-        human.updateLegs(seated, benchYaw - robot.rotation.y, pose?.fall ?? 0, kick);
+        human.applyLegs(values!, offset + 41);
       }
       const activeSegment = sequence?.find(segment => currentBeat >= segment.startCount && currentBeat <= segment.endCount);
       const outcome = outcomes.find(event => currentBeat >= event.count &&
@@ -633,74 +752,11 @@ export function createFootballVisuals(
             : 'Scrimmage complete: players returning to team benches.';
       }
       let possession: string | null = null;
-      const updateBall = () => {
-        ball.rotationQuaternion = null;
-        ball.setEnabled(!floorCalibrationToggle?.checked && !returning && currentBeat >= visibleFromCount &&
-          (!sequence || currentBeat < sequence[sequence.length - 1].endCount + 8 || !!outcome));
-        if (!ball.isEnabled()) return;
-        const beat = currentBeat;
-        let carrier = events[0]?.fromId;
-        for (const event of events) {
-          if (beat < event.startCount) {
-            if (event.startPosition && event === events[0]) {
-              ball.position.set(event.startPosition.x, FIELD_SURFACE_Y + event.startPosition.height, event.startPosition.z);
-              return;
-            }
-            break;
-          }
-          if (beat >= event.endCount) {
-            if (event.targetPosition && !events.some(next => next.startCount > event.startCount && beat >= next.startCount)) {
-              ball.position.set(event.targetPosition.x, FIELD_SURFACE_Y + event.targetPosition.height, event.targetPosition.z);
-              return;
-            }
-            carrier = event.toId; continue;
-          }
-          const endpoints = footballFlightEndpoints(event, anchor);
-          if (!endpoints) { ball.setEnabled(false); return; }
-          const t = (beat - event.startCount) / (event.endCount - event.startCount);
-          ball.position.copyFrom(footballFlightPoint(event, endpoints.from, endpoints.to, t));
-          if (t === 0 && !event.startPosition) possession = event.launchId ?? event.fromId;
-          ball.rotation.z = beat * Math.PI * 2;
-          return;
-        }
-        const position = carrier ? anchor(carrier, beat) : null;
-        if (position) {
-          const drop = events.find(event => event.kind === 'punt' && event.fromId === carrier &&
-            beat >= event.startCount - 1 && beat < event.startCount);
-          if (drop) {
-            const t = beat - drop.startCount + 1;
-            position.y += ((FIELD_SURFACE_Y + (drop.startHeight ?? .3)) - position.y) * t;
-          }
-          const tackle = activeTackles.find(event => event.carrierId === carrier);
-          const fall = tackle ? footballTacklePose(tackle, beat)?.fall ?? 0 : 0;
-          const torso = animations.find(entry => entry.player.id === carrier)?.root;
-          const caughtPass = events.find(event => event.kind === 'pass' && event.toId === carrier &&
-            beat >= event.endCount && !events.some(next =>
-              next.startCount >= event.endCount && next.startCount <= beat && next !== event));
-          const human = animations.find(entry => entry.player.id === carrier)?.human;
-          if (caughtPass && human) {
-            const inverse = parent.computeWorldMatrix(true).clone().invert();
-            const hands = human.hands.map(hand => {
-              hand.computeWorldMatrix(true);
-              return Vector3.TransformCoordinates(hand.getAbsolutePosition(), inverse);
-            });
-            position.copyFrom(Vector3.Center(hands[0], hands[1]));
-            if (torso) {
-              const heldMatrix = Matrix.RotationY(Math.PI / 2).multiply(torso.computeWorldMatrix(true).multiply(inverse));
-              ball.rotationQuaternion = Quaternion.FromRotationMatrix(heldMatrix);
-            }
-          } else if (fall > 0 && torso) {
-            const inverse = Matrix.Identity();
-            parent.computeWorldMatrix(true).invertToRef(inverse);
-            const chest = Vector3.TransformCoordinates(new Vector3(0, .3, .19), torso.computeWorldMatrix(true));
-            Vector3.LerpToRef(position, Vector3.TransformCoordinates(chest, inverse), fall, position);
-          }
-          ball.position.copyFrom(position);
-          possession = carrier ?? null;
-        }
-        else ball.setEnabled(false);
-      };
-      updateBall();
+      const ballOffset = players.length * PLAYER_CHANNELS;
+      ball.position.set(values![ballOffset], values![ballOffset + 1], values![ballOffset + 2]);
+      ball.rotationQuaternion = Quaternion.FromArray(values!, ballOffset + 3);
+      ball.setEnabled(!!values![ballOffset + 7]);
+      possession = players[values![ballOffset + 8]]?.player.id ?? null;
       const carrierRobot = possession ? byId.get(possession) : null;
       const carrierPosition = carrierRobot ? getFootballPlaybackPosition(carrierRobot, currentBeat) : null;
       possessionHalo.setEnabled(ball.isEnabled() && !!carrierPosition);
@@ -711,15 +767,14 @@ export function createFootballVisuals(
       halo.setEnabled(ball.isEnabled() && !!footballBallHighlight?.checked);
       const flight = events.find(event => ['pass', 'kick', 'punt', 'return'].includes(event.kind) &&
         currentBeat >= event.startCount && currentBeat <= event.endCount);
-      const endpoints = flight ? footballFlightEndpoints(flight, anchor) : null;
-      flightLine.setEnabled(ball.isEnabled() && !!footballFlightPath?.checked && !!endpoints);
-      if (flightLine.isEnabled() && flight && endpoints) {
-        const signature = JSON.stringify([flight, endpoints.from.asArray(), endpoints.to.asArray()]);
+      const points = flight ? flightPoints.get(flight) : null;
+      flightLine.setEnabled(ball.isEnabled() && !!footballFlightPath?.checked && !!points);
+      if (flightLine.isEnabled() && flight && points) {
+        const signature = `${events.indexOf(flight)}:${clearanceSignature}`;
         if (signature !== flightSignature) {
           flightSignature = signature;
           MeshBuilder.CreateLines('football-flight-path', {
-            points: Array.from({ length: 33 }, (_, index) =>
-              footballFlightPoint(flight, endpoints.from, endpoints.to, index / 32)), instance: flightLine,
+            points, instance: flightLine,
           }, scene);
         }
       }
@@ -730,7 +785,7 @@ export function createFootballVisuals(
     if (Number.isFinite(visibleFromCount)) {
       disposeTackleEditor = initFootballTackleEditor(players.map(entry => entry.player), tackles,
         (event, others) => validateTackle(event, others), () => {
-          positionCache.clear(); invalidTackles.clear(); update();
+          positionCache.clear(); invalidTackles.clear(); invalidateAnimation(); update();
         });
       const shift = (at: number, amount: number) => {
         positionCache.clear(); stepPrefixes.clear();
@@ -751,7 +806,7 @@ export function createFootballVisuals(
           team: player.team, role: player.label, playStart: visibleFromCount, playWindows: sequence,
           rush: player.rush, playEnd: returnStart,
         }));
-        invalidTackles.clear(); disposeTackleEditor.refresh(); update();
+        invalidTackles.clear(); disposeTackleEditor.refresh(); invalidateAnimation(); update();
       };
       shiftActiveTimeline = shift;
       releaseTimeline = () => { if (shiftActiveTimeline === shift) shiftActiveTimeline = null; };
@@ -765,6 +820,8 @@ export function createFootballVisuals(
         return beat < last ? { startCount: visibleFromCount, endCount: last, label: 'Selected football play' } : null;
       });
     }
+    const disposal = scene.onDisposeObservable.addOnce(cleanup);
+    disposeScene = () => { scene.onDisposeObservable.remove(disposal); };
     return cleanup;
   } catch (error) {
     cleanup();

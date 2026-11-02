@@ -9,7 +9,7 @@ import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 
 const context = vm.createContext({ Vector3, FIELD_SURFACE_Y: -.48 });
 for (const file of ['footballPlayGeometry', 'footballPlaySequence', 'footballSpecialTeams',
-  'footballPlayLibrary', 'footballBallFlight', 'footballTackles']) {
+  'footballPlayLibrary', 'footballAnimationLibrary', 'footballBallFlight', 'footballTackles']) {
   vm.runInContext(stripTypeScriptTypes(readFileSync(new URL(`../src/robot/${file}.ts`, import.meta.url), 'utf8'),
     { mode: 'transform' }).replace(/^import[\s\S]*?;\r?$/gm, '').replace(/export /g, ''), context);
 }
@@ -26,6 +26,16 @@ for (const entry of library) {
   for (const player of play.players) {
     assert.ok(player.positions.every(point => Number.isFinite(point.x) && Number.isFinite(point.z) &&
       Math.abs(point.x) <= 26.6665 && Math.abs(point.z) <= 60), `${entry.value}/${player.id}: field bounds`);
+  }
+  if (!['kickoff', 'punt', 'field-goal'].includes(entry.value)) {
+    const rushers = play.players.filter(player => player.rush);
+    assert.ok(rushers.length >= 4, `${entry.value}: defensive line uses rush gait`);
+    const snap = play.ballEvents.find(event => event.kind === 'snap');
+    const front = play.players.filter(player => player.team === 'offense' &&
+      ['LT', 'LG', 'C', 'RG', 'RT'].includes(player.label));
+    const frontZ = Math.min(...front.map(player => player.positions[snap.startCount + 8].z));
+    assert.ok(rushers.every(player => player.positions[snap.startCount + 12].z < frontZ - .5),
+      `${entry.value}: rushers pass the offensive front into the backfield`);
   }
   const anchor = (id, count) => {
     const point = play.players.find(player => player.id === id)?.positions[count];
@@ -99,6 +109,13 @@ for (const play of ['kickoff', 'punt', 'field-goal']) {
 }
 assert.throws(() => context.generateFootballLibraryPlay('spread', 'invalid'), /supported/);
 const pass = { kind: 'pass', startCount: 5, endCount: 7 };
+for (let elapsed = 0; elapsed < .8; elapsed += .001) {
+  const t = elapsed < .35 ? elapsed / .35 : (elapsed - .35) / .45;
+  const blend = t * t * (3 - 2 * t);
+  const expectedArm = elapsed < .35 ? -2.2 + (-2.6 + 2.2) * blend : -2.6 + (-.8 + 2.6) * blend;
+  assert.ok(Math.abs(context.footballThrowPose(pass, 5 + elapsed).arm - expectedArm) < 1e-12,
+    'Shared precomputed throw-curve coefficients preserve the original pose');
+}
 assert.equal(context.footballThrowPose(pass, 4), null);
 assert.equal(context.footballThrowPose(pass, 7), null);
 assert.equal(context.footballCatchPose(pass, 6), null);

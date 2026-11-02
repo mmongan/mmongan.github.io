@@ -10,7 +10,7 @@ import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 const context = vm.createContext({ Vector3, FIELD_SURFACE_Y: -.48,
   FIELD_WIDTH_YARDS: 53.333, FIELD_LENGTH_YARDS: 120, END_ZONE_DEPTH_YARDS: 10 });
 for (const file of ['footballPlayGeometry', 'footballPlaySequence', 'footballSpecialTeams', 'footballPlayLibrary',
-  'footballMovement', 'footballTackles', 'footballBodyClearance', 'footballBallFlight', 'footballLineOfScrimmage']) {
+  'footballMovement', 'footballTackles', 'footballBodyClearance', 'footballAnimationLibrary', 'footballBallFlight', 'footballLineOfScrimmage']) {
   vm.runInContext(stripTypeScriptTypes(readFileSync(new URL(`../src/robot/${file}.ts`, import.meta.url), 'utf8'),
     { mode: 'transform' }).replace(/^import[\s\S]*?;\r?$/gm, '').replace(/export /g, ''), context);
 }

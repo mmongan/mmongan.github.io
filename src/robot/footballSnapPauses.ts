@@ -5,6 +5,7 @@ import { scene } from '../scene/engine';
 import { getDrillTransportState, pauseAll, playAll, seekToCount } from './robot';
 import { floorCalibrationToggle, footballStatus } from '../ui/dom';
 import type { FootballBallEvent } from './footballPlayGeometry';
+import { startFootballMusicPause, finishFootballMusicPause, resetFootballMusicPause } from '../audio/midiPlayback';
 
 export function initFootballSnapPauses(events: readonly FootballBallEvent[]) {
   const paused = new Set<FootballBallEvent>();
@@ -14,11 +15,15 @@ export function initFootballSnapPauses(events: readonly FootballBallEvent[]) {
     const transport = getDrillTransportState();
     if (pending) {
       if (transport.playing || transport.revision !== pending.revision || transport.beat !== pending.beat) {
+        if (transport.playing && transport.revision === pending.revision && transport.beat === pending.beat) {
+          finishFootballMusicPause();
+        } else resetFootballMusicPause();
         pending = null;
       } else {
         if (footballStatus) footballStatus.value = 'At the snap: 3-second pause before the play.';
         if (performance.now() >= pending.deadline && !floorCalibrationToggle?.checked) {
           pending = null;
+          finishFootballMusicPause();
           playAll();
         }
       }
@@ -34,6 +39,7 @@ export function initFootballSnapPauses(events: readonly FootballBallEvent[]) {
           previous.beat < event.startCount && transport.beat >= event.startCount)) : null;
     if (snap) {
       paused.add(snap);
+      startFootballMusicPause();
       pauseAll();
       seekToCount(snap.startCount);
       const stopped = getDrillTransportState();
@@ -42,5 +48,8 @@ export function initFootballSnapPauses(events: readonly FootballBallEvent[]) {
     }
     previous = getDrillTransportState();
   });
-  return () => { scene.onAfterRenderObservable.remove(observer); };
+  return () => {
+    resetFootballMusicPause();
+    scene.onAfterRenderObservable.remove(observer);
+  };
 }

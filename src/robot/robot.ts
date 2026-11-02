@@ -85,6 +85,14 @@ function getMarcherDetail(): ModelDetail {
   return lowPolygonMarchersToggle?.checked || isFieldShrunk() ? "low" : "high";
 }
 
+export function getRobotAnimationSignature(robot: TransformNode, includeCounts = true) {
+  const state = players.get(robot), parts = marcherParts.get(robot);
+  return JSON.stringify([parts?.gaitIndex, state?.footballMotion, playbackBeatUnits,
+    playbackPpq, playbackCountTicks, repeatOptions.drill,
+    includeCounts ? state?.counts.map(count => [count.position.x, count.position.y, count.position.z, count.rotationY,
+      count.facingY, count.styleIndex, count.bakedGait, count.stepPhase]) : null]);
+}
+
 let marcherDetail: ModelDetail = getMarcherDetail();
 let instrumentDetail: ModelDetail = isFieldShrunk() ? "low" : "high";
 const bodyTemplates = new Set<ModelTemplate>([
@@ -326,15 +334,10 @@ export function disposeAllRobots() {
   Array.from(allRobots).forEach((robot) => robot.dispose());
 }
 
-// Each robot gets its own distinct, well-separated color (golden-angle hue
-// step) so it can be told apart from the crowd and matched to its path line.
-const ROBOT_COLOR_GOLDEN_ANGLE_DEGREES = 137.508;
-let robotColorCounter = 0;
 const robotColors = new Map<TransformNode, Color3>();
 
 function nextRobotColor(): Color3 {
-  const hue = (robotColorCounter++ * ROBOT_COLOR_GOLDEN_ANGLE_DEGREES) % 360;
-  return Color3.FromHSV(hue, 0.65, 0.95);
+  return Color3.FromHexString('#1967d2');
 }
 
 export function getRobotColor(robot: TransformNode): Color3 {
@@ -1552,6 +1555,7 @@ export function getLegAnimationBakeStatus() {
 
 function applyGlobalCount(robot: TransformNode, state: PlayerState,
   sample?: { drillBeat: number; musicBeat: number;
+    root?: (position: Vector3, yaw: number) => void;
     contact?: (pose: BakedLegPose, position: Vector3, yaw: number, left: boolean, progress: number) => void;
     parts?: NonNullable<ReturnType<typeof marcherParts.get>> }): BakedLegPose | undefined {
   if (!sample && ghostBandPreview) {
@@ -1566,6 +1570,15 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState,
   const count = state.counts[index];
   const parts = sample?.parts ?? marcherParts.get(robot);
   if (!parts) return;
+  if (!sample && preparedRobotAnimations.has(robot)) {
+    const frame = preparedRobotAnimations.get(robot)!(drillBeat);
+    if (frame) {
+      robot.position.copyFrom(frame.position);
+      robot.rotation.y = frame.yaw;
+      applyPreparedRobotLegs(parts, frame.pose);
+    }
+    return;
+  }
   const clockOffset = Math.round((drillCountToMidiBeat(drillBeat, playbackCountTicks, playbackPpq) - musicBeat) * 1e8) / 1e8;
   const bakeKey = [parts.gaitIndex, JSON.stringify(state.footballMotion), clockOffset, repeatOptions.songLength, repeatOptions.drill,
     playbackPpq, playbackCountTicks.join(",")].join(":");
@@ -1645,6 +1658,7 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState,
     ? state.counts[0]
     : count).position.clone();
   if (!inPlace) Vector3.LerpToRef(from.position, to.position, forwardProgress, rootPosition);
+  sample?.root?.(rootPosition, bodyRotation);
   if (!sample) {
     const footballPosition = state.footballMotion ? getFootballPlaybackPosition(robot, segmentStart + forwardProgress) : null;
     if (footballPosition) { rootPosition.x = footballPosition.x; rootPosition.z = footballPosition.z; }
@@ -1944,6 +1958,73 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState,
   applyLegPose(pose);
 }
 
+export interface PreparedRobotAnimationFrame {
+  position: Vector3;
+  yaw: number;
+  pose: BakedLegPose;
+}
+
+const preparedRobotAnimations = new Map<TransformNode, (beat: number) => PreparedRobotAnimationFrame | null>();
+
+export function setRobotPreparedAnimation(robot: TransformNode,
+  sampler: ((beat: number) => PreparedRobotAnimationFrame | null) | null) {
+  if (sampler) preparedRobotAnimations.set(robot, sampler);
+  else {
+    preparedRobotAnimations.delete(robot);
+    const parts = marcherParts.get(robot);
+    if (parts) parts.leftLeg.rotationQuaternion = parts.rightLeg.rotationQuaternion = null;
+  }
+}
+
+function applyPreparedRobotLegs(parts: NonNullable<ReturnType<typeof marcherParts.get>>, pose: BakedLegPose) {
+  parts.body.position.y = parts.instrumentRoot.position.y = parts.legRoot.position.y = 0;
+  for (const [index, leg, knee, ankle, shoe] of [
+    [0, parts.leftLeg, parts.leftKnee, parts.leftAnkle, parts.leftShoe],
+    [1, parts.rightLeg, parts.rightKnee, parts.rightAnkle, parts.rightShoe],
+  ] as const) {
+    const solved = pose.legs[index];
+    leg.rotationQuaternion = solved.legRotation.clone();
+    leg.position.set((index === 0 ? -1 : 1) * pose.hipHalfSpacing, .69, 0);
+    knee.position.y = -solved.thighLength;
+    knee.rotation.x = solved.kneeAngle;
+    knee.rotationQuaternion = solved.kneeRotation.clone();
+    ankle.rotationQuaternion = solved.ankleRotation.clone();
+    shoe.rotation.y = 0;
+    shoe.position.set(0, -MARCHER_SHOE_HALF_HEIGHT, MARCHER_SHOE_FORWARD_OFFSET);
+  }
+  attachMarcherThigh(parts.leftThigh, parts.leftLeg, -pose.hipHalfSpacing, MARCHER_THIGH_LENGTH);
+  attachMarcherThigh(parts.rightThigh, parts.rightLeg, pose.hipHalfSpacing, MARCHER_THIGH_LENGTH);
+}
+
+// The existing solver already supports isolated state/parts. Sampling never seeks
+// the transport or updates scene nodes, including the stationary-route case.
+export function createRobotAnimationSampler(robot: TransformNode) {
+  const state = players.get(robot) ?? {
+    counts: [{ position: robot.position.clone(), rotationY: robot.rotation.y }],
+    points: [robot.position.clone()], stepSizeYards: DEFAULT_STEP_SIZE_YARDS,
+  }, parts = marcherParts.get(robot);
+  if (!parts || !state.counts.length) throw new Error('Football animation requires a registered marcher rig.');
+  const isolated: PlayerState = { ...state, counts: state.counts.map(count => ({
+    ...count, position: count.position.clone(),
+  })), stepCache: undefined, gaitPhaseCache: undefined, legBake: undefined };
+  const sampleParts = { ...parts };
+  return (beat: number): PreparedRobotAnimationFrame => {
+    let position = isolated.counts[0].position.clone(), yaw = 0;
+    const pose = applyGlobalCount(robot, isolated, {
+      drillBeat: Math.min(isolated.counts.length - 1, Math.max(0, beat)),
+      musicBeat: 0, parts: sampleParts,
+      root: (value, rotation) => { position = value.clone(); yaw = rotation; },
+    }) ?? {
+      legs: [0, 1].map(() => ({
+        thighLength: MARCHER_THIGH_LENGTH, kneeAngle: 0,
+        legRotation: Quaternion.Identity(), kneeRotation: Quaternion.Identity(), ankleRotation: Quaternion.Identity(),
+      })) as BakedLegPose['legs'],
+      hipHalfSpacing: .09 * MARCHER_BUILD_SCALE, limited: false,
+    };
+    return { position, yaw, pose };
+  };
+}
+
 export function getRobotFootprintSource(robot: TransformNode) {
   const state = players.get(robot), parts = marcherParts.get(robot);
   if (!state || !parts || !state.counts.length) return null;
@@ -2019,6 +2100,11 @@ function ensureSharedObserver(scene: Scene) {
   }
   sharedScene = scene;
   sharedObserver = scene.onBeforeRenderObservable.add(() => {
+    if (globalPlayback.playing && !playbackIsPrepared()) {
+      globalPlayback.playing = false;
+      pendingPlaybackStart = true;
+      notifyDrillTransport();
+    }
     const deltaSeconds = scene.getEngine().getDeltaTime() / 1000;
 
     if (globalPlayback.playing && globalPlayback.speedMultiplier !== 0) {
@@ -3361,20 +3447,34 @@ export function refreshCollisionMarkers(scene: Scene) {
 // whole band always marches together on the same synchronized count clock.
 
 let playbackStartGuard: (() => boolean) | null = null;
+const playbackPreparationGuards = new Set<() => boolean>();
 let pendingPlaybackStart = false;
+
+export function addPlaybackPreparationGuard(guard: () => boolean) {
+  playbackPreparationGuards.add(guard);
+  return () => { playbackPreparationGuards.delete(guard); };
+}
+
+function playbackIsPrepared() {
+  return [...playbackPreparationGuards].every(guard => guard());
+}
 
 export function setPlaybackStartGuard(guard: (() => boolean) | null) {
   playbackStartGuard = guard;
 }
 
 export function retryPendingPlaybackStart() {
-  if (pendingPlaybackStart && (!playbackStartGuard || playbackStartGuard())) playAll();
+  if (pendingPlaybackStart && playbackIsPrepared() && (!playbackStartGuard || playbackStartGuard())) {
+    pendingPlaybackStart = false;
+    globalPlayback.playing = true;
+    notifyDrillTransport();
+  }
 }
 
 export function playAll() {
   prebakingLegAnimation = false;
   globalPlayback.speedMultiplier = Math.abs(globalPlayback.speedMultiplier) || 1;
-  if (playbackStartGuard && !playbackStartGuard()) {
+  if (!playbackIsPrepared() || playbackStartGuard && !playbackStartGuard()) {
     pendingPlaybackStart = true;
     globalPlayback.playing = false;
     notifyDrillTransport();
@@ -3422,7 +3522,8 @@ export function rewindAll() {
   prebakingLegAnimation = false;
   pendingPlaybackStart = false;
   globalPlayback.speedMultiplier = -2;
-  globalPlayback.playing = true;
+  globalPlayback.playing = playbackIsPrepared();
+  pendingPlaybackStart = !globalPlayback.playing;
   notifyDrillTransport();
 }
 

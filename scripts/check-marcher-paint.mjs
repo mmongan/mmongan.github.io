@@ -54,6 +54,12 @@ const context = vm.createContext({
 });
 try {
   const robotCode = read('../src/robot/robot.ts');
+  vm.runInContext(transform(robotCode.slice(robotCode.indexOf('function nextRobotColor('),
+    robotCode.indexOf('export function getRobotColor('))), context);
+  const defaults = Array.from({ length: 40 }, () => context.nextRobotColor());
+  assert.ok(defaults.every(color => color.equals(Color3.FromHexString('#1967d2'))),
+    'Every new band marcher starts with the same blue uniform');
+  assert.notEqual(defaults[0], defaults[1], 'Default marcher colors are independent instances');
   vm.runInContext(transform(robotCode.slice(robotCode.indexOf('export function getRobotColor('),
     robotCode.indexOf('// Robots are tiny'))), context);
   const hex = '#8e24aa', color = Color3.FromHexString(hex);

@@ -278,8 +278,7 @@ function routeFrames(role: OffensivePlayerRole, play: FootballPlay, start: Footb
 function defensiveRoute(role: DefensivePlayerRole, start: FootballPosition): RouteKeyframe[] {
   const index = DEFENSE_ROLES.indexOf(role);
   const lateral = ((index % 3) - 1) * 0.7;
-  const depth = role.startsWith('DE') || role.startsWith('DT')
-    ? -3 : 1.2 + (index % 4) * 0.35;
+  const depth = 1.2 + (index % 4) * 0.35;
   return [
     { count: 0, ...start },
     { count: 4, x: start.x + lateral * 0.35, z: start.z + 0.25 },
@@ -308,9 +307,7 @@ function fourVerticalsRoute(role: OffensivePlayerRole, start: FootballPosition):
 
 // Illustrative 4-3 Cover 2 response, not an adaptive coverage or blocking solver.
 function coverTwoRoute(role: DefensivePlayerRole, start: FootballPosition): RouteKeyframe[] {
-  const end = role.startsWith('DE') || role.startsWith('DT')
-    ? { x: start.x, z: -11.5 }
-    : role === 'FS' ? { x: -13, z: 19 }
+  const end = role === 'FS' ? { x: -13, z: 19 }
     : role === 'SS' ? { x: 13, z: 19 }
     : role.startsWith('CB') ? { x: start.x, z: -3 }
     : { x: role === 'LB-L' ? -8 : role === 'LB-R' ? 8 : 0, z: 1 };
@@ -353,14 +350,25 @@ export function generateFootballPlay(formation: FootballFormation, play: Footbal
       positions: Array.from({ length: 17 }, (_, count) => routeAt(start, frames, count)),
     };
   });
+  const pocket = offense.find(player => player.label === 'QB')?.positions[8];
+  if (!pocket) throw new Error('Football rush routes require a quarterback pocket position.');
   const defense = DEFENSE_ROLES.map((role): FootballPlayer => {
     const start = sourcedPlay && (role === 'FS' || role === 'SS')
       ? { x: role === 'FS' ? -13 : 13, z: 3 } : DEFENSE[role];
-    const frames = sourcedPlay ? coverTwoRoute(role, start) : defensiveRoute(role, start);
+    const rush = role.startsWith('DE') || role.startsWith('DT');
+    const edge = role.startsWith('DE'), side = start.x < 0 ? -1 : 1;
+    const target = { x: pocket.x + side * (edge ? 2.5 : 1.4), z: pocket.z + (edge ? .6 : 2) };
+    const frames = rush ? [
+      { count: 0, ...start },
+      { count: 4, x: edge ? side * 5.5 : start.x, z: edge ? -12 : -11 },
+      { count: 12, ...target },
+      { count: 16, ...target },
+    ] : sourcedPlay ? coverTwoRoute(role, start) : defensiveRoute(role, start);
     return {
       id: `defense-${role}`,
       label: role,
       team: 'defense',
+      rush,
       positions: Array.from({ length: 17 }, (_, count) => routeAt(start, frames, count)),
     };
   });

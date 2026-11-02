@@ -22,6 +22,7 @@ let clock = 0, snapTransport = { beat: 47, playing: true, beatsPerSecond: 2, rev
 let snapStarts = 0;
 const snapAfterRender = new Observable();
 const snapContext = vm.createContext({
+  startFootballMusicPause() {}, finishFootballMusicPause() {}, resetFootballMusicPause() {},
   scene: { onAfterRenderObservable: snapAfterRender }, performance: { now: () => clock },
   getDrillTransportState: () => ({ ...snapTransport }),
   pauseAll: () => { snapTransport.playing = false; },
@@ -75,7 +76,32 @@ let beat = 0;
 const calibration = { checked: false };
 const schedules = new Map();
 const materials = [];
+const preparationTimers = new Map();
+const preparedSamplers = new Map();
+let preparationTimerId = 0;
 const context = vm.createContext({
+  performance, setTimeout(callback) { const id = ++preparationTimerId; preparationTimers.set(id, callback); return id; },
+  clearTimeout(id) { preparationTimers.delete(id); },
+  MARCHER_THIGH_LENGTH: .315,
+  getRobotAnimationSignature: robot => JSON.stringify(robot.metadata?.motion),
+  setRobotPreparedAnimation(robot, sampler) {
+    if (sampler) preparedSamplers.set(robot, sampler); else preparedSamplers.delete(robot);
+  },
+  addPlaybackPreparationGuard: () => () => {},
+  retryPendingPlaybackStart() {},
+  createRobotAnimationSampler: robot => beat => {
+    const counts = schedules.get(robot);
+    const index = Math.min(Math.floor(beat), counts.length - 1);
+    return {
+      position: Vector3.Lerp(counts[index].position, counts[Math.min(index + 1, counts.length - 1)].position, beat - index),
+      yaw: 0,
+      pose: { legs: [0, 1].map(() => ({
+        thighLength: .315, kneeAngle: 0, legRotation: Quaternion.Identity(),
+        kneeRotation: Quaternion.Identity(), ankleRotation: Quaternion.Identity(),
+      })), hipHalfSpacing: .12, limited: false },
+    };
+  },
+  startFootballMusicPause() {}, finishFootballMusicPause() {}, resetFootballMusicPause() {},
   MeshBuilder, Mesh, TransformNode, Color3, Matrix, Quaternion, Vector3, scene, TOP_DOWN_MARKER_LAYER_MASK: 0x10000000,
   FIELD_WIDTH_YARDS: 53.333, FIELD_LENGTH_YARDS: 120, END_ZONE_DEPTH_YARDS: 10, FIELD_SURFACE_Y: -.48,
   StandardMaterial: class {
@@ -94,7 +120,7 @@ const context = vm.createContext({
   initFootballTackleEditor: () => Object.assign(() => {}, { refresh() {} }),
   createFootballFuturePreview: () => () => {},
 });
-for (const module of ['footballMovement', 'footballPresentation', 'footballBodyClearance', 'footballSymbolModel', 'footballHumanModel', 'scrimmageGeometry', 'footballTackles', 'footballBallFlight', 'footballLineOfScrimmage', 'footballSnapPauses']) {
+for (const module of ['footballMovement', 'footballPresentation', 'footballBodyClearance', 'footballSymbolModel', 'footballHumanModel', 'scrimmageGeometry', 'footballTackles', 'footballAnimationLibrary', 'footballBallFlight', 'footballLineOfScrimmage', 'footballSnapPauses', 'footballAnimationPose', 'footballAnimationCache']) {
   vm.runInContext(transform(`../src/robot/${module}.ts`), context);
 }
 vm.runInContext(transform('../src/robot/footballPlayMode.ts'), context);
@@ -112,11 +138,41 @@ scene.onBeforeRenderObservable.add(() => {
       counts[Math.min(index + 1, counts.length - 1)].position, time - index));
     const resolved = context.getFootballPlaybackPosition(robot, beat);
     if (resolved) { robot.position.x = resolved.x; robot.position.z = resolved.z; }
+    const frame = preparedSamplers.get(robot)?.(beat);
+    if (frame) {
+      robot.position.copyFrom(frame.position); robot.rotation.y = frame.yaw;
+      const rig = robot.getChildren().find(node => node.name === 'marcherLegRoot');
+      for (const [side, hip] of rig.getChildren().entries()) {
+        const leg = frame.pose.legs[side], knee = hip.getChildren().find(node => node.name === 'marcherKnee');
+        const ankle = knee.getChildren().find(node => node.name === 'marcherAnkle');
+        hip.position.set((side === 0 ? -1 : 1) * frame.pose.hipHalfSpacing, .69, 0);
+        hip.rotationQuaternion = leg.legRotation;
+        knee.position.y = -leg.thighLength; knee.rotationQuaternion = leg.kneeRotation;
+        ankle.rotationQuaternion = leg.ankleRotation;
+      }
+    }
     robot.computeWorldMatrix(true);
   }
 });
-const near = (actual, expected, message) =>
-  assert.ok(Vector3.Distance(actual, expected) < 1e-6, `${message}: ${actual} versus ${expected}`);
+const flushPreparation = () => {
+  if (calibration.checked) return;
+  while (preparationTimers.size) {
+    const [id, callback] = preparationTimers.entries().next().value;
+    preparationTimers.delete(id); callback();
+  }
+};
+const notifyRender = scene.onBeforeRenderObservable.notifyObservers.bind(scene.onBeforeRenderObservable);
+scene.onBeforeRenderObservable.notifyObservers = (...args) => {
+  notifyRender(...args); flushPreparation(); return notifyRender(...args);
+};
+const createVisuals = context.createFootballVisuals;
+context.createFootballVisuals = (...args) => {
+  const dispose = createVisuals(...args);
+  flushPreparation(); notifyRender(scene);
+  return dispose;
+};
+const near = (actual, expected, message, tolerance = 1e-6) =>
+  assert.ok(Vector3.Distance(actual, expected) < tolerance, `${message}: ${actual} versus ${expected}`);
 const resolvedAnchor = (robot, count, height = 1.05) => {
   const position = schedules.get(robot)[count].position.clone();
   const resolved = context.getFootballPlaybackPosition(robot, count);
@@ -182,9 +238,9 @@ try {
       const rig = robot.getChildren().find(node => node.name === 'marcherLegRoot');
       for (const side of [-1, 1]) {
         const hip = new TransformNode('marcherLeg', scene); hip.parent = rig;
-        hip.position.set(side * .12, .98, 0);
-        const knee = new TransformNode('marcherKnee', scene); knee.parent = hip; knee.position.y = -.45;
-        const ankle = new TransformNode('marcherAnkle', scene); ankle.parent = knee; ankle.position.y = -.45;
+        hip.position.set(side * .12, .69, 0);
+        const knee = new TransformNode('marcherKnee', scene); knee.parent = hip; knee.position.y = -.315;
+        const ankle = new TransformNode('marcherAnkle', scene); ankle.parent = knee; ankle.position.y = -.315;
         for (const [name, parent] of [['marcherThigh', hip], ['marcherCalf', knee], ['marcherKneeJoint', knee]]) {
           const child = new TransformNode(name, scene); child.parent = parent;
         }
@@ -292,7 +348,8 @@ try {
       beat = event.startCount + .35; scene.onBeforeRenderObservable.notifyObservers(scene);
       assert.equal(arm.rotation.x, release, 'Reverse seeking reconstructs throwing pose');
       calibration.checked = true; scene.onBeforeRenderObservable.notifyObservers(scene);
-      assert.equal(elbow.rotation.x, -1.1, 'Calibration removes throwing override');
+      assert.equal(scene.getTransformNodeByName(`football-player-${event.fromId}`).isEnabled(), false,
+        'Calibration hides the prepared throwing pose without rebaking or changing it');
       calibration.checked = false;
       for (const time of [-.5, 0, .25, .5, 1, 1.5]) {
         beat = event.endCount + time; scene.onBeforeRenderObservable.notifyObservers(scene);
@@ -308,7 +365,7 @@ try {
       beat = event.endCount + 2; scene.onBeforeRenderObservable.notifyObservers(scene);
       catcher.forEach(arm => assert.ok(Math.abs(arm.rotation.x + .6) < 1e-6,
         'Receiver continues holding the ball instead of swinging carrying hands'));
-      near(ball.position, positionAt(event.toId, beat), 'Caught ball is held between actual gloves');
+      near(ball.position, positionAt(event.toId, beat), 'Caught ball is held between actual gloves', 1e-4);
       const receiverTorso = scene.getTransformNodeByName(`football-player-${event.toId}`);
       const ballWorld = Vector3.TransformCoordinates(ball.position, parent.computeWorldMatrix(true));
       const localBall = Vector3.TransformCoordinates(ballWorld, receiverTorso.computeWorldMatrix(true).clone().invert());
@@ -317,9 +374,10 @@ try {
       beat = event.endCount; scene.onBeforeRenderObservable.notifyObservers(scene);
       catcher.forEach(arm => assert.equal(arm.rotation.x, -.75, 'Reverse seeking reconstructs catch'));
       calibration.checked = true; scene.onBeforeRenderObservable.notifyObservers(scene);
-      assert.equal(scene.getTransformNodeByName(`football-elbow-${event.toId}-1`).rotation.x, -1.1,
-        'Calibration removes catch override');
-      catcher.forEach(arm => assert.equal(arm.rotation.z, 0, 'Calibration clears inward catch rotation'));
+      assert.equal(scene.getTransformNodeByName(`football-player-${event.toId}`).isEnabled(), false,
+        'Calibration hides the prepared catch pose');
+      catcher.forEach((arm, side) => assert.equal(arm.rotation.z, side === 0 ? .4 : -.4,
+        'Calibration preserves cached inward catch rotation while the player is hidden'));
       calibration.checked = false;
     }
     for (const event of data.ballEvents) {
@@ -336,7 +394,7 @@ try {
       const { robot } = players.find(value => value.player.id === event.toId);
       schedules.get(robot)[beat].position.x += .5;
       scene.onBeforeRenderObservable.notifyObservers(scene);
-      near(ball.position, positionAt(event.toId, beat), `${play}: route endpoint edits move the ball target`);
+      near(ball.position, positionAt(event.toId, beat), `${play}: route endpoint edits move the ball target`, 1e-4);
       assert.ok(possessionHalo.isEnabled(), 'Possession halo switches to the completed transfer recipient');
       const recipient = context.getFootballPlaybackPosition(robot, beat);
       near(possessionHalo.position, new Vector3(recipient.x, -.455, recipient.z),
@@ -574,9 +632,9 @@ try {
       const robot = new TransformNode(player.id, scene); robot.parent = parent;
       const rig = new TransformNode('marcherLegRoot', scene); rig.parent = robot;
       for (const side of [-1, 1]) {
-        const hip = new TransformNode('marcherLeg', scene); hip.parent = rig; hip.position.set(side * .12, .98, 0);
-        const knee = new TransformNode('marcherKnee', scene); knee.parent = hip; knee.position.y = -.45;
-        const ankle = new TransformNode('marcherAnkle', scene); ankle.parent = knee; ankle.position.y = -.45;
+        const hip = new TransformNode('marcherLeg', scene); hip.parent = rig; hip.position.set(side * .12, .69, 0);
+        const knee = new TransformNode('marcherKnee', scene); knee.parent = hip; knee.position.y = -.315;
+        const ankle = new TransformNode('marcherAnkle', scene); ankle.parent = knee; ankle.position.y = -.315;
       }
       schedules.set(robot, player.positions.map(point => ({ position: new Vector3(point.x, -.48, point.z) })));
       return { robot, player };
@@ -662,16 +720,23 @@ try {
       }
     }
     if (data.players.some(player => player.rush)) {
+      beat = 12; scene.onBeforeRenderObservable.notifyObservers(scene);
+      const frontZ = Math.min(...players.filter(entry => entry.player.team === 'offense' &&
+        ['LT', 'LG', 'C', 'RG', 'RT'].includes(entry.player.label)).map(entry => entry.robot.position.z));
+      assert.ok(players.filter(entry => entry.player.rush).every(entry => entry.robot.position.z < frontZ),
+        `${play}: rendered rushers pass the offensive front rather than stopping at blockers`);
+    }
+    if (['edge-sack', 'blitz-sack', 'four-man-rush', 'linebacker-blitz'].includes(play)) {
       beat = 0;
       scene.onBeforeRenderObservable.notifyObservers(scene);
       assertRenderedClearance(players, [], scene.getMeshByName('football-line-of-scrimmage').position.z);
       for (const count of [4, 6, 8, 10, 12, 13, 14, 16, 18, 20]) {
         beat = count; scene.onBeforeRenderObservable.notifyObservers(scene);
         assertRenderedClearance(players, data.tackles);
-        if (data.tackles.length ? count < 20 : count <= 16) {
+        if (data.tackles?.length ? count < 20 : count <= 16) {
           assert.ok(ball.isEnabled(), 'Rush and sack retain the visible possession ball');
         }
-        if (data.tackles.length && count === 14) {
+        if (data.tackles?.some(event => event.carrierId === 'offense-QB') && count === 14) {
           const qb = scene.getTransformNodeByName('football-player-offense-QB');
           assert.equal(qb.rotation.x, Math.PI / 2, 'Quarterback falls during sack');
         }

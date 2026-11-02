@@ -4,6 +4,7 @@
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
 import type { FootballBallEvent } from './footballPlayGeometry';
 import { FIELD_SURFACE_Y } from '../field/constants';
+import { sampleFootballThrowClip, sampleFootballCatchClip } from './footballAnimationLibrary';
 
 export function footballFlightEndpoints(event: FootballBallEvent,
   anchor: (id: string, count: number) => Vector3 | null) {
@@ -44,25 +45,7 @@ export function footballSnapPose(event: FootballBallEvent, beat: number) {
 
 export function footballThrowPose(event: FootballBallEvent, beat: number) {
   if (event.kind !== 'pass' && event.kind !== 'return') return null;
-  const elapsed = beat - event.startCount;
-  if (elapsed <= -1 || elapsed >= 2) return null;
-  const smooth = (t: number) => t * t * (3 - 2 * t);
-  const mix = (a: number, b: number, t: number) => a + (b - a) * smooth(t);
-  if (elapsed < 0) {
-    return { blend: smooth(elapsed + 1), arm: -2.2, elbow: -1.8, supportArm: -.6, supportElbow: -1.5 };
-  }
-
-  if (elapsed < .35) {
-    return { blend: 1, arm: mix(-2.2, -2.6, elapsed / .35),
-      elbow: mix(-1.8, -.45, elapsed / .35), supportArm: -.6, supportElbow: -1.5 };
-  }
-  if (elapsed < .8) {
-    const t = (elapsed - .35) / .45;
-    return { blend: 1, arm: mix(-2.6, -.8, t), elbow: mix(-.45, -1.8, t),
-      supportArm: mix(-.6, -.3, t), supportElbow: -1.5 };
-  }
-  return { blend: 1 - smooth((elapsed - .8) / 1.2), arm: -.8, elbow: -1.8,
-    supportArm: -.3, supportElbow: -1.5 };
+  return sampleFootballThrowClip(beat - event.startCount);
 }
 
 export function footballReturnThrowYaw(event: FootballBallEvent, beat: number, yaw: number, x: number, z: number) {
@@ -74,14 +57,5 @@ export function footballReturnThrowYaw(event: FootballBallEvent, beat: number, y
 
 export function footballCatchPose(event: FootballBallEvent, beat: number) {
   if (event.kind !== 'pass') return null;
-  const elapsed = beat - event.endCount;
-  if (elapsed <= -1 || elapsed >= 1.5) return null;
-  const smooth = (t: number) => t * t * (3 - 2 * t);
-  const tuck = smooth(Math.max(0, Math.min(1, elapsed / .5)));
-  return {
-    blend: elapsed < 0 ? smooth(elapsed + 1) : elapsed <= .5 ? 1 : 1 - smooth(elapsed - .5),
-    arm: -.75 + .15 * tuck,
-    elbow: -.85 - .45 * tuck,
-    inward: .4 + .35 * tuck,
-  };
+  return sampleFootballCatchClip(beat - event.endCount);
 }

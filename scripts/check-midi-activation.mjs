@@ -46,6 +46,7 @@ class AudioContext {
   }
 }
 const context = vm.createContext({
+  resetFootballMusicPause() {},
   AudioContext, Node, midiAudioButton: button, midiVolumeInput: { value: '60' },
   window: { addEventListener(type, handler) { events[type] = handler; } },
   status: message => messages.push(message),

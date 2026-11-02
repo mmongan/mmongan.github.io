@@ -224,7 +224,7 @@ const example = context.convertToOpenChart(reader.readOpenMarchDatabase(SQL,
 run(read('openMarchUrl').slice(read('openMarchUrl').indexOf('const SECTION_INSTRUMENTS')));
 run(readFileSync(new URL('../src/field/constants.ts', import.meta.url), 'utf8'));
 const fieldSurfaceY = vm.runInContext('FIELD_SURFACE_Y', context);
-run(slice('const ROBOT_COLOR_GOLDEN_ANGLE_DEGREES =', 'export function setRobotColor('));
+run(slice('const robotColors =', 'export function setRobotColor('));
 run(slice('export function registerRobotCounts(', '// Same as walkRobotAlongPath'));
 context.recalculateCollisionMarkers = () => {};
 players.clear();

@@ -21,6 +21,7 @@ import { initMidiScore, setMidiScoreTracks } from './midiScore';
 import { quantizeScoreNote } from './midiNotation';
 import exampleMidiUrl from '../assets/liberty-bell-band.mid?url';
 import { midiBeatUnits } from './midiBeatPulse';
+import { FootballMusicTransport } from './footballMusicTransport';
 
 const EXAMPLE_MIDI_DESCRIPTION = "Sousa — The Liberty Bell (full band, Public Domain)";
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
@@ -38,6 +39,20 @@ let loadedDescription = "";
 let synthLoading = false;
 let midiLoading = false;
 let statusIsError = false;
+const footballMusicTransport = new FootballMusicTransport();
+const musicTime = () => context?.currentTime ?? performance.now() / 1000;
+
+export function startFootballMusicPause() {
+  footballMusicTransport.start(getMusicTransportState(), musicTime());
+}
+
+export function finishFootballMusicPause() {
+  footballMusicTransport.finish(getMusicTransportState(), musicTime());
+}
+
+export function resetFootballMusicPause() {
+  footballMusicTransport.reset();
+}
 let footballVolumeScale = 1;
 
 function selectedMidiGain() {
@@ -45,6 +60,7 @@ function selectedMidiGain() {
 }
 
 export function setFootballAudioMode(enabled: boolean) {
+  if (!enabled) resetFootballMusicPause();
   footballVolumeScale = enabled ? .25 : 1;
   if (master && context) master.gain.setTargetAtTime(selectedMidiGain(), context.currentTime, .1);
 }
@@ -185,7 +201,7 @@ function updatePlayback(fromClock = false) {
     return;
   }
   const plan = fromClock ? timeline.tick(context.currentTime)
-    : timeline.synchronize(getMusicTransportState(), context.currentTime);
+    : timeline.synchronize(footballMusicTransport.resolve(getMusicTransportState(), context.currentTime), context.currentTime);
   if (plan.reset) stopVoices();
   plan.scheduled.forEach(note => synth!.start(note));
 }

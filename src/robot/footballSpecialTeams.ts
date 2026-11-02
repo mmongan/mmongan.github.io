@@ -5,6 +5,7 @@ import { generateFootballPlay, type FootballPlayGeometry, type FootballPosition 
 
 export function generateFootballSpecialTeams(play: 'kickoff' | 'punt' | 'field-goal'): FootballPlayGeometry {
   const data = generateFootballPlay('spread', 'four-verticals');
+  data.players.forEach(player => { player.rush = false; });
   const positions = (from: FootballPosition, to: FootballPosition, start: number, end: number) =>
     Array.from({ length: 25 }, (_, count) => {
       const t = Math.max(0, Math.min(1, (count - start) / (end - start)));

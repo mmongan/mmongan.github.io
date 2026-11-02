@@ -9,7 +9,7 @@ import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 
 const context = vm.createContext({ Vector3, FIELD_SURFACE_Y: -.48 });
 for (const name of ['footballPlayGeometry', 'footballPlaySequence', 'footballSpecialTeams', 'footballPlayLibrary',
-  'footballBodyClearance', 'footballMovement', 'footballLineOfScrimmage', 'footballBallFlight']) {
+  'footballBodyClearance', 'footballMovement', 'footballLineOfScrimmage', 'footballAnimationLibrary', 'footballBallFlight']) {
   vm.runInContext(stripTypeScriptTypes(readFileSync(new URL(`../src/robot/${name}.ts`, import.meta.url), 'utf8'),
     { mode: 'transform' }).replace(/^import[\s\S]*?;\r?$/gm, '').replace(/export /g, ''), context);
 }
