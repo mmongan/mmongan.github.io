@@ -95,8 +95,10 @@ export class SampledMidiSynth {
         this.report(`Loading sampled instrument: ${name.replace(/_/g, ' ')}…`);
         const samples = await Promise.race([requests.get(name)!, cancellation]);
         if (this.disposed) throw new Error("Sample loading was cancelled.");
+        // smplr pairs buffer-record entries with key ranges sorted by midi,
+        // so insert in ascending pitch order or samples map to wrong notes.
         const buffers: Record<string, AudioBuffer> = {};
-        for (const sample of samples) {
+        for (const sample of [...samples].sort((a, b) => a.pitch - b.pitch)) {
           try {
             buffers[midiNoteName(sample.pitch)] = await this.context.decodeAudioData(sample.data);
           } catch (error) {
@@ -110,7 +112,12 @@ export class SampledMidiSynth {
           this.boost.gain.value = SOUNDFONT_EXTRA_GAIN;
           this.boost.connect(this.destination);
         }
-        const instrument = Sampler(this.context, { buffers, destination: this.boost, volume: 100 });
+        // Pin playback defaults: smplr's sampler preset otherwise merges
+        // undefined detune into every voice, making the AudioParam NaN.
+        const instrument = Sampler(this.context, {
+          buffers, destination: this.boost, volume: 100,
+          detune: 0, decayTime: 0.3, lpfCutoffHz: 20000,
+        });
         this.instruments.set(name, instrument);
         await Promise.race([instrument.ready, cancellation]);
         if (this.disposed) throw new Error("Sample loading was cancelled.");

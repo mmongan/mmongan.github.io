@@ -28,7 +28,8 @@ class MockWorker {
       if (this.terminated) return;
       if (fail) this.onmessage?.({ data: { id: request.id, error: 'network failed' } });
       else this.onmessage?.({ data: { id: request.id,
-        samples: request.pitches.map(pitch => ({ pitch, data: { url: request.url, pitch } })) } });
+        // reversed: the synth must re-sort samples into ascending pitch order
+        samples: request.pitches.slice().reverse().map(pitch => ({ pitch, data: { url: request.url, pitch } })) } });
     });
   }
   terminate() { this.terminated = true; }
@@ -80,13 +81,16 @@ assert.match(workers[0].requests[0].url, /trumpet-mp3.js$/);
 assert.match(workers[0].requests[1].url, /percussion-mp3.js$/);
 assert.deepEqual([...workers[0].requests[0].pitches], [60, 64]);
 assert.deepEqual(Object.keys(instruments[0].options.buffers), ['C4', 'E4'],
-  'Decoded samples are keyed by MIDI note names the sampler can spread');
+  'Buffer keys are MIDI note names in ascending pitch order — smplr zips sorted key ranges by insertion order');
 assert.equal(instruments[0].options.destination.gain.value, 5,
   'Sampler output keeps the gain boost MIDI.js samples are mastered for');
 assert.equal(instruments[0].options.destination.connectedTo, masterDestination);
 assert.equal(instruments[1].options.destination, instruments[0].options.destination,
   'All instruments share one boost gain node');
 assert.equal(workers[0].terminated, true, 'The soundfont worker is terminated after loading');
+assert.ok([instruments[0].options.detune, instruments[0].options.decayTime, instruments[0].options.lpfCutoffHz]
+  .every(Number.isFinite),
+  'Sampler playback defaults are pinned to finite values so voice detune never becomes a NaN AudioParam');
 const event = { note, delaySeconds: 0.05, durationSeconds: 0.5 };
 synth.start(event);
 synth.start(event);
