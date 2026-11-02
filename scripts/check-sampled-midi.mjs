@@ -9,6 +9,7 @@ import { getSoundfontNames } from 'smplr';
 import { instrumentByPatchID } from '@tonejs/midi/dist/InstrumentMaps.js';
 
 const instruments = [];
+const fetched = [];
 let fail = false;
 let defer = false;
 let failConstruction = false;
@@ -31,7 +32,15 @@ const context = vm.createContext({
     return instance;
   },
   getSoundfontNames, instrumentByPatchID,
+  fetch: (url) => {
+    fetched.push(url);
+    return Promise.resolve({ ok: true, status: 200, text: async () => `soundfont ${url}` });
+  },
+  AbortController,
+  requestIdleCallback: (callback) => callback(),
+  setTimeout,
 });
+const drain = () => new Promise(resolve => setImmediate(resolve));
 const source = readFileSync(new URL('../src/audio/sampledMidiSynth.ts', import.meta.url), 'utf8');
 vm.runInContext(`${stripTypeScriptTypes(source, { mode: 'transform' })
   .replace(/import .*?from 'smplr';/s, '')
@@ -67,12 +76,26 @@ assert.equal(instruments[0].disposed, 1);
 defer = true;
 const preload = new context.SampledMidiSynth(audioContext, {}, () => {});
 const priorCount = instruments.length;
+const priorFetches = fetched.length;
 const loading = preload.load([note, { ...note, program: 65 }, { ...note, percussion: true }]);
-assert.equal(instruments.length - priorCount, 3,
-  'All required instruments begin loading before any earlier instrument finishes');
+assert.equal(fetched.length - priorFetches, 3,
+  'All required soundfont downloads start in parallel before any parsing');
+await drain();
+assert.equal(instruments.length - priorCount, 1,
+  'Soundfonts parse sequentially so main-thread JSON.parse bursts cannot stall startup rendering');
+while (instruments.length - priorCount < 3) {
+  releases.shift()();
+  await drain();
+}
 assert.equal(instruments.slice(priorCount).every(instrument => instrument.events.length === 0), true,
   'Preloading never starts notes or needs audio-context resume');
-releases.forEach(resolve => resolve()); await loading;
+releases.splice(0).forEach(resolve => resolve()); await loading;
+const preloadedOptions = instruments[priorCount].options;
+const fetchesBeforeReuse = fetched.length;
+const served = await preloadedOptions.storage.fetch(preloadedOptions.instrumentUrl);
+assert.equal(await served.text(), `soundfont ${preloadedOptions.instrumentUrl}`,
+  'smplr storage serves the prefetched soundfont text');
+assert.equal(fetched.length, fetchesBeforeReuse, 'Serving prefetched text performs no extra network fetch');
 preload.start(event);
 assert.equal(instruments[priorCount].events.length, 1, 'Preloaded instrument starts without another download');
 preload.dispose();
@@ -80,23 +103,28 @@ releases.length = 0;
 const cancelled = new context.SampledMidiSynth(audioContext, {}, () => {});
 const cancelledStart = instruments.length;
 const cancelledLoading = cancelled.load([note, { ...note, program: 65 }]);
+await drain();
+assert.equal(instruments.length - cancelledStart, 1);
 cancelled.dispose();
 const cancellation = assert.rejects(cancelledLoading, /cancelled/);
-releases.forEach(resolve => resolve()); await cancellation;
+releases.splice(0).forEach(resolve => resolve()); await cancellation;
 assert.ok(instruments.slice(cancelledStart).every(instrument => instrument.disposed === 1),
-  'Cancelling parallel preload disposes every started instrument exactly once');
+  'Cancelling a staged preload disposes every started instrument exactly once');
 defer = false;
 fail = true;
 const failed = new context.SampledMidiSynth(audioContext, {}, () => {});
 await assert.rejects(() => failed.load([note]), /network failed/);
 assert.equal(instruments.at(-1).disposed, 1);
+fail = false;
 failConstruction = true;
 const constructionFailed = new context.SampledMidiSynth(audioContext, {}, () => {});
-await assert.rejects(constructionFailed.load([note, { ...note, program: 65 }]), /network failed|construction failed/);
+await assert.rejects(constructionFailed.load([note, { ...note, program: 65 }]), /construction failed/);
+assert.equal(instruments.at(-1).disposed, 1,
+  'Construction failure disposes instruments that already loaded');
 failConstruction = false;
 for (let program = 0; program < 128; program++) {
   assert.ok(getSoundfontNames().includes(context.instrumentKey({ ...note, program })));
 }
 assert.equal(context.instrumentKey({ ...note, program: 0 }), 'acoustic_grand_piano');
 assert.equal(context.instrumentKey({ ...note, program: 65 }), 'alto_sax');
-console.log('Sampled MIDI checks passed: parallel startup preload, cancellation/construction errors, GM programs/percussion, required pitches, audio-clock scheduling, velocity, unique voices, queued-note cancellation, polyphony, disposal and load errors.');
+console.log('Sampled MIDI checks passed: parallel downloads with sequential idle-time parsing, prefetched-text reuse, cancellation/construction errors, GM programs/percussion, required pitches, audio-clock scheduling, velocity, unique voices, queued-note cancellation, polyphony, disposal and load errors.');

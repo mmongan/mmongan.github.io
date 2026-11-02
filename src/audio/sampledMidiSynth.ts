@@ -1,12 +1,20 @@
 // Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { Soundfont, getSoundfontNames, type StopFn } from 'smplr';
+import { Soundfont, getSoundfontNames, type StopFn, type Storage } from 'smplr';
 import { instrumentByPatchID } from '@tonejs/midi/dist/InstrumentMaps';
 import type { MidiNote, ScheduledMidiNote } from './midiTimeline';
 
 const SAMPLE_BASE_URL = "https://paulrosen.github.io/midi-js-soundfonts/FluidR3_GM/";
 const MAX_VOICES = 64;
+
+// Parsing a soundfont blocks the main thread on a multi-megabyte JSON.parse
+// plus per-note base64 decodes, so wait for idle time between instruments to
+// keep startup scene rendering responsive while samples preload.
+const whenIdle = () => new Promise<void>(resolve => {
+  if (typeof requestIdleCallback === 'function') requestIdleCallback(() => resolve(), { timeout: 500 });
+  else setTimeout(resolve, 50);
+});
 
 const compactName = (name: string) => name.replace(/[^a-z0-9]/g, "");
 const sampleNames = new Map(getSoundfontNames().map(name => [compactName(name), name]));
@@ -26,6 +34,7 @@ export class SampledMidiSynth {
   private voices = new Set<StopFn>();
   private disposed = false;
   private nextVoiceId = 0;
+  private readonly downloadAbort = new AbortController();
 
   constructor(private readonly context: AudioContext, private readonly destination: AudioNode,
     private readonly report: (message: string) => void) {}
@@ -40,11 +49,39 @@ export class SampledMidiSynth {
       pitches.set(key, required);
     }
     try {
-      await Promise.all([...pitches].map(async ([name, required]) => {
+      // Download every required soundfont in parallel so network transfers
+      // overlap, but keep the main-thread-heavy parse/decode sequential below.
+      const downloads = new Map<string, Promise<string>>();
+      for (const name of pitches.keys()) {
+        const download = fetch(`${SAMPLE_BASE_URL}${name}-mp3.js`, { signal: this.downloadAbort.signal })
+          .then(response => {
+            if (!response.ok) throw new Error(`Soundfont download failed (HTTP ${response.status}) for ${name}.`);
+            return response.text();
+          });
+        download.catch(() => {}); // surfaced when awaited below
+        downloads.set(name, download);
+      }
+      for (const [name, required] of pitches) {
+        await whenIdle();
         if (this.disposed) throw new Error("Sample loading was cancelled.");
         this.report(`Loading sampled instrument: ${name.replace(/_/g, ' ')}…`);
+        const instrumentUrl = `${SAMPLE_BASE_URL}${name}-mp3.js`;
+        const sourceText = await downloads.get(name)!;
+        if (this.disposed) throw new Error("Sample loading was cancelled.");
+        // Serve the already-downloaded file to smplr instead of refetching.
+        const storage: Storage = {
+          fetch: requested => requested === instrumentUrl
+            ? Promise.resolve({
+              status: 200,
+              text: async () => sourceText,
+              json: async () => JSON.parse(sourceText),
+              arrayBuffer: async (): Promise<ArrayBuffer> => { throw new Error(`Unexpected binary read of ${requested}.`); },
+            })
+            : fetch(requested),
+        };
         const instrument = Soundfont(this.context, {
-          instrumentUrl: `${SAMPLE_BASE_URL}${name}-mp3.js`,
+          instrumentUrl,
+          storage,
           loadLoopData: false,
           destination: this.destination,
           volume: 100,
@@ -54,7 +91,7 @@ export class SampledMidiSynth {
         await instrument.ready;
         if (this.disposed) throw new Error("Sample loading was cancelled.");
         if (instrument.loadProgress.total === 0) throw new Error(`No samples loaded for ${name}.`);
-      }));
+      }
       this.report('All required MIDI instruments preloaded.');
     } catch (error) {
       this.dispose();
@@ -89,6 +126,7 @@ export class SampledMidiSynth {
 
   dispose() {
     this.disposed = true;
+    this.downloadAbort.abort();
     this.stop();
     this.instruments.forEach(instrument => instrument.dispose());
     this.instruments.clear();
