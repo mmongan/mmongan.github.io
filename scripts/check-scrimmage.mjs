@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs';
 import { stripTypeScriptTypes } from 'node:module';
 import vm from 'node:vm';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
+import { Observable } from '@babylonjs/core/Misc/observable.js';
 
 const compile = path => stripTypeScriptTypes(readFileSync(new URL(path, import.meta.url), 'utf8'),
   { mode: 'transform' }).replace(/^import[\s\S]*?;\r?$/gm, '').replace(/export /g, '');
@@ -96,4 +97,77 @@ assert.equal(new Set(Array.from({ length: 22 }, (_, index) => JSON.stringify(con
   22, 'Players have distinct, evenly spaced bench seats');
 assert.ok(Math.abs(context.scrimmageBenchSeat(0).x) + .55 / 2 < 53.333 / 2 + 4,
   'Bench remains in the sideline aisle ahead of the bleachers, not inside the audience');
-console.log('Scrimmage passed: team benches, band exits beyond the nearest end line, sequential player entry, continuous routes and delayed play.');
+const interactionSource = readFileSync(new URL('../src/interaction/pathInteraction.ts', import.meta.url), 'utf8');
+const resumeSource = interactionSource.slice(interactionSource.indexOf('function resumeBandAfterScrimmage('),
+  interactionSource.indexOf('function clearWaitingFootballPlayers('));
+const afterRender = new Observable();
+let transport = { beat: 0, lastBeat: 458, playing: true, beatsPerSecond: 2, revision: 1 };
+let restored = 0, played = 0, sought = [], messages = [], errors = [], restoreFails = false;
+const original = { playback: { beat: 12, lastBeat: 80 }, name: 'Original band' };
+const resumeContext = vm.createContext({
+  Error,
+  scene: { onAfterRenderObservable: afterRender }, disposeScrimmageResume: null,
+  getDrillTransportState: () => ({ ...transport }), floorCalibrationToggle: { checked: false },
+  marcherGrabs: new Map(), isFloatingPanelGrabbed: () => false, canUseCameraFieldCopies: () => true,
+  restoreCameraFieldState: state => {
+    assert.equal(state, original, 'Restore uses the complete captured original show');
+    if (restoreFails) throw new Error('Restore failed');
+    restored++;
+    transport = { ...transport, ...state.playback, playing: false, revision: transport.revision + 1 };
+  },
+  seekToCount: count => { sought.push(count); transport.beat = count; },
+  playAll: () => { played++; transport.playing = true; },
+  pauseAll: () => { transport.playing = false; },
+  publishFormationEdit: message => messages.push(message), console: { error: (...args) => errors.push(args) },
+});
+vm.runInContext(stripTypeScriptTypes(resumeSource, { mode: 'transform' }), resumeContext);
+const render = () => afterRender.notifyObservers(null);
+resumeContext.resumeBandAfterScrimmage(original);
+render(); assert.equal(restored, 0, 'Playing football does not restore the band early');
+transport = { ...transport, beat: 458, playing: false };
+render();
+assert.equal(restored, 1, 'Natural completion restores the band even when transport has just stopped');
+assert.equal(played, 1, 'Restored original drill starts automatically');
+assert.equal(transport.beat, 12, 'Resume at the captured formation/count without rewinding');
+render(); assert.equal(restored, 1, 'Completion observer unregisters before restoring');
+for (const lastBeat of [50, 458]) {
+  transport = { beat: lastBeat - 1, lastBeat, playing: true, beatsPerSecond: 2, revision: 2 };
+  resumeContext.resumeBandAfterScrimmage(original);
+  render();
+  resumeContext.floorCalibrationToggle.checked = true;
+  transport = { ...transport, beat: lastBeat, playing: false };
+  render(); assert.equal(restored, lastBeat === 50 ? 1 : 2, 'Calibration defers automatic restoration');
+  resumeContext.floorCalibrationToggle.checked = false;
+  render();
+}
+assert.equal(restored, 3, 'Natural and button-triggered simultaneous returns both resume the band');
+for (const mode of ['paused seek', 'reverse', 'replacement']) {
+  transport = { beat: 40, lastBeat: 50, playing: true, beatsPerSecond: 2, revision: 3 };
+  resumeContext.resumeBandAfterScrimmage(original);
+  render();
+  if (mode === 'replacement') {
+    resumeContext.disposeScrimmageResume();
+    resumeContext.disposeScrimmageResume = null;
+  }
+  transport = { ...transport, beat: 50, playing: mode === 'reverse', beatsPerSecond: -2, revision: 4 };
+  render(); assert.equal(restored, 3, `${mode} does not trigger automatic playback`);
+  resumeContext.disposeScrimmageResume?.();
+  resumeContext.disposeScrimmageResume = null;
+}
+original.playback.beat = 80;
+transport = { beat: 50, lastBeat: 50, playing: true, beatsPerSecond: 2, revision: 5 };
+resumeContext.resumeBandAfterScrimmage(original); render();
+assert.deepEqual(sought, [0], 'An already completed original drill restarts at count zero');
+restoreFails = true;
+transport = { beat: 50, lastBeat: 50, playing: true, beatsPerSecond: 2, revision: 6 };
+resumeContext.resumeBandAfterScrimmage(original); render();
+assert.equal(errors.length, 1, 'Restore failures are logged explicitly');
+assert.equal(messages.at(-1), 'Restore failed', 'Restore failures are surfaced to the user');
+assert.equal(transport.playing, false, 'Restore failure stops playback');
+await new Promise(resolve => setTimeout(resolve, 0));
+assert.equal(afterRender.observers.length, 0, 'Observers are cleaned up on success, replacement and failure');
+assert.match(interactionSource, /resumeBandAfterScrimmage\(previous\);\s+playAll\(\)/,
+  'Only staged scrimmages register automatic band playback');
+assert.match(interactionSource, /function clearAllRobots\(\) \{\s+disposeScrimmageResume\?\.\(\)/,
+  'Show replacement removes the automatic restoration callback');
+console.log('Scrimmage passed: benches, band exit/return routes, original drill auto-resume, pause/reverse/replacement gating and cleanup.');

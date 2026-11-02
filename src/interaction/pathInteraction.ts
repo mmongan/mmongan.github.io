@@ -3373,6 +3373,8 @@ function spawnRandomRobots(count: number) {
 // lines, segments/handles, formation connections) so a fresh drill starts on
 // an empty field instead of piling onto whatever was already there.
 function clearAllRobots() {
+  disposeScrimmageResume?.();
+  disposeScrimmageResume = null;
   setFootballEditingEnabled(false);
   clearWaitingFootballPlayers();
   footballVisuals?.();
@@ -3432,7 +3434,36 @@ function clearAllRobots() {
 let footballVisuals: (() => void) | null = null;
 let endActiveScrimmage: (() => void) | null = null;
 let footballPreviousState: ReturnType<typeof captureCameraFieldState> | null = null;
+let disposeScrimmageResume: (() => void) | null = null;
 let waitingFootballCleanup: (() => void) | null = null;
+
+function resumeBandAfterScrimmage(previous: ReturnType<typeof captureCameraFieldState>) {
+  let lastTransport = getDrillTransportState();
+  let completed = false;
+  const observer = scene.onAfterRenderObservable.add(() => {
+    const transport = getDrillTransportState();
+    const forwardPlayback = transport.playing && transport.beatsPerSecond > 0 ||
+      lastTransport.playing && lastTransport.beatsPerSecond > 0 && lastTransport.revision === transport.revision;
+    if (forwardPlayback && transport.lastBeat > 0 && transport.beat >= transport.lastBeat) completed = true;
+    lastTransport = transport;
+    if (!completed || floorCalibrationToggle?.checked || marcherGrabs.size || isFloatingPanelGrabbed() ||
+      !canUseCameraFieldCopies()) return;
+    disposeScrimmageResume?.();
+    disposeScrimmageResume = null;
+    try {
+      restoreCameraFieldState(previous);
+      const band = getDrillTransportState();
+      if (band.lastBeat > 0 && band.beat >= band.lastBeat) seekToCount(0);
+      playAll();
+      publishFormationEdit('Band restored: running the original drill.');
+    } catch (error) {
+      pauseAll();
+      console.error('Could not resume the band drill after scrimmage:', error);
+      publishFormationEdit(error instanceof Error ? error.message : String(error));
+    }
+  });
+  disposeScrimmageResume = () => { scene.onAfterRenderObservable.remove(observer); };
+}
 
 function clearWaitingFootballPlayers() {
   waitingFootballCleanup?.();
@@ -3667,6 +3698,7 @@ function loadFootballPlay(formation: FootballFormation, play: FootballPlay, scri
         ending = true;
         seekToCount(0); playAll();
       };
+      resumeBandAfterScrimmage(previous);
       playAll();
     }
   } catch (error) {
@@ -4080,6 +4112,8 @@ export function initInteraction() {
   const waitingObserver = scene.onBeforeRenderObservable.add(showWaitingFootballPlayers);
   scene.onDisposeObservable.addOnce(() => {
     scene.onBeforeRenderObservable.remove(waitingObserver);
+    disposeScrimmageResume?.();
+    disposeScrimmageResume = null;
     clearWaitingFootballPlayers();
     footballVisuals?.();
     footballVisuals = null;
