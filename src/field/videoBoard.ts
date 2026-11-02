@@ -208,7 +208,7 @@ function createTopDownFieldTexture(
     camera.minZ = scale;
     camera.maxZ = 200 * scale;
     const renderList = rtt.renderList!;
-    renderList.length = 2;
+    renderList.length = 1;
     for (const mesh of scene.meshes) {
       if (mesh.name === "robotTopDownMarker") renderList.push(mesh);
     }

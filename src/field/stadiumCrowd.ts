@@ -6,6 +6,7 @@ import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTextur
 import { Texture } from '@babylonjs/core/Materials/Textures/texture.pure';
 import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
+import { VertexBuffer } from '@babylonjs/core/Buffers/buffer.pure';
 import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
 import { scene } from '../scene/engine';
@@ -58,10 +59,15 @@ export function createStadiumCrowd(parent: Mesh) {
     mat.specularColor = Color3.Black();
     return mat;
   };
-  const shirts = ['#2875b5', '#d95140', '#e5ba38', '#704bb0', '#39a880', '#eeeeee']
-    .map((color, index) => material(`shirt${index}`, color));
-  const skin = ['#f2c7a5', '#b77c50', '#67432f'].map((color, index) => material(`skin${index}`, color));
-  const trousers = material('trousers', '#243247');
+  // The whole audience shares one vertex-colored material, so any number of
+  // outfit/skin/hair combinations still merges into a single static mesh.
+  const crowdMaterial = material('people', '#ffffff');
+  const SHIRTS = ['#2875b5', '#d95140', '#e5ba38', '#704bb0', '#39a880', '#eeeeee',
+    '#f28c28', '#4aa3dd', '#c2436b', '#7a8b2f', '#2f4f8f', '#d9d2c0'].map(Color3.FromHexString);
+  const SKINS = ['#f2c7a5', '#d9a06b', '#b77c50', '#67432f'].map(Color3.FromHexString);
+  const TROUSERS = ['#243247', '#3a3a3a', '#5a4632', '#274035'].map(Color3.FromHexString);
+  const HAIR = ['#2a1d12', '#4a3521', '#8a8a8a', '#1c1c1c', '#6b4a2b'].map(Color3.FromHexString);
+  const SHOES = Color3.FromHexString('#2b2b2b');
   const frameMaterial = material('signFrame', '#f3bc45');
   const signFaces = SIGNS.map((sign, index) => {
     const canvas = document.createElement('canvas');
@@ -105,7 +111,7 @@ export function createStadiumCrowd(parent: Mesh) {
     previousPlaying = state.playing;
     signFaces[MEDIA_SIGNS.findIndex(sign => sign.action === 'playPause')].draw();
   });
-  const materials = [...shirts, ...skin, trousers, frameMaterial, ...signFaces.map(face => face.material)];
+  const materials = [crowdMaterial, frameMaterial, ...signFaces.map(face => face.material)];
   const immersiveSigns = new Map<Mesh, HandMenuHit>();
   const updateSigns = () => {
     immersiveSigns.forEach((action, sign) => sign.setEnabled(isDrillEditingEnabled() && isMenuActionAvailable(action)));
@@ -121,30 +127,84 @@ export function createStadiumCrowd(parent: Mesh) {
   });
   let parts: Mesh[] = [];
 
-  function box(name: string, x: number, y: number, z: number,
-    width: number, height: number, depth: number, mat: StandardMaterial) {
-    const mesh = MeshBuilder.CreateBox(name, { width, height, depth }, scene);
+  function paint(mesh: Mesh, color: Color3) {
+    const count = mesh.getTotalVertices();
+    const colors = new Float32Array(count * 4);
+    for (let vertex = 0; vertex < count; vertex++) {
+      colors[vertex * 4] = color.r;
+      colors[vertex * 4 + 1] = color.g;
+      colors[vertex * 4 + 2] = color.b;
+      colors[vertex * 4 + 3] = 1;
+    }
+    mesh.setVerticesData(VertexBuffer.ColorKind, colors);
+  }
+
+  function finishPart(mesh: Mesh, x: number, y: number, z: number, color: Color3) {
     mesh.position.set(x, y, z);
-    mesh.material = mat;
+    mesh.material = crowdMaterial;
     mesh.isPickable = false;
+    paint(mesh, color);
     parts.push(mesh);
     return mesh;
   }
 
+  function ellipsoid(name: string, x: number, y: number, z: number,
+    width: number, height: number, depth: number, color: Color3, segments = 6) {
+    return finishPart(MeshBuilder.CreateSphere(name,
+      { diameterX: width, diameterY: height, diameterZ: depth, segments }, scene), x, y, z, color);
+  }
+
+  function capsule(name: string, x: number, y: number, z: number,
+    height: number, radius: number, color: Color3, alongField = false) {
+    const mesh = MeshBuilder.CreateCapsule(name,
+      { height: height + radius * 2, radius, tessellation: 6, subdivisions: 1, capSubdivisions: 2 }, scene);
+    if (alongField) mesh.rotation.z = Math.PI / 2;
+    return finishPart(mesh, x, y, z, color);
+  }
+
+  function dome(name: string, x: number, y: number, z: number, diameter: number, color: Color3) {
+    return finishPart(MeshBuilder.CreateSphere(name, { diameter, segments: 5, slice: 0.55 }, scene), x, y, z, color);
+  }
+
+  // Seated audience member facing the field (+x axis points away from it),
+  // built from the same rounded capsule/ellipsoid family as the marchers and
+  // football players. Pose, outfit, complexion, hair, and hats vary
+  // deterministically by seat.
   function spectator(side: number, x: number, seatY: number, z: number, index: number, raised = false) {
-    const shirt = shirts[index % shirts.length];
-    const complexion = skin[Math.floor(index / shirts.length) % skin.length];
-    box('spectatorTorso', x, seatY + 0.33, z, 0.3, 0.54, 0.44, shirt);
-    const head = MeshBuilder.CreateSphere('spectatorHead', { diameter: 0.28, segments: 4 }, scene);
-    head.position.set(x, seatY + 0.78, z);
-    head.material = complexion;
-    head.isPickable = false;
-    parts.push(head);
-    for (const offset of [-0.15, 0.15]) {
-      box('spectatorThigh', x - side * 0.13, seatY + 0.07, z + offset, 0.4, 0.15, 0.12, trousers);
-      box('spectatorShin', x - side * 0.29, seatY - 0.12, z + offset, 0.14, 0.36, 0.14, trousers);
-      box('spectatorArm', x - side * 0.06, seatY + (raised ? 0.98 : 0.35), z + offset * 1.7,
-        0.13, raised ? 0.9 : 0.4, 0.13, raised ? complexion : shirt);
+    const shirt = SHIRTS[index % SHIRTS.length];
+    const complexion = SKINS[Math.floor(index / SHIRTS.length) % SKINS.length];
+    const trouser = TROUSERS[(index + 1) % TROUSERS.length];
+    // 0 hands on lap, 1 both arms up, 2 one arm up, 3 arms crossed low.
+    const pose = raised ? 1 : (index * 7 + 3) % 4;
+    ellipsoid('spectatorTorso', x, seatY + 0.33, z, 0.34, 0.62, 0.48, shirt);
+    for (const offset of [-0.19, 0.19]) {
+      ellipsoid('spectatorShoulder', x, seatY + 0.54, z + offset, 0.2, 0.18, 0.2, shirt, 5);
+    }
+    ellipsoid('spectatorHead', x, seatY + 0.78, z, 0.28, 0.28, 0.28, complexion, 6);
+    const style = index % 4;
+    if (style === 0) {
+      // Team cap with a small brim toward the field.
+      const capColor = SHIRTS[(index + 5) % SHIRTS.length];
+      dome('spectatorCap', x, seatY + 0.84, z, 0.3, capColor);
+      ellipsoid('spectatorCapBrim', x - side * 0.15, seatY + 0.86, z, 0.16, 0.03, 0.18, capColor, 4);
+    } else if (style !== 3) {
+      dome('spectatorHair', x, seatY + 0.83, z, 0.3, HAIR[index % HAIR.length]);
+    }
+    for (const [armIndex, offset] of [-0.15, 0.15].entries()) {
+      capsule('spectatorThigh', x - side * 0.13, seatY + 0.07, z + offset, 0.34, 0.075, trouser, true);
+      capsule('spectatorShin', x - side * 0.29, seatY - 0.12, z + offset, 0.3, 0.07, trouser);
+      ellipsoid('spectatorShoe', x - side * 0.34, seatY - 0.32, z + offset, 0.22, 0.1, 0.16, SHOES, 4);
+      const armZ = z + offset * 1.9;
+      if (pose === 1 || (pose === 2 && armIndex === 0)) {
+        capsule('spectatorArm', x - side * 0.04, seatY + 0.58, armZ, 0.2, 0.06, shirt);
+        capsule('spectatorForearm', x - side * 0.04, seatY + 0.9, armZ, 0.26, 0.055, complexion);
+      } else if (pose === 3) {
+        capsule('spectatorArm', x - side * 0.05, seatY + 0.4, armZ, 0.18, 0.06, shirt);
+        capsule('spectatorForearm', x - side * 0.18, seatY + 0.24, z + offset * 0.8, 0.16, 0.055, complexion, true);
+      } else {
+        capsule('spectatorArm', x - side * 0.05, seatY + 0.4, armZ, 0.18, 0.06, shirt);
+        capsule('spectatorForearm', x - side * 0.2, seatY + 0.22, z + offset * 1.5, 0.16, 0.055, complexion, true);
+      }
     }
   }
 

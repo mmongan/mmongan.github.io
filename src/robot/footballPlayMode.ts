@@ -729,7 +729,22 @@ export function createFootballVisuals(
         }
       }
     };
-    const observer = scene.onBeforeRenderObservable.add(update);
+    // The waiting-bench configuration (no ball events, play never starts) has
+    // a time-invariant pose; re-posing it every frame would force hundreds of
+    // redundant world-matrix recomputes for seated players. Re-pose it only
+    // when its observable inputs change.
+    const staticBench = events.length === 0 && !Number.isFinite(visibleFromCount) &&
+      !sequence?.length && tackles.length === 0 && outcomes.length === 0 && returnStart === undefined;
+    let staticPoseKey: string | null = null;
+    const observer = scene.onBeforeRenderObservable.add(() => {
+      if (staticBench) {
+        const key = `${players.filter(({ robot }) => !robot.isDisposed() && robot.isEnabled()).length}:${
+          !!floorCalibrationToggle?.checked}`;
+        if (key === staticPoseKey) return;
+        staticPoseKey = key;
+      }
+      update();
+    });
     disposeObserver = () => { scene.onBeforeRenderObservable.remove(observer); };
     disposeSnapPauses = initFootballSnapPauses(events);
     if (Number.isFinite(visibleFromCount)) {

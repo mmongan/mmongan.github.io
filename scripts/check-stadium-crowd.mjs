@@ -13,6 +13,7 @@ import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.js';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.js';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
 import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector.js';
+import { VertexBuffer } from '@babylonjs/core/Buffers/buffer.js';
 import { Plane } from '@babylonjs/core/Maths/math.plane.js';
 import { Color3 } from '@babylonjs/core/Maths/math.color.js';
 import { Ray } from '@babylonjs/core/Culling/ray.js';
@@ -32,11 +33,15 @@ const scrimmageButton = { dataset: { returnBand: 'false' },
   removeEventListener: (_, listener) => scrimmageListeners.delete(listener) };
 const context = vm.createContext({
   scrimmageButton,
-  scene, Mesh, MeshBuilder: { ...MeshBuilder, CreateBox(name, options, scene) {
-    const mesh = MeshBuilder.CreateBox(name, options, scene);
-    if (name === 'spectatorTorso' || name === 'spectatorThigh') spectatorBoxes.push({ mesh, options });
+  scene, Mesh, MeshBuilder: { ...MeshBuilder, CreateSphere(name, options, scene) {
+    const mesh = MeshBuilder.CreateSphere(name, options, scene);
+    if (name === 'spectatorTorso') spectatorBoxes.push({ mesh, options });
     return mesh;
-  } }, TransformNode, StandardMaterial, Matrix, Quaternion, Vector3, Plane, Color3, Ray, Observable,
+  }, CreateCapsule(name, options, scene) {
+    const mesh = MeshBuilder.CreateCapsule(name, options, scene);
+    if (name === 'spectatorThigh') spectatorBoxes.push({ mesh, options });
+    return mesh;
+  } }, TransformNode, StandardMaterial, Matrix, Quaternion, Vector3, Plane, Color3, Ray, Observable, VertexBuffer,
   Texture: { TRILINEAR_SAMPLINGMODE: 3 },
   document: { createElement: () => {
     const ctx = { labels: [], fillText(label) { this.labels.push(label); } };
@@ -78,12 +83,12 @@ try {
       assert.equal(torso.mesh.name, 'spectatorTorso');
       for (const thigh of spectatorBoxes.slice(index + 1, index + 3)) {
         assert.equal(thigh.mesh.name, 'spectatorThigh');
-        const sideClearance = torso.options.depth / 2 -
-          (Math.abs(thigh.mesh.position.z - torso.mesh.position.z) + thigh.options.depth / 2);
-        assert.ok(sideClearance >= .0099, 'Thigh side faces are inset at least 1 cm from the torso');
-        const verticalOverlap = torso.options.height / 2 + thigh.options.height / 2 -
+        const sideClearance = torso.options.diameterZ / 2 -
+          (Math.abs(thigh.mesh.position.z - torso.mesh.position.z) + thigh.options.radius);
+        assert.ok(sideClearance >= .0099, 'Thigh capsules stay inset at least 1 cm inside the torso silhouette');
+        const verticalOverlap = torso.options.diameterY / 2 + thigh.options.radius -
           Math.abs(torso.mesh.position.y - thigh.mesh.position.y);
-        const horizontalOverlap = torso.options.width / 2 + thigh.options.width / 2 -
+        const horizontalOverlap = torso.options.diameterX / 2 + thigh.options.height / 2 -
           Math.abs(torso.mesh.position.x - thigh.mesh.position.x);
         assert.ok(verticalOverlap > .08 && horizontalOverlap > .2,
           'Inset thighs still join the torso without an open waist seam on either sideline');

@@ -3482,7 +3482,33 @@ function showWaitingFootballPlayers() {
     return { robot, player };
   });
   const disposeVisuals = createFootballVisuals(players, [], pathRoot, Infinity);
+  // Once the one-time bench pose has been applied, bake the static bench into
+  // a single mesh: ~630 decorative meshes otherwise cost per-frame active-mesh
+  // evaluation and draw calls. The sources stay (disabled) for the visuals'
+  // cleanup; top-down markers remain live for the video board.
+  let mergedBench: Mesh | null = null;
+  let mergeFrames = 0;
+  const mergeObserver = scene.onBeforeRenderObservable.add(() => {
+    if (++mergeFrames < 3) return;
+    scene.onBeforeRenderObservable.remove(mergeObserver);
+    const sources = scene.meshes.filter((mesh): mesh is Mesh => mesh instanceof Mesh &&
+      mesh.name.startsWith('football-') && mesh.isEnabled() && mesh.isVisible &&
+      mesh.getTotalVertices() > 0);
+    if (!sources.length) return;
+    sources.forEach(mesh => mesh.computeWorldMatrix(true));
+    mergedBench = Mesh.MergeMeshes(sources, false, true, undefined, false, true);
+    if (!mergedBench) return;
+    mergedBench.name = 'football-waiting-bench';
+    mergedBench.isPickable = false;
+    mergedBench.setParent(pathRoot);
+    sources.forEach(mesh => mesh.setEnabled(false));
+  });
   waitingFootballCleanup = () => {
+    scene.onBeforeRenderObservable.remove(mergeObserver);
+    // The merged bench's MultiMaterial wraps materials the visuals own.
+    mergedBench?.material?.dispose();
+    mergedBench?.dispose();
+    mergedBench = null;
     disposeVisuals();
     players.forEach(({ robot }) => robot.dispose());
   };
