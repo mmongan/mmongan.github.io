@@ -154,6 +154,7 @@ import {
 } from '../robot/robot';
 import { duplicateDrillButton, duplicateDrillStatus } from '../ui/dom';
 import { MAX_MARCHING_STRIDE_YARDS } from '../robot/gaitSelection';
+import { setFootballAudioMode } from '../audio/midiPlayback';
 import { getTrackedHandMenuPose } from '../menu/handMenuPose';
 import { createPalmSweepState, updatePalmSweep, type PalmSweepState } from './palmSweepGesture';
 import { createPanelMenuGestureState, isOpenFlatPalm, updatePanelMenuGesture,
@@ -3373,6 +3374,7 @@ function spawnRandomRobots(count: number) {
 // lines, segments/handles, formation connections) so a fresh drill starts on
 // an empty field instead of piling onto whatever was already there.
 function clearAllRobots() {
+  setFootballAudioMode(false);
   disposeScrimmageResume?.();
   disposeScrimmageResume = null;
   setFootballEditingEnabled(false);
@@ -3454,8 +3456,24 @@ function resumeBandAfterScrimmage(previous: ReturnType<typeof captureCameraField
       restoreCameraFieldState(previous);
       const band = getDrillTransportState();
       if (band.lastBeat > 0 && band.beat >= band.lastBeat) seekToCount(0);
-      playAll();
-      publishFormationEdit('Band restored: running the original drill.');
+      const pausedBand = getDrillTransportState();
+      const restartAt = performance.now() + 3000;
+      const pauseObserver = scene.onAfterRenderObservable.add(() => {
+        const current = getDrillTransportState();
+        if (current.playing || current.revision !== pausedBand.revision || current.beat !== pausedBand.beat) {
+          disposeScrimmageResume?.();
+          disposeScrimmageResume = null;
+          return;
+        }
+        if (performance.now() < restartAt || floorCalibrationToggle?.checked || marcherGrabs.size ||
+          isFloatingPanelGrabbed() || !canUseCameraFieldCopies()) return;
+        disposeScrimmageResume?.();
+        disposeScrimmageResume = null;
+        playAll();
+        publishFormationEdit('Band restored: running the original drill.');
+      });
+      disposeScrimmageResume = () => { scene.onAfterRenderObservable.remove(pauseObserver); };
+      publishFormationEdit('Band restored: pausing for 3 seconds before running the original drill.');
     } catch (error) {
       pauseAll();
       console.error('Could not resume the band drill after scrimmage:', error);
@@ -3619,6 +3637,7 @@ function loadFootballPlay(formation: FootballFormation, play: FootballPlay, scri
       ...segment, startCount: segment.startCount + offset, endCount: segment.endCount + offset,
     })), geometry.tackles?.map(event => ({ ...event, count: event.count + offset })),
     geometry.outcomes?.map(event => ({ ...event, count: event.count + offset })), returnStart);
+    setFootballAudioMode(true);
     setFootballEditingEnabled(true);
     if (footballDraftFrom) footballDraftFrom.value = String(offset);
     if (footballDraftTo) footballDraftTo.value = String(offset + 16);
@@ -4115,6 +4134,7 @@ export function initInteraction() {
     disposeScrimmageResume?.();
     disposeScrimmageResume = null;
     clearWaitingFootballPlayers();
+    setFootballAudioMode(false);
     footballVisuals?.();
     footballVisuals = null;
     endActiveScrimmage = null;

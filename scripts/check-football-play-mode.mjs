@@ -13,9 +13,53 @@ import '@babylonjs/core/Meshes/instancedMesh.js';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.js';
 import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 import { Color3 } from '@babylonjs/core/Maths/math.color.js';
+import { Observable } from '@babylonjs/core/Misc/observable.js';
 
 const transform = path => stripTypeScriptTypes(readFileSync(new URL(path, import.meta.url), 'utf8'),
   { mode: 'transform' }).replace(/^import[\s\S]*?;\r?$/gm, '').replace(/export /g, '');
+const modeSource = readFileSync(new URL('../src/robot/footballPlayMode.ts', import.meta.url), 'utf8');
+const snapSource = modeSource.slice(modeSource.indexOf('function initFootballSnapPauses('),
+  modeSource.indexOf('export function shiftFootballTimeline('));
+let clock = 0, snapTransport = { beat: 47, playing: true, beatsPerSecond: 2, revision: 1 };
+let snapStarts = 0;
+const snapAfterRender = new Observable();
+const snapContext = vm.createContext({
+  scene: { onAfterRenderObservable: snapAfterRender }, performance: { now: () => clock },
+  getDrillTransportState: () => ({ ...snapTransport }),
+  pauseAll: () => { snapTransport.playing = false; },
+  seekToCount: beat => { snapTransport.beat = beat; snapTransport.revision++; },
+  playAll: () => { snapTransport.playing = true; snapStarts++; },
+  footballStatus: { value: '' }, floorCalibrationToggle: { checked: false },
+});
+vm.runInContext(stripTypeScriptTypes(snapSource, { mode: 'transform' }), snapContext);
+const snapEvents = [48, 96].map(startCount => ({ kind: 'snap', startCount }));
+const disposeSnaps = snapContext.initFootballSnapPauses(snapEvents);
+snapTransport.beat = 48.3; snapAfterRender.notifyObservers(null);
+assert.equal(snapTransport.beat, 48, 'Crossing snap stops at the exact count');
+assert.equal(snapTransport.playing, false);
+clock = 2999; snapAfterRender.notifyObservers(null);
+assert.equal(snapStarts, 0, 'Snap pause lasts the full three seconds');
+clock = 3000; snapAfterRender.notifyObservers(null);
+assert.equal(snapStarts, 1);
+snapAfterRender.notifyObservers(null);
+assert.equal(snapTransport.playing, true, 'Resuming at the snap does not pause again');
+snapTransport.beat = 95; snapAfterRender.notifyObservers(null);
+snapEvents[1].startCount += 4;
+snapTransport.beat = 100.2; snapAfterRender.notifyObservers(null);
+assert.equal(snapTransport.beat, 100, 'Later snap pauses follow retimed event counts');
+clock += 3000; snapContext.floorCalibrationToggle.checked = true; snapAfterRender.notifyObservers(null);
+assert.equal(snapStarts, 1, 'Calibration defers the restart');
+snapContext.floorCalibrationToggle.checked = false; snapAfterRender.notifyObservers(null);
+assert.equal(snapStarts, 2, 'Every play resumes after its pause');
+snapTransport.beat = 47; snapTransport.revision++; snapAfterRender.notifyObservers(null);
+snapTransport.beat = 48; snapAfterRender.notifyObservers(null);
+assert.equal(snapTransport.playing, false, 'Replaying a snap pauses again');
+snapTransport.beat = 49; snapTransport.revision++;
+clock += 3000; snapAfterRender.notifyObservers(null);
+assert.equal(snapStarts, 2, 'Manual seek cancels a pending restart');
+disposeSnaps();
+await new Promise(resolve => setTimeout(resolve, 0));
+assert.equal(snapAfterRender.observers.length, 0, 'Snap observer is disposed on football exit');
 assert.match(readFileSync(new URL('../src/index.html', import.meta.url), 'utf8'),
   /id="footballFlightPath"[^>]*\bchecked\b/, 'Ball path defaults on in the shared native/XR toggle');
 const geometry = vm.createContext({});

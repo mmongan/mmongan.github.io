@@ -38,6 +38,16 @@ let loadedDescription = "";
 let synthLoading = false;
 let midiLoading = false;
 let statusIsError = false;
+let footballVolumeScale = 1;
+
+function selectedMidiGain() {
+  return Number(midiVolumeInput?.value ?? 60) / 100 * footballVolumeScale;
+}
+
+export function setFootballAudioMode(enabled: boolean) {
+  footballVolumeScale = enabled ? .25 : 1;
+  if (master && context) master.gain.setTargetAtTime(selectedMidiGain(), context.currentTime, .1);
+}
 
 export function isMidiPlaybackReady() {
   return !audioEnabled || (!midiLoading && !timeline) ||
@@ -72,7 +82,7 @@ function initializeAudioContext() {
   context ??= new AudioContext();
   if (master) return;
   master = context.createGain();
-  master.gain.value = Number(midiVolumeInput?.value ?? 60) / 100;
+  master.gain.value = selectedMidiGain();
   const limiter = context.createDynamicsCompressor();
   master.connect(limiter);
   limiter.connect(context.destination);
@@ -363,7 +373,7 @@ export function initMidiPlayback() {
   });
   midiVolumeInput?.addEventListener('input', () => {
     if (master && context && midiVolumeInput) {
-      master.gain.setTargetAtTime(Number(midiVolumeInput.value) / 100, context.currentTime, 0.02);
+      master.gain.setTargetAtTime(selectedMidiGain(), context.currentTime, 0.02);
     }
   });
   audioButton?.addEventListener('click', () => {

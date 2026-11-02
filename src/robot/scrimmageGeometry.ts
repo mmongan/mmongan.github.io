@@ -10,7 +10,7 @@ export const SCRIMMAGE_STAND_COUNTS = 2;
 export const SCRIMMAGE_RETURN_COUNTS = 48;
 export const SCRIMMAGE_SIT_COUNTS = 2;
 export const SCRIMMAGE_BAND_RETURN_COUNTS = 48;
-export const SCRIMMAGE_PLAY_START = SCRIMMAGE_EXIT_COUNTS + SCRIMMAGE_ENTRY_COUNTS;
+export const SCRIMMAGE_PLAY_START = Math.max(SCRIMMAGE_EXIT_COUNTS, SCRIMMAGE_ENTRY_COUNTS);
 
 export function scrimmageWalk(start: FootballPosition, end: FootballPosition, counts: number): FootballPosition[] {
   return Array.from({ length: counts + 1 }, (_, count) => {
@@ -36,7 +36,8 @@ export function scrimmageBandRoute(start: FootballPosition, index: number, playC
 
 export function scrimmagePlayerRoute(route: ReadonlyArray<FootballPosition>, index: number): FootballPosition[] {
   const sideline = scrimmageBenchSeat(index);
-  const hold = Array.from({ length: SCRIMMAGE_EXIT_COUNTS + SCRIMMAGE_STAND_COUNTS }, () => ({ ...sideline }));
+  const standStart = SCRIMMAGE_PLAY_START - SCRIMMAGE_ENTRY_COUNTS;
+  const hold = Array.from({ length: standStart + SCRIMMAGE_STAND_COUNTS }, () => ({ ...sideline }));
   return [...hold, ...scrimmageWalk(sideline, route[0], SCRIMMAGE_ENTRY_COUNTS - SCRIMMAGE_STAND_COUNTS),
     ...route.slice(1), ...scrimmagePlayerReturn(route[route.length - 1], index).slice(1)];
 }

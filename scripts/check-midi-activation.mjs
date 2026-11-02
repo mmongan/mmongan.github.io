@@ -64,6 +64,7 @@ let synth = null;
 let synthLoading = false;
 let timeline = { reset() { resets++; } };
 let loadedDescription = 'Example MIDI';
+${source.slice(source.indexOf('let footballVolumeScale'), source.indexOf('export function isMidiPlaybackReady'))}
 ${setupSource}
 ${enableSource}
 ${initSource}

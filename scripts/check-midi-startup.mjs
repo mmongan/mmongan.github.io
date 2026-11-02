@@ -44,4 +44,29 @@ assert.equal(context.globalPlayback.playing, true, 'Muted rewind does not wait f
 context.pauseAll(); context.setPlaybackStartGuard(null); context.playAll();
 assert.equal(context.globalPlayback.playing, true, 'No audio guard preserves ordinary drill playback');
 assert.ok(requests >= 4);
+const audioSource = readFileSync(new URL('../src/audio/midiPlayback.ts', import.meta.url), 'utf8');
+const gains = [];
+const audioContext = vm.createContext({
+  midiVolumeInput: { value: '60' }, master: null, context: null,
+});
+vm.runInContext(stripTypeScriptTypes(audioSource.slice(audioSource.indexOf('let footballVolumeScale'),
+  audioSource.indexOf('export function isMidiPlaybackReady')), { mode: 'transform' }).replace(/export /g, ''),
+audioContext);
+audioContext.setFootballAudioMode(true);
+assert.equal(audioContext.selectedMidiGain(), .15, 'Football before audio initialization retains reduced gain');
+audioContext.master = { gain: { setTargetAtTime: (gain, time, ramp) => gains.push({ gain, time, ramp }) } };
+audioContext.context = { currentTime: 10 };
+audioContext.setFootballAudioMode(true);
+assert.equal(gains.at(-1).gain, .15, 'Football music uses 25% of the selected volume');
+audioContext.midiVolumeInput.value = '80';
+assert.equal(audioContext.selectedMidiGain(), .2, 'Volume slider retains the football multiplier');
+audioContext.setFootballAudioMode(false);
+assert.equal(gains.at(-1).gain, .8, 'Returning to band restores the current user volume');
+assert.equal(audioContext.midiVolumeInput.value, '80', 'Mode changes never overwrite the user volume');
+audioContext.midiVolumeInput.value = '0';
+audioContext.setFootballAudioMode(true);
+assert.equal(gains.at(-1).gain, 0, 'Muted volume stays muted in football');
+assert.match(audioSource, /master\.gain\.value = selectedMidiGain\(\)/, 'Audio initialization applies the mode gain');
+assert.match(audioSource, /setTargetAtTime\(selectedMidiGain\(\), context\.currentTime, 0\.02\)/,
+  'Volume input changes apply the mode gain');
 console.log('MIDI startup passed: explicit Play waits at the opening, readiness releases the request, pause/seek cancel, fast-forward preserves speed, rewind remains muted, and no guard preserves legacy playback.');
