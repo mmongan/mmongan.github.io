@@ -18,6 +18,9 @@ import type { PanelTransparencySlider } from './panelTransparencySlider';
 import { createSettingsButtonIcon } from './settingsButtonIcons';
 
 const panels = new Set<FloatingPanel>();
+// Reverse lookup so per-pointer-move predicates run in O(1) per mesh instead
+// of scanning every registered panel for every mesh in the scene.
+const panelByMesh = new Map<AbstractMesh, FloatingPanel>();
 
 interface PanelResize {
   getScale(): number;
@@ -152,12 +155,16 @@ export class FloatingPanel {
     }
 
     panels.add(this);
+    this.meshes.forEach(mesh => panelByMesh.set(mesh, this));
     const placementObserver = scene.onBeforeRenderObservable.add(() => {
       if (this.root.isEnabled() && this.viewerPlacement && !this.userPlaced &&
         this.placedCamera !== scene.activeCamera) this.placeForViewer(this.viewerPlacement);
     });
     root.onDisposeObservable.addOnce(() => {
       panels.delete(this);
+      this.meshes.forEach(mesh => {
+        if (panelByMesh.get(mesh) === this) panelByMesh.delete(mesh);
+      });
       scene.onBeforeRenderObservable.remove(placementObserver);
     });
   }
@@ -532,7 +539,8 @@ export function executeFloatingPanelControl(hit: Extract<HandMenuHit, { action: 
 }
 
 export function isFloatingPanelMesh(mesh: AbstractMesh) {
-  return [...panels].some(panel => panel.canGrab && panel.root.isEnabled() && panel.meshes.has(mesh));
+  const panel = panelByMesh.get(mesh);
+  return !!panel && panel.canGrab && panel.root.isEnabled();
 }
 
 export function getFloatingPanelNear(point: Vector3, tolerance = 0.03) {

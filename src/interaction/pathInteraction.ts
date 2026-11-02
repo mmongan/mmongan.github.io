@@ -4200,6 +4200,7 @@ export function initInteraction() {
   // wired to the same collision-marker preview and robot selection the VR
   // trigger dispatches to.
   let panelPointer: number | null = null;
+  let lastCursorPickFrame = -1;
   const releasePanelPointer = () => {
     endFloatingPanelGrab("pointer");
     const pointer = panelPointer;
@@ -4281,6 +4282,11 @@ export function initInteraction() {
         if (tempoPick?.hit) updateScoreboardTempoFromPick(tempoPick);
         return;
       }
+      // Cursor styling only needs one pick per rendered frame, no matter how
+      // fast the mouse reports movement.
+      const frameId = scene.getEngine().frameId;
+      if (frameId === lastCursorPickFrame) return;
+      lastCursorPickFrame = frameId;
       const pick = scene.pick(
         scene.pointerX,
         scene.pointerY,

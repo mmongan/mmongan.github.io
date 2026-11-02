@@ -62,6 +62,11 @@ export function applyStaticRenderOptimizations() {
   scene.meshes.forEach(markAlwaysActive);
   scene.onNewMeshAddedObservable.add(markAlwaysActive);
 
+  // Pointer-move picking otherwise ray-tests the whole scene on every mouse
+  // move; all hover/drag behavior does its own targeted picks (tap and down
+  // picking are separate and unaffected).
+  scene.skipPointerMovePicking = true;
+
   frozenMeshes = scene.meshes.filter(mesh => isUnderARTransform(mesh) &&
     !hasDynamicAncestor(mesh) &&
     !DYNAMIC_NAME_PREFIXES.some(prefix => mesh.name.startsWith(prefix)));
