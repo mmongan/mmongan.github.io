@@ -232,7 +232,7 @@ Open **Uniform paint palette** in browser Settings or **Paint** on the floating 
 - Settings also provides a custom color picker, **Paint individual marcher uniforms** toggle, and **Paint selected marcher** button.
 - The marcher's matching route and top-down marker colors update too. Colors survive normal playback and held-marcher rendering changes; other marchers keep their colors.
 - Painting takes precedence over selection, route scrubbing, marcher movement, and field-click hiding. **Done paint**, disabling the checkbox, or entering placement, erase, drafting, multi-selection editing, naming, or floor calibration exits paint mode. You can grab/move the palette without painting.
-- New band marchers default to blue uniforms (`#1967d2`). Explicit saved/imported or painted colors are retained; football team uniforms are unchanged. Save a baked OpenChart show or a browser-local chart page draft to preserve uniform colors. There is no paint undo or inclusion in drafting workspace/camera saves. Unsaved colors reset when the show is replaced or the page reloads.
+- All band marchers start with blue jackets (`#1967d2`), including loaded shows and restored browser drafts; saved/imported jacket colors are overridden on load. Painting remains available afterward, and switching camera fields or returning from a scrimmage preserves current painted colors. Football team uniforms are unchanged. Exported shows and browser drafts still record uniform colors, but loading them reapplies blue. There is no paint undo or inclusion in drafting workspace/camera saves.
 
 Implementation: [marcher paint](src/interaction/marcherPaint.ts). Focused check: `node scripts/check-marcher-paint.mjs`.
 
@@ -684,6 +684,8 @@ Forward football playback holds the players at every snap for three seconds, the
 Band MIDI music plays at 25% of the selected volume during football mode, including entry and return handovers. Returning to band mode restores the current selected volume with a short gain ramp. The volume slider and mute setting are not changed.
 
 [footballAnimationLibrary.ts](src/robot/footballAnimationLibrary.ts) provides shared throw and catch/carry clips. Throw keyframes are compiled once into cubic curve coefficients, reused for quarterbacks and between-play return throws; receivers reuse the same reach/tuck clip rather than defining per-player poses.
+
+Football animates in real time using the same shared marcher playback and leg solver; it does not prepare a full-show animation or block Play for an animation cache. Cached cadence prefixes, reusable route snapshots, bounded body-position caching, and shared pose clips reduce repeated work. Edits invalidate these lightweight caches immediately; tabletop transforms and fractional/reverse seeking remain live.
 
 Ordinary passing/run plays and their coaching/drive sequences send the defensive line past the offensive front into the backfield using the rush gait. Ends bend around the edge; tackles push inside toward the pocket. These authored pressure routes do not add automatic sacks; explicit sack plays retain their scripted contact and recovery.
 

@@ -795,7 +795,7 @@ function resumeChartPageDraft() {
     }));
     restoreMarcherSchedule(robot, {
       instrument: marcher.instrument as MarcherInstrument, instrumentRestPose: marcher.rest,
-      color: new Color3(...marcher.color), stepSizeYards: marcher.step, fixedFacingY: marcher.fixed, counts,
+      color: Color3.FromHexString('#1967d2'), stepSizeYards: marcher.step, fixedFacingY: marcher.fixed, counts,
     }, scene);
     const path = counts.map((count) => count.position.clone());
     robotPaths.set(robot, path);
@@ -3810,7 +3810,7 @@ function spawnOpenChartDrill(drill: OpenChartShow, autoPlay = false): number {
     if (performance && marcher.performance) {
       restoreMarcherSchedule(robotPrimitives, {
         instrument: instruments[index], instrumentRestPose: marcher.performance.instrumentPose === "carry",
-        color: new Color3(...marcher.performance.color),
+        color: Color3.FromHexString('#1967d2'),
         stepSizeYards: marcher.performance.stepSizeYards, fixedFacingY: marcher.performance.fixedFacingY,
         counts: performance.counts.map(({ height, ...count }, countIndex) => ({
           ...count, position: path[countIndex],
