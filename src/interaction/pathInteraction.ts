@@ -155,6 +155,7 @@ import {
 import { duplicateDrillButton, duplicateDrillStatus } from '../ui/dom';
 import { MAX_MARCHING_STRIDE_YARDS } from '../robot/gaitSelection';
 import { setFootballAudioMode } from '../audio/midiPlayback';
+import { onScrimmageReturnComplete, resumeBandAfterPause } from '../robot/scrimmagePlayback';
 import { getTrackedHandMenuPose } from '../menu/handMenuPose';
 import { createPalmSweepState, updatePalmSweep, type PalmSweepState } from './palmSweepGesture';
 import { createPanelMenuGestureState, isOpenFlatPalm, updatePanelMenuGesture,
@@ -3440,47 +3441,22 @@ let disposeScrimmageResume: (() => void) | null = null;
 let waitingFootballCleanup: (() => void) | null = null;
 
 function resumeBandAfterScrimmage(previous: ReturnType<typeof captureCameraFieldState>) {
-  let lastTransport = getDrillTransportState();
-  let completed = false;
-  const observer = scene.onAfterRenderObservable.add(() => {
-    const transport = getDrillTransportState();
-    const forwardPlayback = transport.playing && transport.beatsPerSecond > 0 ||
-      lastTransport.playing && lastTransport.beatsPerSecond > 0 && lastTransport.revision === transport.revision;
-    if (forwardPlayback && transport.lastBeat > 0 && transport.beat >= transport.lastBeat) completed = true;
-    lastTransport = transport;
-    if (!completed || floorCalibrationToggle?.checked || marcherGrabs.size || isFloatingPanelGrabbed() ||
-      !canUseCameraFieldCopies()) return;
+  const canRestore = () => !floorCalibrationToggle?.checked && marcherGrabs.size === 0 &&
+    !isFloatingPanelGrabbed() && canUseCameraFieldCopies();
+  disposeScrimmageResume = onScrimmageReturnComplete(canRestore, () => {
     disposeScrimmageResume?.();
     disposeScrimmageResume = null;
     try {
       restoreCameraFieldState(previous);
       const band = getDrillTransportState();
       if (band.lastBeat > 0 && band.beat >= band.lastBeat) seekToCount(0);
-      const pausedBand = getDrillTransportState();
-      const restartAt = performance.now() + 3000;
-      const pauseObserver = scene.onAfterRenderObservable.add(() => {
-        const current = getDrillTransportState();
-        if (current.playing || current.revision !== pausedBand.revision || current.beat !== pausedBand.beat) {
-          disposeScrimmageResume?.();
-          disposeScrimmageResume = null;
-          return;
-        }
-        if (performance.now() < restartAt || floorCalibrationToggle?.checked || marcherGrabs.size ||
-          isFloatingPanelGrabbed() || !canUseCameraFieldCopies()) return;
-        disposeScrimmageResume?.();
-        disposeScrimmageResume = null;
-        playAll();
-        publishFormationEdit('Band restored: running the original drill.');
-      });
-      disposeScrimmageResume = () => { scene.onAfterRenderObservable.remove(pauseObserver); };
-      publishFormationEdit('Band restored: pausing for 3 seconds before running the original drill.');
+      disposeScrimmageResume = resumeBandAfterPause(canRestore, publishFormationEdit);
     } catch (error) {
       pauseAll();
       console.error('Could not resume the band drill after scrimmage:', error);
       publishFormationEdit(error instanceof Error ? error.message : String(error));
     }
   });
-  disposeScrimmageResume = () => { scene.onAfterRenderObservable.remove(observer); };
 }
 
 function clearWaitingFootballPlayers() {

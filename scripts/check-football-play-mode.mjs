@@ -17,9 +17,7 @@ import { Observable } from '@babylonjs/core/Misc/observable.js';
 
 const transform = path => stripTypeScriptTypes(readFileSync(new URL(path, import.meta.url), 'utf8'),
   { mode: 'transform' }).replace(/^import[\s\S]*?;\r?$/gm, '').replace(/export /g, '');
-const modeSource = readFileSync(new URL('../src/robot/footballPlayMode.ts', import.meta.url), 'utf8');
-const snapSource = modeSource.slice(modeSource.indexOf('function initFootballSnapPauses('),
-  modeSource.indexOf('export function shiftFootballTimeline('));
+const snapSource = transform('../src/robot/footballSnapPauses.ts');
 let clock = 0, snapTransport = { beat: 47, playing: true, beatsPerSecond: 2, revision: 1 };
 let snapStarts = 0;
 const snapAfterRender = new Observable();
@@ -96,7 +94,7 @@ const context = vm.createContext({
   initFootballTackleEditor: () => Object.assign(() => {}, { refresh() {} }),
   createFootballFuturePreview: () => () => {},
 });
-for (const module of ['footballMovement', 'footballPresentation', 'footballBodyClearance', 'footballSymbolModel', 'footballHumanModel', 'scrimmageGeometry', 'footballTackles', 'footballBallFlight', 'footballLineOfScrimmage']) {
+for (const module of ['footballMovement', 'footballPresentation', 'footballBodyClearance', 'footballSymbolModel', 'footballHumanModel', 'scrimmageGeometry', 'footballTackles', 'footballBallFlight', 'footballLineOfScrimmage', 'footballSnapPauses']) {
   vm.runInContext(transform(`../src/robot/${module}.ts`), context);
 }
 vm.runInContext(transform('../src/robot/footballPlayMode.ts'), context);

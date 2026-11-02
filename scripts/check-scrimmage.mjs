@@ -122,6 +122,7 @@ const resumeContext = vm.createContext({
   pauseAll: () => { transport.playing = false; },
   publishFormationEdit: message => messages.push(message), console: { error: (...args) => errors.push(args) },
 });
+vm.runInContext(compile('../src/robot/scrimmagePlayback.ts'), resumeContext);
 vm.runInContext(stripTypeScriptTypes(resumeSource, { mode: 'transform' }), resumeContext);
 const render = () => afterRender.notifyObservers(null);
 resumeContext.resumeBandAfterScrimmage(original);
