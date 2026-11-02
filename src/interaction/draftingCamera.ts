@@ -61,7 +61,7 @@ export async function captureDraftingPhoto(
         texture => {
           texture.renderList = scene.meshes.filter(mesh => guides.includes(mesh) ||
             mesh.name === 'adjustableFieldGrid' ||
-            /^(field$|midfieldLogo$|turfStripe\d+$|leftEndZone$|rightEndZone$|leftSideline$|rightSideline$|goalLine|hashMark)/.test(mesh.name));
+            /^(field$|turfStripe\d+$|leftEndZone$|rightEndZone$|leftSideline$|rightSideline$|goalLine|hashMark)/.test(mesh.name));
         },
         (width, height, data, callback, _mimeType, _fileName, invertY) => {
           try {

@@ -8,7 +8,6 @@ import { createScoreboard } from './scoreboard';
 import { createVideoBoard } from './videoBoard';
 import { videoScreenSizeInput, videoScreenSizeValue } from '../ui/dom';
 import { createAdjustableFieldGrid } from './adjustableGrid';
-import { createMidfieldLogo } from './midfieldLogo';
 
 // Assemble the field as a single scene object, with level-specific updates for
 // the yard lines, bleachers, and goalposts.
@@ -17,7 +16,6 @@ export function createFootballField(): {
   updateVideoBoardProgress: (progress: number | null) => void;
 } {
   const turf = createTurf();
-  createMidfieldLogo();
   const { updateFieldLevel } = turf;
   createAdjustableFieldGrid(turf.field);
   const { updateStands } = createStands();

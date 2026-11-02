@@ -135,7 +135,7 @@ export function createCameraFieldCopies<T>(deps: {
         visual.actionManager = null;
         visual.skeleton = null;
         visual.morphTargetManager = null;
-        visual.renderingGroupId = source.name === 'midfieldLogo' ? source.renderingGroupId : 0;
+        visual.renderingGroupId = 0;
         const pose = source.computeWorldMatrix(true).multiply(inverse);
         visual.rotationQuaternion = Quaternion.Identity();
         pose.decompose(visual.scaling, visual.rotationQuaternion, visual.position);

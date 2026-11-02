@@ -35,6 +35,8 @@ function createEngine(): Engine {
 export const engine = createEngine();
 
 export const scene = new Scene(engine);
+// Diagnostics handle for profiling sessions (e.g. remote Quest debugging).
+(window as unknown as { __scene?: Scene }).__scene = scene;
 scene.clearColor = new Color4(0.03, 0.05, 0.09, 1);
 
 // Distance haze so the horizon ground fades out instead of ending at a hard edge.

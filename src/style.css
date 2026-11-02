@@ -51,23 +51,8 @@ body {
   align-items: center;
   justify-content: center;
   gap: 14px;
-  transition: opacity 0.45s ease;
-}
-
-/* Background lives on a pseudo-element with a circular transparent window at
-   the viewport center, where the in-scene 3D instrument model shows through. */
-.startup-overlay::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: -1;
   background: radial-gradient(circle at 50% 35%, rgba(63, 124, 247, 0.18), transparent 55%), var(--bg);
-  -webkit-mask: radial-gradient(circle at 50% 50%, transparent 0 148px, black 152px);
-  mask: radial-gradient(circle at 50% 50%, transparent 0 148px, black 152px);
-}
-
-.startup-stage {
-  height: 290px;
+  transition: opacity 0.45s ease;
 }
 
 .startup-overlay.startup-overlay-done {

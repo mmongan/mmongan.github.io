@@ -1,10 +1,10 @@
 // Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// In-scene startup display: a rotating 3D model of the instrument currently
-// preloading, plus a floating title/progress panel shown in immersive VR/AR
-// (where the DOM title screen is invisible). On desktop only the model shows
-// — it appears through the transparent window of the DOM overlay.
+// In-scene startup display for immersive VR/AR, where the DOM title screen is
+// invisible: a floating title/progress panel with a rotating 3D model of the
+// instrument currently preloading. On desktop the DOM overlay covers the
+// screen, so the whole display stays disabled outside XR sessions.
 //
 // Must be created after captureContentRootMeshes() so it never joins the AR
 // tabletop transform; it rides the active camera instead.
@@ -154,12 +154,12 @@ export function initStartupDisplay() {
       const camera = scene.activeCamera;
       if (!root || !camera) return;
       const inXR = camera.getClassName() === 'WebXRCamera';
-      // In XR the panel carries the title and progress; on desktop the DOM
-      // overlay does, and only the model shows through its window.
-      panel?.setEnabled(inXR);
+      // The DOM overlay covers the screen on desktop; show the 3D display
+      // only inside immersive sessions.
+      root.setEnabled(inXR);
       if (root.parent !== camera) root.parent = camera;
-      root.position.set(0, 0, inXR ? 1.9 : 2.4);
-      if (modelAnchor) modelAnchor.position.y = inXR ? 0.52 : 0;
+      root.position.set(0, 0, 1.9);
+      if (modelAnchor) modelAnchor.position.y = 0.52;
       if (modelPivot) modelPivot.rotation.y += scene.getEngine().getDeltaTime() / 1000;
       if (textureDirty) {
         textureDirty = false;

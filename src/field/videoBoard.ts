@@ -143,14 +143,7 @@ function createVideoField() {
   mesh.layerMask = TOP_DOWN_MARKER_LAYER_MASK;
   mesh.isPickable = false;
   mesh.material = material;
-  const sourceLogo = scene.getMeshByName('midfieldLogo');
-  if (!sourceLogo) throw new Error('Create the midfield logo before the video-board field.');
-  const logo = sourceLogo.clone('videoFieldLogo', mesh, true);
-  if (!logo) throw new Error('Could not create the video-board midfield logo.');
-  logo.position.set(0, 0.012, 0);
-  logo.layerMask = TOP_DOWN_MARKER_LAYER_MASK;
-  logo.isPickable = false;
-  return { mesh, logo, updateFieldLevel };
+  return { mesh, updateFieldLevel };
 }
 
 // A straight-down orthographic view of the whole field, rendered live into a
@@ -188,9 +181,7 @@ function createTopDownFieldTexture(
     false
   );
   rtt.activeCamera = camera;
-  const logo = videoField.getChildMeshes().find(mesh => mesh.name === 'videoFieldLogo');
-  if (!logo) throw new Error('The video-board field is missing its midfield logo.');
-  rtt.renderList = [videoField, logo];
+  rtt.renderList = [videoField];
   rtt.refreshRate = RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
   scene.customRenderTargets.push(rtt);
   const refreshInterval = Math.max(0.1, refreshIntervalSeconds);

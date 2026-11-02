@@ -34,6 +34,8 @@ import { initDrillSpacingChecker } from '../menu/drillSpacingChecker';
 import { initPlaybackModeControls } from '../ui/playbackMode';
 import { reportStartupProgress } from '../ui/loadingScreen';
 import { initStartupDisplay } from './startupDisplay';
+import { seekToCount, isAnyPlaying } from '../robot/robot';
+import { applyStaticRenderOptimizations, refreshFrozenWorldMatrices } from './renderOptimizations';
 
 // Build static content before wiring up input and the WebXR experience.
 reportStartupProgress(0.05, 'Building the stadium…');
@@ -43,6 +45,8 @@ const footballField = createFootballField();
 
 function updateFieldLevel() {
   footballField.setFieldLevel(getSelectedFieldLevel());
+  // Field-level rebuilds can replace or move static field meshes.
+  refreshFrozenWorldMatrices();
 }
 
 fieldLevelInputs.forEach((input) => {
@@ -79,6 +83,28 @@ initXR(teleportGrid);
 // After captureContentRootMeshes so the camera-riding startup display never
 // joins the AR tabletop transform.
 initStartupDisplay();
+
+// Freeze the static stadium after the scene graph has been rebased under the
+// AR transform; frozen matrices re-sync whenever that transform changes.
+applyStaticRenderOptimizations();
+
+// Render a mid-stride marching pose once while the startup overlay still
+// covers the scene, so the session's first Play press does not hitch on
+// one-time pose, cache, and GPU setup for the marching band.
+let warmupStep = 0;
+const warmupObserver = scene.onBeforeRenderObservable.add(() => {
+  if (isAnyPlaying()) {
+    scene.onBeforeRenderObservable.remove(warmupObserver);
+    return;
+  }
+  if (!getSelectableMarchers().length) return;
+  warmupStep++;
+  if (warmupStep === 1) seekToCount(0.5);
+  else if (warmupStep >= 3) {
+    seekToCount(0);
+    scene.onBeforeRenderObservable.remove(warmupObserver);
+  }
+});
 
 function renderFrame() {
   updateARResizeFromControllers();

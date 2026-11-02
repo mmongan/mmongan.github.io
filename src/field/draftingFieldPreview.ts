@@ -15,7 +15,7 @@ export function isDraftingPreviewSource(mesh: AbstractMesh) {
     if (node.name.startsWith(PREVIEW_PREFIX)) return false;
     if (node.name === 'pathRobot') return true;
   }
-  return /^(field|midfieldLogo|fieldLines|hashMarks|leftEndZone|rightEndZone|goalLineNorth|goalLineSouth|leftSideline|rightSideline|drawingGuide|draftingGuideLabel|draftingStickyNote)$/.test(mesh.name) ||
+  return /^(field|fieldLines|hashMarks|leftEndZone|rightEndZone|goalLineNorth|goalLineSouth|leftSideline|rightSideline|drawingGuide|draftingGuideLabel|draftingStickyNote)$/.test(mesh.name) ||
     /^(turfStripe|yardLine|hashMark|yardNumber|topDownHashMarks|drawingGuideDivisionMark-)/.test(mesh.name);
 }
 
@@ -42,7 +42,7 @@ export function createDraftingFieldPreview(fieldCoordinates: TransformNode) {
         copy.checkCollisions = false;
         copy.metadata = null;
         copy.actionManager = null;
-        copy.renderingGroupId = source.name === 'midfieldLogo' ? source.renderingGroupId : 0;
+        copy.renderingGroupId = 0;
         copies.set(source, copy);
       }
     }
