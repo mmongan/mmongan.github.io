@@ -45,7 +45,8 @@ export class SampledMidiSynth {
   private cancelLoad: ((error: Error) => void) | null = null;
 
   constructor(private readonly context: AudioContext, private readonly destination: AudioNode,
-    private readonly report: (message: string) => void) {}
+    private readonly report: (message: string) => void,
+    private readonly progress?: (loaded: number, total: number, instrument?: string) => void) {}
 
   async load(notes: readonly MidiNote[]) {
     const pitches = new Map<string, Set<number>>();
@@ -81,6 +82,7 @@ export class SampledMidiSynth {
       // Request every instrument up front so downloads overlap in the worker.
       const requests = new Map<string, Promise<SoundfontSample[]>>();
       let nextRequestId = 0;
+      this.progress?.(0, pitches.size);
       for (const [name, required] of pitches) {
         const id = ++nextRequestId;
         const request = new Promise<SoundfontSample[]>((resolve, reject) => pending.set(id, { resolve, reject }));
@@ -93,6 +95,7 @@ export class SampledMidiSynth {
         await whenIdle();
         if (this.disposed) throw new Error("Sample loading was cancelled.");
         this.report(`Loading sampled instrument: ${name.replace(/_/g, ' ')}…`);
+        this.progress?.(this.instruments.size, pitches.size, name);
         const samples = await Promise.race([requests.get(name)!, cancellation]);
         if (this.disposed) throw new Error("Sample loading was cancelled.");
         // smplr pairs buffer-record entries with key ranges sorted by midi,
@@ -122,6 +125,7 @@ export class SampledMidiSynth {
         await Promise.race([instrument.ready, cancellation]);
         if (this.disposed) throw new Error("Sample loading was cancelled.");
       }
+      this.progress?.(pitches.size, pitches.size);
       this.report('All required MIDI instruments preloaded.');
     } catch (error) {
       this.dispose();

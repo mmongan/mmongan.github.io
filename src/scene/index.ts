@@ -32,8 +32,11 @@ import { initMarcherPOV } from '../camera/marcherPOV';
 import { initMarcherFootprints } from '../robot/marcherFootprints';
 import { initDrillSpacingChecker } from '../menu/drillSpacingChecker';
 import { initPlaybackModeControls } from '../ui/playbackMode';
+import { reportStartupProgress } from '../ui/loadingScreen';
+import { initStartupDisplay } from './startupDisplay';
 
 // Build static content before wiring up input and the WebXR experience.
+reportStartupProgress(0.05, 'Building the stadium…');
 createSky();
 createHorizonGround();
 const footballField = createFootballField();
@@ -72,6 +75,10 @@ captureContentRootMeshes();
 const teleportGrid = createTeleportGrid();
 attachToARTransform(teleportGrid);
 initXR(teleportGrid);
+
+// After captureContentRootMeshes so the camera-riding startup display never
+// joins the AR tabletop transform.
+initStartupDisplay();
 
 function renderFrame() {
   updateARResizeFromControllers();

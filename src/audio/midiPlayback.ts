@@ -22,6 +22,8 @@ import { quantizeScoreNote } from './midiNotation';
 import exampleMidiUrl from '../assets/liberty-bell-band.mid?url';
 import { midiBeatUnits } from './midiBeatPulse';
 import { FootballMusicTransport } from './footballMusicTransport';
+import { reportStartupProgress, finishStartup, setStartupInstrument } from '../ui/loadingScreen';
+import { ClickTrack } from './clickTrack';
 
 const EXAMPLE_MIDI_DESCRIPTION = "Sousa — The Liberty Bell (full band, Public Domain)";
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
@@ -39,6 +41,7 @@ let loadedDescription = "";
 let synthLoading = false;
 let midiLoading = false;
 let statusIsError = false;
+let clickTrack: ClickTrack | null = null;
 const footballMusicTransport = new FootballMusicTransport();
 const musicTime = () => context?.currentTime ?? performance.now() / 1000;
 
@@ -169,7 +172,15 @@ async function prepareSynth() {
   if (!context || !master || !midiNotes.length) return;
   synthLoading = true;
   const pending = new SampledMidiSynth(context, master,
-    message => { if (request === synthRequest) status(message); });
+    message => {
+      if (request !== synthRequest) return;
+      status(message);
+      reportStartupProgress(0, message);
+    },
+    (loaded, total, instrument) => {
+      reportStartupProgress(0.3 + 0.65 * (loaded / Math.max(1, total)));
+      setStartupInstrument(instrument ?? null);
+    });
   try {
     await pending.load(midiNotes);
     if (request !== synthRequest) {
@@ -195,9 +206,21 @@ async function prepareSynth() {
 }
 
 function updatePlayback(fromClock = false) {
-  if (!context || context.state !== "running" || !audioEnabled || !timeline || !synth) {
+  if (!context || !master || context.state !== "running" || !audioEnabled || (timeline && !synth)) {
     stopVoices();
     timeline?.reset();
+    clickTrack?.reset();
+    return;
+  }
+  if (!timeline) {
+    // No music loaded: march to a synthesized click drum track instead.
+    if (midiLoading) {
+      clickTrack?.reset();
+      return;
+    }
+    clickTrack ??= new ClickTrack(context, master);
+    if (fromClock) clickTrack.tick(context.currentTime);
+    else clickTrack.synchronize(footballMusicTransport.resolve(getMusicTransportState(), context.currentTime), context.currentTime);
     return;
   }
   const plan = fromClock ? timeline.tick(context.currentTime)
@@ -243,6 +266,7 @@ async function loadMidi(name: string, read: () => Promise<ArrayBuffer>, failureH
   const request = ++loadRequest;
   midiLoading = true;
   status(`Loading ${name}…`);
+  reportStartupProgress(0.2, `Loading ${name}…`);
   try {
     const bytes = await read();
     if (bytes.byteLength > MAX_FILE_BYTES) throw new Error("MIDI files must be 10 MB or smaller.");
@@ -302,10 +326,13 @@ async function loadMidi(name: string, read: () => Promise<ArrayBuffer>, failureH
       ? context?.state === "running" ? "Following drill playback." : "MIDI audio is enabled. Click, tap, or press a key to start sound."
       : "Enable MIDI audio to hear it."}`);
     if (midiClearButton) midiClearButton.disabled = false;
+    reportStartupProgress(0.3, 'Loading instrument samples…');
     initializeAudioContext();
     await prepareSynth();
+    finishStartup();
   } catch (error) {
     if (request !== loadRequest) return;
+    finishStartup();
     status(`Could not load MIDI: ${error instanceof Error ? error.message : String(error)}${timeline ? " Previous MIDI retained." : ""}${failureHint}`, true);
   } finally {
     if (request === loadRequest) {
@@ -384,7 +411,7 @@ export function initMidiPlayback() {
     if (midiFileInput) midiFileInput.value = "";
     if (midiUrlInput) midiUrlInput.value = "";
     clearButton.disabled = true;
-    status("No MIDI loaded.");
+    status("No MIDI loaded. Marching plays a click drum track.");
     retryPendingPlaybackStart();
   });
   midiVolumeInput?.addEventListener('input', () => {

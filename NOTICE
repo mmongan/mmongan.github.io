@@ -24,6 +24,41 @@ OpenChartxr supports OpenMarch's .dots format. This compatibility does
 not imply affiliation or endorsement, and does not grant OpenMarch LLC's
 separate internal-use licensing exception to this project.
 
+Bundled libraries
+-----------------
+The production JavaScript bundle is built from this project's AGPL-3.0-or-later
+source together with the following libraries. Minification removes their
+license headers, so their notices are reproduced here. Each library retains
+its own license.
+
+Babylon.js (@babylonjs/core, @babylonjs/loaders):
+Copyright (c) Microsoft Corporation.
+https://github.com/BabylonJS/Babylon.js
+License: Apache-2.0 — https://www.apache.org/licenses/LICENSE-2.0
+
+smplr:
+Copyright (c) danigb and contributors.
+https://github.com/danigb/smplr
+License: MIT.
+
+@tonejs/midi:
+Copyright (c) 2016 Yotam Mann.
+https://github.com/Tonejs/Midi
+License: MIT.
+
+VexFlow:
+Copyright (c) 2010 Mohit Muthanna Cheppudira.
+https://github.com/0xfe/vexflow
+License: MIT.
+
+sql.js:
+Copyright (c) 2017 sql.js authors.
+https://github.com/sql-js/sql.js
+License: MIT. Incorporates SQLite, which is in the public domain.
+
+The MIT license text reproduced below for the FluidR3_GM samples also applies
+to the MIT-licensed libraries above, with their respective copyright notices.
+
 Third-party assets
 ------------------
 Other components and assets retain their respective licenses.

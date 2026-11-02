@@ -109,7 +109,9 @@ assert.match(messages.at(-1), /64-voice limit/);
 synth.dispose();
 assert.equal(instruments[0].disposed, 1);
 defer = true;
-const preload = new context.SampledMidiSynth(audioContext, masterDestination, () => {});
+const progressCalls = [];
+const preload = new context.SampledMidiSynth(audioContext, masterDestination, () => {},
+  (loaded, total, name) => progressCalls.push(`${loaded}/${total}${name ? ':' + name : ''}`));
 const priorCount = instruments.length;
 const loading = preload.load([note, { ...note, program: 65 }, { ...note, percussion: true }]);
 assert.equal(workers.at(-1).requests.length, 3,
@@ -124,6 +126,8 @@ while (instruments.length - priorCount < 3) {
 assert.equal(instruments.slice(priorCount).every(instrument => instrument.events.length === 0), true,
   'Preloading never starts notes or needs audio-context resume');
 releases.splice(0).forEach(resolve => resolve()); await loading;
+assert.deepEqual(progressCalls, ['0/3', '0/3:trumpet', '1/3:alto_sax', '2/3:percussion', '3/3'],
+  'Preloading reports numeric per-instrument progress and names for the startup displays');
 preload.start(event);
 assert.equal(instruments[priorCount].events.length, 1, 'Preloaded instrument starts without another download');
 preload.dispose();
