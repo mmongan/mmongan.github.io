@@ -89,7 +89,7 @@ assert.deepEqual(Object.keys(metadata.pages[0]).sort(), ['count', 'name', 'notes
 assert.deepEqual(Object.keys(metadata.marchers[0]).sort(),
   ['counts', 'instrument', 'label', 'name', 'notes', 'performance', 'section']);
 assert.deepEqual(Object.keys(metadata.marchers[0].performance).sort(),
-  ['color', 'fixedFacingY', 'gait', 'gaits', 'instrumentPose', 'movementDescriptions', 'stepSizeYards']);
+  ['fixedFacingY', 'gait', 'gaits', 'instrumentPose', 'movementDescriptions', 'stepSizeYards']);
 // Existing v2 files use the same binary data and expanded indexed metadata.
 const oldJson = new TextEncoder().encode(JSON.stringify(metadata));
 const oldPayload = rawFile.subarray(16 + metadataSize);
@@ -208,7 +208,6 @@ await invalid(p => { p.samples[5] = 0; });
 await invalid(p => { p.samples[8] = 16; });
 await invalid(p => { p.samples[9] = -1; });
 await invalid(p => { p.instrumentPose = 'unknown'; });
-await invalid(p => { p.color = [2, 0, 0]; });
 await invalid(p => { p.stepSizeYards = -1; });
 await invalid(p => { p.fixedFacingY = Infinity; });
 console.log('OpenChart performance checks passed: actual gait resolution, explicit halts, named step/pose indices, exact baked round trips, list reordering, playback without inference, editing invalidation and invalid payload rejection.');
@@ -245,6 +244,7 @@ example.marchers.forEach(marcher => {
   context.registerRobotCounts(robot, positions, {});
 });
 context.captureBakedMarcherSchedules().forEach((schedule, index) => {
+  example.marchers[index].color = [schedule.color.r, schedule.color.g, schedule.color.b];
   example.marchers[index].performance = context.packOpenChartPerformance(schedule, gaitNames);
 });
 const exampleBytes = await context.encodeOpenChart(example);

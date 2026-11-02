@@ -52,6 +52,7 @@ export interface OpenChartMarcher {
   section: string;
   notes: string;
   instrument?: string;
+  color?: [number, number, number];
   // Interleaved field-local X/Z coordinates in yards, one pair per count.
   positions: Float64Array;
   performance?: OpenChartPerformance;
@@ -60,7 +61,6 @@ export interface OpenChartMarcher {
 export interface OpenChartPerformance {
   gait: string;
   instrumentPose: "playing" | "carry";
-  color: [number, number, number];
   stepSizeYards: number;
   fixedFacingY?: number;
   gaits: string[];
@@ -155,15 +155,18 @@ function finite(value: unknown, name: string): number {
   return value;
 }
 
+function memberColor(value: unknown): [number, number, number] {
+  if (!Array.isArray(value) || value.length !== 3 ||
+    value.some(component => typeof component !== "number" || !Number.isFinite(component) || component < 0 || component > 1)) {
+    invalid("uniform color must have three components between zero and one");
+  }
+  return [value[0], value[1], value[2]];
+}
+
 function performanceMetadata(value: unknown): Omit<OpenChartPerformance, "samples"> {
   const data = record(value, "performance");
   const instrumentPose = data.instrumentPose;
   if (instrumentPose !== "playing" && instrumentPose !== "carry") invalid("unknown instrument pose");
-  if (!Array.isArray(data.color) || data.color.length !== 3 ||
-    data.color.some(component => typeof component !== "number" || !Number.isFinite(component) || component < 0 || component > 1)) {
-    invalid("uniform color must have three components between zero and one");
-  }
-  const color: [number, number, number] = [data.color[0], data.color[1], data.color[2]];
   const palette = (value: unknown, name: string) => {
     if (!Array.isArray(value) || !value.length || value.length > MAX_COUNTS) invalid(`invalid ${name} palette`);
     return value.map(entry => text(entry, name));
@@ -172,7 +175,7 @@ function performanceMetadata(value: unknown): Omit<OpenChartPerformance, "sample
   const gait = text(data.gait, "default gait");
   if (!gaits.includes(gait)) invalid("default gait is absent from the palette");
   return {
-    gait, instrumentPose, color,
+    gait, instrumentPose,
     stepSizeYards: positive(data.stepSizeYards, "step size"),
     ...(data.fixedFacingY === undefined ? {} : { fixedFacingY: finite(data.fixedFacingY, "fixed facing") }),
     gaits, movementDescriptions: palette(data.movementDescriptions, "movement description"),
@@ -194,12 +197,13 @@ function encodedValueMetadata(show: OpenChartShow) {
     marchers: show.marchers.map(({ positions, performance, ...marcher }) => ({
       label: marcher.label, name: marcher.name,
       section: marcher.section, notes: marcher.notes,
+      ...(marcher.color === undefined ? {} : { color: marcher.color }),
       ...(marcher.instrument === undefined ? {} : { instrument: encodeBuiltin(marcher.instrument, OPEN_CHART_INSTRUMENT_CODES) }),
       counts: positions.length / 2,
       ...(performance ? { performance: {
         gait: encodeBuiltin(performance.gait, OPEN_CHART_GAIT_CODES),
         instrumentPose: encodeBuiltin(performance.instrumentPose, OPEN_CHART_POSE_CODES),
-        color: performance.color, stepSizeYards: performance.stepSizeYards,
+        stepSizeYards: performance.stepSizeYards,
         ...(performance.fixedFacingY === undefined ? {} : { fixedFacingY: performance.fixedFacingY }),
         gaits: performance.gaits.map(value => encodeBuiltin(value, OPEN_CHART_GAIT_CODES)),
         movementDescriptions: performance.movementDescriptions.map(value => encodeBuiltin(value, OPEN_CHART_MOVEMENT_DESCRIPTION_CODES)),
@@ -259,6 +263,7 @@ function metadata(value: unknown) {
       name: text(item.name, "marcher name"),
       section: text(item.section, "marcher section"),
       notes: text(item.notes, "marcher notes"),
+      ...(item.color === undefined ? {} : { color: memberColor(item.color) }),
       ...(item.instrument === undefined ? {} : { instrument: text(item.instrument, "instrument") }),
       ...(item.performance === undefined ? {} : { performance: performanceMetadata(item.performance) }),
       counts,

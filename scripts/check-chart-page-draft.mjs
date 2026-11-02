@@ -50,6 +50,8 @@ assert.throws(broken(d => { d.marchers = []; }), /non-empty/);
 assert.throws(broken(d => { d.marchers[0].counts[0].p = [0, 0]; }), /three numbers/);
 assert.throws(broken(d => { d.marchers[0].counts[1].s = 1.5; }), /whole count/);
 assert.throws(broken(d => { d.marchers[0].step = 0; }), /positive/);
+assert.throws(broken(d => { d.marchers[0].color = [2, 0, 0]; }), /between zero and one/);
+assert.throws(broken(d => { d.marchers[0].color = [-0.1, 0, 0]; }), /between zero and one/);
 assert.throws(broken(d => { d.page.waiting = [2]; }), /distinct saved marchers/);
 assert.throws(broken(d => { d.page.waiting = [1, 1]; }), /distinct saved marchers/);
 assert.throws(broken(d => { d.page.previous = 9; }), /out of order/);

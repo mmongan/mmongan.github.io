@@ -61,13 +61,10 @@ try {
     'Every new band marcher starts with the same blue uniform');
   assert.notEqual(defaults[0], defaults[1], 'Default marcher colors are independent instances');
   const interactionCode = read('../src/interaction/pathInteraction.ts');
-  for (const start of ['function spawnOpenChartDrill(', 'function resumeChartPageDraft(']) {
-    const index = interactionCode.indexOf(start);
-    assert.ok(index >= 0, 'Band import entrypoint exists');
-    const section = interactionCode.slice(index, interactionCode.indexOf('\nfunction ', index + start.length));
-    assert.ok(section.includes("color: Color3.FromHexString('#1967d2')"),
-      'Imported band schedules use blue instead of saved jacket colors');
-  }
+  assert.ok(interactionCode.includes('const color = marcher.color ? new Color3(...marcher.color) : getRobotColor(robotPrimitives);'),
+    'Show imports use member color, defaulting to the new marcher color');
+  assert.ok(interactionCode.includes('color: new Color3(...marcher.color), stepSizeYards: marcher.step'),
+    'Browser drafts restore the member color');
   vm.runInContext(transform(robotCode.slice(robotCode.indexOf('export function getRobotColor('),
     robotCode.indexOf('// Robots are tiny'))), context);
   const hex = '#8e24aa', color = Color3.FromHexString(hex);

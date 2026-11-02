@@ -130,9 +130,13 @@ export function parseChartPageDraft(json: string): ChartPageDraft {
       };
     });
     const fixed = optionalFinite(marcher.fixed, `marcher ${index} fixed facing`);
+    const color = vector(marcher.color, `marcher ${index} color`);
+    if (color.some(component => component < 0 || component > 1)) {
+      fail(`marcher ${index} color components must be between zero and one`);
+    }
     return {
       instrument: marcher.instrument, gait: count(marcher.gait, `marcher ${index} gait`), rest: marcher.rest,
-      color: vector(marcher.color, `marcher ${index} color`), step, counts,
+      color, step, counts,
       ...(fixed === undefined ? {} : { fixed }),
       ...(marcher.label === undefined ? {} : { label: marcher.label as string }),
     };

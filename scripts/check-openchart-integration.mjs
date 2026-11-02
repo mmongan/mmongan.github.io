@@ -51,15 +51,17 @@ const context = vm.createContext({
   clearAllRobots: () => { cleared++; robots.length = 0; context.robotPaths.clear(); },
   forgetOtherChartPageGuides() {},
   createLowPolyRobot: (_scene, gaitIndex = 0) => {
-    const robot = { instrument: selected, gaitIndex, instrumentRestPose: false, color: new Color3(0.2, 0.4, 0.6), stepSizeYards: 0.625 };
+    const robot = { instrument: selected, gaitIndex, instrumentRestPose: false, color: new Color3(25 / 255, 103 / 255, 210 / 255), stepSizeYards: 0.625 };
     robots.push(robot);
     return robot;
   },
-  updateRobotPathLine() {},
+  updateRobotPathLine: robot => { robot.pathColor = robot.color; },
   walkRobotAlongCounts: (robot, path) => {
     robot.counts = path.map(position => ({ position, rotationY: 0 }));
   },
   restoreMarcherSchedule: (robot, snapshot) => { Object.assign(robot, snapshot); },
+  getRobotColor: robot => robot.color,
+  setRobotColor: (robot, color) => { robot.color = color; },
   setMarchTempo: tempo => Math.max(60, Math.min(120, tempo)),
   restoreDrillMidiTiming: timing => { context.savedTiming = timing; },
   captureDrillMidiTiming: lastCount => ({
@@ -124,12 +126,13 @@ for (const bad of [
   { ...show, widthYards: 42 },
   { ...show, marchers: [{ ...show.marchers[0], instrument: 'invalid-instrument' }] },
   { ...show, marchers: [{ ...show.marchers[0], positions: new Float64Array([NaN, 0]) }] },
+  { ...show, marchers: [{ ...show.marchers[0], color: [2, 0, 0] }] },
 ]) {
   assert.equal(await context.openDrill(async () => bad), false);
   assert.equal(robots[0], before, 'Invalid data never clears the current show');
   assert.equal(cleared, 1);
 }
-assert.equal(errors.length, 3, 'Import failures are both visible and logged');
+assert.equal(errors.length, 4, 'Import failures are both visible and logged');
 
 robots[0].counts[1].position.x = 7.25;
 robots[0].counts[1].position.y = 0.75;
@@ -157,6 +160,8 @@ assert.equal(saved.timing.tempos[1].tick, 360);
 assert.equal(saved.marchers[0].positions[2], 7.25, 'Export captures edited routes rather than the original import');
 assert.equal(saved.marchers[0].instrument, 'flute');
 assert.equal(saved.marchers[0].performance.instrumentPose, 'carry');
+assert.deepEqual([...saved.marchers[0].color], [0.8, 0.2, 0.1], 'Color belongs to the member identity');
+assert.equal('color' in saved.marchers[0].performance, false, 'Drill performance has no jacket color');
 assert.equal(saved.marchers[0].name, 'Alice');
 assert.equal(saved.marchers[0].notes, 'Solo');
 assert.equal(saved.pages[1].notes, 'Subset');
@@ -195,7 +200,18 @@ assert.equal(robots[0].fixedFacingY, -0.7);
 assert.equal(robots[0].color.r, 0.8);
 assert.equal(robots[0].color.g, 0.2);
 assert.equal(robots[0].color.b, 0.1);
+assert.equal(robots[0].pathColor.r, 0.8, 'Route visuals use the restored member color');
 assert.equal(plays, 0);
+await context.openDrill(async () => ({
+  ...show, marchers: [{ ...show.marchers[0], color: [0.3, 0.6, 0.9] }],
+}));
+assert.equal(robots[0].color.g, 0.6, 'Route-only shows also restore member appearance');
+await context.openDrill(async () => ({
+  ...saved, marchers: saved.marchers.map(({ color, ...marcher }) => ({
+    ...marcher, performance: { ...marcher.performance, color: [1, 0, 0] },
+  })),
+}));
+assert.equal(robots[0].color.b, 210 / 255, 'Legacy performance colors do not override blue member defaults');
 download = undefined;
 blankPage = {};
 await context.saveOpenChartRoutes();

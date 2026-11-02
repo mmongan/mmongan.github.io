@@ -39,7 +39,6 @@ export function packOpenChartPerformance(
   if (gait === undefined) throw new Error("Unknown marcher gait while exporting OpenChart.");
   return {
     gait, instrumentPose: schedule.instrumentRestPose ? "carry" : "playing",
-    color: [schedule.color.r, schedule.color.g, schedule.color.b],
     stepSizeYards: schedule.stepSizeYards,
     ...(schedule.fixedFacingY === undefined ? {} : { fixedFacingY: schedule.fixedFacingY }),
     gaits: [...gaitNames], movementDescriptions, samples,

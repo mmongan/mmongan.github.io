@@ -795,7 +795,7 @@ function resumeChartPageDraft() {
     }));
     restoreMarcherSchedule(robot, {
       instrument: marcher.instrument as MarcherInstrument, instrumentRestPose: marcher.rest,
-      color: Color3.FromHexString('#1967d2'), stepSizeYards: marcher.step, fixedFacingY: marcher.fixed, counts,
+      color: new Color3(...marcher.color), stepSizeYards: marcher.step, fixedFacingY: marcher.fixed, counts,
     }, scene);
     const path = counts.map((count) => count.position.clone());
     robotPaths.set(robot, path);
@@ -3804,13 +3804,15 @@ function spawnOpenChartDrill(drill: OpenChartShow, autoPlay = false): number {
         performance?.counts[offset / 2].height ?? FIELD_SURFACE_Y, marcher.positions[offset + 1]));
     }
     const robotPrimitives = createLowPolyRobot(scene, performance?.gaitIndex);
+    const color = marcher.color ? new Color3(...marcher.color) : getRobotColor(robotPrimitives);
+    setRobotColor(robotPrimitives, color);
     robotPrimitives.parent = pathRoot;
     robotPaths.set(robotPrimitives, path);
     updateRobotPathLine(robotPrimitives, path);
     if (performance && marcher.performance) {
       restoreMarcherSchedule(robotPrimitives, {
         instrument: instruments[index], instrumentRestPose: marcher.performance.instrumentPose === "carry",
-        color: Color3.FromHexString('#1967d2'),
+        color,
         stepSizeYards: marcher.performance.stepSizeYards, fixedFacingY: marcher.performance.fixedFacingY,
         counts: performance.counts.map(({ height, ...count }, countIndex) => ({
           ...count, position: path[countIndex],
@@ -3900,6 +3902,7 @@ async function saveOpenChartRoutes() {
         return {
           label: getDrillLabel(schedule.robot) ?? "", name: info?.name ?? "", section: info?.section ?? "",
           notes: info?.notes ?? "", instrument: schedule.instrument, positions,
+          color: [schedule.color.r, schedule.color.g, schedule.color.b],
           performance: packOpenChartPerformance(schedule, MARCHING_GAITS.map(gait => gait.name)),
         };
       }),
