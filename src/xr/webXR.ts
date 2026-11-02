@@ -24,6 +24,7 @@ import { scene } from '../scene/engine';
 import { connectMidiXRSession } from '../audio/midiPlayback';
 import { setDrillEditingEnabled } from '../interaction/editingMode';
 import { enterVRButton, enterARButton, xrEntryStatus } from '../ui/dom';
+import { onStartupStateChanged } from '../ui/loadingScreen';
 import { connectMarcherPOVXR, isMarcherPOVActive, setMarcherPOVEnabled } from '../camera/marcherPOV';
 import { setTableHeightForPosture } from '../menu/settings';
 import { placeAutomaticFloatingPanels } from '../menu/floatingPanel';
@@ -189,17 +190,27 @@ export function initXR(teleportGrid: Mesh) {
   let pendingSitting: boolean | null = null;
   let pendingPostureSince = 0;
   let entryHideTimeout: ReturnType<typeof setTimeout> | undefined;
+  // The status text stays readable for 10 seconds of actual viewing time: no
+  // hide countdown starts while the startup title screen still covers the
+  // page. The entry buttons themselves never auto-hide — they are shown
+  // exactly on devices that support the matching immersive mode.
+  let startupScreenFinished = false;
   function scheduleEntryHide() {
+    if (!startupScreenFinished) return;
     if (entryHideTimeout !== undefined) clearTimeout(entryHideTimeout);
     entryHideTimeout = setTimeout(() => {
       entryHideTimeout = undefined;
-      if (enterVRButton) enterVRButton.hidden = true;
-      if (enterARButton) enterARButton.hidden = true;
       if (xrEntryStatus) xrEntryStatus.hidden = true;
     }, 10000);
   }
-  scheduleEntryHide();
+  const unsubscribeStartupHide = onStartupStateChanged(state => {
+    if (!state.finished) return;
+    unsubscribeStartupHide();
+    startupScreenFinished = true;
+    scheduleEntryHide();
+  });
   scene.onDisposeObservable.addOnce(() => {
+    unsubscribeStartupHide();
     if (entryHideTimeout !== undefined) clearTimeout(entryHideTimeout);
   });
   function entryStatus(message: string) {
@@ -213,7 +224,9 @@ export function initXR(teleportGrid: Mesh) {
     for (const [mode, button] of [['immersive-vr', enterVRButton], ['immersive-ar', enterARButton]] as const) {
       if (!button) continue;
       const supported = sessionSupport.get(mode);
-      button.disabled = switchingToFullScaleVR || active || supported === false;
+      // Entry buttons appear only on devices that support the mode.
+      button.hidden = supported === false;
+      button.disabled = switchingToFullScaleVR || active || supported !== true;
       button.title = supported === false ? `${mode === 'immersive-vr' ? 'VR' : 'AR'} is not supported by this browser or device.`
         : 'Open an immersive session to use editing tools.';
     }
