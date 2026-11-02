@@ -8,13 +8,31 @@ import { HemisphericLight } from '@babylonjs/core/Lights/hemisphericLight.pure';
 import { Color3, Color4 } from '@babylonjs/core/Maths/math.color.pure';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
 import { Scene } from '@babylonjs/core/scene.pure';
-import { canvas } from '../ui/dom';
+import { canvas, enterARButton, enterVRButton, xrEntryStatus } from '../ui/dom';
 
-export const engine = new Engine(canvas, true, {
-  preserveDrawingBuffer: true,
-  stencil: true,
-  antialias: true,
-});
+function createEngine(): Engine {
+  try {
+    return new Engine(canvas, true, {
+      preserveDrawingBuffer: true,
+      stencil: true,
+      antialias: true,
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error('Could not initialize the WebGL renderer', error);
+    if (xrEntryStatus) {
+      xrEntryStatus.textContent = `Unable to start the 3D view: ${detail}. ` +
+        'Enable graphics acceleration and restart your browser or VS Code. ' +
+        'If this is an embedded browser, open the site in Chrome, Edge, or the Quest browser.';
+      xrEntryStatus.hidden = false;
+    }
+    if (enterVRButton) enterVRButton.disabled = true;
+    if (enterARButton) enterARButton.disabled = true;
+    throw error;
+  }
+}
+
+export const engine = createEngine();
 
 export const scene = new Scene(engine);
 scene.clearColor = new Color4(0.03, 0.05, 0.09, 1);
