@@ -77,6 +77,7 @@ export interface OpenChartShow {
   name: string;
   tempoBpm: number;
   widthYards: number;
+  bandColor?: [number, number, number];
   pages: OpenChartPage[];
   marchers: OpenChartMarcher[];
   timing?: OpenChartTiming;
@@ -192,6 +193,7 @@ function countLength(value: unknown): number {
 function encodedValueMetadata(show: OpenChartShow) {
   const data = {
     name: show.name, tempoBpm: show.tempoBpm, widthYards: show.widthYards,
+    ...(show.bandColor === undefined ? {} : { bandColor: show.bandColor }),
     timing: getOpenChartTiming(show),
     pages: show.pages.map(page => ({ ...page })),
     marchers: show.marchers.map(({ positions, performance, ...marcher }) => ({
@@ -247,6 +249,7 @@ function metadata(value: unknown) {
   const name = text(data.name, "name");
   const tempoBpm = positive(data.tempoBpm, "tempo");
   const widthYards = positive(data.widthYards, "field width");
+  const bandColor = data.bandColor === undefined ? undefined : memberColor(data.bandColor);
   const timing = timingMetadata(data.timing);
   if (!Array.isArray(data.marchers) || !data.marchers.length || data.marchers.length > MAX_MARCHERS) {
     invalid(`expected 1 to ${MAX_MARCHERS} marchers`);
@@ -282,7 +285,8 @@ function metadata(value: unknown) {
     previous = count;
     return { name: text(page.name, "page name"), count, notes: text(page.notes, "page notes") };
   });
-  return { name, tempoBpm, widthYards, timing, pages, marchers, samples };
+  return { name, tempoBpm, widthYards, ...(bandColor === undefined ? {} : { bandColor }),
+    timing, pages, marchers, samples };
 }
 
 export function getOpenChartLastCount(show: OpenChartShow): number {

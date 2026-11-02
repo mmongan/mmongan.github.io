@@ -45,6 +45,7 @@ export interface ChartPageDraft {
   savedAt: string;
   beat: number;
   tempoBpm: number;
+  bandColor?: SavedVector;
   transition: { shape: string; pace: string; styleIndex: number | null };
   page: SavedBlankPage | null;
   marchers: SavedMarcher[];
@@ -187,8 +188,13 @@ export function parseChartPageDraft(json: string): ChartPageDraft {
     timeline = { beatsPerPage, authoredCounts: [...new Set(authoredCounts)].sort((a, b) => a - b) };
   }
   if (tempoBpm <= 0) fail('tempo must be positive');
+  const bandColor = data.bandColor === undefined ? undefined : vector(data.bandColor, 'band color');
+  if (bandColor?.some(component => component < 0 || component > 1)) {
+    fail('band color components must be between zero and one');
+  }
   return {
     version: 1, savedAt: data.savedAt, beat: Math.max(0, finite(data.beat, 'count')), tempoBpm,
+    ...(bandColor === undefined ? {} : { bandColor }),
     transition: { shape: transition.shape, pace: transition.pace, styleIndex },
     page, marchers, drafting: data.drafting as string | null,
     ...(draftingPage === undefined ? {} : { draftingPage }),

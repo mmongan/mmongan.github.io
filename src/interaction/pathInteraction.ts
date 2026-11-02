@@ -60,7 +60,7 @@ import { SCRIMMAGE_EXIT_COUNTS, SCRIMMAGE_PLAY_START,
   SCRIMMAGE_RETURN_COUNTS, SCRIMMAGE_SIT_COUNTS, SCRIMMAGE_BAND_RETURN_COUNTS,
   scrimmageBandRoute, scrimmagePlayerRoute, scrimmagePlayerReturn, scrimmageWalk,
   scrimmageBenchSeat } from '../robot/scrimmageGeometry';
-import { setRobotColor, createPresentationMarcher } from '../robot/robot';
+import { getBandUniformColor, setBandUniformColor, setRobotColor, createPresentationMarcher } from '../robot/robot';
 import { initChartPageGhostMode, isChartGhostModeEnabled, setChartGhostModeEnabled } from '../robot/chartPageGhostMode';
 import {
   executeDrawingToolAction, handleDrawingPointer, initFieldDrawingTools,
@@ -635,6 +635,7 @@ function captureCameraFieldState() {
       return index;
     }) },
     playback: captureFieldPlayback(),
+    bandColor: getBandUniformColor(),
     transition: { ...getChartTransition() },
     workspace: exportDrawingWorkspace(),
     guides: captureChartPageGuides(),
@@ -660,6 +661,7 @@ function restoreCameraFieldState(state: ReturnType<typeof captureCameraFieldStat
   state.guides.pages.forEach(page => parseDraftingWorkspace(page.drafting));
   pauseAll();
   clearAllRobots();
+  setBandUniformColor(state.bandColor);
   const robots = state.marchers.map(schedule => {
     const robot = createLowPolyRobot(scene, schedule.gaitIndex);
     robot.parent = pathRoot;
@@ -723,11 +725,13 @@ function saveChartPageDraft() {
   const pageGuides = captureChartPageGuides();
   const indexByRobot = new Map(schedules.map((schedule, index) => [schedule.robot, index]));
   const transition = getChartTransition();
+  const bandColor = getBandUniformColor();
   const draft: ChartPageDraft = {
     version: 1,
     savedAt: new Date().toISOString(),
     beat: getDrillTransportState().beat,
     tempoBpm: getMarchTempo(),
+    bandColor: [bandColor.r, bandColor.g, bandColor.b],
     transition: { shape: transition.shape, pace: transition.pace, styleIndex: transition.styleIndex },
     page: page && {
       count: page.count, previous: page.previous, next: page.next,
@@ -785,6 +789,7 @@ function resumeChartPageDraft() {
   }
   clearAllRobots();
   const labels: { robot: TransformNode; label: string }[] = [];
+  setBandUniformColor(draft.bandColor ? new Color3(...draft.bandColor) : Color3.FromHexString('#1967d2'));
   const robots = draft.marchers.map((marcher) => {
     const robot = createLowPolyRobot(scene, marcher.gait);
     robot.parent = pathRoot;
@@ -3792,6 +3797,7 @@ function spawnOpenChartDrill(drill: OpenChartShow, autoPlay = false): number {
   const performances = drill.marchers.map(marcher => marcher.performance
     ? unpackOpenChartPerformance(marcher.performance, gaitNames) : undefined);
   clearAllRobots();
+  setBandUniformColor(drill.bandColor ? new Color3(...drill.bandColor) : Color3.FromHexString('#1967d2'));
   forgetOtherChartPageGuides();
   currentShowName = drill.name;
   const labels: { robot: TransformNode; label: string }[] = [];
@@ -3886,14 +3892,17 @@ async function saveOpenChartRoutes() {
     }
     const schedules = captureBakedMarcherSchedules();
     if (!schedules.length) throw new Error("Add or load marchers before saving drill routes.");
+    const bandColor = getBandUniformColor();
     const show: OpenChartShow = {
       name: currentShowName, tempoBpm: getMarchTempo(), widthYards: FIELD_WIDTH_YARDS,
+      bandColor: [bandColor.r, bandColor.g, bandColor.b],
       timing: captureDrillMidiTiming(Math.max(...schedules.map(schedule => schedule.counts.length - 1))),
       pages: getDrillChartSetCounts().map((count, index) => ({
         count, name: chartPageNames.get(count) ?? `Set ${index + 1}`, notes: chartPageNotes.get(count) ?? "",
       })),
       marchers: schedules.map(schedule => {
         const info = showMarcherInfo.get(schedule.robot);
+        const color: [number, number, number] = [schedule.color.r, schedule.color.g, schedule.color.b];
         const positions = new Float64Array(schedule.counts.length * 2);
         schedule.counts.forEach((count, index) => {
           positions[index * 2] = count.position.x;
@@ -3902,7 +3911,9 @@ async function saveOpenChartRoutes() {
         return {
           label: getDrillLabel(schedule.robot) ?? "", name: info?.name ?? "", section: info?.section ?? "",
           notes: info?.notes ?? "", instrument: schedule.instrument, positions,
-          color: [schedule.color.r, schedule.color.g, schedule.color.b],
+          ...(schedule.color.equals(bandColor) ? {} : {
+            color,
+          }),
           performance: packOpenChartPerformance(schedule, MARCHING_GAITS.map(gait => gait.name)),
         };
       }),

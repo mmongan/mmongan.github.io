@@ -200,10 +200,12 @@ try {
   let page = { count: 8, previous: 0, next: 16, waiting: [marcher] };
   let restoredPage;
   let restoredWorkspace;
+  let bandColor = new Color3(.1, .5, .8);
   const formation = { kind: 'formation', controlPoints: [new Vector3(0, 0, 0), new Vector3(2, 0, 0)],
     robots: [marcher], anchorRobot: marcher, fitClosedCircle: false, linear: true, spacing: 1.25,
     guideLayout: { spacing: 1.25, facing: 'along', facingAngle: 0 }, erasedFormationIndices: new Set([1]) };
   const editorContext = vm.createContext({
+    clearWaitingFootballPlayers() {},
     marcherGrabs: new Map(), segments: [formation, { kind: 'path',
       controlPoints: [new Vector3(1, 0, 2), new Vector3(3, 0, 4)], robots: [marcher],
       fitClosedCircle: false, linear: false }],
@@ -212,6 +214,8 @@ try {
     })),
     captureBlankChartPage: () => page, getDrillLabel: robot => records.find(record => record.robot === robot)?.label,
     captureFieldPlayback: () => capturedPlayback, restoreFieldPlayback() {},
+    getBandUniformColor: () => bandColor.clone(),
+    setBandUniformColor: color => { bandColor = color.clone(); },
     getChartTransition: () => ({ shape: 'straight', pace: 'normal', styleIndex: null }),
     exportDrawingWorkspace: () => 'validated drafting',
     captureChartPageGuides: () => ({ shown: 2, pages: [{ page: 1, drafting: 'other page' }] }),
@@ -238,8 +242,10 @@ try {
   });
   vm.runInContext(transform(editorFunctions), editorContext);
   const editorSnapshot = editorContext.captureCameraFieldState();
+  bandColor = Color3.Red();
   records[0].counts[0].position.x = 99;
   editorContext.restoreCameraFieldState(editorSnapshot);
+  assert.ok(bandColor.equals(new Color3(.1, .5, .8)), 'Field switching restores the band uniform attribute');
   assert.equal(records[0].counts[0].position.x, 1.234567, 'Field state preserves exact coordinates without draft rounding');
   assert.equal(records[0].counts[0].stepPhase, .25, 'Field state preserves authored off-beat phase');
   assert.equal(records[0].counts[0].bakedGait.stepsPerCount, .5, 'Field state preserves baked cadence');

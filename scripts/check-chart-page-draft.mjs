@@ -26,6 +26,7 @@ const draft = {
   savedAt: '2026-01-01T00:00:00.000Z',
   beat: 8,
   tempoBpm: 144,
+  bandColor: [0.1, 0.5, 0.8],
   transition: { shape: 'sCurve', pace: 'ease', styleIndex: null },
   page: { count: 8, previous: 0, next: 16, waiting: [1] },
   marchers: [
@@ -52,6 +53,7 @@ assert.throws(broken(d => { d.marchers[0].counts[1].s = 1.5; }), /whole count/);
 assert.throws(broken(d => { d.marchers[0].step = 0; }), /positive/);
 assert.throws(broken(d => { d.marchers[0].color = [2, 0, 0]; }), /between zero and one/);
 assert.throws(broken(d => { d.marchers[0].color = [-0.1, 0, 0]; }), /between zero and one/);
+assert.throws(broken(d => { d.bandColor = [0, 2, 0]; }), /between zero and one/);
 assert.throws(broken(d => { d.page.waiting = [2]; }), /distinct saved marchers/);
 assert.throws(broken(d => { d.page.waiting = [1, 1]; }), /distinct saved marchers/);
 assert.throws(broken(d => { d.page.previous = 9; }), /out of order/);

@@ -54,12 +54,20 @@ const context = vm.createContext({
 });
 try {
   const robotCode = read('../src/robot/robot.ts');
-  vm.runInContext(transform(robotCode.slice(robotCode.indexOf('function nextRobotColor('),
+  vm.runInContext(transform(robotCode.slice(robotCode.indexOf('const bandUniformColor ='),
     robotCode.indexOf('export function getRobotColor('))), context);
   const defaults = Array.from({ length: 40 }, () => context.nextRobotColor());
   assert.ok(defaults.every(color => color.equals(Color3.FromHexString('#1967d2'))),
     'Every new band marcher starts with the same blue uniform');
   assert.notEqual(defaults[0], defaults[1], 'Default marcher colors are independent instances');
+  context.setBandUniformColor(Color3.FromHexString('#008866'));
+  assert.ok(context.nextRobotColor().equals(Color3.FromHexString('#008866')),
+    'New members inherit the shared band uniform');
+  context.getBandUniformColor().copyFrom(Color3.Red());
+  assert.ok(context.getBandUniformColor().equals(Color3.FromHexString('#008866')),
+    'Callers cannot mutate the band attribute through its getter');
+  assert.throws(() => context.setBandUniformColor(new Color3(2, 0, 0)), /between/);
+  context.setBandUniformColor(Color3.FromHexString('#1967d2'));
   const interactionCode = read('../src/interaction/pathInteraction.ts');
   assert.ok(interactionCode.includes('const color = marcher.color ? new Color3(...marcher.color) : getRobotColor(robotPrimitives);'),
     'Show imports use member color, defaulting to the new marcher color');
@@ -76,6 +84,8 @@ try {
   assert.ok(uniformMaterial.diffuseColor.equals(color), 'Held marcher clone material updates');
   assert.ok(prop.instancedBuffers.color.equals(new Color4(.8, .8, .8, 1)), 'Equipment is untouched');
   assert.ok(context.getRobotColor(other).equals(Color3.Green()), 'Other marcher stays unchanged');
+  assert.ok(context.getBandUniformColor().equals(Color3.FromHexString('#1967d2')),
+    'Individual painting does not change the band default');
   assert.throws(() => context.setRobotColor(robot, new Color3(NaN, 0, 0)), /between/);
   assert.throws(() => context.setRobotColor(other, new Color3(2, 0, 0)), /between/);
   vm.runInContext(transform(read('../src/interaction/marcherPaint.ts')), context);

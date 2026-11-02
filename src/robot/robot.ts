@@ -335,9 +335,21 @@ export function disposeAllRobots() {
 }
 
 const robotColors = new Map<TransformNode, Color3>();
+const bandUniformColor = Color3.FromHexString('#1967d2');
+
+export function getBandUniformColor(): Color3 {
+  return bandUniformColor.clone();
+}
+
+export function setBandUniformColor(color: Color3) {
+  if (![color.r, color.g, color.b].every(value => Number.isFinite(value) && value >= 0 && value <= 1)) {
+    throw new RangeError('Band uniform color components must be between zero and one.');
+  }
+  bandUniformColor.copyFrom(color);
+}
 
 function nextRobotColor(): Color3 {
-  return Color3.FromHexString('#1967d2');
+  return getBandUniformColor();
 }
 
 export function getRobotColor(robot: TransformNode): Color3 {

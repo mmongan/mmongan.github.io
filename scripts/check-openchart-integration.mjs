@@ -26,7 +26,13 @@ class Vector3 {
 }
 class Color3 {
   constructor(r, g, b) { this.r = r; this.g = g; this.b = b; }
+  static FromHexString(hex) {
+    const value = Number.parseInt(hex.slice(1), 16);
+    return new Color3((value >> 16) / 255, ((value >> 8) & 255) / 255, (value & 255) / 255);
+  }
+  equals(color) { return this.r === color.r && this.g === color.g && this.b === color.b; }
 }
+let bandColor = Color3.FromHexString('#1967d2');
 const context = vm.createContext({
   Float64Array, Uint8Array, DataView, TextEncoder, TextDecoder, Blob, Response, CompressionStream, DecompressionStream,
   Vector3, Color3, FIELD_SURFACE_Y: 0.1, FIELD_WIDTH_YARDS: 53.333, scene: {}, pathRoot: {},
@@ -51,7 +57,7 @@ const context = vm.createContext({
   clearAllRobots: () => { cleared++; robots.length = 0; context.robotPaths.clear(); },
   forgetOtherChartPageGuides() {},
   createLowPolyRobot: (_scene, gaitIndex = 0) => {
-    const robot = { instrument: selected, gaitIndex, instrumentRestPose: false, color: new Color3(25 / 255, 103 / 255, 210 / 255), stepSizeYards: 0.625 };
+    const robot = { instrument: selected, gaitIndex, instrumentRestPose: false, color: bandColor, stepSizeYards: 0.625 };
     robots.push(robot);
     return robot;
   },
@@ -61,6 +67,8 @@ const context = vm.createContext({
   },
   restoreMarcherSchedule: (robot, snapshot) => { Object.assign(robot, snapshot); },
   getRobotColor: robot => robot.color,
+  getBandUniformColor: () => bandColor,
+  setBandUniformColor: color => { bandColor = color; },
   setRobotColor: (robot, color) => { robot.color = color; },
   setMarchTempo: tempo => Math.max(60, Math.min(120, tempo)),
   restoreDrillMidiTiming: timing => { context.savedTiming = timing; },
@@ -102,7 +110,7 @@ const end = source.indexOf('export function initInteraction()', start);
 assert.ok(start >= 0 && end > start);
 run(source.slice(start, end), context);
 const show = {
-  name: 'Imported show', tempoBpm: 96, widthYards: 53.333,
+  name: 'Imported show', tempoBpm: 96, widthYards: 53.333, bandColor: [0.1, 0.5, 0.8],
   pages: [{ name: 'Opening', count: 0, notes: 'Start here' }, { name: '1A', count: 2, notes: 'Subset' }],
   marchers: [{
     label: 'T1', name: 'Alice', section: 'Trumpet', notes: 'Solo',
@@ -114,6 +122,7 @@ assert.equal(cleared, 1);
 assert.equal(robots.length, 1);
 assert.equal(selected, 'flute', 'Import restores the instrument picker');
 assert.equal(robots[0].instrument, 'trumpet', 'Imported sections resolve to an app-native instrument');
+assert.equal(robots[0].color.g, 0.5, 'Members inherit the band jacket color');
 assert.equal(robots[0].label, 'T1');
 assert.equal(robots[0].counts[2].position.x, 4);
 assert.equal(robots[0].counts[2].position.z, 5);
@@ -127,12 +136,16 @@ for (const bad of [
   { ...show, marchers: [{ ...show.marchers[0], instrument: 'invalid-instrument' }] },
   { ...show, marchers: [{ ...show.marchers[0], positions: new Float64Array([NaN, 0]) }] },
   { ...show, marchers: [{ ...show.marchers[0], color: [2, 0, 0] }] },
+  { ...show, bandColor: [0, -1, 0] },
 ]) {
   assert.equal(await context.openDrill(async () => bad), false);
   assert.equal(robots[0], before, 'Invalid data never clears the current show');
   assert.equal(cleared, 1);
 }
-assert.equal(errors.length, 4, 'Import failures are both visible and logged');
+assert.equal(errors.length, 5, 'Import failures are both visible and logged');
+await context.saveOpenChartRoutes();
+const inherited = await context.decodeOpenChart(new Uint8Array(await download.arrayBuffer()));
+assert.equal('color' in inherited.marchers[0], false, 'Members inheriting the band color need no saved override');
 
 robots[0].counts[1].position.x = 7.25;
 robots[0].counts[1].position.y = 0.75;
@@ -154,6 +167,7 @@ await context.saveOpenChartRoutes();
 assert.ok(download instanceof Blob);
 const saved = await context.decodeOpenChart(new Uint8Array(await download.arrayBuffer()));
 assert.equal(saved.name, show.name);
+assert.deepEqual([...saved.bandColor], [0.1, 0.5, 0.8], 'The shared jacket color is a band attribute');
 assert.equal(saved.timing.ppq, 960);
 assert.deepEqual([...saved.timing.countTicks], [0, 720, 1440]);
 assert.equal(saved.timing.tempos[1].tick, 360);
@@ -207,7 +221,7 @@ await context.openDrill(async () => ({
 }));
 assert.equal(robots[0].color.g, 0.6, 'Route-only shows also restore member appearance');
 await context.openDrill(async () => ({
-  ...saved, marchers: saved.marchers.map(({ color, ...marcher }) => ({
+  ...saved, bandColor: undefined, marchers: saved.marchers.map(({ color, ...marcher }) => ({
     ...marcher, performance: { ...marcher.performance, color: [1, 0, 0] },
   })),
 }));

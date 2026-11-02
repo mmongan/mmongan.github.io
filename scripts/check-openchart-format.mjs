@@ -26,7 +26,8 @@ const encoded = await format.encodeOpenChart(show);
 const bundledBytes = new Uint8Array(readFileSync(new URL('../src/assets/openmarch/example-show.openchart', import.meta.url)));
 const roundTrip = await format.decodeOpenChart(encoded);
 const bundled = await format.decodeOpenChart(bundledBytes);
-const bundledRoutes = { ...bundled,
+const { bandColor, ...bundledShow } = bundled;
+const bundledRoutes = { ...bundledShow,
   marchers: bundled.marchers.map(({ performance, instrument, color, ...route }) => route) };
 assert.deepEqual(JSON.parse(JSON.stringify(bundledRoutes)), JSON.parse(JSON.stringify(roundTrip)),
   'The full native startup asset retains compatibility metadata and exact route coordinates');
@@ -109,6 +110,8 @@ for (const [label, bytes] of [
   ['page past end', withMetadata(data => { data.pages.at(-1).count = 9999; })],
   ['invalid marcher metadata', withMetadata(data => { data.marchers[0].label = -1; })],
   ['out-of-range member color', withMetadata(data => { data.marchers[0].color = [2, 0, 0]; })],
+  ['out-of-range band color', withMetadata(data => { data.bandColor = [0, 0, 2]; })],
+  ['incomplete band color', withMetadata(data => { data.bandColor = [0, 1]; })],
   ['incomplete member color', withMetadata(data => { data.marchers[0].color = [0, 1]; })],
   ['non-numeric member color', withMetadata(data => { data.marchers[0].color = ['blue', 0, 1]; })],
   ['numeric show name', withMetadata(data => { data.name = 0; })],

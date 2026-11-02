@@ -244,7 +244,7 @@ example.marchers.forEach(marcher => {
   context.registerRobotCounts(robot, positions, {});
 });
 context.captureBakedMarcherSchedules().forEach((schedule, index) => {
-  example.marchers[index].color = [schedule.color.r, schedule.color.g, schedule.color.b];
+  example.bandColor = [schedule.color.r, schedule.color.g, schedule.color.b];
   example.marchers[index].performance = context.packOpenChartPerformance(schedule, gaitNames);
 });
 const exampleBytes = await context.encodeOpenChart(example);
