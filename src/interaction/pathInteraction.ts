@@ -2361,7 +2361,15 @@ formationEditor?.addEventListener("submit", (event) => {
 });
 
 const LETTER_BITMAPS: Record<FormationLetter, string[]> = {
-  A: [".###.", "#...#", "#...#", "#####", "#...#", "#...#", "#...#"],
+
+  A: [".###.", 
+      "#...#", 
+      "#...#", 
+      "#####", 
+      "#...#", 
+      "#...#", 
+      "#...#"],
+
   B: ["####.", "#...#", "#...#", "####.", "#...#", "#...#", "####."],
   C: [".####", "#....", "#....", "#....", "#....", "#....", ".####"],
   D: ["####.", "#...#", "#...#", "#...#", "#...#", "#...#", "####."],
@@ -2373,7 +2381,15 @@ const LETTER_BITMAPS: Record<FormationLetter, string[]> = {
   J: ["..###", "...#.", "...#.", "...#.", "...#.", "#..#.", ".##.."],
   K: ["#...#", "#..#.", "#.#..", "##...", "#.#..", "#..#.", "#...#"],
   L: ["#....", "#....", "#....", "#....", "#....", "#....", "#####"],
-  M: ["#...#", "##.##", "#.#.#", "#.#.#", "#...#", "#...#", "#...#"],
+
+  M: ["#...#", 
+      "##.##", 
+      "#.#.#", 
+      "#.#.#", 
+      "#...#", 
+      "#...#", 
+      "#...#"],
+
   N: ["#...#", "##..#", "##..#", "#.#.#", "#..##", "#..##", "#...#"],
   O: [".###.", "#...#", "#...#", "#...#", "#...#", "#...#", ".###."],
   P: ["####.", "#...#", "#...#", "####.", "#....", "#....", "#...."],
@@ -2386,7 +2402,14 @@ const LETTER_BITMAPS: Record<FormationLetter, string[]> = {
   W: ["#...#", "#...#", "#...#", "#.#.#", "#.#.#", "##.##", "#...#"],
   X: ["#...#", "#...#", ".#.#.", "..#..", ".#.#.", "#...#", "#...#"],
   Y: ["#...#", "#...#", ".#.#.", "..#..", "..#..", "..#..", "..#.."],
-  Z: ["#####", "....#", "...#.", "..#..", ".#...", "#....", "#####"],
+
+  Z: ["#####", 
+      "....#", 
+      "...#.", 
+      "..#..", 
+      ".#...", 
+      "#....", 
+      "#####"],
 };
 
 function createLetterFormation(letter: FormationLetter) {
@@ -3641,7 +3664,7 @@ function loadFootballPlay(formation: FootballFormation, play: FootballPlay, scri
     footballVisuals = createFootballVisuals(players, geometry.ballEvents.map(event => ({
       ...event, startCount: event.startCount + offset, endCount: event.endCount + offset,
     })), pathRoot, offset, geometry.sequence?.map(segment => ({
-      ...segment, startCount: segment.startCount + offset, endCount: segment.endCount + offset,
+      ...segment, startCount: segment.startCount + offset, endCount: segment.endCount + offset, source: 'user'
     })), geometry.tackles?.map(event => ({ ...event, count: event.count + offset })),
     geometry.outcomes?.map(event => ({ ...event, count: event.count + offset })), returnStart);
     setFootballAudioMode(true);

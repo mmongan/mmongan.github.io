@@ -65,7 +65,7 @@ export interface FootballOutcome {
 export interface FootballPlayGeometry {
   outcomes?: FootballOutcome[];
   tackles?: FootballTackleEvent[];
-  sequence?: { label: string; startCount: number; endCount: number; source: string }[];
+  sequence?: { label: string; startCount: number; endCount: number }[];
   players: FootballPlayer[];
   ballEvents: FootballBallEvent[];
 }
@@ -102,7 +102,7 @@ export const FOOTBALL_PLAY_OPTIONS: ReadonlyArray<{ value: FootballPlay; label: 
 ];
 
 export const FOOTBALL_SCRIMMAGE_DEFAULT = { formation: 'spread', play: 'drive' } as const;
-export const FOUR_VERTICALS_SOURCE = 'https://www.footballplaybookdesigner.com/library/article/four-verticals';
+
 
 export const FOOTBALL_FORMATION_PRESETS: Record<FootballFormation, FootballFormationPreset> = {
   shotgun: {

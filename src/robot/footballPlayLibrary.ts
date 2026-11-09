@@ -48,8 +48,7 @@ function generateFootballRushPlay(formation: FootballFormation, play: FootballPl
       kind: 'pass', startCount: 6, endCount: 8, fromId: quarterback.id, toId: 'offense-WR1',
     }],
     tackles: sack ? [{ defenderId: tackler, carrierId: quarterback.id, count: contactCount }] : [],
-    sequence: [{ label: FOOTBALL_PLAY_PRESETS[play].label, startCount: 0, endCount: sack ? contactCount : 16,
-      source: '' }],
+    sequence: [{ label: FOOTBALL_PLAY_PRESETS[play].label, startCount: 0, endCount: sack ? contactCount : 16 }],
   };
 }
 

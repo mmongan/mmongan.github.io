@@ -33,8 +33,7 @@ export function generateFootballPlaySequence(advanceDownfield = false): Football
   FOOTBALL_SEQUENCE_CONCEPTS.forEach((concept, index) => {
     const startCount = index * (16 + FOOTBALL_SEQUENCE_RESET_COUNTS);
     sequence.push({ label: advanceDownfield ? `${concept.label} / ${lineOfScrimmage < 0 ? 'Own' : 'Opponent'} ${50 - Math.abs(lineOfScrimmage)}` : concept.label,
-      startCount, endCount: startCount + 16,
-      source: `https://www.footballplaybookdesigner.com/library/article/${concept.id}` });
+      startCount, endCount: startCount + 16 });
     const routes = base.players.map(player => {
       const start = player.positions[0], role = player.label;
       if (concept.id === 'four-verticals' || player.team === 'defense' ||
