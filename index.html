@@ -12,9 +12,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       name="description"
       content="Babylon.js WebXR VR and AR demo for Meta Quest 3"
     />
-    <title>OpenChartxr</title>
-
-    <script type="module" crossorigin src="/assets/index-C-A48ysX.js"></script>
+    <title>OpenChartxr</title>
+    <script type="module" crossorigin src="/assets/index-B8Qmgyf0.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/rolldown-runtime-B0Z9INg1.js">
     <link rel="modulepreload" crossorigin href="/assets/engineStore-Bn2tApal.js">
     <link rel="modulepreload" crossorigin href="/assets/internalTexture-B3djGrls.js">
@@ -86,5 +85,627 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <output id="midiPlaybackHint" class="status-panel" aria-live="polite" hidden></output>
     </div>
 
+    <div class="settings-overlay" id="settingsOverlay">
+      <div class="settings-panel">
+        <div class="settings-panel-header">
+          <span>Settings</span>
+          <button id="settingsCloseButton" class="settings-close-button">&times;</button>
+        </div>
+
+        <div class="construction-banner">
+          <div class="traffic-cone-preview" aria-hidden="true">
+            <div class="traffic-cone">
+              <span class="traffic-cone-base"></span>
+              <span class="traffic-cone-face" style="--face: 0"></span>
+              <span class="traffic-cone-face" style="--face: 1"></span>
+              <span class="traffic-cone-face" style="--face: 2"></span>
+              <span class="traffic-cone-face" style="--face: 3"></span>
+              <span class="traffic-cone-face" style="--face: 4"></span>
+              <span class="traffic-cone-face" style="--face: 5"></span>
+              <span class="traffic-cone-face" style="--face: 6"></span>
+              <span class="traffic-cone-face" style="--face: 7"></span>
+              <span class="traffic-cone-face" style="--face: 8"></span>
+              <span class="traffic-cone-face" style="--face: 9"></span>
+              <span class="traffic-cone-face" style="--face: 10"></span>
+              <span class="traffic-cone-face" style="--face: 11"></span>
+            </div>
+          </div>
+          <strong>Under construction</strong>
+        </div>
+
+        <div class="settings-group">
+          <label class="settings-label">XR mode</label>
+          <div class="radio-row">
+            <label class="radio-option">
+              <input type="radio" name="xrMode" value="immersive-vr" checked />
+              <span>VR</span>
+            </label>
+            <label class="radio-option">
+              <input type="radio" name="xrMode" value="immersive-ar" />
+              <span>AR</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="settings-group">
+          <label class="settings-label">Tracked-thumb media hand</label>
+          <label class="radio-option">
+            <input id="swapControllerRolesToggle" type="checkbox" />
+            <span>Use left hand for thumb media jogging (default: right)</span>
+          </label>
+          <p>Both controller thumbsticks navigate unless positioning a held marcher or panel. This assignment selects the hand used for optional tracked-thumb timeline jogging.</p>
+          <label class="radio-option">
+            <input id="handThumbJogToggle" type="checkbox" />
+            <span>Hand-tracked thumb media jogging</span>
+          </label>
+          <p>With no controllers connected, enable this option to jog with tracked hands. Curl the selected hand's fingers and raise its thumb. Hold still briefly for neutral, then move the thumb sideways to jog. Open the hand or lower the thumb to stop. No hand menu is required.</p>
+        </div>
+
+        <div class="settings-group">
+          <label class="settings-label">Floor</label>
+          <label class="radio-option">
+            <input id="sittingModeToggle" type="checkbox" />
+            <span>Sitting mode (unchecked: Standing)</span>
+          </label>
+          <button id="fullScaleVRButton" class="xr-button secondary">Full scale VR</button>
+          <button id="tabletopScaleButton" class="xr-button secondary">Tabletop scale</button>
+          <button id="giantModeButton" class="xr-button secondary">Giant mode (fit room)</button>
+          <p>Desktop always uses full 1:1 field scale, including drafting. Tabletop and Giant scaling are available only in immersive VR/AR.</p>
+          <button id="marcherPOVModeButton" class="xr-button secondary" type="button" aria-pressed="false">Marcher POV (eye-level camera follow)</button>
+          <label class="settings-label" for="marcherPOVSelect">POV marcher</label>
+          <select id="marcherPOVSelect" aria-label="POV marcher"><option value="">Select a marcher</option></select>
+          <label class="settings-label" for="roomWidth">Room width (meters)</label>
+          <input id="roomWidth" type="number" min="1" max="50" step="0.1" value="4" required />
+          <label class="settings-label" for="roomLength">Room length (meters)</label>
+          <input id="roomLength" type="number" min="1" max="50" step="0.1" value="5" required />
+          <label class="settings-label" for="floorHeight">Floor height (meters)</label>
+          <input id="floorHeight" type="range" min="-2" max="2" step="0.01" value="0" />
+          <output id="floorHeightValue" for="floorHeight">0.00 m</output>
+          <label class="settings-label" for="tableHeight">Table height (meters)</label>
+          <input id="tableHeight" type="range" min="0" max="2" step="0.01" value="1" />
+          <output id="tableHeightValue" for="tableHeight">1.00 m</output>
+          <label class="radio-option">
+            <input type="checkbox" id="floorCalibrationToggle" />
+            <span>Floor calibration</span>
+          </label>
+        </div>
+
+        <div class="settings-group">
+          <label class="settings-label">Football plays</label>
+          <label for="footballFormation">Offensive formation</label>
+          <select id="footballFormation" aria-label="Football formation"></select>
+          <label for="footballPlay">Play library</label>
+          <select id="footballPlay" aria-label="Football play"></select>
+          <button id="footballLoad" type="button" class="xr-button secondary">Load 11-on-11 football play</button>
+          <button id="runScrimmage" type="button" class="xr-button secondary" data-return-band="false">🏈 Start scrimmage</button>
+          <button id="footballExit" type="button" class="xr-button secondary">Exit football (restore band)</button>
+          <output id="footballStatus" aria-live="polite"></output>
+          <label><input id="footballBallHighlight" type="checkbox"> Highlight football</label>
+          <label><input id="footballFlightPath" type="checkbox" checked> Show ball flight path</label>
+          <label><input id="footballFutureGhosts" type="checkbox"> Preview future ghosts for all players</label>
+          <output id="footballFutureStatus" aria-live="polite"></output>
+          <button id="footballChartEdit" type="button" class="xr-button secondary">Edit football chart</button>
+          <label for="footballDraftTeam">Draft lineup</label>
+          <select id="footballDraftTeam">
+            <option value="offense">Offense (11 existing players)</option>
+            <option value="defense">Defense (11 existing players)</option>
+            <option value="selected">Selected football players</option>
+          </select>
+          <label for="footballDraftFrom">Route start count</label>
+          <input id="footballDraftFrom" type="number" min="0" step="1" value="0">
+          <label for="footballDraftTo">Destination count</label>
+          <input id="footballDraftTo" type="number" min="0" step="1" value="16">
+          <output id="footballDraftStatus" aria-live="polite"></output>
+          <p>Draw with the existing drafting tools. Formation places this lineup on the guide at the destination set. Path replaces the selected player's route between these counts. Route selected form routes this lineup to the guide. No extra players are created.</p>
+          <label for="footballTackleDefender">Scripted tackler</label>
+          <select id="footballTackleDefender" aria-label="Defensive tackler"></select>
+          <label for="footballTackleCarrier">Ball carrier</label>
+          <select id="footballTackleCarrier" aria-label="Tackle ball carrier"></select>
+          <label for="footballTackleCount">Tackle timeline count</label>
+          <input id="footballTackleCount" type="number" min="0" step="1" value="16">
+          <button id="footballTackleNow" type="button" class="xr-button secondary">Use current count</button>
+          <button id="footballTackleAdd" type="button" class="xr-button secondary">Save scripted tackle</button>
+          <label for="footballTackleEvents">Authored tackles</label>
+          <select id="footballTackleEvents" aria-label="Authored tackles"></select>
+          <button id="footballTackleRemove" type="button" class="xr-button secondary">Remove selected tackle</button>
+          <output id="footballTackleStatus" aria-live="polite"></output>
+          <p>Select New tackle to add, or an authored event to update. Edit routes so the defender reaches the carrier, then both hold for eight counts. Tackles are scripted, not automatic collision or injury simulation. Both fall and recover before moving again. Events are session-only.</p>
+          <p>Uses the existing timeline and player route editor. Loading replaces the visible band until Exit. Blue is offense, red is defense. Ball snaps, handoffs and passes follow the play timeline and edited routes. Demonstration movement, not a physics/contact simulation. Football appearance and ball events are session-only; exported routes do not retain them.</p>
+        </div>
+
+        <div class="settings-group">
+          <label class="settings-label">Field markings</label>
+          <div class="radio-row">
+            <label class="radio-option">
+              <input type="radio" name="fieldLevel" value="highschool" checked />
+              <span>High School</span>
+            </label>
+            <label class="radio-option">
+              <input type="radio" name="fieldLevel" value="college" />
+              <span>College</span>
+            </label>
+            <label class="radio-option">
+              <input type="radio" name="fieldLevel" value="nfl" />
+              <span>NFL</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="settings-group">
+          <label class="settings-label" for="videoScreenSize">Video screen size</label>
+          <div class="radio-row">
+            <input id="videoScreenSize" type="range" min="50" max="175" step="5" value="100" />
+            <output id="videoScreenSizeValue" for="videoScreenSize">100%</output>
+          </div>
+        </div>
+
+        <p id="playbackModeNotice" class="settings-status" role="status">Desktop is playback-only at 1:1. Enter immersive VR/AR to edit the drill.</p>
+        <form id="formationEditor" class="settings-group" data-xr-editing hidden>
+          <h3>Drill form editor</h3>
+          <p>Create standing forms without replacing the show. Select a form here or select one of its marchers. Moves, rotations, and scaling apply to the whole form; collision checks reject overlapping edits. To move a selected form together, draw a destination guide and choose Route selected form in the drawing tray; every marcher receives the same count schedule with automatic route avoidance.</p>
+          <label class="radio-option"><input id="gridSnapToggle" type="checkbox" /><span>Snap editing to field grid</span></label>
+          <label class="radio-option"><input id="fieldGridToggle" type="checkbox" /><span>Show adjustable grid on field</span></label>
+          <label class="settings-label" for="fieldGridInterval">Visible grid spacing (yards)</label>
+          <input id="fieldGridInterval" type="number" min="0.5" max="20" step="0.5" value="5" />
+          <label class="settings-label" for="gridSnapInterval">Grid interval (yards)</label>
+          <select id="gridSnapInterval">
+            <option value="0.3125">0.3125 (half step)</option>
+            <option value="0.625" selected>0.625 (8-to-5 step)</option>
+            <option value="1.25">1.25 (two steps)</option>
+            <option value="2.5">2.5</option>
+            <option value="5">5 (yard lines)</option>
+            <option value="custom">Custom X/Z</option>
+          </select>
+          <label class="settings-label" for="gridSnapX">X rounding (yards)</label>
+          <input id="gridSnapX" type="number" min="0.001" max="10" step="any" value="0.625" required />
+          <label class="settings-label" for="gridSnapZ">Z rounding (yards)</label>
+          <input id="gridSnapZ" type="number" min="0.001" max="10" step="any" value="0.625" required />
+          <p>Hold Shift to temporarily bypass grid and angle snapping. Press 1 outside text fields to round the selected standing form to whole yards.</p>
+          <label class="radio-option"><input id="angleSnapToggle" type="checkbox" /><span>Snap rotations to 45 degrees</span></label>
+          <label class="settings-label" for="formationPreset">Form tool</label>
+          <select id="formationPreset">
+            <option value="line">Line</option><option value="arc">Arc</option>
+            <option value="circle">Circle</option><option value="block">Block</option>
+            <option value="triangle">Triangle</option><option value="square">Square</option>
+            <option value="pentagon">Pentagon</option><option value="hexagon">Hexagon</option>
+            <option value="star">Star</option>
+          </select>
+          <label class="settings-label" for="formationSpacing">Marcher spacing (yards)</label>
+          <input id="formationSpacing" type="number" min="0.625" max="10" step="any" value="1.25" required />
+          <label class="settings-label" for="formationOriginX">New form origin X (yards across field width)</label>
+          <input id="formationOriginX" type="number" min="-25" max="25" step="any" value="15" required />
+          <label class="settings-label" for="formationOriginZ">New form origin Z (yards along field length)</label>
+          <input id="formationOriginZ" type="number" min="-50" max="50" step="any" value="30" required />
+          <button type="submit" value="create">Create form</button>
+          <label class="settings-label" for="formationSelection">Selected standing form</label>
+          <select id="formationSelection"><option value="">Select a form</option></select>
+          <p>Align X makes a line along Z; align Z makes a line along X. Distribution keeps the outermost positions and spaces the others evenly on that axis. Colliding results are rejected.</p>
+          <button type="submit" value="alignX">Align X</button>
+          <button type="submit" value="alignZ">Align Z</button>
+          <button type="submit" value="distributeX">Distribute X evenly</button>
+          <button type="submit" value="distributeZ">Distribute Z evenly</button>
+          <button type="submit" value="round">Round to whole yards (1)</button>
+          <button type="submit" value="spacing">Apply spacing to selected form</button>
+          <label class="radio-option"><input id="formationLockX" type="checkbox" /><span>Lock X translation</span></label>
+          <label class="radio-option"><input id="formationLockZ" type="checkbox" /><span>Lock Z translation</span></label>
+          <p>Axis locks constrain standing-form moves and control-point handles, not rotation, scaling, or alignment.</p>
+          <label class="settings-label" for="formationMoveX">Move X (yards)</label>
+          <input id="formationMoveX" type="number" min="-100" max="100" step="any" value="0" required />
+          <label class="settings-label" for="formationMoveZ">Move Z (yards)</label>
+          <input id="formationMoveZ" type="number" min="-100" max="100" step="any" value="0" required />
+          <label class="settings-label" for="formationRotation">Rotate (degrees, clockwise)</label>
+          <input id="formationRotation" type="number" min="-360" max="360" step="any" value="0" required />
+          <label class="settings-label" for="formationScale">Scale selected form</label>
+          <input id="formationScale" type="number" min="0.25" max="4" step="0.05" value="1" required />
+          <button type="submit" value="transform">Apply group transform</button>
+          <output id="formationEditorStatus" class="settings-status" aria-live="polite">No standing form selected. Imported routes are not edited by these controls.</output>
+        </form>
+
+        <form id="selectionEditor" class="settings-group" data-xr-editing hidden>
+          <h3>Selection, shapes, and sets</h3>
+          <label class="radio-option"><input id="drillSelectionMode" type="checkbox" /><span>Enable multi-marcher editing (pauses playback)</span></label>
+          <p>Close Settings to select on the field. Drag a rectangle, Shift-drag a lasso, Ctrl/Cmd-click to toggle a marcher, or Ctrl/Cmd+A to select all eligible marchers. Cyan circles show selection; orange and green handles rotate and scale it. Drag selected marchers to move the selection. Desktop selection gestures replace camera dragging only while enabled.</p>
+          <button type="submit" value="selectAll">Select all eligible marchers</button>
+          <button type="submit" value="selectForm">Select current standing form</button>
+          <button type="submit" value="clearSelection">Clear selection</button>
+          <label class="radio-option"><input id="drillSetEditMode" type="checkbox" /><span>Edit authored drill sets (explicit opt-in)</span></label>
+          <p>Set edits change selected marchers at the destination set and linearly rebuild their transitions to adjacent sets. Other marchers and distant counts remain unchanged. Existing midsets within those transitions are replaced. Destination collisions are rejected; inspect collision previews and stride warnings during playback. Changes are session-local, with no show export or edit undo.</p>
+          <label class="settings-label" for="drillEditSet">Destination set</label>
+          <select id="drillEditSet"><option value="">No drill sets loaded</option></select>
+          <label class="radio-option"><input id="fieldChartModeToggle" type="checkbox" /><span>Field chart mode: previous-set ghosts and movement arrows (pauses playback)</span></label>
+          <output id="fieldChartModeStatus" class="settings-status" aria-live="polite"></output>
+          <p>Choose a destination set above. Chart mode pauses the real band at that set, adds cyan ghosts at the previous set, and draws gold arrows from old to new positions. Holds have no arrow. Arrows show straight-line displacement, not the traveled route. The first set has no previous-set comparison. Playback, timeline jogging, or ghost-band preview turns chart mode off. Turning it off leaves the band paused; no drill positions are edited.</p>
+          <button type="submit" value="copyPrevious">Copy positions from previous set</button>
+          <button type="submit" value="copyNext">Copy positions from next set</button>
+          <button type="submit" value="shapePrevious">Copy grouped shape to previous set</button>
+          <button type="submit" value="shapeNext">Copy grouped shape to next set</button>
+          <p>Transforms, alignment, locks, and rounding use the shared form-editor settings above, but act on this selection.</p>
+          <button type="submit" value="transform">Transform selection using form settings</button>
+          <button type="submit" value="alignX">Align selection X</button>
+          <button type="submit" value="alignZ">Align selection Z</button>
+          <button type="submit" value="distributeX">Distribute selection X</button>
+          <button type="submit" value="distributeZ">Distribute selection Z</button>
+          <div class="radio-row">
+            <button type="submit" value="roundX">Cycle X rounding</button>
+            <button type="submit" value="roundZ">Cycle Z rounding</button>
+            <button type="submit" value="round">Round selection to whole yards</button>
+          </div>
+          <h4>Shape inspector</h4>
+          <p>Selection order assigns marchers along the shape. Start a shape, append segments, then apply coordinates or group. Move starts a disconnected section; Close returns to the first point. Blue field handles edit endpoints and curve controls. Applying never creates or deletes marchers.</p>
+          <label class="settings-label" for="drillShapeStartX">Shape start X (yards)</label>
+          <input id="drillShapeStartX" type="number" step="any" value="-10" required />
+          <label class="settings-label" for="drillShapeStartZ">Shape start Z (yards)</label>
+          <input id="drillShapeStartZ" type="number" step="any" value="-30" required />
+          <button type="submit" value="startShape">Start / reset shape</button>
+          <label class="settings-label" for="drillShapeKind">Next segment</label>
+          <select id="drillShapeKind">
+            <option value="line">Line</option><option value="curve">Single curve (quadratic)</option>
+            <option value="doubleCurve">Double curve (cubic)</option><option value="move">Move (new section)</option>
+            <option value="close">Close</option>
+          </select>
+          <label class="settings-label" for="drillShapeEndX">Endpoint X</label>
+          <input id="drillShapeEndX" type="number" step="any" value="10" required />
+          <label class="settings-label" for="drillShapeEndZ">Endpoint Z</label>
+          <input id="drillShapeEndZ" type="number" step="any" value="-30" required />
+          <label class="settings-label" for="drillShapeControlX">First curve control X</label>
+          <input id="drillShapeControlX" type="number" step="any" value="-5" required />
+          <label class="settings-label" for="drillShapeControlZ">First curve control Z</label>
+          <input id="drillShapeControlZ" type="number" step="any" value="-20" required />
+          <label class="settings-label" for="drillShapeControl2X">Second curve control X</label>
+          <input id="drillShapeControl2X" type="number" step="any" value="5" required />
+          <label class="settings-label" for="drillShapeControl2Z">Second curve control Z</label>
+          <input id="drillShapeControl2Z" type="number" step="any" value="-40" required />
+          <button type="submit" value="appendShape">Append segment</button>
+          <button type="submit" value="deleteSegment">Delete last segment</button>
+          <button type="submit" value="line">Create line from selected marchers</button>
+          <button type="submit" value="applyShape">Apply shape coordinates</button>
+          <button type="submit" value="group">Group selection into shape</button>
+          <button type="submit" value="ungroup">Ungroup without deleting marchers</button>
+          <output id="drillSelectionStatus" class="settings-status" aria-live="polite">Multi-marcher editing disabled.</output>
+        </form>
+
+        <div class="settings-group">
+          <label class="settings-label">Robot paths</label>
+          <button id="duplicateDrillButton" class="xr-button secondary" type="button" data-xr-editing hidden>Duplicate drill side by side (2x marchers)</button>
+          <output id="duplicateDrillStatus" class="settings-status" aria-live="polite"></output>
+          <output id="marcherPOVStatus" class="settings-status" aria-live="polite">Select a marcher, then enable POV.</output>
+          <p>Browser: mouse or arrow keys look around. VR: headset look and room-scale motion remain natural; marching moves your viewpoint. Use Marcher POV on the floating settings panel to exit. Artificial VR movement may cause discomfort; pause the drill or leave POV if needed. POV is not available in AR.</p>
+          <label class="radio-option">
+            <input id="lowPolygonMarchersToggle" type="checkbox" checked />
+            <span>Low-polygon marcher bodies (full-detail instruments)</span>
+          </label>
+          <label class="radio-option">
+            <input type="checkbox" id="collisionMarkersToggle" checked />
+            <span>Show collision markers</span>
+          </label>
+          <div class="spacing-checker">
+            <label class="settings-label" for="drillSpacingThreshold">Live drill spacing check</label>
+            <p>Check nearest-neighbor distances at the current playback position. Run again after seeking or editing.</p>
+            <label for="drillSpacingThreshold">Flag spacing below (yards)</label>
+            <div class="spacing-checker-controls">
+              <input id="drillSpacingThreshold" type="number" min="0.1" max="20" step="0.05" value="1.25" required />
+              <button id="drillSpacingCheck" type="button">Check spacing</button>
+            </div>
+            <output id="drillSpacingSummary" class="settings-status" aria-live="polite">No spacing check run yet.</output>
+            <div id="drillSpacingResults" class="spacing-results" aria-live="polite"></div>
+          </div>
+          <div data-xr-editing hidden>
+          <label class="radio-option">
+            <input type="checkbox" id="placementModeToggle" />
+            <span>Placement mode (trigger places a standing robot)</span>
+          </label>
+          <label class="radio-option">
+            <input type="checkbox" id="eraseModeToggle" />
+            <span>Erase marchers (click, trigger, pinch, or touch a marcher)</span>
+          </label>
+          <div class="radio-row">
+            <button id="undoEraseButton" disabled>Undo edit</button>
+            <button id="redoEraseButton" disabled>Redo edit</button>
+          </div>
+          </div>
+          <label class="radio-option">
+            <input type="checkbox" id="drillChartPadToggle" />
+            <span>Drill chart pad (floating, grabbable)</span>
+          </label>
+          <label class="radio-option"><input id="chartGhostModeToggle" type="checkbox" /><span>Chart ghost mode: before (cyan), current marchers, after (pink)</span></label>
+          <label class="radio-option"><input id="xrSettingsPanelToggle" type="checkbox" /><span>Show floating XR settings panel</span></label>
+          <button id="xrSettingsPanelButton" type="button">Bring XR settings panel here</button>
+          <p>Grab panel frames to position them. Hidden panels keep your placement when reopened. Reset panels/signs in the floating Settings / panels menu restores the default layout beside your current position without changing panel size or transparency. Any controller X/Y/A/B button opens Settings / panels. With hand tracking, hold an open, flat palm facing up briefly to open the same menu, then choose a panel. The menu floats independently rather than attaching to your hand.</p>
+          <div data-xr-editing hidden>
+          <label class="settings-label" for="chartBeatsPerPage">Beats per chart page</label>
+          <input id="chartBeatsPerPage" type="number" min="1" max="64" step="1" value="8" />
+          <p>Authored formations keep their counts. Intermediate pages sample the transition at this interval; editing an intermediate page makes it an authored formation. Guides remain attached to their original counts when the interval changes.</p>
+          <button id="insertChartPageButton" type="button">Insert blank chart page after this page</button>
+          <button id="saveChartDraftButton" type="button">Save chart page draft (this browser)</button>
+          <button id="resumeChartDraftButton" type="button">Resume saved chart page draft</button>
+          <div data-drafting-tools hidden>
+          <label class="settings-label">Instrument (selected marcher and new marchers)</label>
+          <label class="radio-option">
+            <input type="checkbox" id="instrumentPanelToggle" />
+            <span>Show instrument panel</span>
+          </label>
+          <button id="instrumentPanelButton" type="button">Open instrument panel to create marchers</button>
+          </div>
+          <h3>Drafting table</h3>
+          <label class="radio-option"><input id="draftingModeToggle" type="checkbox" /><span>Use field as a drafting table</span></label>
+          <p>Drafting is available in immersive VR/AR on a tabletop-sized field placed in front of you; exiting restores the previous XR field placement. Desktop is a playback-only 1:1 viewer. Toggle Full-size view for a live, view-only field in the distance, including marchers and guides. No pins. Endpoint and line snaps take priority over nearby grid points.</p>
+          <div data-drafting-tools hidden>
+          <div id="draftingTableControls" hidden>
+            <div class="radio-row">
+              <button type="button" data-drafting-action="show">Drawing tools</button>
+              <button type="button" data-drafting-action="drafting">Precision tools</button>
+              <button type="button" data-drafting-action="stencils">Stencils</button>
+              <button type="button" data-drafting-action="cutters">Formation cutters</button>
+            </div>
+            <div class="radio-row">
+              <button type="button" data-drafting-action="guideSelect">Select guides / put tools away</button>
+              <button type="button" data-drafting-action="tableSnap">Toggle drafting snap</button>
+              <button type="button" data-drafting-action="tableGrid">Toggle field grid</button>
+              <button type="button" data-drafting-action="tablePreview">Full-size view on/off</button>
+            </div>
+            <div class="radio-row">
+              <button type="button" data-drafting-action="guideLeft">Move -X</button>
+              <button type="button" data-drafting-action="guideRight">Move +X</button>
+              <button type="button" data-drafting-action="guideBack">Move -Z</button>
+              <button type="button" data-drafting-action="guideForward">Move +Z</button>
+            </div>
+            <div class="radio-row">
+              <button type="button" data-drafting-action="guideRotateLeft">Rotate -</button>
+              <button type="button" data-drafting-action="guideRotateRight">Rotate +</button>
+              <button type="button" data-drafting-action="guideDuplicate">Duplicate selected</button>
+              <button type="button" data-drafting-action="guideDelete">Delete selected</button>
+            </div>
+            <div class="radio-row">
+              <button type="button" data-drafting-action="draftSpacingLess">Move step -</button>
+              <button type="button" data-drafting-action="draftSpacingMore">Move step +</button>
+              <button type="button" data-drafting-action="draftAngle">Rotation angle</button>
+            </div>
+            <div class="radio-row">
+              <button type="button" data-drafting-action="guideSpacingLess">Guide spacing -</button>
+              <button type="button" data-drafting-action="guideSpacingMore">Guide spacing +</button>
+              <button type="button" data-drafting-action="guideSpacingApply">Use divider spacing for guide</button>
+              <button type="button" data-drafting-action="guideFacing">Guide facing mode</button>
+              <button type="button" data-drafting-action="guideFacingLeft">Facing -15 degrees</button>
+              <button type="button" data-drafting-action="guideFacingRight">Facing +15 degrees</button>
+            </div>
+            <p>Select a guide to configure its marcher spacing (0.625-10 yards) and facing: along, reverse, or a fixed field angle (0 degrees toward +Z; 90 toward +X). For exact spacing, enter Divider spacing below and apply it to the guide. Landing ghosts and Create formation use the same spaced positions, starting at the guide's first point.</p>
+            <div class="radio-row">
+              <button type="button" data-drafting-action="formation">Create formation</button>
+              <button type="button" data-drafting-action="path">Create path</button>
+              <button type="button" data-drafting-action="synchronizedRoutes">Route selected form</button>
+              <button type="button" data-drafting-action="undo">Remove newest guide</button>
+            </div>
+            <p>Moves use Divider spacing / parallel offset below. Rotations use the set-square angle around the guide's bounding center. Duplicates are independent copies shifted +X by one move step. Out-of-field edits are rejected. Undo guide removes the newest whole guide, not individual edits.</p>
+          </div>
+          <output id="draftingTableStatus" aria-live="polite"></output>
+          <button id="drawingToolsButton" type="button">Open field drawing tools</button>
+          <button id="draftingToolsButton" type="button">Open advanced drafting tools</button>
+          <label class="settings-label" for="fieldProjectorFile">Image projector: local tracing image</label>
+          <input id="fieldProjectorFile" type="file" accept="image/png,image/jpeg,image/webp" />
+          <button id="fieldProjectorButton" type="button">Open grabbable image projector</button>
+          <label class="radio-option"><input id="fieldProjectorToggle" type="checkbox" /><span>Project tracing image onto field</span></label>
+          <label class="settings-label" for="fieldProjectorX">Projection center X (yards across field)</label>
+          <input id="fieldProjectorX" type="number" min="-26.6665" max="26.6665" step="any" value="0" />
+          <label class="settings-label" for="fieldProjectorZ">Projection center Z (yards along field)</label>
+          <input id="fieldProjectorZ" type="number" min="-60" max="60" step="any" value="0" />
+          <label class="settings-label" for="fieldProjectorWidth">Projection width (yards; aspect ratio preserved)</label>
+          <input id="fieldProjectorWidth" type="number" min="0.5" max="120" step="any" value="40" />
+          <label class="settings-label" for="fieldProjectorRotation">Projection rotation (degrees)</label>
+          <input id="fieldProjectorRotation" type="number" min="-180" max="180" step="any" value="0" />
+          <label class="settings-label" for="fieldProjectorOpacity">Projection opacity (5-100%)</label>
+          <input id="fieldProjectorOpacity" type="range" min="0.05" max="1" step="0.05" value="0.5" />
+          <div class="radio-row">
+            <button id="fieldProjectorFitButton" type="button">Fit image to field</button>
+            <button id="fieldProjectorClearButton" type="button">Remove tracing image</button>
+          </div>
+          <output id="fieldProjectorStatus" aria-live="polite">Choose a local image to project and trace.</output>
+          <p>Upload a PNG, JPEG, or WebP (up to 16 MB) before entering XR. Images stay in this browser session and are resized to the device texture limit (at most 4096 pixels per side). The image is clipped to the field, keeps its aspect ratio, and does not intercept drawing. At zero rotation the image top points toward +Z. Trace it with drawing tools, then Create formation/path as usual. Projector on the floating settings panel opens alignment, scale, rotation, fade, and on/off controls. Moving the projector body only repositions its controls. Put away hides the device but keeps the projection. Calibration temporarily hides the image. Reload/Remove clears only the image; no image or projection settings are saved in drafting workspaces/camera photos, and no automatic image-to-route conversion occurs.</p>
+          <label class="settings-label" for="draftingSpacing">Divider spacing / parallel offset (yards)</label>
+          <input id="draftingSpacing" type="number" min="0.05" max="20" step="any" value="1.25" />
+          <label class="settings-label" for="draftingAngle">Set square angle</label>
+          <select id="draftingAngle">
+            <option value="30">30 degrees</option><option value="45" selected>45 degrees</option>
+            <option value="60">60 degrees</option><option value="90">90 degrees</option>
+          </select>
+          <label class="settings-label" for="draftingText">Annotation text</label>
+          <input id="draftingText" type="text" maxlength="80" value="Note" />
+          <p>Advanced drafting: T-square, set square, dividers, measuring tape, spline, parallel offsets, annotations, and sticky notes. Drag on the field or grab a tool and touch its working edge to the turf. Drafting-table mode adds shared snapping and pin-free selected-guide edits. Spacing, angle, offset side, and parallel-reference controls are also on the advanced tray. Notes use the text above.</p>
+          <div class="radio-row">
+            <button id="draftingSaveButton" type="button">Save drafting locally</button>
+            <button id="draftingRestoreButton" type="button">Restore saved drafting</button>
+            <button id="draftingDeleteButton" type="button">Delete saved drafting</button>
+          </div>
+          <output id="draftingSaveStatus" aria-live="polite"></output>
+          <div class="radio-row">
+            <button id="draftingCameraButton" type="button">Camera: copy field in 3D</button>
+            <button id="draftingPhotoCaptureButton" type="button">Take top-down PNG photo</button>
+            <button id="draftingPhotoRestoreButton" type="button">Restore camera snapshot</button>
+            <button id="draftingPhotoDownloadButton" type="button">Download field photo</button>
+          </div>
+          <img id="draftingPhotoPreview" alt="Saved top-down field snapshot" hidden style="max-width:100%; height:auto;" />
+          <p>The camera shutter creates a separately positioned 3D field copy with marcher routes and committed guides. Grab an inactive copy's edge to move, turn, or resize it; Edit field switches editing and playback to that copy. Inactive fields stay paused. Copies are session-only. Take top-down PNG photo separately saves one PNG and its drafting workspace together. Restore camera snapshot restores drafting only, not marchers or routes; downloaded photos are images only.</p>
+          <p>One saved drafting workspace per browser and site address. Save overwrites it; restore replaces current guides (press twice when guides exist). No automatic restore. Marchers, routes, tool poses, and live previews are not saved. Delete saved drafting removes only the stored copy, not current guides. Clearing browser data removes the save.</p>
+          <button id="stencilTrayButton" type="button">Open stencil tray</button>
+          <button id="cookieCutterTrayButton" type="button">Open cookie cutter tray</button>
+          <div class="radio-row">
+            <label class="radio-option">
+              <input type="radio" name="marcherInstrument" value="trumpet" checked />
+              <span>Trumpet</span>
+            </label>
+            <label class="radio-option">
+              <input type="radio" name="marcherInstrument" value="mellophone" />
+              <span>Mellophone</span>
+            </label>
+            <label class="radio-option">
+              <input type="radio" name="marcherInstrument" value="altoSax" />
+              <span>Alto saxophone</span>
+            </label>
+            <label class="radio-option">
+              <input type="radio" name="marcherInstrument" value="bariSax" />
+              <span>Baritone saxophone</span>
+            </label>
+            <label class="radio-option">
+              <input type="radio" name="marcherInstrument" value="trombone" />
+              <span>Trombone</span>
+            </label>
+            <label class="radio-option">
+              <input type="radio" name="marcherInstrument" value="euphonium" />
+              <span>Euphonium</span>
+            </label>
+            <label class="radio-option">
+              <input type="radio" name="marcherInstrument" value="clarinet" />
+              <span>Clarinet</span>
+            </label>
+            <label class="radio-option">
+              <input type="radio" name="marcherInstrument" value="flute" />
+              <span>Flute</span>
+            </label>
+            <label class="radio-option">
+              <input type="radio" name="marcherInstrument" value="sousaphone" />
+              <span>Sousaphone</span>
+            </label>
+            <label class="radio-option">
+              <input type="radio" name="marcherInstrument" value="snare" />
+              <span>Snare drum</span>
+            </label>
+            <label class="radio-option">
+              <input type="radio" name="marcherInstrument" value="tenors" />
+              <span>Tenor drums</span>
+            </label>
+            <label class="radio-option">
+              <input type="radio" name="marcherInstrument" value="bassDrum" />
+              <span>Bass drum</span>
+            </label>
+            <label class="radio-option">
+              <input type="radio" name="marcherInstrument" value="glockenspiel" />
+              <span>Glockenspiel</span>
+            </label>
+            <label class="radio-option"><input type="radio" name="marcherInstrument" value="cymbals" /><span>Cymbals</span></label>
+            <label class="radio-option"><input type="radio" name="marcherInstrument" value="guardFlag" /><span>Color guard flag</span></label>
+            <label class="radio-option"><input type="radio" name="marcherInstrument" value="guardRifle" /><span>Color guard rifle (parade prop)</span></label>
+            <label class="radio-option"><input type="radio" name="marcherInstrument" value="guardSabre" /><span>Color guard sabre (parade prop)</span></label>
+          </div>
+          <p>Color guard performers use the same placement, formation, route, chart, and footprint tools as marchers. Guard equipment is held in a fixed presentation pose; spins, tosses, cloth simulation, and separate choreography are not included.</p>
+          <button id="marcherPaletteButton" type="button">Open uniform paint palette</button>
+          <label class="radio-option"><input id="marcherPaintToggle" type="checkbox" /><span>Paint individual marcher uniforms</span></label>
+          <label class="settings-label" for="marcherPaintColor">Uniform paint color</label>
+          <input id="marcherPaintColor" type="color" value="#1e88e5" />
+          <button id="marcherPaintSelectedButton" type="button">Paint selected marcher</button>
+          <output id="marcherPaintStatus" class="settings-status" aria-live="polite"></output>
+          <p>Open the grabbable palette here or with Paint on the floating settings panel. Choose a swatch (or custom color above), then click, trigger, or pinch a marcher to recolor only their uniform. Paint selected applies to the current selection. Done paint or the checkbox exits paint mode. Painting replaces movement/selection gestures while active; placement, erase, drawing, and selection editing turn it off. Uniforms, matching route colors, and top-down markers update; instruments/guard equipment are unchanged. Save the OpenChart show or a chart page draft to preserve colors. Paint has no undo.</p>
+          </div>
+          <label class="settings-label" for="marcherCount">Marchers to add</label>
+          <div class="radio-row">
+            <input id="marcherCount" type="range" min="1" max="100" step="1" value="8" />
+            <output id="marcherCountValue" for="marcherCount">8</output>
+          </div>
+          <button id="addRandomRobotsButton" class="xr-button secondary">Add marchers</button>
+          <button id="generateDrillButton" class="xr-button secondary">Generate marching band drill</button>
+          </div>
+          <label class="settings-label" for="openChartFile">Open drill show (.openchart or .dots)</label>
+          <input id="openChartFile" type="file" accept=".openchart,.dots" />
+          <button id="saveOpenChartButton" type="button" class="xr-button secondary">Save baked drill show (.openchart)</button>
+          <p>OpenChart saves complete marcher schedules: positions/heights, headings, facing, resolved named steps, cadence and cumulative step phase per count. MIDI PPQ, independent count tick positions, and tempo changes preserve musical timing without requiring quarter-note drill counts. Default gait, step size, instrument playing/carry pose, uniform color, field width, and pages are included. Files use uncompressed binary data, descriptive JSON keys, type-scoped built-in value codes, and inline custom text. Limb motion and footprint previews use the app's predefined step/pose library; footprints, joint animation, MIDI notes, audio, and drafting state are not embedded. Only OpenChart v13 is supported. OpenMarch imports remain available.</p>
+          <label class="settings-label" for="openMarchUrl">Open drill show (.openchart or .dots URL)</label>
+          <form id="openMarchForm" class="url-row">
+            <input id="openMarchUrl" type="url" placeholder="https://example.com/show.dots" autocomplete="url" spellcheck="false" required />
+            <button id="openMarchButton" type="submit" class="xr-button secondary">Open</button>
+          </form>
+          <button id="openMarchExampleButton" type="button" class="xr-button secondary">Load example OpenChart show</button>
+          <output id="openMarchStatus" class="settings-status" for="openMarchUrl"></output>
+          <label class="radio-option"><input id="ghostBandToggle" type="checkbox" /><span>Ghost-band timeline comparison</span></label>
+          <label class="radio-option"><input id="marcherFootprintsToggle" type="checkbox" /><span>Show selected marcher's full-route footprints</span></label>
+          <output id="marcherFootprintsStatus" class="settings-status" aria-live="polite"></output>
+          <p>Select a marcher on the field. Cyan left and gold right prints show sole contact anchors sampled from the same leg solver as playback at each stance entry along the full route. Gait cadence, MIDI beat units, facing, and bounded stride placement are included. Initial planted feet are included; repeated mark-time contacts overlap. Prints are projected onto the turf, not a recording of heel/toe pressure or a playback trail. Selection, gait, timing, or route changes update them. The overlay does not edit the drill or move playback and is hidden during floor calibration.</p>
+          <label class="settings-label" for="ghostBandTimeline">Ghost-band timeline</label>
+          <input id="ghostBandTimeline" type="range" min="0" max="1" step="0.1" value="0" disabled />
+          <output id="ghostBandStatus" class="settings-status" aria-live="polite"></output>
+          <p>Freeze the real band at the current count and move a cyan ghost band along the timeline. Optional tracked-thumb jogging automatically enters this mode. The slider and chart/score media controls move the ghosts. Trigger a ghost (or click it on desktop) to jump the real band to the preview count, paused. Turning this mode off instead returns to the frozen count, paused. Ghosts preview positions and facings using the captured body pose; they do not edit the drill. This is separate from the chart's before/after Ghosts toggle.</p>
+          <label class="settings-label" for="midiFile">Drill music (.mid / .midi)</label>
+          <input id="midiFile" type="file" accept=".mid,.midi,audio/midi,audio/x-midi" />
+          <label class="settings-label" for="midiUrl">MIDI URL</label>
+          <form id="midiUrlForm" class="url-row">
+            <input id="midiUrl" type="url" placeholder="https://example.com/music.mid" required />
+            <button type="submit" class="xr-button secondary">Load MIDI URL</button>
+          </form>
+          <button id="midiExampleButton" type="button" class="xr-button secondary">Load Liberty Bell full-band score</button>
+          <p>Startup music: The Liberty Bell (1893), J. P. Sousa, full-band MIDI with 20 woodwind, brass, and percussion tracks. From <a href="https://archive.org/details/InternetJukebox.JPS.48" target="_blank" rel="noopener noreferrer">Internet Archive</a>, marked <a href="https://creativecommons.org/publicdomain/mark/1.0/" target="_blank" rel="noopener noreferrer">Public Domain</a>. URL servers must allow CORS downloads.</p>
+          <p>One drill count = one quarter-note beat. Music follows drill tempo, playback, and seeking. MIDI audio is enabled by default; click, tap, or press a key to unlock browser sound before entering VR/AR.</p>
+          <div class="radio-row">
+            <button id="midiAudioButton" type="button">Mute MIDI audio</button>
+            <button id="midiClearButton" type="button" disabled>Clear MIDI</button>
+          </div>
+          <label class="settings-label" for="midiVolume">MIDI volume</label>
+          <label class="radio-option"><input id="repeatDrill" type="checkbox" /><span>Repeat drill</span></label>
+          <label class="radio-option"><input id="repeatSong" type="checkbox" /><span>Repeat song</span></label>
+          <input id="midiVolume" type="range" min="0" max="100" value="60" aria-label="MIDI volume" />
+          <output id="midiStatus" class="settings-status" for="midiFile" aria-live="polite">No MIDI loaded.</output>
+          <label class="radio-option">
+            <input id="musicStandToggle" type="checkbox" />
+            <span>Show music stand with score</span>
+          </label>
+          <button id="musicStandPlaceButton" type="button">Place music stand to my right</button>
+          <p>The score floats without a pole. Drag it with the mouse (wheel adjusts distance), grab with a controller grip or trigger, or pinch near it or along your hand's pointing ray. Its buttons control rewind, previous count, play/pause, next count, and fast-forward for both music and drill; rewind is silent.</p>
+          <output id="musicStandStatus" class="settings-status" aria-live="polite"></output>
+          <label class="settings-label" for="musicStandSize">Music pad size</label>
+          <div class="radio-row">
+            <input id="musicStandSize" type="range" min="60" max="250" step="10" value="100" />
+            <output id="musicStandSizeValue" for="musicStandSize">100%</output>
+          </div>
+          <label class="settings-label" for="musicScoreMeasures">Measures per page (staff layout)</label>
+          <select id="musicScoreMeasures" aria-label="Measures per page">
+            <option value="auto" selected>Auto (scales with pad size)</option>
+            <option value="1">1 measure (large print)</option>
+            <option value="2">2 measures (8 counts / 1 drill set)</option>
+            <option value="3">3 measures</option>
+            <option value="4">4 measures (show more staff)</option>
+            <option value="8">8 measures (overview)</option>
+          </select>
+          <details id="midiScore">
+            <summary>Sheet music (MIDI preview)</summary>
+            <p>VexFlow notation, rounded to sixteenth notes in 4/4 drill-count measures. Overlapping notes become tied chords; original meter, key spelling, separate voices, and expression are not reconstructed. The music stand shows the same track and measures in desktop, VR, and AR.</p>
+            <label class="settings-label" for="midiScoreTrack">Music track</label>
+            <select id="midiScoreTrack" disabled aria-label="Music track"></select>
+            <label class="radio-option">
+              <input id="midiScoreFollow" type="checkbox" checked />
+              <span>Follow drill playback</span>
+            </label>
+            <div class="radio-row">
+              <button id="midiScorePrevious" type="button" disabled>Previous measures</button>
+              <button id="midiScoreNext" type="button" disabled>Next measures</button>
+            </div>
+            <output id="midiScoreStatus" class="settings-status" aria-live="polite">No MIDI loaded.</output>
+            <div id="midiScoreCanvas" class="midi-score" tabindex="0" aria-label="Sheet music; scroll horizontally for full measures"></div>
+          </details>
+          <label class="radio-option">
+            <input type="checkbox" id="drillLabelsToggle" />
+            <span>Show drill labels above marchers</span>
+          </label>
+          <details id="showInfo" class="show-info" hidden>
+            <summary id="showInfoSummary">Show</summary>
+            <p class="show-info-heading">Pages (click to jump)</p>
+            <div class="show-info-table">
+              <table>
+                <thead><tr><th>Page</th><th>Count</th><th>Counts</th><th>Notes</th></tr></thead>
+                <tbody id="showInfoPages"></tbody>
+              </table>
+            </div>
+            <p class="show-info-heading">Marchers</p>
+            <div class="show-info-table">
+              <table>
+                <thead><tr><th>Label</th><th>Name</th><th>Section</th><th>Instrument</th></tr></thead>
+                <tbody id="showInfoMarchers"></tbody>
+              </table>
+            </div>
+          </details>
+          <p>OpenChartxr &copy; 2026 Marty Mongan.
+            <a href="https://github.com/mmongan/mmongan.github.io/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">AGPL-3.0-or-later</a> &middot;
+            <a href="https://github.com/mmongan/mmongan.github.io" target="_blank" rel="noopener noreferrer">Corresponding source</a> &middot;
+            <a href="https://github.com/mmongan/mmongan.github.io/blob/main/NOTICE" target="_blank" rel="noopener noreferrer">Asset notices</a>
+          </p>
+        </div>
+      </div>
+    </div>
+
   </body>
 </html>
