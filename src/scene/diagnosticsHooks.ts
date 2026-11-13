@@ -8,7 +8,7 @@
 // URL contains `?diagnostics`. It exposes existing transport and readiness
 // functions only; it adds no separate playback or scene state.
 
-import { isMidiPlaybackReady } from '../audio/midiPlayback';
+import { getMidiPlaybackWaitReason, isMidiPlaybackReady } from '../audio/midiPlayback';
 import {
   getDrillTransportState, isPlaybackRequested, isPlaybackStartPending,
   pauseAll, playAll, seekToCount, toggleAllPlayback,
@@ -21,6 +21,7 @@ export interface OpenChartxrDiagnostics {
   isPlaybackStartPending: typeof isPlaybackStartPending;
   isPlaybackRequested: typeof isPlaybackRequested;
   isMidiPlaybackReady: typeof isMidiPlaybackReady;
+  midiWaitReason: typeof getMidiPlaybackWaitReason;
   playAll: typeof playAll;
   pauseAll: typeof pauseAll;
   toggleAllPlayback: typeof toggleAllPlayback;
@@ -50,6 +51,7 @@ export function installDiagnosticsHooks(getMarcherCount: () => number) {
     isPlaybackStartPending,
     isPlaybackRequested,
     isMidiPlaybackReady,
+    midiWaitReason: getMidiPlaybackWaitReason,
     playAll,
     pauseAll,
     toggleAllPlayback,

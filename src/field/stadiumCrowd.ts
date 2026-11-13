@@ -18,6 +18,7 @@ import { FIELD_WIDTH_YARDS } from './constants';
 import { mergeMeshesByMaterial } from './meshMerging';
 import { createMediaButtonIcon } from '../menu/settingsButtonIcons';
 import { scrimmageButton } from '../ui/dom';
+import { getMidiPlaybackWaitReason, onMidiStatusChangedObservable } from '../audio/midiPlayback';
 import {
   isDrillEditingEnabled, onEditingModeChangedObservable, isMenuActionAvailable, onDraftingToolsChangedObservable,
 } from '../interaction/editingMode';
@@ -88,8 +89,10 @@ export function createStadiumCrowd(parent: Mesh) {
       ctx.fillStyle = '#ffffff';
       if (playPause && isPlaybackStartPending()) {
         // Immersive users can't see the DOM status explaining a held Play.
+        const reason = getMidiPlaybackWaitReason();
         ctx.font = 'bold 36px Arial';
-        ctx.fillText('WAITING FOR MUSIC', 256, 296, 470);
+        ctx.fillText(reason === 'audio' ? 'PULL TRIGGER FOR SOUND'
+          : reason === 'loading' ? 'LOADING MUSIC' : 'WAITING FOR MUSIC', 256, 296, 470);
       }
       if (sign.action.action === 'football') {
         const returnBand = scrimmageButton?.dataset.returnBand === 'true';
@@ -110,14 +113,17 @@ export function createStadiumCrowd(parent: Mesh) {
   });
   const updateScrimmageSign = () => signFaces[SIGNS.length - 1].draw();
   scrimmageButton?.addEventListener('change', updateScrimmageSign);
-  const playSignState = () => `${getDrillTransportState().playing}:${isPlaybackStartPending()}`;
+  const playSignState = () =>
+    `${getDrillTransportState().playing}:${isPlaybackStartPending()}:${getMidiPlaybackWaitReason()}`;
   let previousPlaySignState = playSignState();
-  const observer = onDrillTransportChangedObservable.add(() => {
+  const refreshPlaySign = () => {
     const next = playSignState();
     if (next === previousPlaySignState) return;
     previousPlaySignState = next;
     signFaces[MEDIA_SIGNS.findIndex(sign => sign.action === 'playPause')].draw();
-  });
+  };
+  const observer = onDrillTransportChangedObservable.add(refreshPlaySign);
+  const midiStatusObserver = onMidiStatusChangedObservable.add(refreshPlaySign);
   const materials = [crowdMaterial, frameMaterial, ...signFaces.map(face => face.material)];
   const immersiveSigns = new Map<Mesh, HandMenuHit>();
   const updateSigns = () => {
@@ -128,6 +134,7 @@ export function createStadiumCrowd(parent: Mesh) {
   scene.onDisposeObservable.addOnce(() => {
     scrimmageButton?.removeEventListener('change', updateScrimmageSign);
     onDrillTransportChangedObservable.remove(observer);
+    onMidiStatusChangedObservable.remove(midiStatusObserver);
     onEditingModeChangedObservable.remove(modeObserver);
     onDraftingToolsChangedObservable.remove(draftingObserver);
     materials.forEach(mat => mat.dispose(false, true));

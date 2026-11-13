@@ -46,7 +46,7 @@ Preserve the ordering in `src/scene/index.ts` unless the change explicitly requi
 
 Per-frame work in `renderFrame` runs through `runFrameStage`, so one failing stage is logged once and cannot stop the render loop (a dead loop looks like a frozen band in a headset while music continues). Keep new per-frame stages inside it.
 
-Play can be pending on the MIDI start guard (`isPlaybackStartPending`/`isPlaybackRequested` in `src/robot/robot.ts`). Any `seekToCount` cancels a pending start, so automatic seeks (warm-ups, mode entries) must skip while playback is requested. 3D Play/Pause controls show the pending state because immersive users can't see the DOM status.
+Play can be pending on the MIDI start guard (`isPlaybackStartPending`/`isPlaybackRequested` in `src/robot/robot.ts`). Any `seekToCount` cancels a pending start, so automatic seeks (warm-ups, mode entries) must skip while playback is requested. 3D Play/Pause controls show the pending state because immersive users can't see the DOM status; the stadium Play sign shows `getMidiPlaybackWaitReason()` from `src/audio/midiPlayback.ts`. Never await `AudioContext.resume()` unbounded: Chrome can leave it pending without user activation, and a stuck `enablingAudio` ignores every later gesture. Keep XR audio unlock on the activation-granting `select`/`squeeze` events.
 
 The content-root snapshot and teleport-grid ordering is important for AR tabletop transforms. Review `src/xr/ar.ts` before changing scene parenting or scale behavior.
 

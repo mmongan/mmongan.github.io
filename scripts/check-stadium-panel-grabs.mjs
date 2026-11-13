@@ -29,6 +29,7 @@ const context = vm.createContext({
   __APP_VERSION__: 'test', performance,
   getDrillTransportState: () => ({ playing }),
   isPlaybackRequested: () => playing, isPlaybackStartPending: () => false,
+  getMidiPlaybackWaitReason: () => null, onMidiStatusChangedObservable: { add: () => ({}), remove() {} },
   document: { createElement: () => ({ getContext: () => new Proxy({}, {
     get: (target, key) => target[key] ?? (() => {}),
     set: (target, key, value) => { target[key] = value; return true; },

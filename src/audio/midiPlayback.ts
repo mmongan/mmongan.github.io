@@ -24,6 +24,7 @@ import { midiBeatUnits } from './midiBeatPulse';
 import { FootballMusicTransport } from './footballMusicTransport';
 import { reportStartupProgress, finishStartup, setStartupInstrument } from '../ui/loadingScreen';
 import { ClickTrack } from './clickTrack';
+import { Observable } from '@babylonjs/core/Misc/observable.pure';
 
 const EXAMPLE_MIDI_DESCRIPTION = "Sousa — The Liberty Bell (full band, Public Domain)";
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
@@ -73,6 +74,21 @@ export function isMidiPlaybackReady() {
     (context?.state === "running" && synth !== null);
 }
 
+export type MidiPlaybackWaitReason = 'loading' | 'audio';
+
+// Why Play is waiting on music, for immersive transport controls that can't
+// show the DOM status line: samples/MIDI still loading, or browser audio not
+// yet allowed (a trigger/pinch is needed).
+export function getMidiPlaybackWaitReason(): MidiPlaybackWaitReason | null {
+  if (isMidiPlaybackReady()) return null;
+  if (midiLoading || synthLoading || (timeline && !synth)) return 'loading';
+  return context?.state === 'running' ? null : 'audio';
+}
+
+// Notified whenever the music status changes (loading progress, audio
+// permission, errors), so readiness displays can refresh.
+export const onMidiStatusChangedObservable = new Observable<void>();
+
 function updatePlaybackHint(message = midiStatus?.textContent ?? "") {
   if (midiPlaybackHint) {
     midiPlaybackHint.hidden = !statusIsError;
@@ -84,6 +100,7 @@ function status(message: string, error = false) {
   statusIsError = error;
   if (midiStatus) midiStatus.textContent = message;
   updatePlaybackHint(message);
+  onMidiStatusChangedObservable.notifyObservers();
 }
 
 function stopVoices() {
@@ -125,17 +142,34 @@ export function unlockMidiAudio() {
   void enableAudio(true);
 }
 
+// WebXR treats the completed `select` and `squeeze` events as user
+// activation; the start events are kept as early, best-effort attempts.
+const XR_AUDIO_UNLOCK_EVENTS = ['selectstart', 'select', 'selectend', 'squeezestart', 'squeeze'] as const;
+
 export function connectMidiXRSession(session: XRSession) {
   const unlock = () => unlockMidiAudio();
-  session.addEventListener('selectstart', unlock);
-  session.addEventListener('selectend', unlock);
-  session.addEventListener('squeezestart', unlock);
+  XR_AUDIO_UNLOCK_EVENTS.forEach(type => session.addEventListener(type, unlock));
   session.addEventListener('end', () => {
-    session.removeEventListener('selectstart', unlock);
-    session.removeEventListener('selectend', unlock);
-    session.removeEventListener('squeezestart', unlock);
+    XR_AUDIO_UNLOCK_EVENTS.forEach(type => session.removeEventListener(type, unlock));
   }, { once: true });
   unlockMidiAudio();
+}
+
+// Chrome can leave resume() pending indefinitely when it is called without
+// user activation (e.g. at XR session start or from a non-activating XR
+// event). Waiting on it forever kept `enablingAudio` set, so every later
+// trigger/pinch was ignored and Play stayed "waiting for music" in the
+// headset. Bound the wait; a late resolution is still handled by the
+// context's statechange listener.
+const AUDIO_RESUME_WAIT_MS = 1500;
+
+function resumeAudioContext(audioContext: AudioContext): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(resolve, AUDIO_RESUME_WAIT_MS);
+    audioContext.resume().then(
+      () => { clearTimeout(timer); resolve(); },
+      error => { clearTimeout(timer); reject(error); });
+  });
 }
 
 async function enableAudio(automatic = false) {
@@ -146,7 +180,7 @@ async function enableAudio(automatic = false) {
     initializeAudioContext();
     const audioContext = context;
     if (!audioContext) throw new Error("Audio context is unavailable.");
-    await audioContext.resume();
+    await resumeAudioContext(audioContext);
     if (audioContext.state !== "running") throw new Error("Browser audio is suspended.");
     audioEnabled = true;
     if (midiAudioButton) midiAudioButton.textContent = "Mute MIDI audio";
@@ -338,6 +372,7 @@ async function loadMidi(name: string, read: () => Promise<ArrayBuffer>, failureH
     if (request === loadRequest) {
       midiLoading = false;
       updatePlaybackHint();
+      onMidiStatusChangedObservable.notifyObservers();
       retryPendingPlaybackStart();
     }
   }

@@ -45,7 +45,11 @@ class AudioContext {
     this.state = 'running';
   }
 }
+const timers = new Map();
+let timerId = 0;
 const context = vm.createContext({
+  setTimeout: (callback, delay) => { timers.set(++timerId, { callback, delay }); return timerId; },
+  clearTimeout: id => { timers.delete(id); },
   resetFootballMusicPause() {},
   AudioContext, Node, midiAudioButton: button, midiVolumeInput: { value: '60' },
   window: { addEventListener(type, handler) { events[type] = handler; } },
@@ -120,6 +124,11 @@ xrEvents.selectstart();
 releaseResume();
 await flush();
 assert.equal(audio.state, 'running', 'XR pinch/trigger resumes music without a DOM menu');
+audio.state = 'suspended';
+xrEvents.select();
+releaseResume();
+await flush();
+assert.equal(audio.state, 'running', 'The activation-granting XR select event resumes music');
 buttonEvents.click();
 const mutedResumes = resumes;
 xrEvents.squeezestart();
@@ -129,7 +138,7 @@ releaseResume();
 await flush();
 assert.equal(context.state().enabled, true);
 xrEvents.end();
-assert.deepEqual(removed.sort(), ['selectend', 'selectstart', 'squeezestart']);
+assert.deepEqual(removed.sort(), ['select', 'selectend', 'selectstart', 'squeeze', 'squeezestart']);
 for (const type of ['pointerup', 'touchend', 'click']) {
   audio.state = 'suspended';
   events[type]({ isTrusted: true, target: new Node() });
@@ -149,6 +158,27 @@ events.pointerup({ isTrusted: true, target: new Node() });
 releaseResume();
 await flush();
 assert.equal(audio.state, 'running', 'A later trusted interaction recovers after permission denial');
+// Chrome may never settle resume() without user activation (Quest XR events
+// that do not grant it). A stalled request must not block later gestures.
+audio.state = 'suspended';
+timers.clear();
+events.pointerdown({ isTrusted: true, target: new Node() });
+const stalledResumes = resumes;
+assert.equal(context.state().enabling, true);
+const resumeWait = [...timers.values()].find(timer => timer.delay === 1500);
+assert.ok(resumeWait, 'Waiting on resume() is bounded');
+timers.clear();
+resumeWait.callback();
+await flush();
+assert.equal(context.state().enabling, false, 'A stalled resume releases the activation lock');
+assert.equal(context.state().enabled, true, 'Automatic stalls keep the audio preference for retries');
+assert.match(messages.at(-1), /suspended.*retry/);
+events.pointerup({ isTrusted: true, target: new Node() });
+assert.equal(resumes, stalledResumes + 1, 'The next trigger/pinch/tap retries after a stalled resume');
+releaseResume();
+await flush();
+assert.equal(audio.state, 'running', 'Audio recovers on the retry');
+assert.equal(timers.size, 0, 'A settled resume clears its bounded wait');
 assert.ok(stopped > 0 && resets > 0);
 assert.ok(!source.includes('midiStartButton'), 'Music must not require a separate start button');
 const sceneSource = readFileSync(new URL('../src/scene/index.ts', import.meta.url), 'utf8');
@@ -157,16 +187,21 @@ assert.doesNotMatch(sceneSource, /\bplayAll\b|\bstartupPlaybackObserver\b/,
 assert.doesNotMatch(setupSource + enableSource, /\bplayAll\b|\btoggleAllPlayback\b/,
   'Audio permission and XR connection must not start playback');
 const readinessSource = source.slice(source.indexOf('export function isMidiPlaybackReady()'), source.indexOf('function updatePlaybackHint('));
-const readiness = vm.createContext({ audioEnabled: true, midiLoading: true, timeline: null, context: null, synth: null });
+class Observable { notifyObservers() {} }
+const readiness = vm.createContext({ Observable, audioEnabled: true, midiLoading: true, synthLoading: false,
+  timeline: null, context: null, synth: null });
 vm.runInContext(stripTypeScriptTypes(readinessSource).replace(/export /g, ''), readiness);
 assert.equal(readiness.isMidiPlaybackReady(), false);
+assert.equal(readiness.getMidiPlaybackWaitReason(), 'loading', 'Headset controls report music still loading');
 readiness.midiLoading = false;
 readiness.timeline = {};
 readiness.synth = {};
 readiness.context = { state: 'suspended' };
 assert.equal(readiness.isMidiPlaybackReady(), false);
+assert.equal(readiness.getMidiPlaybackWaitReason(), 'audio', 'Headset controls ask for a trigger when audio is blocked');
 readiness.context.state = 'running';
 assert.equal(readiness.isMidiPlaybackReady(), true);
+assert.equal(readiness.getMidiPlaybackWaitReason(), null);
 readiness.synth = null;
 assert.equal(readiness.isMidiPlaybackReady(), false, 'Running context alone is not enough; samples must be loaded');
 readiness.audioEnabled = false;
@@ -181,6 +216,7 @@ assert.doesNotMatch(midiLoadSource, /if \(audioEnabled\) await prepareSynth/,
   'First Play or unmute must not be the first sample download');
 const statusSource = source.slice(source.indexOf('export function isMidiPlaybackReady()'), source.indexOf('function stopVoices('));
 const hintContext = vm.createContext({
+  Observable,
   audioEnabled: true, midiLoading: false, timeline: {}, context: { state: 'running' },
   synth: {}, synthLoading: false, statusIsError: false,
   midiStatus: { textContent: '' }, midiPlaybackHint: { hidden: true, textContent: '' },
