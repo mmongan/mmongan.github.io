@@ -16,7 +16,7 @@ import { engine, scene } from '../scene/engine';
 import { attachToARTransform } from '../xr/ar';
 import { registerMenuButton } from '../menu/handMenu';
 import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS, HASH_OFFSETS_YARDS } from './constants';
-import { TOP_DOWN_MARKER_LAYER_MASK, getDrillTransportState } from '../robot/robot';
+import { TOP_DOWN_MARKER_LAYER_MASK, isPlaybackRequested, isPlaybackStartPending } from '../robot/robot';
 import { createMediaButtonIcon } from '../menu/settingsButtonIcons';
 import { FieldMountedPanel } from '../menu/floatingPanel';
 
@@ -448,7 +448,7 @@ function createVideoBoardButtons(y: number, z: number) {
     button.parent = panel;
     button.position = new Vector3(startX + index * spacing, 0, -panelDepth / 2 - 0.02);
     createMediaButtonIcon(button, { action: label.action }, buttonSize, buttonSize,
-      () => getDrillTransportState().playing);
+      isPlaybackRequested, isPlaybackStartPending);
 
     registerMenuButton(button, { action: label.action });
     buttons.set(button, { action: label.action });

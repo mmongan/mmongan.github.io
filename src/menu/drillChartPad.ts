@@ -20,6 +20,8 @@ import {
   getDrillLastCountIndex,
   getGlobalCountIndex,
   getDrillTransportState,
+  isPlaybackRequested,
+  isPlaybackStartPending,
   getRobotPositionsAtCount,
   getChartRobots,
   getRobotPositionAtCount,
@@ -262,7 +264,7 @@ function createPad(): Pad {
     buttons.set(button, hit);
     button.parent = root;
     if (isMediaButtonAction(hit)) {
-      createMediaButtonIcon(button, hit, 0.05, BUTTON_HEIGHT, () => getDrillTransportState().playing);
+      createMediaButtonIcon(button, hit, 0.05, BUTTON_HEIGHT, isPlaybackRequested, isPlaybackStartPending);
     }
     meshes.add(button);
   }

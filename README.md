@@ -13,11 +13,11 @@ In immersive VR, choose **Drum Game** in Settings with a selected percussion mar
 
 Startup audio prompts are not shown in the top-right HUD. Detailed music status remains in browser Settings; music and XR entry errors remain visible in the HUD.
 
-The desktop HUD initially has **Enter VR** and **Enter AR** buttons; these and the compatibility message hide after 10 seconds. The button-row background also hides when no controls are visible. New XR status/error messages appear for another 10 seconds. The setup gear is hidden outside immersive sessions. Each entry button selects its own session mode, uses the existing XR scene, and reports unsupported hardware or launch errors without starting playback. Tabletop/Giant scale controls remain unavailable until XR is active.
+Play waits at the current count until MIDI samples are preloaded and browser audio is enabled. While it waits, every 3D Play/Pause control shows the pause icon blinking and the stadium Play sign reads **WAITING FOR MUSIC**, so immersive users can see Play is armed; pressing it again cancels the request. Playback then starts automatically. The startup warm-up never cancels a pending Play, and a failure in one render-loop stage is logged once without stopping the immersive view. Checks: `node scripts/check-midi-startup.mjs` and `node scripts/check-media-icons.mjs`.
+
+The desktop HUD shows **Enter VR** and **Enter AR** buttons on devices that support each mode; they stay visible, while the compatibility message hides 10 seconds after the startup screen finishes. The button-row background also hides when no controls are visible. New XR status/error messages appear for another 10 seconds. The setup gear is hidden outside immersive sessions. Each entry button selects its own session mode, uses the existing XR scene, and reports unsupported hardware or launch errors without starting playback. Tabletop/Giant scale controls remain unavailable until XR is active.
 
 The 3D view requires WebGL. If renderer initialization fails, a persistent message replaces the unexplained black screen and XR entry is disabled. Enable graphics acceleration and restart the browser or VS Code; if an embedded browser cannot provide WebGL, open the site in Chrome, Edge, or the Quest browser. Validate this failure path with `node scripts/check-engine-startup.mjs`.
-
-An **OpenChartxr** midfield badge sits on the fifty-yard line, using the stadium's navy, cyan, white, and gold branding. It is drawn on top of the marchers for five seconds at startup, then fades away over 0.8 seconds and stays hidden, including on the live video board. The timer is independent of playback and pause. It follows field scaling in VR/AR, appears in drafting previews/photos while visible, and does not intercept picking or marcher placement. Check with `node scripts/check-midfield-logo.mjs`.
 
 All movable workspace panels share a navy, cyan-accented frame with matching 2.4 cm-wide grab rails, 6 cm frame depth, and a header containing matching 9 cm **-**, **+**, and **X** controls at their authored scale. Frames sit at the front of each panel regardless of its body depth; resizing scales the whole panel, including its frame. Use **- / +** to resize or hold the panel with two controllers/hands and change their separation. Existing panel-specific size settings and limits remain synchronized; other panels resize from 25% to 300% of their size at the first resize. **X** releases grabs and uses the panel's existing hide/close behavior. Locked stadium boards/signs, physical drawing tools, and camera shutter targets do not receive these frames.
 
@@ -52,6 +52,14 @@ To serve the production build locally:
 ```bash
 npm run preview
 ```
+
+### Live browser tests
+
+```bash
+npm run test:live
+```
+
+Runs the Playwright suite in `tests/live/` against the real app: it starts Vite on port 5179 and drives headless Chrome (installed Chrome by default; set `PW_CHANNEL=chromium` or `msedge` to change). The suite covers startup and rendering, desktop playback-only gating, Play/Pause/seek on the shared drill clock, Play pressed while music loads (armed state, blinking 3D controls, startup warm-up and show loading, cancellation), and render-loop recovery after a per-frame error. Instrument samples are served offline as silent audio, so no network is needed. Set `LIVE_TEST_URL` to test an already-running or deployed build; pages open with `?diagnostics`, which installs the read-only `window.__openchartxr` test handle (always present in dev builds). Reports and failure traces are written to `test-results/`.
 
 To check eraser undo/redo behavior (Node.js 22.13 or newer):
 
@@ -716,48 +724,35 @@ Checks: `node scripts/check-football-play-geometry.mjs`, `node scripts/check-foo
 
 ```
 src/
-  index.html         entry HTML, HUD, and settings overlay
-  style.css          page and overlay styling
-  camera/
-    desktopCamera.ts desktop spectator camera and intro
-    playerAvatar.ts  tracked-player body and height calibration
-  environment/
-    sky.ts           skybox
-    ground.ts        horizon ground plane
-  field/
-    constants.ts     field dimensions and per-level configs
-    footballField.ts assembles the field pieces
-    goalPosts.ts     goal posts
-    markings.ts      hash marks and yard numbers
-    scoreboard.ts    scoreboard
-    stands.ts        bleacher/stand geometry
-    turf.ts          field turf mesh/materials
-    videoBoard.ts    video board and playback display
-  interaction/
-    controllers.ts   controller input and gesture state
-    handInteraction.ts hand tracking and manipulation logic
-    pathInteraction.ts robot path editing, formations, and stadium manipulation
-  menu/
-    handMenu.ts standalone panel/stadium action registry (no attached menus)
-    settings.ts      settings overlay interactions
-  robot/
-    collisionMarkers.ts collision previews
-    drill.ts         synchronized drill path planning
-    robot.ts         robot models, path registration, and synchronized playback
-  scene/
-    engine.ts        Babylon engine and scene setup
-    index.ts         sole TypeScript application entrypoint and render loop
-  ui/
-    dom.ts           shared DOM references for application controls
-  xr/
-    ar.ts            AR tabletop transforms and scene scaling
-    gloveMeshes.ts   rigged glove meshes and WebXR joint-to-bone mappings
-    webXR.ts         VR/AR session setup, teleportation, and controllers
+  index.html      entry HTML, HUD, and settings overlay
+  style.css       page and overlay styling
+  assets/         example MIDI, OpenMarch/OpenChart shows, glove meshes
+  audio/          MIDI loading/playback, sampled synth and worker, click track,
+                  MIDI-to-drill timing, score notation/layout, football music gain
+  camera/         desktop spectator camera, marcher POV, Drum Game
+  environment/    sky and horizon ground
+  field/          field dimensions, turf, goal posts, stands, crowd and signs,
+                  scoreboard, video board, adjustable grid, drafting preview
+  interaction/    controllers, hands, path/formation editing, selection editor,
+                  drafting tools/workspace/camera, projector, paint, football drafting
+  menu/           floating panels, shared action registry (handMenu.ts), settings,
+                  chart pad, music stand, instrument panel, XR settings panel
+  robot/          marcher and instrument models, playback and leg solving, drill
+                  planning, chart pages, show formats, field chart mode, football
+  scene/          engine/scene singleton, application entrypoint and render loop,
+                  startup display, static render optimizations
+  ui/             shared DOM references, loading screen, playback-mode gating
+  xr/             WebXR session setup, AR tabletop transforms, glove meshes
 
 scripts/
-  deploy.mjs               publishes the production build to GitHub Pages
+  check-*.mjs              standalone validation checks (no npm test script)
   simulate-drill-sync.mjs  standalone drill synchronization experiment
+  convert-openmarch.mts, make-openmarch-example.mts, generate-step-cycles.mjs
+                           regenerate example shows and step-cycle data
+  deploy.mjs               publishes the production build to GitHub Pages
 ```
+
+See [CLAUDE.md](CLAUDE.md) for module ownership and the validation command for each area.
 
 ## License
 

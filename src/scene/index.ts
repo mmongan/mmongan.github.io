@@ -34,8 +34,9 @@ import { initDrillSpacingChecker } from '../menu/drillSpacingChecker';
 import { initPlaybackModeControls } from '../ui/playbackMode';
 import { reportStartupProgress } from '../ui/loadingScreen';
 import { initStartupDisplay } from './startupDisplay';
-import { seekToCount, isAnyPlaying } from '../robot/robot';
+import { seekToCount, isPlaybackRequested } from '../robot/robot';
 import { applyStaticRenderOptimizations, refreshFrozenWorldMatrices } from './renderOptimizations';
+import { installDiagnosticsHooks } from './diagnosticsHooks';
 
 // Build static content before wiring up input and the WebXR experience.
 reportStartupProgress(0.05, 'Building the stadium…');
@@ -93,7 +94,9 @@ applyStaticRenderOptimizations();
 // one-time pose, cache, and GPU setup for the marching band.
 let warmupStep = 0;
 const warmupObserver = scene.onBeforeRenderObservable.add(() => {
-  if (isAnyPlaying()) {
+  // Seeking cancels a pending start, so a Play pressed while music is still
+  // loading (common in immersive sessions) must end the warm-up untouched.
+  if (isPlaybackRequested()) {
     scene.onBeforeRenderObservable.remove(warmupObserver);
     return;
   }
@@ -106,17 +109,33 @@ const warmupObserver = scene.onBeforeRenderObservable.add(() => {
   }
 });
 
+// Babylon queues the next frame only after this one returns, so an uncaught
+// error permanently stops rendering. In a headset the compositor keeps
+// reprojecting the last frame, which looks like a frozen band while music
+// continues. Contain each stage, logging each distinct failure once.
+const reportedFrameErrors = new Set<string>();
+function runFrameStage(name: string, stage: () => void) {
+  try {
+    stage();
+  } catch (error) {
+    const key = `${name}:${error instanceof Error ? error.message : String(error)}`;
+    if (reportedFrameErrors.has(key)) return;
+    reportedFrameErrors.add(key);
+    console.error(`Render frame stage "${name}" failed; continuing.`, error);
+  }
+}
+
 function renderFrame() {
-  updateARResizeFromControllers();
-  updateTabletopHands();
-  updateHandPathDrawing();
-  updateRobotPathFromControllers();
-  const progress = getSelectedRobotProgress();
-  footballField.updateVideoBoardProgress(progress);
-  scene.render();
+  runFrameStage('arResize', updateARResizeFromControllers);
+  runFrameStage('tabletopHands', updateTabletopHands);
+  runFrameStage('handPathDrawing', updateHandPathDrawing);
+  runFrameStage('controllerPaths', updateRobotPathFromControllers);
+  runFrameStage('videoBoard', () => footballField.updateVideoBoardProgress(getSelectedRobotProgress()));
+  runFrameStage('render', () => scene.render());
 }
 
 engine.runRenderLoop(renderFrame);
+installDiagnosticsHooks(() => getSelectableMarchers().length);
 
 window.addEventListener("resize", () => {
   engine.resize();

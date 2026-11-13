@@ -8,7 +8,7 @@ import {
 import { getMusicTransportState, onDrillTransportChangedObservable } from '../robot/robot';
 import {
   scoreBeatPositionsMulti, scoreMeasure, scoreMeasureCount,
-  scorePitch, type ScoreTrack, type ScoreSegment,
+  scorePitch, type ScoreTrack,
 } from './midiNotation';
 import { Observable } from '@babylonjs/core/Misc/observable.pure';
 import { layoutScorePage, scoreMeasuresPerPage } from './scoreLayout';

@@ -54,7 +54,7 @@ try {
     globalThis.FloatingPanel = FloatingPanel;`, context);
   const source = read('../src/interaction/pathInteraction.ts');
   vm.runInContext(transform(source.slice(source.indexOf('function isGripPressed('),
-    source.indexOf('// Caller guarantees pinchState'))), context);
+    source.indexOf('export function setActiveController('))), context);
   const start = source.indexOf('    const gripPressed = isGripPressed(controller);',
     source.indexOf('export function updateRobotPathFromControllers'));
   const end = source.indexOf('    if (handInteraction.updateControllerFormationPull(', start);

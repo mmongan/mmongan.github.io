@@ -54,6 +54,7 @@ let playing = false;
 const context = vm.createContext({
   scene, desk, Mesh, MeshBuilder, TransformNode, StandardMaterial, Color3, Vector3, Observable,
   getDrillTransportState: () => ({ playing, beatsPerSecond: 2 }),
+  isPlaybackRequested: () => playing, isPlaybackStartPending: () => false,
   document: { createElement: () => {
     const ctx = {};
     return { getContext: () => ctx };

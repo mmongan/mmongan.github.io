@@ -76,6 +76,7 @@ const observerContext = vm.createContext({
   selectedMarchingGait: 0,
   MARCHING_GAITS: [{ tempoFactor: 1 }],
   applyGlobalCountToAllRobots: () => { updates++; },
+  playbackIsPrepared: () => true, notifyDrillTransport() {}, pendingPlaybackStart: false,
 });
 vm.runInContext(`${stripTypeScriptTypes(observerSource, { mode: 'transform' })}
 globalThis.ensure = ensureSharedObserver;`, observerContext);

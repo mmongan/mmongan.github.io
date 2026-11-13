@@ -28,6 +28,7 @@ const context = vm.createContext({
   scene, engine, Mesh, MeshBuilder, TransformNode, StandardMaterial, Color3, Matrix, Quaternion, Vector3, Plane, Ray, Observable,
   __APP_VERSION__: 'test', performance,
   getDrillTransportState: () => ({ playing }),
+  isPlaybackRequested: () => playing, isPlaybackStartPending: () => false,
   document: { createElement: () => ({ getContext: () => new Proxy({}, {
     get: (target, key) => target[key] ?? (() => {}),
     set: (target, key, value) => { target[key] = value; return true; },

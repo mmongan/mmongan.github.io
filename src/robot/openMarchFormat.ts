@@ -378,7 +378,7 @@ export function writeOpenMarchDatabase(
     for (let beat = 1; beat <= lastCount; beat += BEATS_PER_MEASURE) {
       run(db, "INSERT INTO measures (start_beat) VALUES (?)", [beat]);
     }
-    setCounts.forEach((count, page) => {
+    setCounts.forEach((_count, page) => {
       run(db, "INSERT INTO pages (id, start_beat, notes) VALUES (?, ?, ?)", [
         page,
         page === 0 ? 0 : setCounts[page - 1] + 1,

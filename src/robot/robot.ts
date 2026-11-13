@@ -14,7 +14,7 @@ import { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
 import { Observable, Observer } from '@babylonjs/core/Misc/observable.pure';
 import { Node } from '@babylonjs/core/node';
 import { Scene } from '@babylonjs/core/scene.pure';
-import { createCollisionMarkerManager, COLLISION_MARKER_RADIUS_YARDS } from './collisionMarkers';
+import { createCollisionMarkerManager } from './collisionMarkers';
 import { footballMovement, type FootballMotion } from './footballMovement';
 import { getFootballPlaybackPosition } from './footballPresentation';
 import { buildGaitStepPhaseOffsets, DOUBLE_TIME_ABOVE_YARDS, gaitPhaseAtBeat, isAutoGaitStyle, selectAutoGait } from './gaitSelection';
@@ -3514,6 +3514,19 @@ export function toggleAllPlayback() {
 
 export function isAnyPlaying(): boolean {
   return globalPlayback.playing;
+}
+
+// Play was pressed but is waiting on a start guard (e.g. MIDI samples or
+// browser audio permission). Immersive views have no DOM status line, so
+// transport controls use this to show that Play is armed rather than ignored.
+export function isPlaybackStartPending(): boolean {
+  return pendingPlaybackStart;
+}
+
+// True while playing or armed to play; matches what toggleAllPlayback treats
+// as "on", so Play/Pause icons show the action the next press performs.
+export function isPlaybackRequested(): boolean {
+  return globalPlayback.playing || pendingPlaybackStart;
 }
 
 export function getMarchTempo(): number {

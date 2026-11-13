@@ -165,7 +165,6 @@ try {
   const models = [
     ['trumpetModel', ['getTrumpetTemplate']],
     ['mellophoneModel', ['getMellophoneTemplate']],
-    ['baritoneModel', ['getBaritoneTemplate']],
     ['euphoniumModel', ['getEuphoniumTemplate']],
     ['tromboneModel', ['getTromboneTemplate']],
     ['sousaphoneModel', ['getSousaphoneTemplate']],

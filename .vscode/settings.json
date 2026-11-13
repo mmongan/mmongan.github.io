@@ -6,5 +6,6 @@
             "matchCommandLine": true
         }
     },
-    "sarif-viewer.connectToGithubCodeScanning": "off"
+    "sarif-viewer.connectToGithubCodeScanning": "off",
+    "js/ts.tsdk.path": "node_modules\\typescript"
 }

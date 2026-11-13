@@ -20,7 +20,7 @@ import {
   setScoreStandScale, setScoreMeasuresConfig, getScoreMeasuresConfig, getEffectiveMeasuresPerPage,
 } from '../audio/midiScore';
 import { registerMenuButton, type HandMenuHit } from './handMenu';
-import { getDrillTransportState, onDrillTransportChangedObservable } from '../robot/robot';
+import { getDrillTransportState, isPlaybackRequested, isPlaybackStartPending, onDrillTransportChangedObservable } from '../robot/robot';
 import type { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.pure';
 import { layoutScorePage } from '../audio/scoreLayout';
 import { createMediaButtonIcon } from './settingsButtonIcons';
@@ -148,7 +148,7 @@ export function initMusicStand() {
     button.position.set((index - 3) * 0.092, -0.37, -0.007);
     button.material = material;
     const hit: HandMenuHit = { action };
-    createMediaButtonIcon(button, hit, 0.08, 0.0575, () => getDrillTransportState().playing);
+    createMediaButtonIcon(button, hit, 0.08, 0.0575, isPlaybackRequested, isPlaybackStartPending);
     registerMenuButton(button, hit);
     buttons.set(button, hit);
     buttonTextures.push({ texture: buttonTexture, canvas: buttonCanvas, action: hit });
@@ -234,13 +234,14 @@ export function initMusicStand() {
   let buttonSignature = '';
   function updateMediaButtons() {
     const transport = getDrillTransportState();
-    const next = `${transport.playing}:${Math.sign(transport.beatsPerSecond)}`;
+    const requested = isPlaybackRequested();
+    const next = `${requested}:${Math.sign(transport.beatsPerSecond)}`;
     if (next === buttonSignature) return;
     buttonSignature = next;
     for (const button of buttonTextures) {
       const ctx = button.canvas.getContext('2d');
       if (!ctx) throw new Error('Music media controls require a 2D canvas context.');
-      const active = button.action.action === 'playPause' && transport.playing;
+      const active = button.action.action === 'playPause' && requested;
       drawPanelButton(ctx, 256, 128, '', active);
       button.texture.update(true);
     }

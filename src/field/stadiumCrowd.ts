@@ -13,7 +13,7 @@ import { scene } from '../scene/engine';
 import { registerMenuButton, type HandMenuHit } from '../menu/handMenu';
 import { FieldMountedPanel } from '../menu/floatingPanel';
 import { drawPanelButton } from '../menu/panelStyle';
-import { getDrillTransportState, onDrillTransportChangedObservable } from '../robot/robot';
+import { getDrillTransportState, isPlaybackRequested, isPlaybackStartPending, onDrillTransportChangedObservable } from '../robot/robot';
 import { FIELD_WIDTH_YARDS } from './constants';
 import { mergeMeshesByMaterial } from './meshMerging';
 import { createMediaButtonIcon } from '../menu/settingsButtonIcons';
@@ -83,9 +83,14 @@ export function createStadiumCrowd(parent: Mesh) {
     mat.disableLighting = true;
     mat.backFaceCulling = false;
     const draw = () => {
-      const playing = sign.action.action === 'playPause' && getDrillTransportState().playing;
-      drawPanelButton(ctx, 512, 320, '', playing);
+      const playPause = sign.action.action === 'playPause';
+      drawPanelButton(ctx, 512, 320, '', playPause && isPlaybackRequested());
       ctx.fillStyle = '#ffffff';
+      if (playPause && isPlaybackStartPending()) {
+        // Immersive users can't see the DOM status explaining a held Play.
+        ctx.font = 'bold 36px Arial';
+        ctx.fillText('WAITING FOR MUSIC', 256, 296, 470);
+      }
       if (sign.action.action === 'football') {
         const returnBand = scrimmageButton?.dataset.returnBand === 'true';
         ctx.font = '150px "Segoe UI Emoji", "Apple Color Emoji", sans-serif';
@@ -105,10 +110,12 @@ export function createStadiumCrowd(parent: Mesh) {
   });
   const updateScrimmageSign = () => signFaces[SIGNS.length - 1].draw();
   scrimmageButton?.addEventListener('change', updateScrimmageSign);
-  let previousPlaying = getDrillTransportState().playing;
-  const observer = onDrillTransportChangedObservable.add(state => {
-    if (state.playing === previousPlaying) return;
-    previousPlaying = state.playing;
+  const playSignState = () => `${getDrillTransportState().playing}:${isPlaybackStartPending()}`;
+  let previousPlaySignState = playSignState();
+  const observer = onDrillTransportChangedObservable.add(() => {
+    const next = playSignState();
+    if (next === previousPlaySignState) return;
+    previousPlaySignState = next;
     signFaces[MEDIA_SIGNS.findIndex(sign => sign.action === 'playPause')].draw();
   });
   const materials = [crowdMaterial, frameMaterial, ...signFaces.map(face => face.material)];
@@ -244,7 +251,7 @@ export function createStadiumCrowd(parent: Mesh) {
           face.material = signFaces[index + (row === 0 ? 0 : MEDIA_SIGNS.length)].material;
           const action = sign.action;
           if (row === 0) createMediaButtonIcon(face, action, 2.86, 1.66,
-            () => getDrillTransportState().playing);
+            isPlaybackRequested, isPlaybackStartPending);
           registerMenuButton(frame, action);
           registerMenuButton(face, action);
           new FieldMountedPanel(frame, new Set([frame, ...frame.getChildMeshes()]), frame,

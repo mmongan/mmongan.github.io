@@ -7,7 +7,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 ## Application
 
-This is a Babylon.js, TypeScript, and Vite WebXR marching-band drill designer. It supports desktop, immersive VR, and tabletop AR.
+OpenChartxr is a Babylon.js, TypeScript, and Vite WebXR marching-band drill designer (AGPL-3.0-or-later), deployed to GitHub Pages from this repository. It supports desktop, immersive VR, and tabletop AR, primarily targeting Meta Quest 3.
+
+- Desktop is a playback-only 1:1 viewer: load shows and music, use the transport, browse chart pages and scores, compare ghosts, and switch spectator/marcher POV. Drill editing, drafting, instrument creation, painting, and formation tools are gated to immersive VR/AR through `src/interaction/editingMode.ts` (`DESKTOP_PLAYBACK_NOTICE`). The exception is football mode, which intentionally enables desktop editing for its session. Startup is paused with POV off; audio permission never starts playback.
+- Shows load from OpenMarch `.dots` files and the native binary OpenChart format; examples live in `src/assets/openmarch/`. MIDI music drives the shared drill/music transport.
+- A football play mode replaces the band with 11-on-11 stylized players for bundled plays, sequences, and special teams using the same transport, leg solver, chart editor, and drafting workspace.
+- `README.md` is the detailed user-facing feature specification (very large). Read the relevant section before changing a feature, and update it alongside behavior changes.
 
 ## Source Layout
 
@@ -15,14 +20,16 @@ This is a Babylon.js, TypeScript, and Vite WebXR marching-band drill designer. I
 - `src/scene/engine.ts` owns the shared Babylon engine and scene. Reuse this singleton; do not create another engine or scene for a feature.
 - `src/scene/` owns application startup and scene composition.
 - `src/xr/` owns WebXR session setup and AR tabletop behavior.
-- `src/camera/` owns the desktop spectator camera and tracked-player avatar.
-- `src/interaction/` owns controller, pointer, hand, path, and formation interactions.
-- `src/robot/` owns robot models, playback, drill planning, and collision previews.
+- `src/scene/startupDisplay.ts` owns the in-XR startup/progress display; `src/scene/renderOptimizations.ts` freezes static stadium matrices/materials under the AR transform and must be re-synced (`refreshFrozenWorldMatrices`) when field levels rebuild or the transform changes.
+- `src/camera/` owns the desktop spectator camera, marcher POV, and Drum Game.
+- `src/audio/` owns MIDI loading/playback, the sampled soundfont synth and worker, click track, MIDI-to-drill timing, score notation/layout (VexFlow), and football-mode music gain.
+- `src/interaction/` owns controller, pointer, hand, path, formation, drafting, paint, projector, and football-drafting interactions. `editingMode.ts` owns desktop/XR editing gates and drafting-tool enablement.
+- `src/robot/` owns marcher/robot models, instruments, playback, gait and leg solving, drill planning, collision previews, chart pages/timeline, OpenMarch/OpenChart formats, and football play mode (`football*.ts`, `scrimmage*.ts`).
+- `src/ui/` owns shared DOM references, the loading screen, leg-bake progress, and playback-mode controls.
 - `src/field/` owns field dimensions and stadium components.
 - `src/field/adjustableGrid.ts` owns the optional visible field grid. Its spacing and visibility are independent of editing snap settings and the teleport grid.
 - `src/environment/` owns sky and horizon-ground construction.
-- `src/menu/` owns standalone floating panels, their shared action registry, and settings overlay behavior. There are no hand/wrist-attached menus; XR entry and controller Y summon the floating settings panel.
-- `src/ui/dom.ts` owns shared DOM references for application controls.
+- `src/menu/` owns standalone floating panels, the chart pad, music stand, instrument panel, settings overlay, and the shared action registry. Despite its name, `src/menu/handMenu.ts` is that registry (`HandMenuHit` actions dispatched by panels, stadium signs, and trays); there are no hand/wrist-attached menus. XR entry and controller Y summon the floating settings panel.
 
 Keep modules within their feature boundaries. Use descriptive filenames; do not add another `index.ts` barrel or organize files merely by their Babylon.js dependency. Create a new folder only when it represents a cohesive boundary for multiple related modules.
 
@@ -34,7 +41,12 @@ Preserve the ordering in `src/scene/index.ts` unless the change explicitly requi
 2. Set up field-level controls and initialize interactions.
 3. Call `captureContentRootMeshes()` after real scene content exists and before creating the teleport grid.
 4. Create and attach the teleport grid, then initialize XR.
-5. Keep per-frame controller, hand, path, menu, and render updates in their established order.
+5. Initialize the startup display after the content snapshot (so it never joins the AR transform), then apply static render optimizations.
+6. Keep per-frame controller, hand, path, menu, and render updates in their established order.
+
+Per-frame work in `renderFrame` runs through `runFrameStage`, so one failing stage is logged once and cannot stop the render loop (a dead loop looks like a frozen band in a headset while music continues). Keep new per-frame stages inside it.
+
+Play can be pending on the MIDI start guard (`isPlaybackStartPending`/`isPlaybackRequested` in `src/robot/robot.ts`). Any `seekToCount` cancels a pending start, so automatic seeks (warm-ups, mode entries) must skip while playback is requested. 3D Play/Pause controls show the pending state because immersive users can't see the DOM status.
 
 The content-root snapshot and teleport-grid ordering is important for AR tabletop transforms. Review `src/xr/ar.ts` before changing scene parenting or scale behavior.
 
@@ -88,6 +100,19 @@ The content-root snapshot and teleport-grid ordering is important for AR tableto
 - `src/interaction/marcherPaint.ts` owns the grabbable uniform palette and shared paint state/actions. Keep the kidney-shaped board solid with a through thumb hole, beveled rim, and procedural wood grain; swatches are individually sculpted, glossy 3D oil-paint blobs, not discs. Reuse floating-panel/menu dispatch for desktop, controller rays, and tracked-hand pinches. Enable paint by disabling conflicting editing/drawing gestures and finish existing grabs first. Block during floor calibration and exit on other edit modes. Painting must not select, move, erase, scrub, or enter marcher POV; quick consecutive swatch/marcher taps must also work.
 - `setRobotColor` in `src/robot/robot.ts` updates the per-marcher color, tinted uniform instance buffers, held-clone material, and top-down marker only; never tint shared equipment materials. New rendering parts inherit the stored color. Refresh matching route/selected step visuals after painting. Color is session-only, outside drafting persistence and camera capture. Dispose palette meshes/materials/textures and unregister DOM/render callbacks with the scene.
 
+## Show Formats And Chart Pages
+
+- `src/robot/openMarchFormat.ts` and `openMarchUrl.ts` read OpenMarch `.dots` shows; `openChartFormat.ts` and `openChartPerformance.ts` own the versioned binary OpenChart format and baked performances. Wire value codes are permanent and independent of runtime library ordering; never renumber them. The OpenChart field reference in `README.md` documents the format, so update it with any format change.
+- `chartPageTimeline.ts`, `chartPageDraft.ts`, and `chartPageGhostMode.ts` own authored set pages, blank keyframes, and their ghosts. Inserting a page must retime everything keyed to later counts (football snaps, passes, tackles, drafting counts).
+- `scripts/convert-openmarch.mts` and `make-openmarch-example.mts` regenerate example assets; `generate-step-cycles.mjs` regenerates `marcherStepCycles.bin`.
+
+## Football Play Mode
+
+- `src/robot/footballPlayMode.ts` composes football visuals and their cleanup; `footballPlayLibrary.ts`/`footballPlaySequence.ts` define the bundled plays and drives; `footballSnapPauses.ts` owns snap hold/restart timing; `scrimmagePlayback.ts` owns staged band exit/return handovers; `footballBodyClearance.ts` owns presentation-only body separation; `footballTackles.ts`/`footballTackleEditor.ts` own scripted tackles; `footballAnimationLibrary.ts` owns shared throw/catch clips. `src/interaction/footballDrafting.ts` connects football to the existing chart editor and drafting workspace; `src/audio/footballMusicTransport.ts` owns band music gain during football.
+- Football reuses the shared transport, leg solver, chart editor, drafting tools, and tabletop parenting; do not add a separate simulation, clock, or animation cache that blocks Play. Presentation offsets must not modify authored routes, counts, possession, or tackle events.
+- Loading football snapshots and replaces the band; exiting or a finished return restores the saved routes, pages, guides, and timing. Football presentation, ball events, and the band snapshot are session-only. Calibration and unfinished grabs/drawing block load/exit; camera field-copy capture is blocked in football mode.
+- These are illustrative teaching animations, not physics, AI coverage, or rules simulation; keep UI copy and docs from implying otherwise.
+
 ## Development And Validation
 
 - Install dependencies with `npm install`.
@@ -105,6 +130,12 @@ The content-root snapshot and teleport-grid ordering is important for AR tableto
 - Run `node scripts/check-marcher-paint.mjs` when changing uniform tinting or palette interactions. Use `node scripts/check-instrument-geometry.mjs`, `node scripts/check-instrument-menu.mjs`, and `node scripts/check-instrument-panel.mjs` for equipment models/pickers, including all three guard props.
 - Run `node scripts/check-field-image-projector.mjs` for projector image loading, clipped UV geometry, transform/opacity controls, async resource ownership, and tracing/calibration behavior.
 - Run `node scripts/check-thumb-jog.mjs` and `node scripts/check-controller-roles.mjs` when changing media jogging or controller hand assignments.
+- Run the `scripts/check-football-*.mjs` checks plus `check-scrimmage.mjs` when changing football play mode, and `check-xr-settings-panel.mjs` when changing its floating controls.
+- Run `check-openmarch-format.mjs`, `check-openchart-format.mjs`, `check-openchart-integration.mjs`, and `check-openchart-performance.mjs` for show import/format changes; run the `check-chart-page-*.mjs` checks for chart page/timeline changes.
+- Run `check-midi-*.mjs`, `check-sampled-midi.mjs`, and `check-click-track.mjs` for audio changes; `check-engine-startup.mjs` for WebGL/startup failure handling; `check-playback-mode.mjs` and `check-xr-entry.mjs` for desktop playback-only gating and XR entry.
+- Every `scripts/check-*.mjs` file is a standalone check; when unsure which apply, search `scripts/` for the module name you changed.
+
+- Run `npm run test:live` (Playwright, `tests/live/`) for startup, transport, pending-Play, render-loop, or desktop-gating changes. It starts Vite on port 5179 and drives the real app in headless installed Chrome (`PW_CHANNEL` overrides; `LIVE_TEST_URL` targets a running/deployed build). Tests read state only through `window.__openchartxr` from `src/scene/diagnosticsHooks.ts` (dev builds or `?diagnostics`); extend that hook rather than reaching into modules. Soundfonts are served offline as silent samples and can be held to test loading states; keep the suite network-free. Type-check tests with `npx tsc --noEmit -p tests/live/tsconfig.json`.
 
 There is no `npm test` script in `package.json`. The standalone checks above can be run directly; those using Node.js TypeScript stripping require Node.js 22.13 or newer. Report only validation commands actually run.
 
@@ -112,5 +143,7 @@ There is no `npm test` script in `package.json`. The standalone checks above can
 
 - Inspect nearby callers and preserve public APIs and observable update order when refactoring.
 - Keep changes focused; do not overwrite unrelated work in the shared worktree.
+- New project-owned source, scripts, styles, HTML, and Markdown files carry the copyright and `SPDX-License-Identifier: AGPL-3.0-or-later` header used by existing files. Third-party assets keep their own notices (see `NOTICE`).
+- Root `index.html` and `assets/` are generated deploy output; edit `src/` instead.
 - Do not commit or push unless explicitly requested.
 - `npm run deploy` publishes the build: it replaces root `assets/`, copies generated output into the repository root, creates a Git commit, and pushes to `origin main`. Do not run it unless the user explicitly asks to deploy.

@@ -50,6 +50,7 @@ const context = vm.createContext({
   isChartGhostModeEnabled: () => ghosts, isDraftingTableMode: () => drafting,
   setChartGhostModeEnabled: value => { ghosts = value; },
   getDrillTransportState: () => ({ playing, lastBeat: 16 }),
+  isPlaybackRequested: () => playing, isPlaybackStartPending: () => false,
   executeDrawingToolAction: action => { modes.push(action.tool); drafting = action.tool === 'table'; },
   toggleAllPlayback: () => { playing = !playing; },
   rewindAll: () => seeks.push('rewind'), fastForwardAll: () => seeks.push('fastForward'),

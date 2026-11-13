@@ -19,13 +19,18 @@ vm.runInContext(stripTypeScriptTypes(source.slice(source.indexOf('let playbackSt
 { mode: 'transform' }).replace(/export /g, ''), context);
 let ready = false, requests = 0;
 context.setPlaybackStartGuard(() => { requests++; return ready; });
+assert.equal(context.isPlaybackRequested(), false);
 context.playAll();
 assert.equal(context.globalPlayback.playing, false, 'Play waits without advancing the opening while samples/audio are unavailable');
 assert.equal(context.globalPlayback.countIndex, 0);
+assert.equal(context.isPlaybackStartPending(), true, 'Immersive controls can show that Play is armed');
+assert.equal(context.isPlaybackRequested(), true, 'Play/Pause icons show the pending request as on');
 context.retryPendingPlaybackStart();
 assert.equal(context.globalPlayback.playing, false);
 ready = true; context.retryPendingPlaybackStart();
 assert.equal(context.globalPlayback.playing, true, 'Ready samples/browser audio release only an explicit pending Play');
+assert.equal(context.isPlaybackStartPending(), false);
+assert.equal(context.isPlaybackRequested(), true);
 context.pauseAll();
 ready = false; context.playAll(); context.toggleAllPlayback();
 ready = true; context.retryPendingPlaybackStart();
@@ -44,6 +49,12 @@ assert.equal(context.globalPlayback.playing, true, 'Muted rewind does not wait f
 context.pauseAll(); context.setPlaybackStartGuard(null); context.playAll();
 assert.equal(context.globalPlayback.playing, true, 'No audio guard preserves ordinary drill playback');
 assert.ok(requests >= 4);
+const entrySource = readFileSync(new URL('../src/scene/index.ts', import.meta.url), 'utf8');
+const warmup = entrySource.slice(entrySource.indexOf('const warmupObserver'), entrySource.indexOf('seekToCount(0.5)'));
+assert.match(warmup, /if \(isPlaybackRequested\(\)\)/,
+  'Startup warm-up seeks must not cancel a Play pressed while music is still loading');
+assert.match(entrySource, /runFrameStage\('render', \(\) => scene\.render\(\)\)/,
+  'Render-loop stages are contained so one failure cannot freeze the immersive view');
 const audioSource = readFileSync(new URL('../src/audio/midiPlayback.ts', import.meta.url), 'utf8');
 const gains = [];
 const audioContext = vm.createContext({
@@ -102,7 +113,7 @@ let audioTime = 10, musicState = { ...state }, voiceStops = 0;
 const scheduledPitches = [];
 const integration = vm.createContext({
   context: { state: 'running', get currentTime() { return audioTime; } },
-  audioEnabled: true, footballMusicTransport: music,
+  audioEnabled: true, footballMusicTransport: music, master: {}, clickTrack: null, midiLoading: false,
   timeline: new timelineContext.Timeline(Array.from({ length: 80 }, (_, index) => ({
     beat: 48 + index / 4, duration: .2, pitch: index, velocity: 1, program: 0, percussion: false,
   }))),

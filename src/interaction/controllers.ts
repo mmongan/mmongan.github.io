@@ -15,7 +15,6 @@ import {
   getFieldHeightSetting,
   preserveARSurfaceHeight,
 } from '../xr/ar';
-import { scene } from '../scene/engine';
 import { floorCalibrationToggle } from '../ui/dom';
 
 export const activeControllers = new Map<string, WebXRInputSource>();

@@ -56,11 +56,12 @@ const context = vm.createContext({
   setImmersiveFieldScaling: enabled => assert.equal(enabled, false),
   updateScaleControls: enabled => assert.equal(enabled, false),
   applyPostureHeight() {},
+  onStartupStateChanged: listener => { queueMicrotask(() => listener({ finished: true })); return () => {}; },
 });
 const code = `
 let xrExperience, preparingXR = null, preferredMode = 'immersive-vr';
 let switchingToFullScaleVR = false, giantModeActive = false;
-const sessionSupport = new Map();
+const sessionSupport = new Map([['immersive-vr', true], ['immersive-ar', true]]);
 ${slice('  let entryHideTimeout:', '  function getCameraSittingPosture(')}
 ${slice('  async function setupDefaultXRExperience(', '  async function createXRExperience(')}
 async function createXRExperience() {
@@ -117,11 +118,11 @@ const timer = [...timers.values()][0];
 assert.equal(timer.delay, 10000, 'XR entry UI hides after ten seconds');
 timers.clear();
 timer.callback();
-assert.equal(enterVRButton.hidden, true);
-assert.equal(enterARButton.hidden, true);
-assert.equal(context.xrEntryStatus.hidden, true, 'Compatibility/status message hides with the buttons');
+assert.equal(context.xrEntryStatus.hidden, true, 'Compatibility/status message hides after the timeout');
+assert.notEqual(enterVRButton.hidden, true, 'Supported entry buttons never auto-hide');
+assert.notEqual(enterARButton.hidden, true);
 context.updateEntryButtons();
-assert.equal(enterVRButton.hidden, true, 'Support updates do not restore timed-out buttons');
+assert.equal(enterVRButton.hidden, false, 'Support updates keep supported entry buttons visible');
 context.entryStatus('Could not open VR: retry required.');
 assert.equal(context.xrEntryStatus.hidden, false, 'New errors are visible after the startup timeout');
 disposeTimer();

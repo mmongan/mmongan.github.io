@@ -13,6 +13,7 @@ const run = (source, context) => vm.runInContext(stripTypeScriptTypes(source, { 
 let selected = 'flute';
 let cleared = 0;
 let plays = 0;
+let pendingStart = false;
 let sought;
 let timeline;
 let download;
@@ -78,6 +79,7 @@ const context = vm.createContext({
   }),
   seekToCount: count => { sought = count; },
   playAll: () => { plays++; },
+  isPlaybackStartPending: () => pendingStart,
   refreshCollisionMarkers() {},
   setDrillLabels: (_scene, _root, labels) => labels.forEach(({ robot, label }) => { robot.label = label; }),
   getDrillLabel: robot => robot.label,
@@ -247,4 +249,9 @@ assert.match(html, /id="openChartFile"[^>]*accept="\.openchart,\.dots"/);
 assert.match(html, /id="saveOpenChartButton"/);
 assert.match(source, /openChartFileInput\?\.addEventListener\("change"/);
 assert.match(source, /saveOpenChartButton\?\.addEventListener\("click", saveOpenChartRoutes\)/);
+plays = 0;
+pendingStart = true;
+assert.equal(await context.openDrill(async () => show), true);
+assert.equal(plays, 1, 'A Play armed while music loads carries over to the newly opened show');
+pendingStart = false;
 console.log('OpenChart integration checks passed: paused scene loading, metadata/instruments, atomic rejection, edited route export, native reimport, blank-page guard and stale request handling.');

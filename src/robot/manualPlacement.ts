@@ -124,7 +124,7 @@ export function tryManualMarcherPoses(
     const angle = (pose.rotationY ?? previous[i].rotationY) - previous[i].rotationY;
     return Math.atan2(Math.sin(angle), Math.cos(angle));
   });
-  if (sweep) poses.forEach((pose, i) => {
+  if (sweep) poses.forEach((_pose, i) => {
     steps = Math.max(steps, Math.ceil(Math.abs(angles[i]) / (Math.PI / 180)));
   });
   let accepted = false;

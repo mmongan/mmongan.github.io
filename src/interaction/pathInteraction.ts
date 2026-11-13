@@ -15,15 +15,8 @@ import { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
 import { WebXRHandJoint, WebXRHandTracking } from '@babylonjs/core/XR/features/WebXRHandTracking.pure';
 import { WebXRInputSource } from '@babylonjs/core/XR/webXRInputSource';
 import {
-  getARPosition,
   getARScale,
-  setARScale,
-  setARPosition,
-  setARRotation,
-  getARScaleRange,
-  getARRotation,
   attachToARTransform,
-  isARTabletopModeActive,
 } from '../xr/ar';
 import { scene } from '../scene/engine';
 import { createSelectionEditor } from './selectionEditor';
@@ -107,8 +100,6 @@ import {
   captureMarcherMovement,
   restoreMarcherMovement,
   setRobotCountPosition,
-  setRobotHeld,
-  placeRobot,
   getBlankChartPageState,
   placeNearestBlankPageMarcher,
   directAdjacentBlankPageMarchers,
@@ -121,7 +112,6 @@ import {
   clearRobotPath,
   refreshCollisionMarkers,
   COLLISION_MARKER_RADIUS_YARDS,
-  resetRobotSchedule,
   disposeAllRobots,
   walkRobotAlongCounts,
   suspendRobotForErase,
@@ -130,6 +120,7 @@ import {
   setMarcherInstrument,
   setMarchTempo,
   playAll,
+  isPlaybackStartPending,
   pauseAll,
   registerRobotCounts,
   captureMarcherSchedules,
@@ -210,44 +201,6 @@ import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS, FIELD_SURFACE_Y } from '../field
 import { buildSynchronizedPaths, FORMATION_SPACING_YARDS, generateMarchingDrillPaths, getDrillSectionInstrument, MARCH_STEP_YARDS } from '../robot/drill';
 import { isGuideOnField } from './fieldDrawingGeometry';
 
-// Track the live XR controllers and the state of a grab/manipulation gesture.
-// Hand-distance sensitivity for scaling: fine control near the small end of
-// the range, coarse/fast control between table size and full 1:1.
-const SCALE_EXPONENT_AT_MIN = 0.4;
-const SCALE_EXPONENT_AT_MAX = 1.6;
-
-const pinchState = {
-  active: false,
-  startDistance: 0,
-  startScale: 1,
-  scaleExponent: SCALE_EXPONENT_AT_MIN,
-  // The grabbed point, expressed in the content's local (unscaled) space, so
-  // scale/rotation changes stay anchored under the grip midpoint.
-  localAnchor: new Vector3(),
-  startYaw: 0,
-  startRotation: 0,
-};
-
-function resetPinchState() {
-  pinchState.active = false;
-  pinchState.startDistance = 0;
-  pinchState.startScale = 1;
-  pinchState.scaleExponent = SCALE_EXPONENT_AT_MIN;
-  pinchState.localAnchor = new Vector3();
-  pinchState.startYaw = 0;
-  pinchState.startRotation = 0;
-}
-
-// Logarithmically blend the sensitivity exponent by where `scale` sits between
-// the min and max scale, so equal hand movement covers a small absolute range
-// near the min (lots of control) and a large absolute range near the max.
-function getScaleExponentFor(scale: number): number {
-  const { min, max } = getARScaleRange();
-  const t = (Math.log(scale) - Math.log(min)) / (Math.log(max) - Math.log(min));
-  const clampedT = Math.min(1, Math.max(0, t));
-  return SCALE_EXPONENT_AT_MIN + (SCALE_EXPONENT_AT_MAX - SCALE_EXPONENT_AT_MIN) * clampedT;
-}
-
 function rotateAroundY(vector: Vector3, angle: number): Vector3 {
   return Vector3.TransformCoordinates(vector, Matrix.RotationY(angle));
 }
@@ -260,21 +213,6 @@ function isGripPressed(controller: WebXRInputSource): boolean {
 function getControllerPosition(controller: WebXRInputSource) {
   // Use the physical grip mesh if present; otherwise fall back to the pointer.
   return controller.grip ?? controller.pointer;
-}
-
-// Caller guarantees pinchState is already active with a valid startDistance.
-function getScaleFromControllerDistance(distance: number) {
-  const { min, max } = getARScaleRange();
-  const scaleRatio = distance / pinchState.startDistance;
-  const easedRatio = Math.pow(scaleRatio, pinchState.scaleExponent);
-  const relativeScale = pinchState.startScale * easedRatio;
-  return Math.min(max, Math.max(min, relativeScale));
-}
-
-function getControllerYaw(leftPosition: Vector3, rightPosition: Vector3) {
-  const dx = rightPosition.x - leftPosition.x;
-  const dz = rightPosition.z - leftPosition.z;
-  return Math.atan2(dx, dz);
 }
 
 export function setActiveController(controller: WebXRInputSource) {
@@ -307,39 +245,16 @@ const pathRoot = new TransformNode("robotPathRoot", scene);
 attachToARTransform(pathRoot);
 setCollisionMarkerParent(pathRoot);
 
-const ROBOT_PATHS_STORAGE_KEY = "chartxr.robotPaths";
-const MAX_STORED_PATHS = 20;
 // Selecting a robot reveals every other robot's path too (so their routes
 // stay visible for context), but at reduced alpha so the selected one stands out.
 const PATH_SELECTED_ALPHA = 1;
 const PATH_UNSELECTED_ALPHA = 0.25;
 
-type StoredPoint = [number, number, number];
+// Drawn routes are session-only: they are not persisted to local storage.
+// The list and save hook stay so erase/undo and hand edits keep one ordering.
+function saveStoredPaths(_paths: Vector3[][]) {}
 
-function loadStoredPaths(): Vector3[][] {
-  // try {
-  //   const raw = localStorage.getItem(ROBOT_PATHS_STORAGE_KEY);
-  //   if (!raw) return [];
-  //   const parsed = JSON.parse(raw) as StoredPoint[][];
-  //   return parsed.map((path) => path.map(([x, y, z]) => new Vector3(x, y, z)));
-  // } catch {
-  //   return [];
-  // }
-  return [];
-}
-
-function saveStoredPaths(paths: Vector3[][]) {
-  // try {
-  //   const serialized: StoredPoint[][] = paths
-  //     .slice(-MAX_STORED_PATHS)
-  //     .map((path) => path.map((point): StoredPoint => [point.x, point.y, point.z]));
-  //   localStorage.setItem(ROBOT_PATHS_STORAGE_KEY, JSON.stringify(serialized));
-  // } catch {
-  //   // Storage can be unavailable (private browsing, quota, etc.) — drawing still works, it just won't persist.
-  // }
-}
-
-const storedPaths: Vector3[][] = loadStoredPaths();
+const storedPaths: Vector3[][] = [];
 const eraseHistory = new EditHistory(() => {
   if (undoEraseButton) undoEraseButton.disabled = !eraseHistory.canUndo;
   if (redoEraseButton) redoEraseButton.disabled = !eraseHistory.canRedo;
@@ -356,46 +271,9 @@ let selectedRobot: TransformNode | null = null;
 let showAllPaths = !!showAllPathsToggle?.checked;
 let pathsHiddenByFieldClick = true;
 
-// Paths/segments are drawn as tubes connecting the grab-point balls instead
-// of thin CreateLines meshes, so drawn routes are actually visible in VR.
+// Route "tubes" are hidden, non-pickable bookkeeping meshes (see
+// createTubeLine); the radius still offsets step handles beside the route.
 const PATH_TUBE_RADIUS_YARDS = 0.05;
-const PATH_TUBE_TESSELLATION = 6;
-// Drawn and planned paths are densely sampled, mostly along straight runs.
-// Points closer than this to the simplified line are dropped from the tube
-// geometry only; the path data itself keeps every sample.
-const PATH_TUBE_SIMPLIFY_TOLERANCE_YARDS = 0.01;
-
-function distanceToSegment(point: Vector3, start: Vector3, end: Vector3): number {
-  const segment = end.subtract(start);
-  const lengthSquared = segment.lengthSquared();
-  if (lengthSquared < 1e-12) return Vector3.Distance(point, start);
-  const t = Math.min(1, Math.max(0, Vector3.Dot(point.subtract(start), segment) / lengthSquared));
-  return Vector3.Distance(point, start.add(segment.scale(t)));
-}
-
-// Ramer–Douglas–Peucker simplification of a polyline.
-function simplifyTubePath(points: Vector3[], tolerance: number): Vector3[] {
-  if (points.length <= 2) return points;
-  const keep = new Uint8Array(points.length);
-  keep[0] = keep[points.length - 1] = 1;
-  const stack: Array<[number, number]> = [[0, points.length - 1]];
-  while (stack.length) {
-    const [first, last] = stack.pop()!;
-    let farthest = -1;
-    let farthestDistance = tolerance;
-    for (let i = first + 1; i < last; i++) {
-      const distance = distanceToSegment(points[i], points[first], points[last]);
-      if (distance > farthestDistance) {
-        farthest = i;
-        farthestDistance = distance;
-      }
-    }
-    if (farthest < 0) continue;
-    keep[farthest] = 1;
-    stack.push([first, farthest], [farthest, last]);
-  }
-  return points.filter((_, index) => keep[index]);
-}
 
 function createTubeLine(name: string, _points: Vector3[], color: Color3, existingMaterial?: StandardMaterial): Mesh {
   // Keep segment bookkeeping without rendering or picking route geometry.
@@ -3845,6 +3723,10 @@ function spawnOpenChartDrill(drill: OpenChartShow, autoPlay = false): number {
   const gaitNames = MARCHING_GAITS.map(gait => gait.name);
   const performances = drill.marchers.map(marcher => marcher.performance
     ? unpackOpenChartPerformance(marcher.performance, gaitNames) : undefined);
+  // A Play armed while music is still loading (typically pressed during
+  // startup, before the bundled show arrives) carries over to the new show.
+  // Replacing a show that is actually playing still resets to paused.
+  const resumePendingStart = isPlaybackStartPending();
   clearAllRobots();
   setBandUniformColor(drill.bandColor ? new Color3(...drill.bandColor) : Color3.FromHexString('#1967d2'));
   forgetOtherChartPageGuides();
@@ -3884,7 +3766,7 @@ function spawnOpenChartDrill(drill: OpenChartShow, autoPlay = false): number {
   restoreDrillMidiTiming(getOpenChartTiming(drill));
   const tempoBpm = getMarchTempo();
   seekToCount(0);
-  if (autoPlay) playAll();
+  if (autoPlay || resumePendingStart) playAll();
 
   refreshCollisionMarkers(scene);
   setDrillLabels(scene, pathRoot, labels);

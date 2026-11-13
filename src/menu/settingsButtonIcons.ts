@@ -16,7 +16,7 @@ export function isMediaButtonAction(action: HandMenuHit) {
 }
 
 export function createMediaButtonIcon(button: AbstractMesh, action: HandMenuHit,
-  width: number, height: number, getPlaying: () => boolean) {
+  width: number, height: number, getPlaying: () => boolean, getPending?: () => boolean) {
   const scene = button.getScene();
   const root = new TransformNode(`mediaIcon-${button.name}`, scene);
   root.parent = button;
@@ -70,8 +70,11 @@ export function createMediaButtonIcon(button: AbstractMesh, action: HandMenuHit,
     meshes.push(pause);
     const update = () => {
       const playing = getPlaying();
+      // While Play waits on music/audio, blink the pause bars so immersive
+      // users see Play is armed (the next press cancels it).
+      const blinkOff = playing && !!getPending?.() && Math.floor(performance.now() / 400) % 2 === 1;
       icon.setEnabled(!playing);
-      pause.setEnabled(playing);
+      pause.setEnabled(playing && !blinkOff);
     };
     update();
     const observer = scene.onBeforeRenderObservable.add(update);

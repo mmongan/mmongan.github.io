@@ -54,6 +54,7 @@ const context = vm.createContext({
   },
   drawPanelButton() {},
   getDrillTransportState: () => ({ playing }),
+  isPlaybackRequested: () => playing, isPlaybackStartPending: () => false,
   onDrillTransportChangedObservable: transport,
 });
 try {
