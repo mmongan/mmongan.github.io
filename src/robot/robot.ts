@@ -1792,12 +1792,29 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState,
         playbackCountTicks, playbackPpq);
     }
     const offsets = getGaitStepPhaseOffsets(state, parts.gaitIndex);
-    // Saved phases may rejoin the clock after a cadence change, so they need
-    // not be monotone. Prefer the nearest segment containing this footfall.
-    for (let distance = 0; distance < last; distance++) {
+    const segmentCadence = (index: number) =>
+      resolveSegmentGait(state, index, parts.gaitIndex)?.stepsPerCount ?? 0;
+    // Saved phases may rejoin the shared count clock after a cadence change,
+    // so they need not be monotone and equal step numbers can recur in distant
+    // sections. Search only segments that continue this segment's step clock
+    // without such a rejoin: a footfall past the discontinuity extrapolates
+    // the local cadence below, rather than planting the foot at an unrelated
+    // far-away section's position (which reach-limiting throws the leg toward).
+    const joined = (index: number) =>
+      Math.abs(offsets[index] + segmentCadence(index) - offsets[index + 1]) < 1e-8;
+    let searchDown = true;
+    let searchUp = true;
+    for (let distance = 0; (searchDown || searchUp) && distance < last; distance++) {
       for (const index of distance === 0 ? [segmentStart] : [segmentStart - distance, segmentStart + distance]) {
         if (index < 0 || index >= last) continue;
-        const cadence = resolveSegmentGait(state, index, parts.gaitIndex)?.stepsPerCount ?? 0;
+        if (index < segmentStart) {
+          searchDown &&= joined(index);
+          if (!searchDown) continue;
+        } else if (index > segmentStart) {
+          searchUp &&= joined(index - 1);
+          if (!searchUp) continue;
+        }
+        const cadence = segmentCadence(index);
         if (cadence > 0 && step >= offsets[index] && step <= offsets[index] + cadence) {
           return index + (step - offsets[index]) / cadence;
         }

@@ -40,6 +40,7 @@ const context = vm.createContext({
   footballDraftTeam: { selectedOptions: [{ text: 'Offense' }] },
   footballDraftFrom: { value: '0' },
   footballDraftTo: { value: '16' },
+  getMarcherPOVPanelLabel: () => ({ text: 'Marcher POV: off', active: false }),
   footballBallHighlight: { checked: false },
   footballFlightPath: { checked: false },
   footballFutureGhosts: { checked: false },

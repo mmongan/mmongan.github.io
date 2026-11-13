@@ -6,6 +6,7 @@ import { getObjectName } from '../interaction/objectNames';
 import type { WebXRDefaultExperience } from '@babylonjs/core/XR/webXRDefaultExperience';
 import { WebXRState } from '@babylonjs/core/XR/webXRTypes';
 import { TargetCamera } from '@babylonjs/core/Cameras/targetCamera.pure';
+import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
 import { scene } from '../scene/engine';
 import { camera as desktopCamera, setDesktopMarcherPOV } from './desktopCamera';
 import { MarcherPOVCamera } from './marcherPOVCamera';
@@ -36,29 +37,79 @@ export function getMarcherPOVLabel() {
   return robot ? `Marcher ${getMarchers().indexOf(robot) + 1}` : '';
 }
 
+const isUsableMarcher = (robot: TransformNode | null): robot is TransformNode =>
+  !!robot && !robot.isDisposed() && robot.isEnabled();
+
+// The visible marcher closest to the centre of the current view, so panel
+// buttons (which cannot pick a marcher themselves) start POV on the marcher
+// the user is looking at. Marchers behind the camera rank last.
+function findMarcherInView(camera: TargetCamera): TransformNode | null {
+  const origin = camera.globalPosition;
+  const forward = camera.getDirection(Vector3.Forward(camera.getScene().useRightHandedSystem));
+  let best: TransformNode | null = null;
+  let bestScore = Infinity;
+  for (const robot of getMarchers()) {
+    if (!isUsableMarcher(robot)) continue;
+    const offset = robot.getAbsolutePosition().subtract(origin);
+    const along = Vector3.Dot(offset, forward);
+    const sideways = offset.subtract(forward.scale(along)).length();
+    const score = along > 0 ? sideways / along : 1e6 + offset.length();
+    if (score < bestScore) {
+      bestScore = score;
+      best = robot;
+    }
+  }
+  return best;
+}
+
+// Short state for immersive panel buttons, which can't show the DOM status.
+let panelNotice: { text: string; until: number } | null = null;
+const PANEL_NOTICE_MS = 3000;
+
+function notifyPanel(text: string) {
+  panelNotice = { text, until: performance.now() + PANEL_NOTICE_MS };
+}
+
+export function getMarcherPOVPanelLabel(): { text: string; active: boolean } {
+  if (panelNotice && performance.now() < panelNotice.until) return { text: panelNotice.text, active: follower.active };
+  panelNotice = null;
+  return { text: `Marcher POV: ${follower.active ? 'on' : 'off'}`, active: follower.active };
+}
+
 export function setMarcherPOVEnabled(enabled: boolean) {
   if (!enabled) {
     stopMarcherDrumGame();
     follower.stop();
     setDesktopMarcherPOV(false);
+    panelNotice = null;
     publish('POV off. Select a marcher, then enable POV.');
     return;
   }
-  const robot = getSelected();
   const camera = scene.activeCamera;
   const xr = camera?.getClassName() === 'WebXRCamera';
-  if (!robot || robot.isDisposed()) {
-    publish('Select a marcher first, by clicking/pinching it or using the marcher list.');
-    return;
-  }
   if (!(camera instanceof TargetCamera) || (xr && !availableVR())) {
+    notifyPanel('POV: VR or desktop only');
     publish('POV is available in the browser and immersive VR, not AR or floor calibration.');
     return;
   }
+  let robot = getSelected();
+  if (!isUsableMarcher(robot)) {
+    // Started from a panel/sign with no usable selection: follow the marcher
+    // in view and select it, so paths, chart and Drum Game agree.
+    robot = findMarcherInView(camera);
+    if (!robot) {
+      notifyPanel('POV: no visible marchers');
+      publish('No visible marchers. Open a show or add marchers, then enable POV.');
+      return;
+    }
+    selectMarcher(robot);
+  }
   if (!follower.start(robot, camera, xr)) {
+    notifyPanel('POV: marcher not visible');
     publish('That marcher is not visible. Select a visible marcher to start POV.');
     return;
   }
+  panelNotice = null;
   setDesktopMarcherPOV(!xr);
   publish(xr ? 'VR POV: movement follows the marcher; headset look and room-scale motion stay yours.'
     : 'Marcher POV: mouse/arrow keys look around; movement follows the selected marcher.');

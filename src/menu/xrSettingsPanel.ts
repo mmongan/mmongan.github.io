@@ -24,6 +24,7 @@ import { registerMenuButton, type HandMenuHit } from './handMenu';
 import { drawPanelButton, PANEL_FRAME_COLOR } from './panelStyle';
 import { createSettingsButtonIcon } from './settingsButtonIcons';
 import { SETTINGS_PANEL_ROWS } from './settingsPanelControls';
+import { getMarcherPOVPanelLabel } from '../camera/marcherPOV';
 
 type XRSetting = Extract<HandMenuHit, { action: 'xrSetting' }>['setting'];
 const placement = {
@@ -147,6 +148,15 @@ export function initXRSettingsPanel() {
       const count = label.label === 'Tackle count' ? footballTackleCount
         : label.label === 'Route start' ? footballDraftFrom
         : label.label === 'Destination' ? footballDraftTo : null;
+      if (label.label === 'Marcher POV') {
+        const pov = getMarcherPOVPanelLabel();
+        const signature = `${pov.text}:${pov.active}`;
+        if (label.signature === signature) continue;
+        label.signature = signature;
+        draw(label.ctx, pov.text, pov.active);
+        label.texture.update();
+        continue;
+      }
       if (!label.toggle && !select && !count) continue;
       const text = select ? select.selectedOptions[0]?.text ?? label.label
         : count ? `Count ${count.value}` : `${label.label}: ${label.toggle!.checked ? 'on' : 'off'}`;

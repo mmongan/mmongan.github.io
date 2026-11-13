@@ -9,6 +9,18 @@ import { Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
 const POV_HIDDEN_LAYER = 0x20000000;
 const TOP_DOWN_LAYER = 0x10000000;
 
+// Only the followed performer's head stays hidden in POV: it surrounds the
+// eye point and would fill the view. The jacket, arms, gloves, legs, shoes
+// and instrument remain visible, so looking down shows your own robot body.
+// Marchers: `marcherTrim` is the merged neck/head/shako/plume, plus eyes.
+// Football players: neck/face/helmet/nose/eyes and the floating role plate.
+const SELF_HEAD_MESH =
+  /^(marcherTrim|robotEyes)$|^football-(neck|face|helmet|nose|eye-white|pupil|role)-/;
+
+export function isPOVSelfHiddenMesh(mesh: AbstractMesh): boolean {
+  return SELF_HEAD_MESH.test(mesh.name);
+}
+
 export interface MarcherEyePose {
   position: Vector3;
   yaw: number;
@@ -106,7 +118,7 @@ export class MarcherPOVCamera {
 
   private hideRobotMeshes() {
     this.robot?.getChildMeshes(false).forEach(mesh => {
-      if (mesh.layerMask === TOP_DOWN_LAYER || this.hiddenMeshes.has(mesh)) return;
+      if (mesh.layerMask === TOP_DOWN_LAYER || this.hiddenMeshes.has(mesh) || !isPOVSelfHiddenMesh(mesh)) return;
       this.hiddenMeshes.set(mesh, mesh.layerMask);
       mesh.layerMask = POV_HIDDEN_LAYER;
     });

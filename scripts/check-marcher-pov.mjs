@@ -34,8 +34,16 @@ globalThis.Follower = MarcherPOVCamera;`, context);
   body.parent = robot;
   const height = (1.8 / 0.9144) / 1.372;
   body.scaling.set(height * 0.64, height, height * 0.64);
-  const mesh = new Mesh('bodyMesh', scene);
+  // `marcherTrim` is the merged neck/head/shako/plume; the jacket, limbs and
+  // instrument stay visible so the viewer sees their own robot body.
+  const mesh = new Mesh('marcherTrim', scene);
   mesh.parent = body;
+  const eyes = new Mesh('robotEyes', scene);
+  eyes.parent = body;
+  const jacket = new Mesh('marcherJacket', scene);
+  jacket.parent = body;
+  const horn = new Mesh('marcherHorn', scene);
+  horn.parent = robot;
   const marker = new Mesh('videoBoardDot', scene);
   marker.parent = robot;
   marker.layerMask = 0x10000000;
@@ -66,7 +74,10 @@ globalThis.Follower = MarcherPOVCamera;`, context);
   const follower = new context.Follower(eyePose);
   assert.equal(follower.start(robot, camera, false), true);
   near(camera.position, eye.position, 'Start at actual eyes');
-  assert.equal(mesh.layerMask, 0x20000000, 'Hide own body from main camera');
+  assert.equal(mesh.layerMask, 0x20000000, 'Hide own head/shako from the main camera');
+  assert.equal(eyes.layerMask, 0x20000000, 'Hide own eyes from the main camera');
+  assert.equal(jacket.layerMask, originalMask, 'Own robot body stays visible in POV');
+  assert.equal(horn.layerMask, originalMask, 'Own instrument stays visible in POV');
   assert.equal(marker.layerMask, 0x10000000, 'Keep video-board dot visible');
   camera.rotation.x = 0.23;
   camera.rotation.y += 0.3;
@@ -233,7 +244,39 @@ globalThis.drawPage = drawPage;globalThis.signature = getPageSignature;`, chartC
   assert.equal(startupContext.isMarcherPOVActive(), false, 'Loaded marchers do not auto-enable POV');
   assert.equal(autoSelections, 0, 'Startup does not auto-select the first marcher');
   near(camera.position, spectatorPosition, 'Startup preserves spectator camera position');
-  console.log('Marcher POV checks passed: transformed eye anchor, follow/seek/pause/reverse, look, restoration, selection/disposal, natural VR head motion, own-body hiding, and live chart highlight.');
+
+  // Settings panel / sign buttons dispatch `marcherPOV` with no way to pick a
+  // marcher. With nothing selected, POV follows (and selects) the marcher in view.
+  let panelSelection = null;
+  const panelContext = vm.createContext({
+    scene, TargetCamera, Vector3, performance, MarcherPOVCamera: context.Follower, getMarcherEyePose: eyePose,
+    desktopCamera: camera, setDesktopMarcherPOV() {},
+    getObjectName: () => undefined,
+    marcherPOVSelect: null, marcherPOVStatus: null, marcherPOVExitButton: null, marcherPOVModeButton: null,
+    initMarcherDrumGame() {}, isDrumGameActive: () => false,
+    stopMarcherDrumGame() {}, toggleDrumGame() {},
+    window: { addEventListener() {} },
+  });
+  vm.runInContext(compile(povSource), panelContext);
+  panelContext.initMarcherPOV(() => panelSelection, () => [second],
+    selected => { panelSelection = selected; }, () => {});
+  assert.equal(panelContext.getMarcherPOVPanelLabel().text, 'Marcher POV: off');
+  panelContext.setMarcherPOVEnabled(true);
+  assert.equal(panelSelection, second, 'Panel POV selects the marcher in view when none is selected');
+  assert.equal(panelContext.isMarcherPOVActive(), true, 'Panel POV starts without a prior marcher pick');
+  const onLabel = panelContext.getMarcherPOVPanelLabel();
+  assert.equal(onLabel.text, 'Marcher POV: on', 'The panel button shows POV state in the headset');
+  assert.equal(onLabel.active, true);
+  panelContext.setMarcherPOVEnabled(false);
+  assert.equal(panelContext.isMarcherPOVActive(), false);
+  near(camera.position, spectatorPosition, 'Panel POV exit restores the spectator camera');
+  panelSelection = null;
+  panelContext.initMarcherPOV(() => panelSelection, () => [], () => {}, () => {});
+  panelContext.setMarcherPOVEnabled(true);
+  assert.equal(panelContext.isMarcherPOVActive(), false);
+  assert.equal(panelContext.getMarcherPOVPanelLabel().text, 'POV: no visible marchers',
+    'Failures are explained on the panel button, not only in the DOM');
+  console.log('Marcher POV checks passed: transformed eye anchor, follow/seek/pause/reverse, look, restoration, selection/disposal, natural VR head motion, own head hiding with visible own robot body, panel start, and live chart highlight.');
 } finally {
   scene.dispose();
   engine.dispose();

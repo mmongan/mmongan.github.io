@@ -14,6 +14,7 @@ import {
   pauseAll, playAll, seekToCount, toggleAllPlayback,
 } from '../robot/robot';
 import { onStartupStateChanged } from '../ui/loadingScreen';
+import { getMarcherPOVPanelLabel, isMarcherPOVActive } from '../camera/marcherPOV';
 import { engine, scene } from './engine';
 
 export interface OpenChartxrDiagnostics {
@@ -27,6 +28,8 @@ export interface OpenChartxrDiagnostics {
   toggleAllPlayback: typeof toggleAllPlayback;
   seekToCount: typeof seekToCount;
   marcherCount: () => number;
+  marcherPOVActive: typeof isMarcherPOVActive;
+  marcherPOVPanelLabel: typeof getMarcherPOVPanelLabel;
   startupFinished: () => boolean;
   // Frames presented by the engine, counted even if scene rendering fails.
   enginePresentedFrames: () => number;
@@ -57,6 +60,8 @@ export function installDiagnosticsHooks(getMarcherCount: () => number) {
     toggleAllPlayback,
     seekToCount,
     marcherCount: getMarcherCount,
+    marcherPOVActive: isMarcherPOVActive,
+    marcherPOVPanelLabel: getMarcherPOVPanelLabel,
     startupFinished: () => startupFinished,
     enginePresentedFrames: () => presented,
     sceneRenderedFrames: () => rendered,

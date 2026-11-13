@@ -923,6 +923,33 @@ assert.equal(context.getGaitStepPhaseOffsets({ counts: partialOffbeat }, parts.g
 state.counts = originalSynchronizationCounts;
 console.log('Band synchronization passed: shared left-foot count-1 parity, half/double-time histories, baked cadence changes, and explicit off-beat instructions.');
 
+// Baked cadence changes rejoin the shared count clock, so equal step numbers
+// recur in distant sections (phase 0..31 here reuses the numbers that the
+// half- and single-time rejoins return to). Swing landings next to a rejoin
+// must extrapolate the local cadence instead of matching the distant section
+// that reuses the step number, which threw the reach-limited leg toward a
+// position yards away.
+{
+  const bakedGait = stepsPerCount => ({
+    gaitIndex: 0, stepsPerCount, bodyYaw: 0, legYawOffset: 0,
+    inPlace: false, sideways: false, label: 'Test March',
+  });
+  const rejoined = Array.from({ length: 80 }, (_, index) => ({
+    position: new Vector3(0, 0, index * 0.15), rotationY: 0,
+    stepPhase: index < 32 ? index
+      : index < 36 ? 16 + (index - 32) * 0.5
+      : index < 44 ? 72 + (index - 36) * 2
+      : index + 11,
+    bakedGait: bakedGait(index < 32 ? 1 : index < 36 ? 0.5 : index < 44 ? 2 : 1),
+  }));
+  for (const beat of [32.125, 34.5, 35.25, 35.8, 35.9375, 36, 36.1, 36.5, 37, 43.9, 44, 44.2]) {
+    const contact = sampleContact(rejoined, beat);
+    assert.equal(contact.pose.limited, false,
+      `Footfalls next to a step-phase rejoin stay local to their own section (beat ${beat})`);
+  }
+}
+console.log('Step-phase rejoin passed: swing landings near cadence rejoins never sample distant sections that reuse their step numbers.');
+
 let verifiedContacts = 0;
 for (const songLength of [0, 32]) {
   context.repeatOptions = { songLength, drill: false };

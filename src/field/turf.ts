@@ -62,8 +62,32 @@ function createStripeMaterial(
     }
   }
 
-  ctx.fillStyle = stripeIndex % 2 === 0 ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.12)";
+  // Mow-stripe sheen: alternating stripes read as mowed in opposite
+  // directions, with a soft gradient along the mow axis instead of a flat tint.
+  const sheen = ctx.createLinearGradient(0, 0, 0, height);
+  if (stripeIndex % 2 === 0) {
+    sheen.addColorStop(0, "rgba(255, 255, 255, 0.16)");
+    sheen.addColorStop(1, "rgba(255, 255, 255, 0.04)");
+  } else {
+    sheen.addColorStop(0, "rgba(0, 0, 0, 0.15)");
+    sheen.addColorStop(1, "rgba(0, 0, 0, 0.04)");
+  }
+  ctx.fillStyle = sheen;
   ctx.fillRect(0, 0, resolution, height);
+
+  // Blade-scale speckle at the texture's own resolution, so close-up turf has
+  // grain the per-yard tiling above minifies away. Low-detail and top-down
+  // materials skip it: it would alias at their scale.
+  if (resolution >= 512) {
+    for (let i = 0; i < 2500; i++) {
+      const x = Math.random() * resolution;
+      const y = Math.random() * height;
+      ctx.fillStyle = Math.random() < 0.5
+        ? `rgba(195, 235, 160, ${0.05 + Math.random() * 0.08})`
+        : `rgba(12, 52, 16, ${0.05 + Math.random() * 0.09})`;
+      ctx.fillRect(x, y, 1.5, 1 + Math.random() * 2.5);
+    }
+  }
 
   ctx.strokeStyle = "rgba(250, 250, 250, 0.95)";
   for (let z = -50; z <= 50; z += 5) {

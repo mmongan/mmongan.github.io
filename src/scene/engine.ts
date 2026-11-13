@@ -12,11 +12,13 @@ import { canvas, enterARButton, enterVRButton, xrEntryStatus } from '../ui/dom';
 
 function createEngine(): Engine {
   try {
+    // adaptToDeviceRatio renders at the display's native pixel density, so
+    // desktop and high-DPI screens get a crisp image instead of an upscaled one.
     return new Engine(canvas, true, {
       preserveDrawingBuffer: true,
       stencil: true,
       antialias: true,
-    });
+    }, true);
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     console.error('Could not initialize the WebGL renderer', error);
@@ -49,16 +51,24 @@ scene.fogEnd = 260;
 // bleachers, instead of just clamping altitude.
 scene.collisionsEnabled = true;
 
+// Warm/cool daylight: a cool sky dome with green turf bounce from below, and
+// a warm directional sun that owns the specular highlights. The split gives
+// surfaces directional color depth without shadow maps or extra geometry.
 export const hemiLight = new HemisphericLight(
   "hemiLight",
   new Vector3(0, 1, 0),
   scene
 );
-hemiLight.intensity = 1.1;
+hemiLight.intensity = 1.05;
+hemiLight.diffuse = new Color3(0.88, 0.94, 1.0);
+hemiLight.groundColor = new Color3(0.33, 0.39, 0.3);
+hemiLight.specular = new Color3(0, 0, 0);
 
 export const dirLight = new DirectionalLight(
   "dirLight",
   new Vector3(-1, -1, -1),
   scene
 );
-dirLight.intensity = 0.8;
+dirLight.intensity = 0.85;
+dirLight.diffuse = new Color3(1.0, 0.95, 0.85);
+dirLight.specular = new Color3(1.0, 0.97, 0.9);

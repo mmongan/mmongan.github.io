@@ -26,7 +26,10 @@ function drawCloudPuff(
 
   for (const dx of offsets) {
     const puffGradient = ctx.createRadialGradient(cx + dx, cy, 0, cx + dx, cy, radius);
+    // Hold a dense core before falling off, so puffs read as cloud matter
+    // rather than an airbrushed glow.
     puffGradient.addColorStop(0, `rgba(255, 255, 255, ${alpha})`);
+    puffGradient.addColorStop(0.55, `rgba(255, 255, 255, ${alpha * 0.8})`);
     puffGradient.addColorStop(1, "rgba(255, 255, 255, 0)");
     ctx.fillStyle = puffGradient;
     ctx.beginPath();
@@ -38,27 +41,56 @@ function drawCloudPuff(
 // Procedural gradient skybox with soft clouds (day sky, no external texture assets needed).
 export function createSky(): Mesh {
   const skyCanvas = document.createElement("canvas");
-  skyCanvas.width = 512;
+  skyCanvas.width = 1024;
   skyCanvas.height = 512;
   const skyCtx = skyCanvas.getContext("2d")!;
+  // Deep zenith through mid blue to a pale, faintly warm horizon haze.
   const skyGradient = skyCtx.createLinearGradient(0, 0, 0, skyCanvas.height);
-  skyGradient.addColorStop(0, "#1a3d8f");
-  skyGradient.addColorStop(0.45, "#4d8fd6");
-  skyGradient.addColorStop(0.75, "#bfe0f2");
-  skyGradient.addColorStop(1, "#eaf6ff");
+  skyGradient.addColorStop(0, "#15347c");
+  skyGradient.addColorStop(0.4, "#3f84d2");
+  skyGradient.addColorStop(0.72, "#a9d4ee");
+  skyGradient.addColorStop(0.9, "#e4f2fb");
+  skyGradient.addColorStop(1, "#f5f2e3");
   skyCtx.fillStyle = skyGradient;
   skyCtx.fillRect(0, 0, skyCanvas.width, skyCanvas.height);
 
-  const cloudCount = 14;
+  // Thin, faint high-altitude streaks above the cumulus band.
+  for (let i = 0; i < 6; i++) {
+    const y = skyCanvas.height * (0.08 + Math.random() * 0.12);
+    const x = Math.random() * skyCanvas.width;
+    const length = 4 + Math.floor(Math.random() * 4);
+    for (let p = 0; p < length; p++) {
+      drawCloudPuff(skyCtx, skyCanvas.width, x + p * 26, y + (Math.random() - 0.5) * 4,
+        14 + Math.random() * 10, 0.08 + Math.random() * 0.05);
+    }
+  }
+
+  // Cumulus clusters: domed bright tops over a flatter base, with a soft
+  // blue-grey underside shade so the clouds read as lit from above.
+  const cloudCount = 10;
   for (let i = 0; i < cloudCount; i++) {
     const clusterX = Math.random() * skyCanvas.width;
-    const clusterY = skyCanvas.height * (0.16 + Math.random() * 0.38);
-    const puffs = 4 + Math.floor(Math.random() * 4);
+    const clusterY = skyCanvas.height * (0.18 + Math.random() * 0.34);
+    const scale = 0.5 + Math.random() * 0.55;
+    for (const dx of [0, skyCanvas.width, -skyCanvas.width]) {
+      const shade = skyCtx.createRadialGradient(clusterX + dx, clusterY + 10 * scale, 0,
+        clusterX + dx, clusterY + 10 * scale, 70 * scale);
+      shade.addColorStop(0, "rgba(140, 160, 190, 0.12)");
+      shade.addColorStop(1, "rgba(140, 160, 190, 0)");
+      skyCtx.fillStyle = shade;
+      skyCtx.beginPath();
+      skyCtx.ellipse(clusterX + dx, clusterY + 10 * scale, 80 * scale, 14 * scale, 0, 0, Math.PI * 2);
+      skyCtx.fill();
+    }
+    const puffs = 9 + Math.floor(Math.random() * 5);
     for (let p = 0; p < puffs; p++) {
-      const offsetX = (Math.random() - 0.5) * 70;
-      const offsetY = (Math.random() - 0.5) * 18;
-      const radius = 18 + Math.random() * 26;
-      drawCloudPuff(skyCtx, skyCanvas.width, clusterX + offsetX, clusterY + offsetY, radius, 0.35 + Math.random() * 0.3);
+      const offsetX = (Math.random() - 0.5) * 120 * scale;
+      // Keep puff centres at or above the cluster base for a flat-bottomed dome.
+      const offsetY = -Math.random() * 20 * scale;
+      const radius = (10 + Math.random() * 12) * scale;
+      const alpha = 0.32 + 0.3 * (1 - Math.abs(offsetX) / (65 * scale)) + Math.random() * 0.1;
+      drawCloudPuff(skyCtx, skyCanvas.width, clusterX + offsetX, clusterY + offsetY, radius,
+        Math.max(0.22, Math.min(0.65, alpha)));
     }
   }
 
