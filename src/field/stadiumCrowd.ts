@@ -168,11 +168,13 @@ export function createStadiumCrowd(parent: Mesh) {
       { diameterX: width, diameterY: height, diameterZ: depth, segments }, scene), x, y, z, color);
   }
 
+  // Capsule axis: 'y' upright, 'x' toward/away from the field, 'z' across the body.
   function capsule(name: string, x: number, y: number, z: number,
-    height: number, radius: number, color: Color3, alongField = false) {
+    height: number, radius: number, color: Color3, axis: 'x' | 'y' | 'z' = 'y') {
     const mesh = MeshBuilder.CreateCapsule(name,
       { height: height + radius * 2, radius, tessellation: 6, subdivisions: 1, capSubdivisions: 2 }, scene);
-    if (alongField) mesh.rotation.z = Math.PI / 2;
+    if (axis === 'x') mesh.rotation.z = Math.PI / 2;
+    if (axis === 'z') mesh.rotation.x = Math.PI / 2;
     return finishPart(mesh, x, y, z, color);
   }
 
@@ -194,6 +196,9 @@ export function createStadiumCrowd(parent: Mesh) {
     for (const offset of [-0.19, 0.19]) {
       ellipsoid('spectatorShoulder', x, seatY + 0.54, z + offset, 0.2, 0.18, 0.2, shirt, 5);
     }
+    // The neck bridges the torso top and the head, which would otherwise only
+    // meet at a tangent point and read as a floating head.
+    ellipsoid('spectatorNeck', x, seatY + 0.66, z, 0.14, 0.16, 0.14, complexion, 5);
     ellipsoid('spectatorHead', x, seatY + 0.78, z, 0.28, 0.28, 0.28, complexion, 6);
     const style = index % 4;
     if (style === 0) {
@@ -205,19 +210,26 @@ export function createStadiumCrowd(parent: Mesh) {
       dome('spectatorHair', x, seatY + 0.83, z, 0.3, HAIR[index % HAIR.length]);
     }
     for (const [armIndex, offset] of [-0.15, 0.15].entries()) {
-      capsule('spectatorThigh', x - side * 0.13, seatY + 0.07, z + offset, 0.34, 0.075, trouser, true);
+      // Hips sink into the torso and knees meet the shins, so the seated legs
+      // chain torso -> thigh -> shin -> shoe without open joints.
+      capsule('spectatorThigh', x - side * 0.11, seatY + 0.09, z + offset, 0.34, 0.075, trouser, 'x');
       capsule('spectatorShin', x - side * 0.29, seatY - 0.12, z + offset, 0.3, 0.07, trouser);
       ellipsoid('spectatorShoe', x - side * 0.34, seatY - 0.32, z + offset, 0.22, 0.1, 0.16, SHOES, 4);
-      const armZ = z + offset * 1.9;
+      // Arms hang inside the shoulder caps; every forearm starts at its elbow.
+      const armZ = z + offset * 1.8;
       if (pose === 1 || (pose === 2 && armIndex === 0)) {
         capsule('spectatorArm', x - side * 0.04, seatY + 0.58, armZ, 0.2, 0.06, shirt);
         capsule('spectatorForearm', x - side * 0.04, seatY + 0.9, armZ, 0.26, 0.055, complexion);
       } else if (pose === 3) {
-        capsule('spectatorArm', x - side * 0.05, seatY + 0.4, armZ, 0.18, 0.06, shirt);
-        capsule('spectatorForearm', x - side * 0.18, seatY + 0.24, z + offset * 0.8, 0.16, 0.055, complexion, true);
+        capsule('spectatorArm', x - side * 0.05, seatY + 0.4, armZ, 0.22, 0.06, shirt);
+        // Folded arms: forearms cross the chest toward the opposite hip,
+        // stacked so the pair reads as resting on each other.
+        capsule('spectatorForearm', x - side * 0.14, seatY + 0.28 + armIndex * 0.05, z + offset * 0.5,
+          0.32, 0.055, complexion, 'z');
       } else {
-        capsule('spectatorArm', x - side * 0.05, seatY + 0.4, armZ, 0.18, 0.06, shirt);
-        capsule('spectatorForearm', x - side * 0.2, seatY + 0.22, z + offset * 1.5, 0.16, 0.055, complexion, true);
+        capsule('spectatorArm', x - side * 0.05, seatY + 0.4, armZ, 0.22, 0.06, shirt);
+        // Hands rest forward on the lap, reaching from the elbow over the thigh.
+        capsule('spectatorForearm', x - side * 0.17, seatY + 0.22, z + offset * 1.5, 0.16, 0.055, complexion, 'x');
       }
     }
   }

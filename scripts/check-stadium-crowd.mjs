@@ -35,11 +35,11 @@ const context = vm.createContext({
   scrimmageButton,
   scene, Mesh, MeshBuilder: { ...MeshBuilder, CreateSphere(name, options, scene) {
     const mesh = MeshBuilder.CreateSphere(name, options, scene);
-    if (name === 'spectatorTorso') spectatorBoxes.push({ mesh, options });
+    if (name.startsWith('spectator')) spectatorBoxes.push({ mesh, options });
     return mesh;
   }, CreateCapsule(name, options, scene) {
     const mesh = MeshBuilder.CreateCapsule(name, options, scene);
-    if (name === 'spectatorThigh') spectatorBoxes.push({ mesh, options });
+    if (name.startsWith('spectator')) spectatorBoxes.push({ mesh, options });
     return mesh;
   } }, TransformNode, StandardMaterial, Matrix, Quaternion, Vector3, Plane, Color3, Ray, Observable, VertexBuffer,
   Texture: { TRILINEAR_SAMPLINGMODE: 3 },
@@ -80,11 +80,79 @@ try {
     spectatorBoxes.length = 0;
     updateStands(level);
     assert.ok(spectatorBoxes.length > 0, 'Crowd geometry is checked before material batching');
-    for (let index = 0; index < spectatorBoxes.length; index += 3) {
-      const torso = spectatorBoxes[index];
-      assert.equal(torso.mesh.name, 'spectatorTorso');
-      for (const thigh of spectatorBoxes.slice(index + 1, index + 3)) {
-        assert.equal(thigh.mesh.name, 'spectatorThigh');
+    // Body parts must be connected: every joint in the chains head-neck-torso,
+    // torso-thigh-shin-shoe, and shoulder-arm-forearm actually overlaps, in
+    // every pose (hands on lap, arms raised, one arm up, arms folded).
+    const hatParts = new Set(['spectatorCap', 'spectatorCapBrim', 'spectatorHair']);
+    const groups = [];
+    for (const part of spectatorBoxes) {
+      if (part.mesh.name === 'spectatorTorso') groups.push([]);
+      if (!hatParts.has(part.mesh.name)) groups.at(-1).push(part);
+    }
+    // A capsule's core segment in world space; vertical unless rotated to lie
+    // along the field (rotation.z) or across the body (rotation.x).
+    const capsuleSegment = ({ mesh, options }) => {
+      const half = options.height / 2 - options.radius;
+      const axis = Math.abs(mesh.rotation.z - Math.PI / 2) < 1e-9 ? new Vector3(1, 0, 0)
+        : Math.abs(mesh.rotation.x - Math.PI / 2) < 1e-9 ? new Vector3(0, 0, 1) : new Vector3(0, 1, 0);
+      return { a: mesh.position.subtract(axis.scale(half)), b: mesh.position.add(axis.scale(half)),
+        radius: options.radius };
+    };
+    const segmentDistance = (p1, q1, p2, q2) => {
+      const d1 = q1.subtract(p1), d2 = q2.subtract(p2), r = p1.subtract(p2);
+      const a = Vector3.Dot(d1, d1), e = Vector3.Dot(d2, d2);
+      const c = Vector3.Dot(d1, r), f = Vector3.Dot(d2, r);
+      let s = 0, t = 0;
+      if (a > 1e-12 || e > 1e-12) {
+        if (a <= 1e-12) t = Math.max(0, Math.min(1, f / e));
+        else if (e <= 1e-12) s = Math.max(0, Math.min(1, -c / a));
+        else {
+          const b = Vector3.Dot(d1, d2), den = a * e - b * b;
+          s = den > 1e-12 ? Math.max(0, Math.min(1, (b * f - c * e) / den)) : 0;
+          t = (b * s + f) / e;
+          if (t < 0) { t = 0; s = Math.max(0, Math.min(1, -c / a)); }
+          else if (t > 1) { t = 1; s = Math.max(0, Math.min(1, (b - c) / a)); }
+        }
+      }
+      return p1.add(d1.scale(s)).subtract(p2.add(d2.scale(t))).length();
+    };
+    const capsulesTouch = (left, right) => {
+      const one = capsuleSegment(left), two = capsuleSegment(right);
+      return segmentDistance(one.a, one.b, two.a, two.b) <= one.radius + two.radius - .004;
+    };
+    // Conservative ellipsoid contact: a sphere of the smallest semi-axis.
+    const sphereTouchesCapsule = (ellipsoidPart, capsulePart) => {
+      const radius = Math.min(ellipsoidPart.options.diameterX,
+        ellipsoidPart.options.diameterY, ellipsoidPart.options.diameterZ) / 2;
+      const segment = capsuleSegment(capsulePart);
+      return segmentDistance(ellipsoidPart.mesh.position, ellipsoidPart.mesh.position,
+        segment.a, segment.b) <= radius + segment.radius - .004;
+    };
+    const nearest = (part, candidates) => candidates.reduce((best, candidate) =>
+      candidate.mesh.position.subtract(part.mesh.position).length() <
+        best.mesh.position.subtract(part.mesh.position).length() ? candidate : best);
+    for (const group of groups) {
+      const named = name => group.filter(part => part.mesh.name === name);
+      const [torso] = named('spectatorTorso');
+      const [neck] = named('spectatorNeck');
+      const [head] = named('spectatorHead');
+      assert.ok(neck && head, 'Each spectator has a neck bridging the head and torso');
+      assert.ok(torso.mesh.position.y + torso.options.diameterY / 2 -
+        (neck.mesh.position.y - neck.options.diameterY / 2) >= .01,
+        'The neck sinks into the torso top');
+      assert.ok(neck.mesh.position.y + neck.options.diameterY / 2 -
+        (head.mesh.position.y - head.options.diameterY / 2) >= .01,
+        'The head sits down onto the neck');
+      const thighs = named('spectatorThigh');
+      const shins = named('spectatorShin');
+      const shoes = named('spectatorShoe');
+      const arms = named('spectatorArm');
+      const forearms = named('spectatorForearm');
+      const shoulders = named('spectatorShoulder');
+      assert.equal(thighs.length, 2);
+      assert.ok(shins.length === 2 && shoes.length === 2 && arms.length === 2 &&
+        forearms.length === 2 && shoulders.length === 2, 'Each spectator has both full limbs');
+      for (const thigh of thighs) {
         const sideClearance = torso.options.diameterZ / 2 -
           (Math.abs(thigh.mesh.position.z - torso.mesh.position.z) + thigh.options.radius);
         assert.ok(sideClearance >= .0099, 'Thigh capsules stay inset at least 1 cm inside the torso silhouette');
@@ -94,6 +162,18 @@ try {
           Math.abs(torso.mesh.position.x - thigh.mesh.position.x);
         assert.ok(verticalOverlap > .08 && horizontalOverlap > .2,
           'Inset thighs still join the torso without an open waist seam on either sideline');
+      }
+      for (const shin of shins) {
+        assert.ok(capsulesTouch(shin, nearest(shin, thighs)), 'Each shin meets its thigh at the knee');
+      }
+      for (const shoe of shoes) {
+        assert.ok(sphereTouchesCapsule(shoe, nearest(shoe, shins)), 'Each shoe joins its shin at the ankle');
+      }
+      for (const arm of arms) {
+        assert.ok(sphereTouchesCapsule(nearest(arm, shoulders), arm), 'Each arm hangs from its shoulder');
+      }
+      for (const forearm of forearms) {
+        assert.ok(arms.some(arm => capsulesTouch(forearm, arm)), 'Each forearm starts at an elbow');
       }
     }
     if (previousFace) {
@@ -187,7 +267,7 @@ try {
   playing = false; transport.notifyObservers({ playing });
   scene.onBeforeRenderObservable.notifyObservers(scene);
   assert.match(visibleIcon().name, /-symbol$/);
-  console.log('Stadium crowd checks passed: tier population, ten static batches, 38 clickable audience signs including Run Scrimmage, field-facing text, XR-only panel launchers, live Play/Pause, deterministic rebuild, and action cleanup.');
+  console.log('Stadium crowd checks passed: tier population, connected spectator joints in every pose, ten static batches, 38 clickable audience signs including Run Scrimmage, field-facing text, XR-only panel launchers, live Play/Pause, deterministic rebuild, and action cleanup.');
 } finally {
   scene.dispose();
   await new Promise(resolve => setTimeout(resolve, 0));
