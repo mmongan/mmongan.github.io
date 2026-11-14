@@ -23,17 +23,44 @@ export function createFootballHumanModel(robot: TransformNode, torso: TransformN
   sphere(`football-jersey-${id}`, torso, 0, .3, 0, .59, .72, .36, jerseyMaterial);
   sphere(`football-waist-${id}`, torso, 0, -.005, 0, .47, .27, .32, white);
   sphere(`football-neck-${id}`, torso, 0, .65, 0, .14, .19, .14, skin);
-  sphere(`football-face-${id}`, torso, 0, .81, .055, .27, .34, .28, skin);
-  sphere(`football-helmet-${id}`, torso, 0, .875, -.055, .37, .38, .32, jerseyMaterial);
-  sphere(`football-nose-${id}`, torso, 0, .79, .2, .05, .075, .065, skin);
+  // Helmet modeled on a modern shell (reference: Riddell Speed): deeper
+  // front-to-back than wide, enclosing the head down over the ears and jaw,
+  // with the face recessed so it sits barely proud of the shell's front
+  // window instead of bulging out of it.
+  sphere(`football-face-${id}`, torso, 0, .82, .085, .22, .26, .22, skin);
+  sphere(`football-helmet-${id}`, torso, 0, .85, -.01, .34, .4, .38, jerseyMaterial);
+  // Forward jaw flaps at the sides of the window anchor the face guard.
   for (const side of [-1, 1]) {
-    sphere(`football-eye-white-${id}-${side}`, torso, side * .063, .85, .177, .065, .035, .015, white);
-    sphere(`football-pupil-${id}-${side}`, torso, side * .063, .85, .187, .024, .026, .012, dark);
+    sphere(`football-jaw-${id}-${side}`, torso, side * .13, .71, .09, .11, .13, .14, jerseyMaterial);
   }
-  const mask = MeshBuilder.CreateTorus(`football-mask-${id}`,
-    { diameter: .29, thickness: .016, tessellation: 16 }, scene);
-  mask.parent = torso; mask.position.set(0, .74, .055);
-  mask.scaling.z = 1.4; mask.material = white;
+  // Center helmet stripe: a thin white sliver proud of the crown, running
+  // front to back. Both spheres tessellate coarsely, so it needs real
+  // clearance over the shell to surface between the facets.
+  sphere(`football-stripe-${id}`, torso, 0, .87, -.01, .05, .42, .39, white);
+  sphere(`football-nose-${id}`, torso, 0, .8, .185, .05, .07, .06, skin);
+  for (const side of [-1, 1]) {
+    sphere(`football-eye-white-${id}-${side}`, torso, side * .05, .85, .19, .055, .03, .015, white);
+    sphere(`football-pupil-${id}-${side}`, torso, side * .05, .85, .199, .022, .024, .012, dark);
+  }
+  // Front-only two-bar cage: one tube snakes across the top bar, down the
+  // right side, and back across the chin bar, attached at the jaw flaps; a
+  // short center bar ties the bars together in front of the chin. Nothing
+  // wraps behind the head.
+  const cagePath: Vector3[] = [];
+  const cageArc = (y: number, reverse: boolean) => {
+    for (let step = 0; step <= 8; step++) {
+      const t = (reverse ? 8 - step : step) / 8 * 2.7 - 1.35;
+      cagePath.push(new Vector3(.155 * Math.sin(t), y, .02 + .22 * Math.cos(t)));
+    }
+  };
+  cageArc(.78, false);
+  cageArc(.71, true);
+  const cage = MeshBuilder.CreateTube(`football-mask-${id}`,
+    { path: cagePath, radius: .012, tessellation: 6 }, scene);
+  cage.parent = torso; cage.material = white;
+  const chinBar = MeshBuilder.CreateCapsule(`football-mask-center-${id}`,
+    { height: .13, radius: .011, tessellation: 6, subdivisions: 1 }, scene);
+  chinBar.parent = torso; chinBar.position.set(0, .745, .238); chinBar.material = white;
   const arms = [-1, 1].map(side => {
     sphere(`football-shoulder-pad-${id}-${side}`, torso, side * .275, .53, 0, .31, .25, .35, jerseyMaterial);
     const shoulder = new TransformNode(`football-shoulder-${id}-${side}`, scene);
@@ -41,6 +68,8 @@ export function createFootballHumanModel(robot: TransformNode, torso: TransformN
     const upper = MeshBuilder.CreateCapsule(`football-arm-${id}-${side}`,
       { height: .32, radius: .07, tessellation: 8, subdivisions: 1 }, scene);
     upper.parent = shoulder; upper.position.y = -.13; upper.material = skin;
+    // Short jersey sleeve over the top of the arm, moving with the shoulder.
+    sphere(`football-sleeve-${id}-${side}`, shoulder, 0, -.08, 0, .17, .2, .17, jerseyMaterial);
     const elbow = new TransformNode(`football-elbow-${id}-${side}`, scene);
     elbow.parent = shoulder; elbow.position.y = -.26; elbow.rotation.x = -1.1;
     const forearm = MeshBuilder.CreateCapsule(`football-forearm-${id}-${side}`,
@@ -91,7 +120,8 @@ export function createFootballHumanModel(robot: TransformNode, torso: TransformN
       const calf = MeshBuilder.CreateCapsule(`football-calf-${id}-${index}`,
         { height: 1, radius: .08, tessellation: 8, subdivisions: 1 }, scene);
       thigh.parent = calf.parent = legsRoot;
-      thigh.material = white; calf.material = skin;
+      // Team-colored knee-high socks under white pants.
+      thigh.material = white; calf.material = jerseyMaterial;
       const pad = sphere(`football-knee-pad-${id}-${index}`, legsRoot, 0, 0, 0, .17, .18, .18, white);
       const shoe = sphere(`football-cleat-${id}-${index}`, legsRoot, 0, 0, 0, .14, .08, .28, dark);
       return { hip, knee, ankle, thigh, calf, pad, shoe };

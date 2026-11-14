@@ -1455,14 +1455,15 @@ function getGaitStepPhaseOffsets(state: PlayerState, styleIndex: number): number
   const cached = state.gaitPhaseCache?.get(styleIndex);
   if (cached?.counts === state.counts) return cached.offsets;
   const savedOffsets = state.counts.map(count => count.stepPhase);
-  if (savedOffsets.every((phase): phase is number => phase !== undefined)) {
-    return savedOffsets;
-  }
-
-  const stepsPerCount = Array.from({ length: Math.max(0, state.counts.length - 1) }, (_, index) =>
-    resolveSegmentGait(state, index, styleIndex)?.stepsPerCount ?? 0);
-  const offsets = buildGaitStepPhaseOffsets(stepsPerCount)
-    .map((phase, index) => savedOffsets[index] ?? phase);
+  // Cache the fully-saved path too: beatForStep asks for these offsets per
+  // foot per marcher per frame, and rebuilding the array each call is enough
+  // allocation churn to stutter a headset.
+  const offsets = savedOffsets.every((phase): phase is number => phase !== undefined)
+    ? savedOffsets
+    : buildGaitStepPhaseOffsets(
+      Array.from({ length: Math.max(0, state.counts.length - 1) }, (_, index) =>
+        resolveSegmentGait(state, index, styleIndex)?.stepsPerCount ?? 0)
+    ).map((phase, index) => savedOffsets[index] ?? phase);
   (state.gaitPhaseCache ??= new Map()).set(styleIndex, { counts: state.counts, offsets });
   return offsets;
 }

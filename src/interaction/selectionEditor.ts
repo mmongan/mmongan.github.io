@@ -7,7 +7,8 @@ import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
 import type { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.pure';
 import type { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
 import { engine, scene } from '../scene/engine';
-import { isDrillEditingEnabled } from './editingMode';
+import { DESKTOP_PLAYBACK_NOTICE, isDrillEditingEnabled } from './editingMode';
+import { guideArcParameter, sampleGuideFormation, type GuideMarcherSettings } from './guideMarcherLayout';
 import {
   canvas, drillSelectionMode, drillSetEditMode, drillEditSet, drillSelectionStatus,
   selectionEditor, drillShapeInputs, drillShapeKind, formationMoveX, formationMoveZ,
@@ -559,10 +560,82 @@ export function createSelectionEditor(deps: EditorDependencies) {
   }
   scene.onBeforeRenderObservable.add(drawVisuals);
   const fieldChart = createFieldChartMode(deps);
+  // Drill-first drafting: a drafted guide can become the marchers' positions
+  // in an authored drill set, reusing the same atomic set transaction as the
+  // selection transforms. These are invoked from the drafting workspace.
+  function enableSetEditing(): boolean {
+    if (!isDrillEditingEnabled()) { status(DESKTOP_PLAYBACK_NOTICE); return false; }
+    if (!sets.length) { status('Load a drill with authored sets first.'); return false; }
+    if (!drillSelectionMode.checked || !drillSetEditMode.checked) {
+      drillSelectionMode.checked = true;
+      drillSetEditMode.checked = true;
+      changeContext();
+    }
+    return true;
+  }
+  function stepDestination(direction: -1 | 1): string | null {
+    if (!enableSetEditing()) return null;
+    cancelDrag();
+    const current = setIndex();
+    const index = Math.max(0, Math.min(sets.length - 1, current < 0 ? 0 : current + direction));
+    if (String(index) !== drillEditSet.value) {
+      drillEditSet.value = String(index);
+      drillEditSet.dispatchEvent(new Event('change'));
+    } else holdAtSet();
+    const set = sets[index];
+    const previous = sets[index - 1];
+    return `set ${index + 1}/${sets.length}: ${set.name} (count ${set.count}` +
+      (previous ? `, ${set.count - previous.count} counts from ${previous.name})` : ', opening set)');
+  }
+  function destinationLabel(): string | null {
+    const set = enabled() && drillSetEditMode.checked ? activeSet() : undefined;
+    if (!set) return null;
+    const previous = sets[setIndex() - 1];
+    return `Set ${setIndex() + 1}/${sets.length} · count ${set.count}` +
+      (previous ? ` · ${set.count - previous.count} counts` : ' · opening set');
+  }
+  function applyGuideToSet(points: readonly Vector3[], layout: GuideMarcherSettings): boolean {
+    if (!enableSetEditing() || !requireEnabled()) return false;
+    const set = activeSet();
+    if (!set) { status('Choose a loaded destination set first.'); return false; }
+    const members = selected.length ? [...selected] : eligible();
+    if (!members.length) { status('No marchers have a position in the destination set.'); return false; }
+    // Order marchers by where they project along the guide (from their
+    // previous-set positions when available), so the form keeps its order
+    // and transitions do not cross more than the drill asks them to.
+    const previousCount = sets[setIndex() - 1]?.count;
+    const reference = (robot: TransformNode) => {
+      const counts = getRobotCounts(robot);
+      return (previousCount === undefined ? undefined : counts?.[previousCount]?.position) ??
+        counts?.[set.count]?.position ?? robot.position;
+    };
+    setSelection(members
+      .map(robot => ({ robot, arc: guideArcParameter(points, reference(robot)) }))
+      .sort((a, b) => a.arc - b.arc).map(entry => entry.robot));
+    if (!selected.length) { status('No marchers are editable in the destination set.'); return false; }
+    const slots = sampleGuideFormation(points, selected.length, layout);
+    if (slots.length !== selected.length) {
+      status('The guide is too short to form marchers along it. Draw a longer guide.');
+      return false;
+    }
+    // Keep each marcher's authored height; the guide supplies X/Z and facing.
+    const targets = slots.map((slot, index) => new Vector3(slot.position.x,
+      getRobotCounts(selected[index])?.[set.count]?.position.y ?? selected[index].position.y,
+      slot.position.z));
+    if (!commit(targets, slots.map(slot => slot.rotationY))) return false;
+    groups = groups.filter(group => group.count !== contextCount() ||
+      !group.robots.some(robot => selected.includes(robot)));
+    draft = null;
+    status(`Formed ${selected.length} marchers along the guide into ${set.name} (count ${set.count}).`);
+    return true;
+  }
   return {
     enabled,
     selected: () => [...selected],
     select: setSelection,
+    stepDestination,
+    destinationLabel,
+    applyGuideToSet,
     disable() {
       drillSelectionMode.checked = false;
       cancelDrag(); invalidate();

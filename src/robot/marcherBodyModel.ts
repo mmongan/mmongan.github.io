@@ -19,6 +19,7 @@ import { JacketLegOcclusion, JACKET_LEG_CLIP_HEIGHT } from './jacketLegOcclusion
 
 const DARK = new Color4(0.06, 0.1, 0.17, 1);
 const METAL = new Color4(0.35, 0.38, 0.42, 1);
+const BRASS = new Color4(0.74, 0.56, 0.2, 1);
 const BOOT = new Color4(0.025, 0.035, 0.045, 1);
 const GLOVE = new Color4(0.9, 0.92, 0.88, 1);
 const TINTED = new Color4(1, 1, 1, 1);
@@ -85,9 +86,29 @@ function addMarcherTrim(geometry: InstrumentGeometry, skin: Color4) {
     ? [[0, 1.62], [0.08, 1.7], [0, 1.78]]
     : [[0, 1.62], [0.06, 1.645], [0.08, 1.7], [0.06, 1.755], [0, 1.78]], 6, GLOVE);
   geometry.fine(() => {
-    geometry.lathe([[0, 1.354], [.145, 1.354], [.145, 1.365], [0, 1.365]], 16, DARK,
+    geometry.lathe([[0, 1.354], [.145, 1.354], [.145, 1.365], [0, 1.365]], 10, DARK,
       ({ x, y, z }) => new Vector3(x, y, z > 0 ? z * 1.35 : z));
   });
+  // Fixed-color parade furniture lives on the untinted trim so it keeps its
+  // white/brass colors over any jacket tint, at both detail levels. The
+  // jacket narrows depth to z * 0.78; the belt follows the same squash. The
+  // belt and buckle replace the jacket's former waist ring and buckle.
+  geometry.lathe([[.168, .715], [.174, .728], [.174, .775], [.168, .788]], 10, GLOVE,
+    ({ x, y, z }) => new Vector3(x, y, z * 0.78));
+  geometry.box(new Vector3(-.026, .733, .131), new Vector3(.026, .769, .144), BRASS);
+  // Double-breasted brass button rows following the chest curve.
+  for (const side of [-1, 1]) {
+    for (const [y, z] of [[.78, .121], [.87, .139], [.96, .177]] as const) {
+      geometry.box(new Vector3(side * .05 - .011, y, z), new Vector3(side * .05 + .011, y + .022, z + .013), BRASS);
+    }
+  }
+  // White shoulder epaulets capping the jacket's shoulder line.
+  for (const side of [-1, 1]) {
+    geometry.lathe([[0, -.01], [.055, -.01], [.062, .002], [.038, .014], [0, .02]], 6, GLOVE,
+      ({ x, y, z }) => new Vector3(side * .2 + x * .9, 1.048 + y, .02 + z * .72));
+  }
+  // Brass shako badge plate.
+  geometry.box(new Vector3(-.03, 1.455, .126), new Vector3(.03, 1.545, .14), BRASS);
   addRobotHead(geometry, skin);
 }
 
@@ -108,9 +129,6 @@ export const getMarcherJacketTemplate = partTemplate("marcherJacketTemplate", (g
   geometry.fine(() => {
     geometry.lathe([[.12, 1.064], [.12, 1.09]], 12, DARK,
       ({ x, y, z }) => new Vector3(x, y, z * .85));
-    geometry.lathe([[.163, .735], [.163, .765]], 12, DARK,
-      ({ x, y, z }) => new Vector3(x, y, z * .78));
-    geometry.box(new Vector3(-.028, .737, .125), new Vector3(.028, .763, .137), METAL);
   });
 });
 

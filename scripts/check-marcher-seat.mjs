@@ -356,7 +356,9 @@ try {
       assert.ok(mesh.getTotalVertices() <= oldMesh.getTotalVertices(), `${name}: never adds vertices`);
     }
     assert.ok(after < before, `${detail}: marcher body vertex count reduced`);
-    if (detail === 'high') assert.ok(after <= 1200, 'Human face and tailored uniform stay within the full-detail vertex budget');
+    // 1280 covers the tailored uniform plus its fixed-color parade furniture
+    // (belt, buckle, buttons, epaulets, shako badge) on the untinted trim.
+    if (detail === 'high') assert.ok(after <= 1280, 'Human face and tailored uniform stay within the full-detail vertex budget');
     else assert.ok(after < previous, 'Low-detail bodies use fewer radial vertices');
     console.log(`Current reduction ${detail}: ${previous} -> ${after} vertices (${(100 * (1 - after / previous)).toFixed(1)}% fewer).`);
     console.log(`Marcher body ${detail}: ${before} -> ${after} vertices (${(100 * (1 - after / before)).toFixed(1)}% fewer, eyes/instrument excluded).`);

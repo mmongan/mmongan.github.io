@@ -3963,6 +3963,15 @@ export function initInteraction() {
     },
     createSynchronizedRoutes: points => footballVisuals
       ? convertFootballGuide(points, 'routes') : createSynchronizedRoutesFromGuide(points),
+    stepGuideSet: direction => selectionTools?.stepDestination(direction) ?? null,
+    describeGuideSet: () => selectionTools?.destinationLabel() ?? null,
+    applyGuideToSet: (points, settings) => {
+      if (footballVisuals) {
+        showPlacementNotice('Guide-to-set editing is not available during football play mode.');
+        return false;
+      }
+      return selectionTools?.applyGuideToSet(points, settings) ?? false;
+    },
   });
   initChartPageGuides(getDrillChartPageIndex);
   selectionTools = createSelectionEditor({

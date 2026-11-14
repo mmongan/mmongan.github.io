@@ -211,10 +211,15 @@ export function createStadiumCrowd(parent: Mesh) {
     }
     for (const [armIndex, offset] of [-0.15, 0.15].entries()) {
       // Hips sink into the torso and knees meet the shins, so the seated legs
-      // chain torso -> thigh -> shin -> shoe without open joints.
-      capsule('spectatorThigh', x - side * 0.11, seatY + 0.09, z + offset, 0.34, 0.075, trouser, 'x');
-      capsule('spectatorShin', x - side * 0.29, seatY - 0.12, z + offset, 0.3, 0.07, trouser);
-      ellipsoid('spectatorShoe', x - side * 0.34, seatY - 0.32, z + offset, 0.22, 0.1, 0.16, SHOES, 4);
+      // chain torso -> thigh -> shin -> shoe without open joints. The lower
+      // leg must also stay outside the bleacher structure: the spectator's own
+      // riser face sits 0.355 toward the field (tier row depth 0.65 from the
+      // seat centre at mid-tread, riser box half-width 0.03), and the tread of
+      // the row in front is one row height (0.35) below the bench top, so the
+      // shin hangs in front of the riser and the shoe rests on that tread.
+      capsule('spectatorThigh', x - side * 0.14, seatY + 0.09, z + offset, 0.4, 0.075, trouser, 'x');
+      capsule('spectatorShin', x - side * 0.44, seatY - 0.1, z + offset, 0.26, 0.07, trouser);
+      ellipsoid('spectatorShoe', x - side * 0.5, seatY - 0.3, z + offset, 0.22, 0.1, 0.16, SHOES, 4);
       // Arms hang inside the shoulder caps; every forearm starts at its elbow.
       const armZ = z + offset * 1.8;
       if (pose === 1 || (pose === 2 && armIndex === 0)) {

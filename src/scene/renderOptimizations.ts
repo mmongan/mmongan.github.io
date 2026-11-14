@@ -38,12 +38,16 @@ function isUnderARTransform(node: Node): boolean {
 }
 
 let frozenMeshes: AbstractMesh[] = [];
+let matricesFrozen = true;
 
 // Re-synchronizes frozen world matrices after the field transform or field
 // construction changes. Costs one forced matrix compute per static mesh, the
 // same work an unfrozen scene would do on its own for the same change.
+// While the AR transform is in motion the matrices are thawed (live), so
+// there is nothing to re-sync until the motion settles.
 export function refreshFrozenWorldMatrices() {
   frozenMeshes = frozenMeshes.filter(mesh => !mesh.isDisposed());
+  if (!matricesFrozen) return;
   frozenMeshes.forEach(mesh => {
     mesh.unfreezeWorldMatrix();
     mesh.computeWorldMatrix(true);
@@ -76,7 +80,13 @@ export function applyStaticRenderOptimizations() {
     mesh.material?.freeze();
   });
 
-  // Watch the AR transform roots; any change re-syncs the frozen matrices.
+  // Watch the AR transform roots. A one-off change re-syncs the frozen
+  // matrices, but continuous motion (tabletop grabs, scale easing, tracked
+  // floor following) would force that full re-freeze every frame, which costs
+  // more than live matrices do. So motion thaws the static meshes and they
+  // re-freeze only once the transform has been still for a moment.
+  const REFREEZE_AFTER_STABLE_FRAMES = 12;
+  let stableFrames = 0;
   const watched = AR_TRANSFORM_NAMES
     .map(name => scene.getTransformNodeByName(name))
     .filter((node): node is NonNullable<typeof node> => !!node);
@@ -84,12 +94,23 @@ export function applyStaticRenderOptimizations() {
   scene.onBeforeRenderObservable.add(() => {
     let changed = false;
     watched.forEach((node, index) => {
-      const matrix = node.computeWorldMatrix() as Matrix;
+      // Forced: the render-id cache can hide a change made before this frame.
+      const matrix = node.computeWorldMatrix(true) as Matrix;
       if (!matrix.equals(previous[index])) {
         changed = true;
         previous[index].copyFrom(matrix);
       }
     });
-    if (changed) refreshFrozenWorldMatrices();
+    if (changed) {
+      stableFrames = 0;
+      if (matricesFrozen) {
+        matricesFrozen = false;
+        frozenMeshes = frozenMeshes.filter(mesh => !mesh.isDisposed());
+        frozenMeshes.forEach(mesh => mesh.unfreezeWorldMatrix());
+      }
+    } else if (!matricesFrozen && ++stableFrames >= REFREEZE_AFTER_STABLE_FRAMES) {
+      matricesFrozen = true;
+      refreshFrozenWorldMatrices();
+    }
   });
 }

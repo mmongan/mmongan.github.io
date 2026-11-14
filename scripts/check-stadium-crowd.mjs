@@ -169,6 +169,26 @@ try {
       for (const shoe of shoes) {
         assert.ok(sphereTouchesCapsule(shoe, nearest(shoe, shins)), 'Each shoe joins its shin at the ankle');
       }
+      // The lower legs must also stay outside the bleacher structure (mirrors
+      // stands.ts: ROW_HEIGHT 0.35, ROW_DEPTH 0.65, riser box half-width 0.03).
+      // The spectator sits mid-tread, so their own riser's field-side face is
+      // 0.65 / 2 + 0.03 toward the field of the seat centre, and the tread of
+      // the row in front is one row height below the bench top under the torso.
+      const fieldSide = Math.sign(torso.mesh.position.x);
+      const benchTopY = torso.mesh.position.y - 0.33;
+      const riserFaceOffset = 0.65 / 2 + 0.03;
+      const treadTopY = benchTopY - 0.35;
+      for (const part of [...shins, ...shoes]) {
+        const fieldward = fieldSide * (torso.mesh.position.x - part.mesh.position.x);
+        const halfWidth = part.options.radius ?? part.options.diameterX / 2;
+        assert.ok(fieldward - halfWidth >= riserFaceOffset,
+          'Shins and shoes hang in front of the riser instead of inside the bleachers');
+      }
+      for (const shoe of shoes) {
+        const soleY = shoe.mesh.position.y - shoe.options.diameterY / 2;
+        assert.ok(soleY >= treadTopY - 1e-9 && soleY <= treadTopY + 0.02,
+          'Shoes rest on the tread of the row in front, neither inside nor floating above it');
+      }
       for (const arm of arms) {
         assert.ok(sphereTouchesCapsule(nearest(arm, shoulders), arm), 'Each arm hangs from its shoulder');
       }
@@ -267,7 +287,7 @@ try {
   playing = false; transport.notifyObservers({ playing });
   scene.onBeforeRenderObservable.notifyObservers(scene);
   assert.match(visibleIcon().name, /-symbol$/);
-  console.log('Stadium crowd checks passed: tier population, connected spectator joints in every pose, ten static batches, 38 clickable audience signs including Run Scrimmage, field-facing text, XR-only panel launchers, live Play/Pause, deterministic rebuild, and action cleanup.');
+  console.log('Stadium crowd checks passed: tier population, connected spectator joints in every pose, legs clear of the bleacher structure, ten static batches, 38 clickable audience signs including Run Scrimmage, field-facing text, XR-only panel launchers, live Play/Pause, deterministic rebuild, and action cleanup.');
 } finally {
   scene.dispose();
   await new Promise(resolve => setTimeout(resolve, 0));

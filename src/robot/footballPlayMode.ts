@@ -294,14 +294,6 @@ export function createFootballVisuals(
       const human = createFootballHumanModel(robot, root, player.team === 'offense' ? offense : defense,
         skins[animations.length % skins.length], white, dark);
       animations.push({ robot, player, root, human });
-      const label = new DynamicTexture(`football-label-${player.id}`, { width: 256, height: 128 }, scene, false);
-      label.drawText(player.label, null, 90, 'bold 60px Arial', 'white', '#18263b', true);
-      const labelMaterial = material(`football-label-material-${player.id}`, Color3.White());
-      labelMaterial.diffuseTexture = label; labelMaterial.emissiveColor = Color3.White();
-      const plate = MeshBuilder.CreatePlane(`football-role-${player.id}`, { width: .6, height: .3 }, scene);
-      plate.parent = root; plate.position.set(0, .3, .19); plate.rotation.y = Math.PI;
-      plate.scaling.set(.65, .65, .65);
-      plate.material = labelMaterial;
     }
     const ball = MeshBuilder.CreateSphere('football-ball', { diameter: .24, segments: 8 }, scene);
     roots.push(ball);

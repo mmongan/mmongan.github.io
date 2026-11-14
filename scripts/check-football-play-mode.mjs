@@ -232,7 +232,10 @@ try {
     assert.equal(scene.meshes.filter(mesh => mesh.name.startsWith('football-helmet-')).length, 22);
     assert.equal(scene.meshes.filter(mesh => mesh.name.startsWith('football-face-')).length, 22,
       'Players have visible human faces beneath their helmets');
-    for (const mask of scene.meshes.filter(mesh => mesh.name.startsWith('football-mask-'))) {
+    const maskMeshes = scene.meshes.filter(mesh => mesh.name.startsWith('football-mask-'));
+    assert.equal(maskMeshes.length, 44, 'Each player has a cage and a center chin bar');
+    let cages = 0;
+    for (const mask of maskMeshes) {
       const vertices = mask.getVerticesData('position');
       const inverse = mask.parent.computeWorldMatrix(true).clone().invert();
       const matrix = mask.computeWorldMatrix(true).multiply(inverse);
@@ -241,11 +244,20 @@ try {
         points.push(Vector3.TransformCoordinates(new Vector3(vertices[index], vertices[index + 1], vertices[index + 2]), matrix));
       }
       const extent = axis => Math.max(...points.map(point => point[axis])) - Math.min(...points.map(point => point[axis]));
-      assert.ok(extent('y') < .02 && extent('x') > .29 && extent('z') > .4,
-        'Face guard wraps horizontally around the lower face, not vertically across it');
-      assert.ok(Math.max(...points.map(point => point.z)) > .24,
+      assert.ok(Math.min(...points.map(point => point.z)) > -.01,
+        'Face guard is a front-only cage attached at the jaw, not a ring around the helmet');
+      assert.ok(Math.max(...points.map(point => point.z)) > .22,
         'Front of the face guard clears the nose');
+      if (extent('x') > .28) {
+        cages++;
+        assert.ok(extent('y') > .05 && extent('y') < .2,
+          'Cage bars band the mouth and chin, not the whole face');
+      } else {
+        assert.ok(extent('x') < .1 && extent('y') > .08,
+          'The narrow mask piece is a vertical center bar tying the cage bars together');
+      }
     }
+    assert.equal(cages, 22, 'Every player wears one full-width cage');
     assert.equal(scene.meshes.filter(mesh => mesh.name.startsWith('football-thigh-')).length, 44);
     assert.equal(scene.meshes.filter(mesh => mesh.name.startsWith('football-calf-')).length, 44);
     const jersey = scene.getMeshByName('football-jersey-offense-QB');

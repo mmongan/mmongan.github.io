@@ -34,7 +34,8 @@ export function createDraftingTablePanel() {
     [['Save locally', 'saveDrafting'], ['Restore saved', 'restoreDrafting'], ['Take photo', 'takePhoto'], ['Clear guides', 'clear']],
     [['Full-size view', 'tablePreview'], ['3D camera copy', 'take3DSnapshot']],
     [['Guide space -', 'guideSpacingLess'], ['Guide space +', 'guideSpacingMore'], ['Use spacing', 'guideSpacingApply'], ['Guide facing', 'guideFacing']],
-    [['Facing -15', 'guideFacingLeft'], ['Facing +15', 'guideFacingRight']],
+    [['Facing -15', 'guideFacingLeft'], ['Facing +15', 'guideFacingRight'], ['Set -', 'setDestinationPrevious'], ['Set +', 'setDestinationNext']],
+    [['Guide to set', 'applyGuideSet']],
   ];
   rows.forEach((row, y) => row.forEach(([label, command], x) => {
     const canvas = document.createElement('canvas');

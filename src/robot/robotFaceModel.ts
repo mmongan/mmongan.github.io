@@ -65,11 +65,13 @@ export function addRobotHead(geometry: InstrumentGeometry, skin = SKIN) {
     : SKULL_PROFILE, HEAD_SIDES, skin, place);
   const noseZ = frontFaceZ(geometry, 0.14);
   geometry.lathe([[0, 1.222], [.016, 1.232], [.019, 1.244], [.009, 1.275], [0, 1.282]],
-    8, skin, ({ x, y, z }) => v(x, y, noseZ + .015 + z * 1.3));
+    6, skin, ({ x, y, z }) => v(x, y, noseZ + .015 + z * 1.3));
+  // The mouth stays at every detail level; eyes render separately, so a
+  // low-detail face without it reads as featureless below the nose.
+  const mouthZ = frontFaceZ(geometry, MOUTH_RADIUS);
+  geometry.box(v(-0.027, MOUTH_Y - 0.003, mouthZ - 0.004),
+    v(0.027, MOUTH_Y + 0.003, mouthZ + 0.008), LIPS);
   geometry.fine(() => {
-    const mouthZ = frontFaceZ(geometry, MOUTH_RADIUS);
-    geometry.box(v(-0.027, MOUTH_Y - 0.003, mouthZ - 0.004),
-      v(0.027, MOUTH_Y + 0.003, mouthZ + 0.008), LIPS);
     const browZ = frontFaceZ(geometry, EYE_RADIUS);
     for (const side of [-1, 1]) {
       geometry.box(v(side * 0.043 - 0.02, 1.303, browZ - 0.002),
@@ -78,7 +80,7 @@ export function addRobotHead(geometry: InstrumentGeometry, skin = SKIN) {
     const earDepth = 0.03;
     const earX = sideFaceX(geometry, EAR_RADIUS) + earDepth / 2 - 0.004;
     for (const side of [-1, 1]) {
-      geometry.lathe([[0, -.04], [.016, -.025], [.022, 0], [.017, .025], [0, .04]], 8,
+      geometry.lathe([[0, -.04], [.016, -.025], [.022, 0], [.017, .025], [0, .04]], 6,
         skin, ({ x, y, z }) => v(side * earX + x * .65, EAR_Y + y, z - .01));
     }
   });

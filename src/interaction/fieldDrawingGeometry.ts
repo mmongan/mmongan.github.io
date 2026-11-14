@@ -17,7 +17,8 @@ export type DrawingToolCommand = FieldDrawingTool | 'show' | 'stencils' | 'cutte
   CameraFieldCommand |
   'table' | 'tableExit' | 'toolboxStore' | 'tablePreview' | 'tableSnap' | 'tableGrid' | 'guideSelect' | 'guideLeft' | 'guideRight' |
   'guideForward' | 'guideBack' | 'guideRotateLeft' | 'guideRotateRight' | 'guideDuplicate' | 'guideDelete' |
-  'guideSpacingLess' | 'guideSpacingMore' | 'guideSpacingApply' | 'guideFacing' | 'guideFacingLeft' | 'guideFacingRight';
+  'guideSpacingLess' | 'guideSpacingMore' | 'guideSpacingApply' | 'guideFacing' | 'guideFacingLeft' | 'guideFacingRight' |
+  'setDestinationPrevious' | 'setDestinationNext' | 'applyGuideSet';
 
 export type CameraFieldCommand = 'take3DSnapshot' | `cameraFieldEdit:${number}` | `cameraFieldDelete:${number}` |
   `cameraFieldSmaller:${number}` | `cameraFieldLarger:${number}`;

@@ -49,6 +49,12 @@ interface DrawingDependencies {
   createPath(points: Vector3[]): boolean;
   createSynchronizedRoutes(points: Vector3[]): boolean;
   cameraFieldAction(command: CameraFieldCommand): void;
+  /** Moves the shared destination drill set selector; returns its new label, or null without authored sets. */
+  stepGuideSet?(direction: -1 | 1): string | null;
+  /** Current destination drill set label for status readouts, or null when none is active. */
+  describeGuideSet?(): string | null;
+  /** Forms marchers along the guide into the destination drill set; reports its own failures. */
+  applyGuideToSet?(points: Vector3[], settings: GuideMarcherSettings): boolean;
 }
 interface GuideOptions extends Partial<GuideMarcherSettings> {
   editable?: 'yarn' | 'spline';
@@ -424,12 +430,17 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
   function updateTableStatus() {
     const step = getDraftSpacing();
     const layout = selectedGuide ? getGuideMarcherSettings(selectedGuide.options) : null;
+    // 8-to-5 marching steps: 0.625 yards per step.
+    const steps = (yards: number) => `${(yards / 0.625).toFixed(yards / 0.625 % 1 ? 1 : 0)} steps`;
+    const destination = deps.describeGuideSet?.() ?? null;
     const message = `${tableMode ? 'Drafting table' : 'Field'} | ${selected ?? 'Select guides'} | ` +
       `Snap ${tableSnap ? 'on' : 'off'} | View ${fullSizePreview ? 'on' : 'off'} | ${guides.length} guides | ` +
-      `${selectedGuide ? `Selected: ${measureDraftLine(selectedGuide.points).yards.toFixed(2)} yd` : 'No selection'} | ` +
+      `${selectedGuide ? `Selected: ${measureDraftLine(selectedGuide.points).yards.toFixed(2)} yd (` +
+        `${steps(measureDraftLine(selectedGuide.points).yards)})` : 'No selection'} | ` +
       `Step ${step ?? '?'} yd / ${getDraftAngle()} deg` +
-      (layout ? ` | Guide ${layout.spacing.toFixed(3)} yd / ${layout.facing}` +
-        (layout.facing === 'fixed' ? ` ${layout.facingAngle} deg` : '') : '');
+      (layout ? ` | Guide ${layout.spacing.toFixed(3)} yd (${steps(layout.spacing)}) / ${layout.facing}` +
+        (layout.facing === 'fixed' ? ` ${layout.facingAngle} deg` : '') : '') +
+      (destination ? ` | ${destination}` : '');
     tablePanel.status(message);
     if (draftingTableStatus) draftingTableStatus.value = message;
   }
@@ -1551,6 +1562,26 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
       if (!guide) { deps.notify('Draw a destination guide on the field first.'); return; }
       if (deps.createSynchronizedRoutes(guide.points.map(point => point.clone()))) {
         deps.notify('Synchronized routes created from the destination guide.');
+      }
+      return;
+    }
+    if (value === 'setDestinationPrevious' || value === 'setDestinationNext') {
+      if (guidesBusy()) { deps.notify('Finish the stroke before changing the destination set.'); return; }
+      // A null label was already explained through the shared notifier.
+      const label = deps.stepGuideSet?.(value === 'setDestinationNext' ? 1 : -1) ?? null;
+      if (label) deps.notify(`Destination ${label}.`);
+      updateTableStatus();
+      return;
+    }
+    if (value === 'applyGuideSet') {
+      if (guidesBusy()) { deps.notify('Finish the stroke before applying the guide to a set.'); return; }
+      const guide = activeGuide();
+      if (!guide || guide.options.sticky) {
+        deps.notify('Draw or select a line or curve guide on the field first.'); return;
+      }
+      if (deps.applyGuideToSet?.(guide.points.map(point => point.clone()),
+        getGuideMarcherSettings(guide.options))) {
+        updateTableStatus();
       }
       return;
     }
