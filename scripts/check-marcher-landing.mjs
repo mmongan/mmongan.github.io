@@ -45,6 +45,7 @@ const context = vm.createContext({
   MARCHER_TWIST_COMMIT_RADIANS: 20 * Math.PI / 180,
   getMarcherRenderingGroup: () => 0, setMarcherRenderingGroup() {},
   captureMarcherMove: () => () => {}, setRobotHeld() {}, selectRobot() {}, setRobotFacing() {}, setPlacedMarcherFacing() {},
+  animateHeldMarcherWalk() {}, paths: {},
   getRobotCounts: () => null, getSelectedRobot: () => null,
   robotPaths: new Map(), robotPathLines: new Map(), storedPaths: [],
   pathSegmentByRobot: new Map(), segments: [],
@@ -102,7 +103,10 @@ try {
         move(robot, new Vector3(2, -0.21, 3), 0.4);
         assert.ok(grab.landingGhost?.isEnabled(), 'Quarter-yard ground tolerance shows a landing ghost');
         near(grab.landingGhost.position, new Vector3(2, -0.46, 3), 'Preview projects feet to turf');
-        assert.ok(Math.abs(grab.landingGhost.rotation.y - 0.4) < 1e-6, 'Landing ghost follows facing');
+        // A drag that travels over the field is a walking drag: facing follows
+        // the travel direction rather than the wrist yaw.
+        assert.ok(Math.abs(grab.landingGhost.rotation.y - Math.atan2(2, 3)) < 1e-3,
+          'Landing ghost faces the walking direction');
         assert.ok(grab.landingGhost.getChildMeshes().length > 0, 'Preview contains actual marcher geometry');
         assert.ok(grab.landingGhost.getChildMeshes().every(mesh => !mesh.isPickable && !mesh.checkCollisions));
         if (!draft) near(grab.ghost.position, Vector3.Zero(), 'Original-position ghost is not moved');
@@ -160,8 +164,12 @@ try {
   const ghost = held.landingGhost;
   move(cancelled, new Vector3(30, -0.25, 0));
   assert.equal(ghost.isEnabled(), false, 'Moving beyond field bounds hides landing ghost');
+  // Over the field a drag can no longer lift the marcher into the air: the
+  // grab walks it along the turf, so the landing preview stays live even
+  // with the hand raised. Off-field moves (above) still float and hide it.
   move(cancelled, new Vector3(0, 0.5, 0));
-  assert.equal(ghost.isEnabled(), false, 'Lifting away hides landing ghost');
+  assert.equal(ghost.isEnabled(), true, 'Over the field the grab stays grounded with a live landing preview');
+  near(cancelled.position, new Vector3(0, -0.46, 0), 'Held marcher walks on the turf instead of lifting');
   context.finishMarcherGrab('left', false);
   assert.equal(ghost.isDisposed(), true, 'Cancellation disposes preview');
   near(cancelled.position, new Vector3(0, -0.46, 0), 'Cancellation restores original pose');
