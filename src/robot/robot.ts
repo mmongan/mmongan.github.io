@@ -1058,8 +1058,18 @@ export function restoreDrillMidiTiming(timing: OpenChartTiming) {
   notifyDrillTransport(true);
 }
 
-export function setPlaybackBeatUnits(units: ReadonlyArray<MidiBeatUnit>) {
+// Replacing music with a different pulse structure invalidates baked footfall
+// phases and cadences: they encode the pulses of the music the show was baked
+// with, so keeping them would leave the band marching to the old music's step
+// clock instead of the new beat. Identical pulse structures keep intentional
+// authored phases (e.g. opposite-foot starts), and the automatic startup
+// example load preserves the demo show's baked performance.
+export function setPlaybackBeatUnits(units: ReadonlyArray<MidiBeatUnit>, preserveBakedGaits = false) {
+  const changed = units.length !== playbackBeatUnits.length ||
+    units.some((unit, index) => unit.beat !== playbackBeatUnits[index].beat ||
+      unit.quarterNotesPerPulse !== playbackBeatUnits[index].quarterNotesPerPulse);
   playbackBeatUnits = units.map(unit => ({ ...unit }));
+  if (changed && !preserveBakedGaits) players.forEach(state => clearBakedCountGaits(state));
   players.forEach(invalidateLegBake);
   notifyDrillTransport(true);
 }

@@ -296,7 +296,8 @@ async function readMidiUrl(input: string): Promise<ArrayBuffer> {
   return bytes.buffer;
 }
 
-async function loadMidi(name: string, read: () => Promise<ArrayBuffer>, failureHint = "") {
+async function loadMidi(name: string, read: () => Promise<ArrayBuffer>, failureHint = "",
+  preserveBakedGaits = false) {
   const request = ++loadRequest;
   midiLoading = true;
   status(`Loading ${name}…`);
@@ -347,7 +348,7 @@ async function loadMidi(name: string, read: () => Promise<ArrayBuffer>, failureH
     timeline = new MidiTimeline(notes);
     const beats = notes.reduce((last, n) => Math.max(last, n.beat + n.duration), 0);
     setPlaybackTempoMap(tempoMap, midi.header.ppq);
-    setPlaybackBeatUnits(beatUnits);
+    setPlaybackBeatUnits(beatUnits, preserveBakedGaits);
     setPlaybackSongLength(beats);
     loadedDescription = `${name}: ${musicTracks.length} parts, ${notes.length} notes, ${Math.ceil(beats)} beats`;
     setMidiScoreTracks(musicTracks.map((track, index) => ({
@@ -378,8 +379,9 @@ async function loadMidi(name: string, read: () => Promise<ArrayBuffer>, failureH
   }
 }
 
-function loadMidiFromUrl(input: string, name = input) {
-  return loadMidi(name, () => readMidiUrl(input), " URL servers must allow cross-origin (CORS) downloads.");
+function loadMidiFromUrl(input: string, name = input, preserveBakedGaits = false) {
+  return loadMidi(name, () => readMidiUrl(input), " URL servers must allow cross-origin (CORS) downloads.",
+    preserveBakedGaits);
 }
 
 export function initMidiPlayback() {
@@ -470,6 +472,9 @@ export function initMidiPlayback() {
   window.setInterval(() => updatePlayback(true), 25);
   const sharedUrl = new URLSearchParams(window.location.search).get("midi");
   if (midiUrlInput) midiUrlInput.value = sharedUrl || new URL(exampleMidiUrl, window.location.href).href;
+  // The automatic startup load pairs the bundled demo music with the bundled
+  // baked show, so it must not discard the show's baked step clock; a shared
+  // ?midi= URL is the user's own music and re-derives footfall timing.
   void loadMidiFromUrl(sharedUrl || exampleMidiUrl,
-    sharedUrl || EXAMPLE_MIDI_DESCRIPTION);
+    sharedUrl || EXAMPLE_MIDI_DESCRIPTION, !sharedUrl);
 }
