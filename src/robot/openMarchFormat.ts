@@ -8,8 +8,6 @@ import type { Database, SqlJsStatic } from "sql.js";
 // marcher tracks. It only uses type imports so Node checks can load it without
 // Babylon.js or a bundler.
 
-export const OPEN_MARCH_FILE_EXTENSION = ".dots";
-
 // OpenMarch canvas pixels are half an inch, so one yard is 18 pixels no matter
 // which step size the field uses.
 const OPEN_MARCH_PIXELS_PER_INCH = 0.5;
@@ -234,7 +232,7 @@ const roundSteps = (yards: number) => Math.round((yards / YARDS_PER_EIGHT_TO_FIV
 // Mirrors OpenMarch's football templates, with hashes placed where OpenChartxr
 // draws them for the selected level and end zones included because OpenChartxr's
 // field spans the full 120 yards.
-export function createOpenMarchFieldProperties(spec: OpenMarchFieldSpec) {
+function createOpenMarchFieldProperties(spec: OpenMarchFieldSpec) {
   const xCheckpoints: Checkpoint[] = [];
   let id = 0;
   for (let yards = 0; yards <= 100; yards += 5) {
@@ -329,14 +327,14 @@ function getFieldFrame(field: unknown): FieldFrame {
   return getFieldFrame(createOpenMarchFieldProperties({ level: "highschool", widthYards: 53.333, hashOffsetYards: 8.8889 }));
 }
 
-export function fieldPointToOpenMarchPixels(point: FieldPoint, frame: FieldFrame, widthYards: number) {
+function fieldPointToOpenMarchPixels(point: FieldPoint, frame: FieldFrame, widthYards: number) {
   return {
     x: frame.centerX - point.z * OPEN_MARCH_PIXELS_PER_YARD,
     y: frame.frontY - (point.x + widthYards / 2) * OPEN_MARCH_PIXELS_PER_YARD,
   };
 }
 
-export function openMarchPixelsToFieldPoint(x: number, y: number, frame: FieldFrame, widthYards: number): FieldPoint {
+function openMarchPixelsToFieldPoint(x: number, y: number, frame: FieldFrame, widthYards: number): FieldPoint {
   return {
     x: (frame.frontY - y) / OPEN_MARCH_PIXELS_PER_YARD - widthYards / 2,
     z: (frame.centerX - x) / OPEN_MARCH_PIXELS_PER_YARD,

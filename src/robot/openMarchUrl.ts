@@ -28,7 +28,7 @@ function loadSqlJs(): Promise<SqlJsStatic> {
 }
 
 // Share links for file pages are rewritten to their raw download URLs.
-export function resolveOpenMarchUrl(input: string, base = window.location.href): URL {
+function resolveOpenMarchUrl(input: string, base = window.location.href): URL {
   if (input.trim().toLowerCase() === OPEN_MARCH_EXAMPLE) return new URL(exampleShowUrl, base);
   const url = new URL(input.trim(), base);
   const github = url.hostname === "github.com" && url.pathname.match(/^\/([^/]+)\/([^/]+)\/(?:blob|raw)\/(.+)$/);

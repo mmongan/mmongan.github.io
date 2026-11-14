@@ -70,9 +70,16 @@ const MARCHER_TWIST_COMMIT_RADIANS = (20 * Math.PI) / 180;
 // down so the final spot can be fine-tuned without jitter.
 const TURF_PRECISION_SCALE = 0.35;
 // Laser-pointer marcher drags: the marcher pursues the projected turf dot at
-// a brisk field pace and turns toward it at a bounded rate.
-const MARCH_DRAG_SPEED_YARDS_PER_SECOND = 2.5;
+// a brisk field pace and turns toward it at a bounded rate. A wrist twist
+// beyond the deadband offsets the facing relative to the travel direction,
+// so a twisted drag slides or back-marches toward the dot.
+// Pursuit speed grows with the dot's distance: a far pointer hustles the
+// marcher across the field and a near one eases it onto the spot.
+const MARCH_DRAG_MIN_SPEED_YARDS_PER_SECOND = 1.5;
+const MARCH_DRAG_MAX_SPEED_YARDS_PER_SECOND = 12;
+const MARCH_DRAG_SPEED_PER_YARD_OF_DISTANCE = 1.2;
 const MARCH_DRAG_TURN_RATE_RADIANS_PER_SECOND = 10;
+const MARCH_DRAG_TWIST_DEADBAND_RADIANS = (8 * Math.PI) / 180;
 
 export interface HandSegment {
   kind: 'formation' | 'path';
@@ -499,11 +506,12 @@ export function createHandInteraction(paths: HandPathDependencies) {
       grab.offset.addInPlace(Vector3.TransformNormal(rebased.subtract(target), pathMatrix));
       position = rebased;
     }
-    let yaw = grab.robot.rotation.y;
-    if (facingYaw !== null && grab.initialFacingYaw !== null) {
-      const yawDelta = facingYaw - grab.initialFacingYaw;
-      yaw = grab.initialRotationY + Math.atan2(Math.sin(yawDelta), Math.cos(yawDelta));
-    }
+    // Wrapped wrist twist since the grab began; both the carried yaw and the
+    // marching facing offset below derive from this one value.
+    const wristTwist = facingYaw !== null && grab.initialFacingYaw !== null
+      ? Math.atan2(Math.sin(facingYaw - grab.initialFacingYaw), Math.cos(facingYaw - grab.initialFacingYaw))
+      : null;
+    let yaw = wristTwist !== null ? grab.initialRotationY + wristTwist : grab.robot.rotation.y;
     // Laser-pointer drag for existing marchers: the drag projects a dot onto
     // the turf and the marcher marches toward it at field pace, turning at a
     // bounded rate and swinging its legs by distance covered. Brand-new
@@ -518,10 +526,16 @@ export function createHandInteraction(paths: HandPathDependencies) {
       const dx = dot.x - current.x;
       const dz = dot.z - current.z;
       const distance = Math.hypot(dx, dz);
-      const step = Math.min(distance, MARCH_DRAG_SPEED_YARDS_PER_SECOND * dt);
+      const speed = Math.min(MARCH_DRAG_MAX_SPEED_YARDS_PER_SECOND,
+        Math.max(MARCH_DRAG_MIN_SPEED_YARDS_PER_SECOND, distance * MARCH_DRAG_SPEED_PER_YARD_OF_DISTANCE));
+      const step = Math.min(distance, speed * dt);
       let walked: Vector3;
       if (distance > 0.05) {
-        const heading = Math.atan2(dx, dz);
+        // The facing target is the travel heading plus any deliberate wrist
+        // twist, so a twisted drag slides/back-marches toward the dot.
+        const twist = wristTwist !== null &&
+          Math.abs(wristTwist) >= MARCH_DRAG_TWIST_DEADBAND_RADIANS ? wristTwist : 0;
+        const heading = Math.atan2(dx, dz) + twist;
         const from = grab.walkHeading ? grab.robot.rotation.y : yaw;
         const turn = Math.atan2(Math.sin(heading - from), Math.cos(heading - from));
         yaw = from + turn * Math.min(1, MARCH_DRAG_TURN_RATE_RADIANS_PER_SECOND * dt);

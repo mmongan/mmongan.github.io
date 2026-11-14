@@ -142,7 +142,7 @@ function initializeAudioContext() {
   });
 }
 
-export function unlockMidiAudio() {
+function unlockMidiAudio() {
   if (!audioEnabled || enablingAudio || context?.state === "running") return;
   void enableAudio(true);
 }

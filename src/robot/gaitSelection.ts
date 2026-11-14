@@ -31,14 +31,14 @@ export interface AutoGaitSelection {
 }
 
 // Cadence must fit the fixed-length legs: at most a standard 8-to-5 stride.
-export const IN_PLACE_STEP_YARDS = 0.05;
+const IN_PLACE_STEP_YARDS = 0.05;
 export const MAX_MARCHING_STRIDE_YARDS = 0.625;
-export const HALF_TIME_BELOW_YARDS = 0.18;
+const HALF_TIME_BELOW_YARDS = 0.18;
 export const DOUBLE_TIME_ABOVE_YARDS = MAX_MARCHING_STRIDE_YARDS;
 // Travel within 50° of facing reads as forward, beyond 130° as backward,
 // and anything in between as a sideways slide/crab walk.
-export const FORWARD_MAX_ANGLE = (50 * Math.PI) / 180;
-export const BACKWARD_MIN_ANGLE = (130 * Math.PI) / 180;
+const FORWARD_MAX_ANGLE = (50 * Math.PI) / 180;
+const BACKWARD_MIN_ANGLE = (130 * Math.PI) / 180;
 
 const HIGH_LIFT_STYLES: ReadonlySet<AutoGaitStyle> = new Set(["High Step", "Knee-Ankle March"]);
 

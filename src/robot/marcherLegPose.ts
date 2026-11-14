@@ -7,7 +7,7 @@ export const MARCHER_THIGH_LENGTH = 0.315;
 export const MARCHER_CALF_LENGTH = 0.315;
 export const MARCHER_SHOE_FORWARD_OFFSET = 0.055;
 export const MARCHER_SHOE_HALF_HEIGHT = 0.03;
-export const MARCHER_MAX_FOOT_REACH = 0.22;
+const MARCHER_MAX_FOOT_REACH = 0.22;
 
 export function marcherSoleFromLegPose(hip: Vector3, pose: ReturnType<typeof solvePlantedMarcherLeg>) {
   const calf = pose.legRotation.multiply(pose.kneeRotation);

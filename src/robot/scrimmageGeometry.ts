@@ -5,8 +5,8 @@ import { FIELD_WIDTH_YARDS, FIELD_LENGTH_YARDS } from '../field/constants';
 import type { FootballPosition } from './footballPlayGeometry';
 
 export const SCRIMMAGE_EXIT_COUNTS = 48;
-export const SCRIMMAGE_ENTRY_COUNTS = 48;
-export const SCRIMMAGE_STAND_COUNTS = 2;
+const SCRIMMAGE_ENTRY_COUNTS = 48;
+const SCRIMMAGE_STAND_COUNTS = 2;
 export const SCRIMMAGE_RETURN_COUNTS = 48;
 export const SCRIMMAGE_SIT_COUNTS = 2;
 export const SCRIMMAGE_BAND_RETURN_COUNTS = 48;

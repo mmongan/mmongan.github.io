@@ -78,7 +78,6 @@ const schedules = new Map();
 const materials = [];
 const context = vm.createContext({
   addPlaybackPreparationGuard() { throw new Error('Football must not require preparation before Play.'); },
-  createRobotAnimationSampler() { throw new Error('Football must use the shared live marcher solver.'); },
   startFootballMusicPause() {}, finishFootballMusicPause() {}, resetFootballMusicPause() {},
   MeshBuilder, Mesh, TransformNode, Color3, Matrix, Quaternion, Vector3, scene, TOP_DOWN_MARKER_LAYER_MASK: 0x10000000,
   FIELD_WIDTH_YARDS: 53.333, FIELD_LENGTH_YARDS: 120, END_ZONE_DEPTH_YARDS: 10, FIELD_SURFACE_Y: -.48,

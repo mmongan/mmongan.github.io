@@ -9,7 +9,7 @@ import vm from 'node:vm';
 const source = readFileSync(new URL('../src/robot/robot.ts', import.meta.url), 'utf8');
 const context = vm.createContext({
   globalPlayback: { playing: false, speedMultiplier: 1, countIndex: 0, stepAccumulatorSeconds: 0 },
-  prebakingLegAnimation: false, transportRevision: 0, repeatElapsed: null,
+  transportRevision: 0, repeatElapsed: null,
   notifyDrillTransport() {}, applyGlobalCountToAllRobots() {}, setDrillBeatPosition() {},
   getMaxCountIndex: () => 16, clampToBlankChartPageSpan: beat => beat,
 });

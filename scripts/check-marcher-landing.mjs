@@ -43,7 +43,9 @@ const context = vm.createContext({
   formationPull: null, fingerPath: null,
   GRABBED_MARCHER_RENDERING_GROUP: 2, TURF_PRECISION_SCALE: 0.35,
   MARCHER_TWIST_COMMIT_RADIANS: 20 * Math.PI / 180,
-  MARCH_DRAG_SPEED_YARDS_PER_SECOND: 2.5, MARCH_DRAG_TURN_RATE_RADIANS_PER_SECOND: 10,
+  MARCH_DRAG_MIN_SPEED_YARDS_PER_SECOND: 1.5, MARCH_DRAG_MAX_SPEED_YARDS_PER_SECOND: 12,
+  MARCH_DRAG_SPEED_PER_YARD_OF_DISTANCE: 1.2, MARCH_DRAG_TURN_RATE_RADIANS_PER_SECOND: 10,
+  MARCH_DRAG_TWIST_DEADBAND_RADIANS: 8 * Math.PI / 180,
   StandardMaterial,
   getMarcherRenderingGroup: () => 0, setMarcherRenderingGroup() {},
   captureMarcherMove: () => () => {}, setRobotHeld() {}, selectRobot() {}, setRobotFacing() {}, setPlacedMarcherFacing() {},
@@ -112,8 +114,10 @@ try {
           assert.ok(Math.abs(grab.landingGhost.rotation.y - 0.4) < 1e-6,
             'Carried draft preview follows the wrist facing');
         } else {
-          assert.ok(Math.abs(grab.landingGhost.rotation.y - Math.atan2(2, 3)) < 1e-3,
-            'Marching preview faces the laser dot');
+          // The 0.4 rad wrist twist held through the drag offsets the facing
+          // relative to the travel direction (slide/back-march control).
+          assert.ok(Math.abs(grab.landingGhost.rotation.y - (Math.atan2(2, 3) + 0.4)) < 1e-3,
+            'Wrist twist offsets the marching facing from the travel direction');
           assert.ok(grab.dotMesh?.isEnabled() && grab.beamMesh?.isEnabled(),
             'Laser beam and turf dot are visible while dragging');
           const toDot = Math.hypot(2 - robot.position.x, 3 - robot.position.z);

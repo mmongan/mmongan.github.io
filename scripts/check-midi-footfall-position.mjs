@@ -867,7 +867,7 @@ for (const distance of [0.2, 0.625, 2, 10]) {
 assert.ok(warnings.some(message => message.includes('Unmarchable')), 'Impossible routes are explicitly flagged');
 run(readFileSync(new URL('../src/robot/openMarchFormat.ts', import.meta.url), 'utf8'));
 run(robotSource.slice(robotSource.indexOf('const GAIT_INDEX_BY_NAME ='),
-  robotSource.indexOf('// The gait a marcher uses leaving')));
+  robotSource.indexOf('function wrapAngle(angle:')));
 const gaitIndex = name => vm.runInContext('MARCHING_GAITS', context).findIndex(gait => gait.name === name);
 const transformSnapshot = () => JSON.stringify([robot, parts]);
 

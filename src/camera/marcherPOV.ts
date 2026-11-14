@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import type { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
-import { getObjectName } from '../interaction/objectNames';
 import type { WebXRDefaultExperience } from '@babylonjs/core/XR/webXRDefaultExperience';
 import { WebXRState } from '@babylonjs/core/XR/webXRTypes';
 import { TargetCamera } from '@babylonjs/core/Cameras/targetCamera.pure';
@@ -144,7 +143,7 @@ function refreshMarcherList() {
   }
   listRefreshCountdown = 30;
   const marchers = getMarchers().filter(robot => !robot.isDisposed() && robot.isEnabled());
-  const signature = JSON.stringify(marchers.map(robot => [robot.uniqueId, getObjectName(robot)]));
+  const signature = JSON.stringify(marchers.map(robot => robot.uniqueId));
   if (marcherPOVSelect && signature !== listSignature) {
     listSignature = signature;
     const placeholder = document.createElement('option');
@@ -153,7 +152,7 @@ function refreshMarcherList() {
     marcherPOVSelect.replaceChildren(placeholder, ...marchers.map((robot, index) => {
       const option = document.createElement('option');
       option.value = String(robot.uniqueId);
-      option.textContent = getObjectName(robot) ?? `Marcher ${index + 1}`;
+      option.textContent = `Marcher ${index + 1}`;
       return option;
     }));
   }

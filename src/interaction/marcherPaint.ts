@@ -18,10 +18,10 @@ import { drawPanelButton } from '../menu/panelStyle';
 import { floorCalibrationToggle, marcherPaletteButton, marcherPaintToggle,
   marcherPaintColor, marcherPaintSelectedButton, marcherPaintStatus } from '../ui/dom';
 
-export const MARCHER_PAINT_SWATCHES = ['#e53935', '#fb8c00', '#fdd835', '#43a047',
+const MARCHER_PAINT_SWATCHES = ['#e53935', '#fb8c00', '#fdd835', '#43a047',
   '#00acc1', '#1e88e5', '#8e24aa', '#d81b60', '#ffffff', '#202534'];
 
-export function buildPaintPaletteGeometry() {
+function buildPaintPaletteGeometry() {
   const positions: number[] = [], indices: number[] = [], uvs: number[] = [];
   const sides = 96, holeX = -0.23, holeY = -0.045;
   const rings = [
@@ -59,7 +59,7 @@ export function buildPaintPaletteGeometry() {
   return { positions, indices, normals, uvs };
 }
 
-export function buildPaintBlobGeometry(seed: number) {
+function buildPaintBlobGeometry(seed: number) {
   const positions = [0, 0, -0.03], indices: number[] = [];
   const sides = 24, rings = 6;
   for (let ring = 1; ring <= rings; ring++) {

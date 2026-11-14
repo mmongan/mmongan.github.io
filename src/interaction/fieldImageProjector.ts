@@ -22,7 +22,7 @@ import { floorCalibrationToggle, fieldProjectorButton, fieldProjectorFile, field
 
 export type FieldProjectorCommand = 'show' | 'hide' | 'toggle' | 'fit' | 'left' | 'right' | 'up' | 'down' |
   'wider' | 'narrower' | 'turnLeft' | 'turnRight' | 'dim' | 'bright';
-export const FIELD_PROJECTOR_MAX_BYTES = 16 * 1024 * 1024;
+const FIELD_PROJECTOR_MAX_BYTES = 16 * 1024 * 1024;
 let projector: ReturnType<typeof createFieldImageProjector> | null = null;
 export function initFieldImageProjector(fieldRoot: TransformNode, notify: (message: string) => void) {
   projector ??= createFieldImageProjector(fieldRoot, notify);

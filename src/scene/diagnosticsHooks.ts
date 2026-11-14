@@ -39,7 +39,7 @@ export interface OpenChartxrDiagnostics {
   scene: () => typeof scene;
 }
 
-export function shouldInstallDiagnostics(search = window.location.search): boolean {
+function shouldInstallDiagnostics(search = window.location.search): boolean {
   return import.meta.env.DEV || new URLSearchParams(search).has('diagnostics');
 }
 

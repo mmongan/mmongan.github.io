@@ -70,7 +70,11 @@ assert.match(robot, /seekToCount\(count\);\s*openBlankChartPage\(count, at,/, 'i
 // Wiring: Save/Resume on the chart pad, Settings, and the menu dispatcher.
 assert.match(pad, /label: "Save", name: "saveDraft"[\s\S]*?drillChartSaveDraft/);
 assert.match(pad, /label: "Resume", name: "resumeDraft"[\s\S]*?drillChartResumeDraft/);
-assert.match(pad, /distance < nearestDistance/, 'nearest chart-pad button wins overlapping touch margins');
+// Chart-pad button touches resolve through the floating-panel path first
+// (getFloatingPanelButtonNearPoint ?? getHandMenuHitNearPoint), where the
+// nearest button wins when touch margins overlap.
+assert.match(read('menu/floatingPanel.ts'), /distance < nearestDistance/,
+  'nearest chart-pad button wins overlapping touch margins');
 assert.match(html, /id="saveChartDraftButton"/);
 assert.match(html, /id="resumeChartDraftButton"/);
 assert.match(path, /case "drillChartSaveDraft":\s*saveChartPageDraft\(\);/);

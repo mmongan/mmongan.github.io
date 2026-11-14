@@ -8,7 +8,7 @@ export interface FootballTackleEvent {
   carrierId: string;
   count: number;
 }
-export const FOOTBALL_TACKLE_DURATION = 8;
+const FOOTBALL_TACKLE_DURATION = 8;
 
 export function footballTackleYaw(defender: FootballPosition, carrier: FootballPosition) {
   return Math.atan2(carrier.x - defender.x, carrier.z - defender.z) + Math.PI / 2;

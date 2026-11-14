@@ -54,7 +54,7 @@ scene.collisionsEnabled = true;
 // Warm/cool daylight: a cool sky dome with green turf bounce from below, and
 // a warm directional sun that owns the specular highlights. The split gives
 // surfaces directional color depth without shadow maps or extra geometry.
-export const hemiLight = new HemisphericLight(
+const hemiLight = new HemisphericLight(
   "hemiLight",
   new Vector3(0, 1, 0),
   scene
@@ -64,7 +64,7 @@ hemiLight.diffuse = new Color3(0.88, 0.94, 1.0);
 hemiLight.groundColor = new Color3(0.33, 0.39, 0.3);
 hemiLight.specular = new Color3(0, 0, 0);
 
-export const dirLight = new DirectionalLight(
+const dirLight = new DirectionalLight(
   "dirLight",
   new Vector3(-1, -1, -1),
   scene

@@ -165,12 +165,7 @@ export function placeTabletopInFrontOfCamera(camera: Camera) {
   setARRotation(Math.atan2(forward.x, forward.z));
 }
 
-// Height is independent of AR/VR mode so it carries over across mode switches.
-export function getARHeight() {
-  return arPivot.position.y;
-}
-
-export function setARHeight(height: number) {
+function setARHeight(height: number) {
   arPivot.position.y = height;
 }
 

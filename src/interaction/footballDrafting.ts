@@ -11,7 +11,7 @@ import { authorChartPage } from '../robot/chartPageTimeline';
 import { sampleDestinationGuide, sampleGuideMarchers, type GuideMarcherSettings } from './guideMarcherLayout';
 import { isGuideOnField } from './fieldDrawingGeometry';
 
-export function footballDraftSpan() {
+function footballDraftSpan() {
   const from = footballDraftFrom?.value === '' ? NaN : Number(footballDraftFrom?.value);
   const to = footballDraftTo?.value === '' ? NaN : Number(footballDraftTo?.value);
   if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to < from) {

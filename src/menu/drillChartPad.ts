@@ -1,7 +1,6 @@
 // Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import type { Ray } from '@babylonjs/core/Culling/ray';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
 import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.pure';
 import { Texture } from '@babylonjs/core/Materials/Textures/texture.pure';
@@ -42,8 +41,6 @@ import { isDraftingTableMode } from '../interaction/fieldDrawingTools';
 import { isDraftingToolsEnabled } from '../interaction/editingMode';
 import { createMediaButtonIcon, isMediaButtonAction } from './settingsButtonIcons';
 
-export const DRILL_CHART_COUNTS_PER_SET = 8;
-
 const PAD_WIDTH = 0.42;
 const PAD_HEIGHT = 0.315;
 const BACKING_DEPTH = 0.008;
@@ -75,7 +72,6 @@ interface Pad {
 let pad: Pad | null = null;
 let visible = false;
 // Manual placement survives hide/show; explicit summons bring the pad back.
-const POINTER_SOURCE = "pointer";
 let lastSignature = "";
 let framesUntilRedraw = 0;
 let whiteboardPose: Matrix | null = null;
@@ -537,10 +533,6 @@ function placeInFrontOfViewer() {
   });
 }
 
-export function isDrillChartPadVisible() {
-  return visible;
-}
-
 export function summonDrillChartPad() {
   setDrillChartPadVisible(true);
   placeInFrontOfViewer();
@@ -565,74 +557,6 @@ export function setDrillChartPadVisible(show: boolean) {
   if (visible === show) return;
   visible = show;
   visibilityListeners.forEach((listener) => listener(show));
-}
-
-export function isDrillChartPadMesh(mesh: AbstractMesh) {
-  return pad?.meshes.has(mesh) ?? false;
-}
-
-export function isPointNearDrillChartPad(point: Vector3, tolerance = 0.03) {
-  return pad?.interaction.near(point, tolerance) ?? false;
-}
-
-export function pickDrillChartPad(ray: Ray) {
-  return pad?.interaction.pick(ray) ?? null;
-}
-
-export function getDrillChartButtonNearPoint(point: Vector3): HandMenuHit | null {
-  if (!pad || !visible) return null;
-  // Neighbouring buttons' touch margins overlap, so the nearest one wins.
-  let nearest: HandMenuHit | null = null;
-  let nearestDistance = Infinity;
-  for (const [button, action] of pad.buttons) {
-    const local = Vector3.TransformCoordinates(point, button.computeWorldMatrix(true).clone().invert());
-    if (Math.abs(local.x) <= BUTTON_WIDTH / 2 + 0.01 &&
-      Math.abs(local.y) <= BUTTON_HEIGHT / 2 + 0.01 && Math.abs(local.z) <= 0.04) {
-      const distance = local.x * local.x + local.y * local.y;
-      if (distance < nearestDistance) {
-        nearestDistance = distance;
-        nearest = action;
-      }
-    }
-  }
-  return nearest;
-}
-
-// Grabs keep the pad's pose fixed relative to the grabbing hand/controller;
-// a second hand grabbing takes it over from the first.
-export function beginDrillChartPadGrab(source: string, sourceWorld: Matrix) {
-  pad?.interaction.begin(source, sourceWorld);
-}
-
-export function updateDrillChartPadGrab(source: string, sourceWorld: Matrix) {
-  pad?.interaction.update(source, sourceWorld);
-}
-
-export function endDrillChartPadGrab(source: string) {
-  pad?.interaction.end(source);
-}
-
-// Desktop mouse drags slide the pad across a camera-facing plane through its
-// grab point, turning it to keep facing the viewer.
-export function beginDrillChartPadPointerDrag(ray: Ray) {
-  return pad?.interaction.beginPointer(ray) ?? false;
-}
-
-export function updateDrillChartPadPointerDrag(ray: Ray) {
-  pad?.interaction.updatePointer(ray);
-}
-
-export function endDrillChartPadPointerDrag() {
-  endDrillChartPadGrab(POINTER_SOURCE);
-}
-
-// Mouse wheel over the pad pushes it away from or pulls it toward the viewer.
-export function nudgeDrillChartPadDistance(ray: Ray, wheelDelta: number) {
-  return pad?.interaction.nudge(ray, wheelDelta) ?? false;
-}
-
-export function isDrillChartPadGrabbed(source?: string) {
-  return pad?.interaction.grabbed(source) ?? false;
 }
 
 scene.onBeforeRenderObservable.add(() => {

@@ -23,7 +23,7 @@ const seekStart = robotSource.indexOf('export function seekToCount(');
 const seekEnd = robotSource.indexOf('// Nudges the shared clock', seekStart);
 let applied = 0;
 const transport = vm.createContext({
-  prebakingLegAnimation: true, transportRevision: 4, repeatElapsed: 8,
+  transportRevision: 4, repeatElapsed: 8,
   globalPlayback: { playing: true, countIndex: 8, stepAccumulatorSeconds: .3 },
   getMaxCountIndex: () => 16,
   setDrillBeatPosition: beat => {
@@ -39,7 +39,6 @@ assert.equal(transport.globalPlayback.playing, false);
 assert.equal(transport.globalPlayback.stepAccumulatorSeconds, 0);
 assert.equal(transport.repeatElapsed, 0, 'Restart resets the active repeat position');
 assert.equal(transport.transportRevision, 5, 'Restart marks a discontinuity for synchronized audio');
-assert.equal(transport.prebakingLegAnimation, false);
 assert.equal(applied, 1, 'Restart applies opening poses and notifies transport subscribers');
 transport.globalPlayback.playing = true;
 transport.seekToCount(16);

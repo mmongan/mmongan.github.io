@@ -111,9 +111,6 @@ export function selectDrawingGuideNear(point: Vector3, radius: number, vertical 
 export function snapToSelectedDrawingGuide(point: Vector3): Vector3 | null {
   return drawing?.snapToSelected(point) ?? null;
 }
-export function snapToNearbyDrawingGuide(point: Vector3, radius = 0.25): Vector3 | null {
-  return drawing?.snapToNearby(point, radius)?.position ?? null;
-}
 export function getNearbyDrawingGuidePose(point: Vector3, radius = 0.25) {
   return drawing?.snapToNearby(point, radius) ?? null;
 }

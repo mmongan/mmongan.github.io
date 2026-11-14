@@ -9,7 +9,7 @@ export interface HandMenuPose {
   normal: Vector3;
 }
 
-export function getHandMenuPose(
+function getHandMenuPose(
   position: Vector3, palmNormal: Vector3, towardWrist: Vector3
 ): HandMenuPose | null {
   if ([position, palmNormal, towardWrist].some(vector =>

@@ -45,7 +45,7 @@ const run = source => vm.runInContext(stripTypeScriptTypes(source, { mode: 'tran
 run(read('gaitSelection'));
 run(readFileSync(new URL('../src/audio/drillMidiTiming.ts', import.meta.url), 'utf8'));
 run(slice('export const MARCHING_GAITS =', 'let selectedMarchingGait'));
-run(slice('const GAIT_INDEX_BY_NAME =', '// The gait a marcher uses leaving'));
+run(slice('const GAIT_INDEX_BY_NAME =', 'function wrapAngle(angle:'));
 run(slice('export function captureMarcherSchedules()', 'export function captureBlankChartPage('));
 run(slice('export function restoreMarcherSchedule(', '// Reopens a saved blank page:'));
 run(slice('function applyFixedFacing(', 'export function getRobotFixedFacing('));

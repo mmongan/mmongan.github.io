@@ -3,14 +3,14 @@
 
 type ThrowFrame = readonly [time: number, arm: number, elbow: number, supportArm: number, supportElbow: number];
 
-export const FOOTBALL_THROW_CLIP: readonly ThrowFrame[] = [
+const FOOTBALL_THROW_CLIP: readonly ThrowFrame[] = [
   [0, -2.2, -1.8, -.6, -1.5],
   [.35, -2.6, -.45, -.6, -1.5],
   [.8, -.8, -1.8, -.3, -1.5],
   [2, -.8, -1.8, -.3, -1.5],
 ];
 
-export const FOOTBALL_CATCH_CLIP = {
+const FOOTBALL_CATCH_CLIP = {
   reach: { arm: -.75, elbow: -.85, inward: .4 },
   carry: { arm: -.6, elbow: -1.3, inward: .75 },
 } as const;

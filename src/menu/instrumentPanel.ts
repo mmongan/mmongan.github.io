@@ -16,7 +16,7 @@ import { addInstrumentButtonModel } from './instrumentButtonModel';
 import { registerMenuButton, type HandMenuHit } from './handMenu';
 import { drawPanelButton, PANEL_FRAME_COLOR } from './panelStyle';
 
-export const INSTRUMENT_PANEL_CHOICES: readonly MarcherInstrument[] = [
+const INSTRUMENT_PANEL_CHOICES: readonly MarcherInstrument[] = [
   'trumpet', 'mellophone', 'trombone', 'euphonium', 'sousaphone', 'altoSax',
   'bariSax', 'clarinet', 'flute', 'snare', 'tenors', 'bassDrum', 'glockenspiel',
   'cymbals',

@@ -1,9 +1,9 @@
 // Copyright (C) 2026 Marty Mongan <marty.mongan@gmail.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-export const SCORE_MEASURE_WIDTH = 760;
-export const SCORE_PAGE_WIDTH = 1456;
-export const SCORE_PAGE_HEIGHT = 1110;
+const SCORE_MEASURE_WIDTH = 760;
+const SCORE_PAGE_WIDTH = 1456;
+const SCORE_PAGE_HEIGHT = 1110;
 const MEASURE_LABEL_HEIGHT = 24;
 
 export function scoreMeasuresPerPage(trackCount: number, standScale: number, config: 'auto' | number): number {

@@ -11,7 +11,7 @@ export const FOOTBALL_SEQUENCE_CONCEPTS = [
   { id: 'mesh', label: 'Mesh', target: 'WR2', throwCount: 10 },
   { id: 'four-verticals', label: 'Four Verticals', target: 'WR3', throwCount: 12 },
 ] as const;
-export const FOOTBALL_SEQUENCE_RESET_COUNTS = 32;
+const FOOTBALL_SEQUENCE_RESET_COUNTS = 32;
 
 function sampledRoute(start: FootballPosition, points: readonly [number, number, number][]) {
   const frames = [[0, start.x, start.z], ...points];

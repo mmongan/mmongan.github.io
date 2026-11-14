@@ -8,10 +8,10 @@ export interface PalmSweepState {
   cooldownUntil: number;
 }
 
-export const PALM_SWEEP_WINDOW_SECONDS = 0.35;
-export const PALM_SWEEP_MIN_DISTANCE_METERS = 0.18;
-export const PALM_SWEEP_MAX_RISE_METERS = 0.12;
-export const PALM_SWEEP_COOLDOWN_SECONDS = 1;
+const PALM_SWEEP_WINDOW_SECONDS = 0.35;
+const PALM_SWEEP_MIN_DISTANCE_METERS = 0.18;
+const PALM_SWEEP_MAX_RISE_METERS = 0.12;
+const PALM_SWEEP_COOLDOWN_SECONDS = 1;
 
 export function createPalmSweepState(): PalmSweepState {
   return { samples: [], cooldownUntil: 0 };

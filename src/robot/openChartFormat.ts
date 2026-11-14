@@ -4,17 +4,17 @@
 export const OPEN_CHART_EXTENSION = ".openchart";
 const SIGNATURE = "OCHART13";
 // Wire codes are permanent and independent of runtime library ordering.
-export const OPEN_CHART_INSTRUMENT_CODES = Object.freeze([
+const OPEN_CHART_INSTRUMENT_CODES = Object.freeze([
   "trumpet", "mellophone", "altoSax", "bariSax", "trombone", "euphonium",
   "clarinet", "flute", "sousaphone", "snare", "tenors", "bassDrum",
   "glockenspiel", "cymbals", "guardFlag", "guardRifle", "guardSabre",
 ]);
-export const OPEN_CHART_GAIT_CODES = Object.freeze([
+const OPEN_CHART_GAIT_CODES = Object.freeze([
   "Field March", "High Step", "Parade", "Crab Walk", "Knee-Ankle March", "Slide",
   "Mark Time", "High Mark Time", "Double Time", "Half Time", "Backward March", "Backward High Step",
 ]);
 export const OPEN_CHART_POSE_CODES = Object.freeze(["playing", "carry"]);
-export const OPEN_CHART_MOVEMENT_DESCRIPTION_CODES = Object.freeze([...OPEN_CHART_GAIT_CODES, "Halt"]);
+const OPEN_CHART_MOVEMENT_DESCRIPTION_CODES = Object.freeze([...OPEN_CHART_GAIT_CODES, "Halt"]);
 
 function encodeBuiltin(value: string, codes: readonly string[]): number | string {
   const code = codes.indexOf(value);
@@ -28,7 +28,7 @@ function decodeBuiltin(value: unknown, codes: readonly string[], name: string): 
   }
   return codes[value];
 }
-export const OPEN_CHART_DEFAULT_PPQ = 480;
+const OPEN_CHART_DEFAULT_PPQ = 480;
 export const OPEN_CHART_SAMPLE = {
   height: 0, heading: 1, facing: 2, style: 3, gait: 4,
   steps: 5, bodyYaw: 6, legYaw: 7, flags: 8, movementDescription: 9, phase: 10,

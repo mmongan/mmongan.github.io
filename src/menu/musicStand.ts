@@ -44,7 +44,7 @@ export function setMusicStandVisible(visible: boolean) {
   updateVisibility?.(visible);
 }
 
-export function setMusicStandScale(scale: number) {
+function setMusicStandScale(scale: number) {
   const clamped = Math.max(0.6, Math.min(2.5, Math.round(scale * 1000) / 1000));
   standScale = clamped;
   if (deskNode) {
@@ -60,7 +60,7 @@ export function setMusicStandScale(scale: number) {
   updateTopBarButtonsFn?.();
 }
 
-export function getMusicStandScale(): number {
+function getMusicStandScale(): number {
   return standScale;
 }
 

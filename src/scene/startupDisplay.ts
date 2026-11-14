@@ -37,7 +37,7 @@ const MODEL_KEYWORDS: readonly (readonly [RegExp, MarcherInstrument])[] = [
   [/glockenspiel|xylophone|vibraphone|marimba|celesta|music_box|tubular|bell|dulcimer|kalimba|piano|clavinet|harpsichord|organ/, 'glockenspiel'],
 ];
 
-export function startupInstrumentModel(soundfontName: string): MarcherInstrument {
+function startupInstrumentModel(soundfontName: string): MarcherInstrument {
   const match = MODEL_KEYWORDS.find(([pattern]) => pattern.test(soundfontName));
   return match ? match[1] : 'trumpet';
 }

@@ -65,7 +65,7 @@ export function isDraftingToolAction(hit: HandMenuHit) {
   }
 }
 
-export function isPlaybackMenuAction(hit: HandMenuHit) {
+function isPlaybackMenuAction(hit: HandMenuHit) {
   switch (hit.action) {
     case 'football':
       return hit.command === 'scrimmage';

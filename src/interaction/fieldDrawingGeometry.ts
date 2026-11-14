@@ -50,10 +50,6 @@ export function buildLaserGuide(origin: Vector3, direction: Vector3): Vector3[] 
   ));
 }
 
-export function isFieldShapeTool(value: string): value is FieldStencil | FieldCutter {
-  return /^(circle|square|triangle|pentagon|hexagon|star)(Stencil|Cutter)$/.test(value);
-}
-
 export function buildToolGuide(tool: FieldDrawingTool, start: Vector3, end: Vector3): Vector3[] {
   const a = new Vector3(start.x, FIELD_SURFACE_Y + 0.025, start.z);
   const b = new Vector3(end.x, a.y, end.z);
