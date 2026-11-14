@@ -430,11 +430,14 @@ export function createFootballVisuals(
       }
     }, -1, true);
     disposeClearance = () => scene.onBeforeRenderObservable.remove(clearanceObserver);
+    // Body separation is solved only at fixed quarter-count grid beats and
+    // interpolated between them, so clearance offsets slide smoothly instead
+    // of snapping when a pair starts or stops colliding, poses stay pure
+    // functions of the beat, and the solver runs a few times per count
+    // rather than every frame.
+    const CLEARANCE_GRID = 0.25;
     const samplePositions = (rawBeat: number) => {
-      // Quantized key: robot playback and the frame update pass the same beat
-      // through slightly different float paths; without rounding, every frame
-      // re-ran the whole-field separation solver two or three times.
-      const beat = Math.round(rawBeat * 1048576) / 1048576;
+      const beat = Math.round(rawBeat / CLEARANCE_GRID) * CLEARANCE_GRID;
       const cached = positionCache.get(beat);
       if (cached) return cached;
       const activeTackles = activeTacklesAt(beat);
@@ -485,7 +488,15 @@ export function createFootballVisuals(
       positionCache.set(beat, resolved);
       return resolved;
     };
-    players.forEach(({ robot }) => setFootballPositionSampler(robot, beat => samplePositions(beat).get(robot) ?? null));
+    players.forEach(({ robot }) => setFootballPositionSampler(robot, beat => {
+      const low = Math.floor(beat / CLEARANCE_GRID) * CLEARANCE_GRID;
+      const high = low + CLEARANCE_GRID;
+      const from = samplePositions(low).get(robot);
+      const to = samplePositions(high).get(robot);
+      if (!from || !to) return from ?? to ?? null;
+      const t = (beat - low) / CLEARANCE_GRID;
+      return { x: from.x + (to.x - from.x) * t, z: from.z + (to.z - from.z) * t };
+    }));
     const anchor = (id: string, count: number) => {
       const robot = byId.get(id);
       if (!robot || robot.isDisposed() || !robot.isEnabled()) return null;

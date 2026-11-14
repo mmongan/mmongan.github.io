@@ -394,7 +394,10 @@ interface InstrumentSpec {
 }
 
 const DEFAULT_ELBOW_BENDS: [Vector3, Vector3] = [new Vector3(-0.6, -1, -0.2), new Vector3(0.6, -1, -0.2)];
-const MARCHER_MOUTH = new Vector3(0, 1.2, 0.16 * MARCHER_BUILD_SCALE);
+// Center of the lip line on the face template (the lips seat against the
+// receding chin), so mouthpieces rest on the lips rather than floating ahead
+// of them. The build scale narrows X/Z only; Y is unscaled.
+const MARCHER_MOUTH = new Vector3(0, 1.196, 0.147 * MARCHER_BUILD_SCALE);
 
 // Drums hang on a carrier and are modelled in instrument-root coordinates, so
 // they never move: the "mouthpiece" is the mouth itself, and playing and
@@ -1499,9 +1502,11 @@ function getGaitStepPhaseOffsets(state: PlayerState, styleIndex: number): number
 // remains a pure function of the beat (seeks and reverse scrubbing
 // reconstruct it exactly). Legs stay planted (legRoot untouched); the jacket
 // hem overlap hides the hip shift.
-const TORSO_BOB = 0.016;
-const TORSO_SWAY = 0.008;
-const TORSO_TWIST = 0.035;
+// Marchers glide: the roll step exists to keep the upper body level enough
+// to play, so the bob is barely visible and the sway/twist stay slight.
+const TORSO_BOB = 0.004;
+const TORSO_SWAY = 0.005;
+const TORSO_TWIST = 0.02;
 const TORSO_LEAN = 0.03;
 const TORSO_BANK_PER_RADIAN = 0.08;
 const TORSO_BANK_LIMIT = 0.06;
@@ -1518,7 +1523,12 @@ function applyTorsoDynamics(parts: NonNullable<ReturnType<typeof marcherParts.ge
   const bell = 4 * turnProgress * (1 - turnProgress);
   parts.body.rotation.z = Math.max(-TORSO_BANK_LIMIT,
     Math.min(TORSO_BANK_LIMIT, turnDelta * TORSO_BANK_PER_RADIAN)) * bell;
-  parts.instrumentRoot.position.y = Math.abs(Math.sin(stride - 0.5)) * TORSO_BOB * 0.85;
+  // The instrument root mirrors the torso exactly: the arms live under the
+  // body, so any divergence (a phase lag, a missing axis) pulls the gloves
+  // off the instrument grips at the wrists.
+  parts.instrumentRoot.position.x = parts.body.position.x;
+  parts.instrumentRoot.position.y = parts.body.position.y;
+  parts.instrumentRoot.rotation.copyFrom(parts.body.rotation);
   parts.legRoot.position.y = 0;
 }
 
@@ -1536,7 +1546,9 @@ function applyTorsoIdle(robot: TransformNode, parts: NonNullable<ReturnType<type
   parts.body.rotation.x = 0;
   parts.body.rotation.y = 0;
   parts.body.rotation.z = 0;
+  parts.instrumentRoot.position.x = parts.body.position.x;
   parts.instrumentRoot.position.y = breath;
+  parts.instrumentRoot.rotation.set(0, 0, 0);
   parts.legRoot.position.y = 0;
 }
 
