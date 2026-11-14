@@ -474,7 +474,10 @@ export function createHandInteraction(paths: HandPathDependencies) {
     grab.landingGhost.setEnabled(true);
   }
 
-  function moveMarcherGrab(handedness: string, point: Vector3, facingYaw: number | null = null) {
+  // `origin` is where the drag laser visibly starts: the controller ray's
+  // origin for ray grabs, or the pinch point itself for hand grabs.
+  function moveMarcherGrab(handedness: string, point: Vector3, facingYaw: number | null = null,
+    origin: Vector3 = point) {
     const grab = marcherGrabs.get(handedness);
     if (!grab || grab.robot.isDisposed()) {
       grab?.ghost?.dispose();
@@ -520,7 +523,7 @@ export function createHandInteraction(paths: HandPathDependencies) {
     const dot = draft ? null : projectToTurf(Vector3.TransformCoordinates(position, pathMatrix));
     if (dot) {
       grab.dotTarget = dot.clone();
-      updateDragLaser(grab, point, dot);
+      updateDragLaser(grab, origin, dot);
       const dt = Math.min(0.1, (scene.getEngine().getDeltaTime() || 16) / 1000);
       const current = grab.robot.position;
       const dx = dot.x - current.x;

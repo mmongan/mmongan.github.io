@@ -2702,8 +2702,9 @@ function beginMarcherGrab(
   handInteraction.beginMarcherGrab(handedness, robot, point, source, rayDistance, facingYaw);
 }
 
-function moveMarcherGrab(handedness: string, point: Vector3, facingYaw: number | null = null) {
-  handInteraction.moveMarcherGrab(handedness, point, facingYaw);
+function moveMarcherGrab(handedness: string, point: Vector3, facingYaw: number | null = null,
+  origin?: Vector3) {
+  handInteraction.moveMarcherGrab(handedness, point, facingYaw, origin);
 }
 
 function finishMarcherGrab(handedness: string, commit: boolean) {
@@ -2898,6 +2899,8 @@ export function updateRobotPathFromControllers() {
               .add(ray.direction.scale(marcherGrab.controllerDepthOffset ?? 0))
             : ray.origin.add(ray.direction.scale(marcherGrab.rayDistance)),
           facingYaw === null ? null : facingYaw + marcherGrab.controllerYawOffset,
+          // The drag laser shoots from the controller, not the carried point.
+          ray.origin,
         );
       }
       return;
