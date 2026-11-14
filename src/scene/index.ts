@@ -6,6 +6,7 @@ import '../camera/desktopCamera';
 import { drillChartPadToggle, fieldLevelInputs, getSelectedFieldLevel } from '../ui/dom';
 import { createSky } from '../environment/sky';
 import { createHorizonGround } from '../environment/ground';
+import { initBandRoom, updateBandRoomVisibility } from '../environment/bandRoom';
 import { createFootballField } from '../field/footballField';
 import {
   initInteraction,
@@ -84,6 +85,9 @@ initXR(teleportGrid);
 // After captureContentRootMeshes so the camera-riding startup display never
 // joins the AR tabletop transform.
 initStartupDisplay();
+// Likewise outside the snapshot: the room-scale band room shown around
+// reduced-scale VR sessions must not join the tabletop transform.
+initBandRoom();
 
 // Freeze the static stadium after the scene graph has been rebased under the
 // AR transform; frozen matrices re-sync whenever that transform changes.
@@ -131,6 +135,7 @@ function renderFrame() {
   runFrameStage('handPathDrawing', updateHandPathDrawing);
   runFrameStage('controllerPaths', updateRobotPathFromControllers);
   runFrameStage('videoBoard', () => footballField.updateVideoBoardProgress(getSelectedRobotProgress()));
+  runFrameStage('bandRoom', updateBandRoomVisibility);
   runFrameStage('render', () => scene.render());
 }
 

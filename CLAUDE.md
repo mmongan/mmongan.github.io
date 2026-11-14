@@ -28,7 +28,7 @@ OpenChartxr is a Babylon.js, TypeScript, and Vite WebXR marching-band drill desi
 - `src/ui/` owns shared DOM references, the loading screen, and playback-mode controls.
 - `src/field/` owns field dimensions and stadium components.
 - `src/field/adjustableGrid.ts` owns the optional visible field grid. Its spacing and visibility are independent of editing snap settings and the teleport grid.
-- `src/environment/` owns sky and horizon-ground construction.
+- `src/environment/` owns sky, horizon-ground, and band-room construction. The procedural band rehearsal room (`bandRoom.ts`) surrounds reduced-scale immersive-VR sessions only; it is built after the AR content snapshot (never joins the tabletop transform), stays decorative (non-pickable, frozen, merged per material), and hides on desktop, at full 1:1 VR scale, and in AR passthrough. Run `node scripts/check-band-room.mjs` when changing it.
 - `src/menu/` owns standalone floating panels, the chart pad, music stand, instrument panel, settings overlay, and the shared action registry. Despite its name, `src/menu/handMenu.ts` is that registry (`HandMenuHit` actions dispatched by panels, stadium signs, and trays); there are no hand/wrist-attached menus. XR entry and controller Y summon the floating settings panel.
 
 Keep modules within their feature boundaries. Use descriptive filenames; do not add another `index.ts` barrel or organize files merely by their Babylon.js dependency. Create a new folder only when it represents a cohesive boundary for multiple related modules.
