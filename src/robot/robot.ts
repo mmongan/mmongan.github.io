@@ -1683,9 +1683,13 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState,
   if (!inPlace) Vector3.LerpToRef(from.position, to.position, forwardProgress, rootPosition);
   sample?.root?.(rootPosition, bodyRotation);
   if (!sample) {
-    const footballPosition = state.footballMotion ? getFootballPlaybackPosition(robot, segmentStart + forwardProgress) : null;
-    if (footballPosition) { rootPosition.x = footballPosition.x; rootPosition.z = footballPosition.z; }
     robot.position.copyFrom(rootPosition);
+    // Football body separation displaces only the rendered root. The leg solve
+    // below stays in the authored-route frame (as leg bakes do), so the legs
+    // and planted feet travel with the displaced body instead of staying on
+    // the route while the torso slides sideways off them.
+    const footballPosition = state.footballMotion ? getFootballPlaybackPosition(robot, segmentStart + forwardProgress) : null;
+    if (footballPosition) { robot.position.x = footballPosition.x; robot.position.z = footballPosition.z; }
     robot.rotation.y = bodyRotation;
   }
   to.position.subtractToRef(from.position, playbackDisplacement);

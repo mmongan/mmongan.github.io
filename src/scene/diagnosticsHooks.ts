@@ -35,6 +35,8 @@ export interface OpenChartxrDiagnostics {
   enginePresentedFrames: () => number;
   // Frames whose scene render completed.
   sceneRenderedFrames: () => number;
+  // The shared scene, for read-only pose/mesh inspection by the live suite.
+  scene: () => typeof scene;
 }
 
 export function shouldInstallDiagnostics(search = window.location.search): boolean {
@@ -65,6 +67,7 @@ export function installDiagnosticsHooks(getMarcherCount: () => number) {
     startupFinished: () => startupFinished,
     enginePresentedFrames: () => presented,
     sceneRenderedFrames: () => rendered,
+    scene: () => scene,
   };
   (window as unknown as { __openchartxr?: OpenChartxrDiagnostics }).__openchartxr = diagnostics;
   scene.onDisposeObservable.addOnce(() => {

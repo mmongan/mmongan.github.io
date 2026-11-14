@@ -63,20 +63,13 @@ export function addRobotHead(geometry: InstrumentGeometry, skin = SKIN) {
   geometry.lathe(geometry.low
     ? [[0, 1.13], [0.105, 1.175], [0.14, 1.235], [0.144, 1.3], [0.125, 1.355], [0, 1.372]]
     : SKULL_PROFILE, HEAD_SIDES, skin, place);
+  // Nose with a bridge rising toward the brow line and a rounded tip.
   const noseZ = frontFaceZ(geometry, 0.14);
-  geometry.lathe([[0, 1.222], [.016, 1.232], [.019, 1.244], [.009, 1.275], [0, 1.282]],
-    6, skin, ({ x, y, z }) => v(x, y, noseZ + .015 + z * 1.3));
-  // The mouth stays at every detail level; eyes render separately, so a
-  // low-detail face without it reads as featureless below the nose.
-  const mouthZ = frontFaceZ(geometry, MOUTH_RADIUS);
-  geometry.box(v(-0.027, MOUTH_Y - 0.003, mouthZ - 0.004),
-    v(0.027, MOUTH_Y + 0.003, mouthZ + 0.008), LIPS);
+  geometry.lathe([[0, 1.216], [.019, 1.226], [.021, 1.242], [.013, 1.262], [.011, 1.284], [0, 1.294]],
+    6, skin, ({ x, y, z }) => v(x, y, noseZ + .013 + z * 1.3));
+  // Eyes, brows, and mouth render from the shared face-features template at
+  // every detail level, so even a low-detail face keeps its expression.
   geometry.fine(() => {
-    const browZ = frontFaceZ(geometry, EYE_RADIUS);
-    for (const side of [-1, 1]) {
-      geometry.box(v(side * 0.043 - 0.02, 1.303, browZ - 0.002),
-        v(side * 0.043 + 0.02, 1.31, browZ + 0.006), FACE_DETAIL);
-    }
     const earDepth = 0.03;
     const earX = sideFaceX(geometry, EAR_RADIUS) + earDepth / 2 - 0.004;
     for (const side of [-1, 1]) {
@@ -85,16 +78,37 @@ export function addRobotHead(geometry: InstrumentGeometry, skin = SKIN) {
     }
   });
 }
+// Shared face features: layered eyes (white, iris, pupil) under a lash line,
+// tapered brows, and a two-tone mouth. They live on the untinted shared
+// template so every complexion and detail level keeps the same expression;
+// the budget-checked trim carries only skin-colored geometry.
 function createRobotEyesTemplate(scene: Scene): Mesh {
   const geometry = new InstrumentGeometry();
   const white = new Color4(0.95, 0.96, 0.97, 1);
+  const iris = new Color4(0.36, 0.22, 0.13, 1);
   const pupil = new Color4(0.04, 0.07, 0.1, 1);
+  const brow = new Color4(0.17, 0.12, 0.09, 1);
+  const lowerLip = new Color4(0.68, 0.4, 0.35, 1);
   const eyeZ = frontFaceZ(geometry, EYE_RADIUS);
+  // Corners sorted so boxes accept either side's coordinates.
+  const span = (x1: number, y1: number, z1: number, x2: number, y2: number, z2: number, color: Color4) =>
+    geometry.box(v(Math.min(x1, x2), Math.min(y1, y2), Math.min(z1, z2)),
+      v(Math.max(x1, x2), Math.max(y1, y2), Math.max(z1, z2)), color);
   for (const side of [-1, 1]) {
     const x = side * 0.043;
-    geometry.box(v(x - 0.02, 1.276, eyeZ - 0.002), v(x + 0.02, 1.296, eyeZ + 0.006), white);
-    geometry.box(v(x - 0.007, 1.28, eyeZ + 0.005), v(x + 0.007, 1.292, eyeZ + 0.009), pupil);
+    span(x - 0.021, 1.274, eyeZ - 0.002, x + 0.021, 1.294, eyeZ + 0.005, white);
+    span(x - 0.011, 1.277, eyeZ + 0.004, x + 0.011, 1.291, eyeZ + 0.008, iris);
+    span(x - 0.005, 1.28, eyeZ + 0.007, x + 0.005, 1.289, eyeZ + 0.01, pupil);
+    // Dark upper lash line settles the stare into an open-eyed look.
+    span(x - 0.022, 1.293, eyeZ - 0.001, x + 0.022, 1.2965, eyeZ + 0.0085, FACE_DETAIL);
+    // Two slim brow segments, lifted clear of the lashes with a raised outer
+    // end, keep the expression relaxed rather than glowering.
+    span(side * 0.022, 1.309, eyeZ - 0.002, side * 0.047, 1.315, eyeZ + 0.006, brow);
+    span(side * 0.045, 1.3115, eyeZ - 0.002, side * 0.067, 1.3175, eyeZ + 0.006, brow);
   }
+  const mouthZ = frontFaceZ(geometry, MOUTH_RADIUS);
+  span(-0.028, MOUTH_Y - 0.003, mouthZ - 0.004, 0.028, MOUTH_Y + 0.002, mouthZ + 0.007, LIPS);
+  span(-0.019, MOUTH_Y - 0.012, mouthZ - 0.003, 0.019, MOUTH_Y - 0.003, mouthZ + 0.0085, lowerLip);
   const material = new StandardMaterial("robotEyesMaterial", scene);
   material.diffuseColor = Color3.White();
   material.specularColor = new Color3(0.15, 0.15, 0.15);

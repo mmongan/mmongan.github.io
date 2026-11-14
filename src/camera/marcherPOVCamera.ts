@@ -15,7 +15,7 @@ const TOP_DOWN_LAYER = 0x10000000;
 // Marchers: `marcherTrim` is the merged neck/head/shako/plume, plus eyes.
 // Football players: neck/face/helmet/nose/eyes and the floating role plate.
 const SELF_HEAD_MESH =
-  /^(marcherTrim|robotEyes)$|^football-(neck|face|helmet|stripe|jaw|mask|nose|eye-white|pupil|role)-/;
+  /^(marcherTrim|robotEyes)$|^football-(neck|face|helmet|stripe|jaw|mask|nose|eye-white|iris|pupil|brow|mouth|role)-/;
 
 export function isPOVSelfHiddenMesh(mesh: AbstractMesh): boolean {
   return SELF_HEAD_MESH.test(mesh.name);

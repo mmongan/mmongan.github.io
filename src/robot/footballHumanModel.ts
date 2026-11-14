@@ -10,7 +10,8 @@ import type { FootballUpperPose } from './footballAnimationPose';
 import type { PreparedRobotAnimationFrame } from './robot';
 
 export function createFootballHumanModel(robot: TransformNode, torso: TransformNode,
-  jerseyMaterial: StandardMaterial, skin: StandardMaterial, white: StandardMaterial, dark: StandardMaterial) {
+  jerseyMaterial: StandardMaterial, skin: StandardMaterial, white: StandardMaterial, dark: StandardMaterial,
+  brown: StandardMaterial) {
   const scene = robot.getScene();
   const sphere = (name: string, parent: TransformNode, x: number, y: number, z: number,
     width: number, height: number, depth: number, material: StandardMaterial) => {
@@ -38,10 +39,15 @@ export function createFootballHumanModel(robot: TransformNode, torso: TransformN
   // clearance over the shell to surface between the facets.
   sphere(`football-stripe-${id}`, torso, 0, .87, -.01, .05, .42, .39, white);
   sphere(`football-nose-${id}`, torso, 0, .8, .185, .05, .07, .06, skin);
+  // Layered eyes (white, brown iris, pupil) under low brows, with a soft
+  // mouth shadow in the cage gap, keep the small face readable as a face.
   for (const side of [-1, 1]) {
-    sphere(`football-eye-white-${id}-${side}`, torso, side * .05, .85, .19, .055, .03, .015, white);
-    sphere(`football-pupil-${id}-${side}`, torso, side * .05, .85, .199, .022, .024, .012, dark);
+    sphere(`football-eye-white-${id}-${side}`, torso, side * .05, .85, .19, .055, .032, .015, white);
+    sphere(`football-iris-${id}-${side}`, torso, side * .05, .85, .197, .03, .028, .013, brown);
+    sphere(`football-pupil-${id}-${side}`, torso, side * .05, .851, .203, .014, .016, .01, dark);
+    sphere(`football-brow-${id}-${side}`, torso, side * .052, .876, .188, .05, .013, .02, brown);
   }
+  sphere(`football-mouth-${id}`, torso, 0, .757, .182, .042, .011, .012, brown);
   // Front-only two-bar cage: one tube snakes across the top bar, down the
   // right side, and back across the chin bar, attached at the jaw flaps; a
   // short center bar ties the bars together in front of the chin. Nothing

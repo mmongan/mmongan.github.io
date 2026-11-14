@@ -232,6 +232,7 @@ export function createFootballVisuals(
     lineMaterial.alpha = .8; scrimmageLine.material = lineMaterial; roots.push(scrimmageLine);
     const skins = ['#f2c7a5', '#b77c50', '#67432f'].map((color, index) =>
       material(`football-skin-${index}`, Color3.FromHexString(color)));
+    const facialBrown = material('football-facial-brown', Color3.FromHexString('#4b2f1d'));
     if (visibleFromCount > 0) {
       const benchMaterial = material('football-bench', Color3.FromHexString('#a7afb9'));
       for (const side of [-1, 1]) {
@@ -292,7 +293,7 @@ export function createFootballVisuals(
       symbol.setEnabled(Number.isFinite(visibleFromCount));
       roots.push(symbol);
       const human = createFootballHumanModel(robot, root, player.team === 'offense' ? offense : defense,
-        skins[animations.length % skins.length], white, dark);
+        skins[animations.length % skins.length], white, dark, facialBrown);
       animations.push({ robot, player, root, human });
     }
     const ball = MeshBuilder.CreateSphere('football-ball', { diameter: .24, segments: 8 }, scene);

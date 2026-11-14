@@ -260,6 +260,25 @@ try {
     assert.equal(cages, 22, 'Every player wears one full-width cage');
     assert.equal(scene.meshes.filter(mesh => mesh.name.startsWith('football-thigh-')).length, 44);
     assert.equal(scene.meshes.filter(mesh => mesh.name.startsWith('football-calf-')).length, 44);
+    // Facial features: layered eyes under brows and a mouth shadow per player.
+    assert.equal(scene.meshes.filter(mesh => mesh.name.startsWith('football-brow-')).length, 44,
+      'Every player has two eyebrows');
+    assert.equal(scene.meshes.filter(mesh => mesh.name.startsWith('football-iris-')).length, 44,
+      'Every player has two irises layered between eye whites and pupils');
+    assert.equal(scene.meshes.filter(mesh => mesh.name.startsWith('football-mouth-')).length, 22,
+      'Every player has a mouth shadow in the cage gap');
+    for (const suffix of ['eye-white-offense-QB--1', 'iris-offense-QB--1', 'pupil-offense-QB--1']) {
+      assert.ok(scene.getMeshByName(`football-${suffix}`), `football-${suffix} exists`);
+    }
+    {
+      const white = scene.getMeshByName('football-eye-white-offense-QB--1');
+      const iris = scene.getMeshByName('football-iris-offense-QB--1');
+      const pupil = scene.getMeshByName('football-pupil-offense-QB--1');
+      assert.ok(white.position.z < iris.position.z && iris.position.z < pupil.position.z,
+        'Iris layers in front of the white and behind the pupil');
+      assert.ok(iris.scaling.x < white.scaling.x && pupil.scaling.x < iris.scaling.x,
+        'Eye layers shrink from white to iris to pupil');
+    }
     const jersey = scene.getMeshByName('football-jersey-offense-QB');
     assert.ok(jersey.getTotalVertices() > 24, 'Torso is rounded, not a six-face box');
     assert.ok(scene.getTransformNodeByName('football-elbow-offense-QB--1').rotation.x < -1,
