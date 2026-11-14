@@ -283,14 +283,24 @@ try {
     'Layout guides use no thumbtacks or pins');
   act('clear');
   act('pencil');
-  assert.equal(scene.meshes.filter(mesh => mesh.name.startsWith('toolMark-')).length, 12,
-    'Ruler and protractor have numbered graduations');
+  assert.ok(scene.getMeshByName('toolMark-ruler-rulerScale') &&
+    scene.getMeshByName('toolMark-protractor-protractorScale') &&
+    scene.getMeshByName('toolMark-tape-tapeScale'),
+  'Ruler, protractor, and tape carry engraved graduation scales');
   context.handleDrawingPointer('down', point(0, 0));
   assert.equal(cameraControlsAttached, false, 'Drawing suspends mouse camera rotation');
   context.handleDrawingPointer('move', point(4, 0));
   pointerListeners.get('pointerup')();
   assert.equal(cameraControlsAttached, true, 'Releasing outside the canvas restores camera controls');
   assert.equal(guideCount(), 1, 'Window release completes an active stroke');
+  {
+    // Drop-to-fill reads the nearest committed guide's points by proximity.
+    const near = context.getNearbyDrawingGuidePoints(new Vector3(2, 0, 0.1), 0.3);
+    assert.ok(Array.isArray(near) && near.length >= 2,
+      'A point near a committed guide returns that guide\'s points for drop-to-fill');
+    assert.equal(context.getNearbyDrawingGuidePoints(new Vector3(2, 0, 5), 0.3), null,
+      'Far points return no guide for drop-to-fill');
+  }
   act('clear');
   context.handleDrawingPointer('down', point(0, 0));
   context.handleDrawingPointer('move', point(4, 0));

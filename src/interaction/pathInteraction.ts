@@ -58,7 +58,7 @@ import { initChartPageGhostMode, isChartGhostModeEnabled, setChartGhostModeEnabl
 import {
   executeDrawingToolAction, handleDrawingPointer, initFieldDrawingTools,
   isDrawingPointerActive, isFieldDrawingToolActive, isDraftingTableMode, selectDrawingGuideNear, snapToSelectedDrawingGuide,
-  clearDrawingGuides, getSelectedDrawingGuidePoints, exportDrawingWorkspace, importDrawingWorkspace,
+  clearDrawingGuides, getSelectedDrawingGuidePoints, getNearbyDrawingGuidePoints, exportDrawingWorkspace, importDrawingWorkspace,
   canUseCameraFieldCopies,
 } from './fieldDrawingTools';
 import {
@@ -2005,8 +2005,9 @@ function getEditableEditorFormation(): Segment | undefined {
   return segment;
 }
 
-function createSynchronizedRoutesFromGuide(controlPoints: Vector3[]): boolean {
-  const segment = getEditableEditorFormation();
+function createSynchronizedRoutesFromGuide(controlPoints: Vector3[],
+  form: Segment | undefined = undefined): boolean {
+  const segment = form ?? getEditableEditorFormation();
   if (!segment) return false;
   if (!isGuideOnField(controlPoints)) {
     publishFormationEdit("Destination guide must be finite and stay inside the field.");
@@ -2666,6 +2667,15 @@ const handInteraction = createHandInteraction({
   activateChartButton: executeMenuAction,
   notifyPlacement: showPlacementNotice,
   captureMarcherMove,
+  marcherDroppedOnGuide: (robot, position) => {
+    // Football drafting keeps its own guide-to-route flows.
+    if (footballVisuals) return;
+    const segment = segments.find((entry) => entry.kind === 'formation' && entry.robots.includes(robot));
+    if (!segment || segment.robots.length < 2) return;
+    const points = getNearbyDrawingGuidePoints(position, 0.3);
+    if (!points || points.length < 2) return;
+    createSynchronizedRoutesFromGuide(points, segment);
+  },
 });
 const { marcherGrabs } = handInteraction;
 

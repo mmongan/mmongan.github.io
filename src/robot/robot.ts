@@ -2039,6 +2039,40 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState,
   applyLegPose(pose);
 }
 
+// Procedural step cycle for a marcher being walked across the turf by a grab.
+// Held robots are excluded from the playback pose pass, so the drag drives
+// the legs directly: `phase` advances one unit per step and `amplitude`
+// scales the stride (0 restores standing). The next transport application
+// after release reposes the legs through the normal pipeline.
+export function animateHeldMarcherWalk(robot: TransformNode, phase: number, amplitude: number) {
+  const parts = marcherParts.get(robot);
+  if (!parts || !heldRobots.has(robot)) return;
+  const swing = Math.sin(phase * Math.PI) * 0.5 * amplitude;
+  const bob = Math.abs(Math.cos(phase * Math.PI)) * 0.03 * amplitude;
+  for (const [leg, knee, ankle, direction] of [
+    [parts.leftLeg, parts.leftKnee, parts.leftAnkle, 1],
+    [parts.rightLeg, parts.rightKnee, parts.rightAnkle, -1],
+  ] as const) {
+    leg.rotationQuaternion = null;
+    leg.rotation.x = swing * direction;
+    leg.rotation.z = 0;
+    leg.position.y = 0.69;
+    leg.position.z = 0;
+    // The rearward-swinging leg folds at the knee as it lifts and recovers.
+    knee.rotation.x = Math.max(0, swing * direction) * 1.1;
+    knee.rotationQuaternion = null;
+    knee.position.y = -MARCHER_THIGH_LENGTH;
+    ankle.rotation.x = -Math.max(0, swing * direction) * 0.5;
+    ankle.rotationQuaternion = null;
+    attachMarcherThigh(direction > 0 ? parts.leftThigh : parts.rightThigh, leg,
+      direction > 0 ? -0.09 * MARCHER_BUILD_SCALE : 0.09 * MARCHER_BUILD_SCALE);
+    alignMarcherKnee(direction > 0 ? parts.leftThigh : parts.rightThigh, knee);
+  }
+  parts.body.position.y = bob;
+  parts.instrumentRoot.position.y = bob;
+  parts.legRoot.position.y = bob;
+}
+
 export interface PreparedRobotAnimationFrame {
   position: Vector3;
   yaw: number;

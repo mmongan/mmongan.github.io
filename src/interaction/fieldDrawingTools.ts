@@ -117,6 +117,10 @@ export function snapToNearbyDrawingGuide(point: Vector3, radius = 0.25): Vector3
 export function getNearbyDrawingGuidePose(point: Vector3, radius = 0.25) {
   return drawing?.snapToNearby(point, radius) ?? null;
 }
+/** Root-local points of the committed line/curve guide nearest a point, or null. */
+export function getNearbyDrawingGuidePoints(point: Vector3, radius = 0.3): Vector3[] | null {
+  return drawing?.guidePointsNear(point, radius) ?? null;
+}
 /** Removes every drafted guide (e.g. for a new blank chart page); returns how many were removed. */
 export function clearDrawingGuides() {
   return drawing?.clearGuides() ?? 0;
@@ -243,6 +247,12 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
   plastic.diffuseColor = new Color3(0.95, 0.72, 0.25);
   plastic.alpha = 0.7;
   plastic.backFaceCulling = false;
+  // Clear instrument acrylic, as on real protractors and set squares.
+  const acrylic = new StandardMaterial('drawingToolAcrylic', scene);
+  acrylic.diffuseColor = new Color3(0.85, 0.92, 0.95);
+  acrylic.specularColor = new Color3(0.5, 0.5, 0.5);
+  acrylic.alpha = 0.45;
+  acrylic.backFaceCulling = false;
   const pencilMaterial = new StandardMaterial('drawingPencilMaterial', scene);
   pencilMaterial.diffuseColor = new Color3(1, 0.7, 0.05);
   const eraserMaterial = new StandardMaterial('drawingEraserMaterial', scene);
@@ -740,6 +750,17 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     }
     return nearest;
   }
+  // Root-local points of the committed line/curve guide nearest a point.
+  function guidePointsNear(point: Vector3, radius: number): Vector3[] | null {
+    let best: Guide | null = null;
+    let distance = radius;
+    for (const guide of guides) {
+      if (guide.options.sticky) continue;
+      const hit = closestPointOnGuide(guide.points, point);
+      if (hit && hit.distance <= distance) { best = guide; distance = hit.distance; }
+    }
+    return best ? best.points.map(guidePoint => guidePoint.clone()) : null;
+  }
   function disposeGuide(guide: Guide) {
     if (guide === selectedGuide) selectedGuide = null;
     guide.meshes.forEach(mesh => mesh.dispose());
@@ -943,29 +964,50 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
     const edge = new Vector3(0.24, -0.12, 0);
     let compassPencil: AbstractMesh | undefined;
     let compassLead: AbstractMesh | undefined;
+    let compassSleeve: AbstractMesh | undefined;
     let updateCompassRadius: ((radius: number) => void) | undefined;
     function rod(name: string, a: Vector3, b: Vector3, radius: number) {
       const mesh = MeshBuilder.CreateTube(name, { path: [a, b], radius, tessellation: 6, cap: 3 }, scene);
       mesh.parent = root; mesh.material = kind === 'pencil' ? pencilMaterial : metal;
       parts.add(mesh); return mesh;
     }
-    function marking(text: string, position: Vector3, size: number) {
+    // One engraved-scale texture per instrument face, as on real scales,
+    // instead of separate wire ticks and per-digit label planes.
+    function graduations(name: string, width: number, depth: number, position: Vector3,
+      draw: (ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement) => void) {
       const canvas = document.createElement('canvas');
-      canvas.width = 128; canvas.height = 64;
+      canvas.width = 1024;
+      canvas.height = Math.max(64, Math.round(1024 * depth / width / 64) * 64);
       const ctx = canvas.getContext('2d');
       if (!ctx) throw new Error('Tool graduations require a 2D canvas context.');
-      ctx.fillStyle = '#101820'; ctx.font = 'bold 42px Arial';
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, 64, 32);
-      const texture = new DynamicTexture(`toolMark-${kind}-${text}`, canvas, scene, false);
+      ctx.fillStyle = '#16202a';
+      ctx.strokeStyle = '#16202a';
+      draw(ctx, canvas);
+      const texture = new DynamicTexture(`toolMark-${kind}-${name}`, canvas, scene, false);
       texture.hasAlpha = true; texture.update();
-      const material = new StandardMaterial(`toolMark-${kind}-${text}Material`, scene);
+      const material = new StandardMaterial(`toolMark-${kind}-${name}Material`, scene);
       material.diffuseTexture = texture; material.opacityTexture = texture;
       material.disableLighting = true; material.emissiveColor = Color3.White();
       material.backFaceCulling = false;
-      const mesh = MeshBuilder.CreatePlane(`toolMark-${kind}-${text}`, { width: size * 2, height: size }, scene);
+      const mesh = MeshBuilder.CreatePlane(`toolMark-${kind}-${name}`, { width, height: depth }, scene);
       mesh.parent = root; mesh.position.copyFrom(position); mesh.rotation.x = Math.PI / 2;
       mesh.material = material; mesh.isPickable = false;
       mesh.onDisposeObservable.addOnce(() => material.dispose(false, true));
+      return mesh;
+    }
+    // Cylinder seated between two points: tapered instrument legs, chucks and
+    // clamp sleeves, oriented like the turned metal parts they model.
+    function turned(name: string, a: Vector3, b: Vector3, topDiameter: number, bottomDiameter: number,
+      material = metal, tessellation = 10) {
+      const mesh = MeshBuilder.CreateCylinder(name,
+        { height: Vector3.Distance(a, b), diameterTop: topDiameter, diameterBottom: bottomDiameter, tessellation }, scene);
+      mesh.parent = root;
+      mesh.position.copyFrom(Vector3.Center(a, b));
+      mesh.rotationQuaternion = Quaternion.FromUnitVectorsToRef(Vector3.Up(),
+        b.subtract(a).normalize(), new Quaternion());
+      mesh.material = material;
+      parts.add(mesh);
+      return mesh;
     }
     if (kind === 'camera') {
       const body = MeshBuilder.CreateBox('draftingCameraBody', { width: 0.16, height: 0.09, depth: 0.07 }, scene);
@@ -978,29 +1020,79 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
       const shutterAction: HandMenuHit = { action: 'drawingTool', tool: 'take3DSnapshot' };
       registerMenuButton(shutter, shutterAction);
       new FloatingPanel(root, new Set([shutter]), root, Vector3.Zero(), new Map([[shutter, shutterAction]]));
-    } else if (kind === 'tSquare' || kind === 'setSquare' || kind === 'offset') {
+    } else if (kind === 'tSquare') {
+      // Proven form: a flat maple blade with a clear ruling strip, fixed into
+      // a wider two-ply head that registers against the field edge.
       tip.set(-0.12, -0.12, 0); edge.set(0.12, -0.12, 0);
-      rod(`draftingBody-${kind}`, tip, edge, 0.009);
-      if (kind === 'tSquare') {
-        rod('draftingTSquareCross', new Vector3(-0.12, -0.12, -0.1), new Vector3(-0.12, -0.12, 0.1), 0.012);
-      } else if (kind === 'setSquare') {
-        rod('draftingSetSquareVertical', tip, new Vector3(-0.12, -0.12, 0.2), 0.009);
-        rod('draftingSetSquareHypotenuse', new Vector3(-0.12, -0.12, 0.2), edge, 0.009);
-      } else {
-        rod('draftingOffsetParallel', tip.add(new Vector3(0, 0, 0.08)), edge.add(new Vector3(0, 0, 0.08)), 0.009);
-        rod('draftingOffsetLink', tip, tip.add(new Vector3(0, 0, 0.08)), 0.006);
+      const blade = MeshBuilder.CreateBox('draftingBody-tSquare', { width: 0.27, height: 0.006, depth: 0.04 }, scene);
+      blade.parent = root; blade.position.set(0.005, -0.118, 0.022); blade.material = wood; parts.add(blade);
+      const lip = MeshBuilder.CreateBox('draftingTSquareLip', { width: 0.27, height: 0.004, depth: 0.012 }, scene);
+      lip.parent = root; lip.position.set(0.005, -0.119, 0.004); lip.material = acrylic; parts.add(lip);
+      const head = MeshBuilder.CreateBox('draftingTSquareCross', { width: 0.034, height: 0.012, depth: 0.2 }, scene);
+      head.parent = root; head.position.set(-0.137, -0.117, 0.01); head.material = wood; parts.add(head);
+      const ply = MeshBuilder.CreateBox('draftingTSquareHeadPly', { width: 0.042, height: 0.006, depth: 0.2 }, scene);
+      ply.parent = root; ply.position.set(-0.137, -0.124, 0.01); ply.material = graphite; parts.add(ply);
+    } else if (kind === 'setSquare') {
+      // Proven form: a clear acrylic 45-degree triangle with the usual
+      // lightening cutout, not a wireframe of rods.
+      tip.set(-0.12, -0.12, 0); edge.set(0.12, -0.12, 0);
+      const corners = [tip.clone(), edge.clone(), new Vector3(-0.12, -0.12, 0.2)];
+      const outer = [...corners, corners[0].clone()];
+      const centroid = corners.reduce((sum, point) => sum.add(point), Vector3.Zero()).scale(1 / 3);
+      const inner = outer.map(point => Vector3.Lerp(point, centroid, 0.42));
+      const plate = MeshBuilder.CreateRibbon('draftingSetSquarePlate',
+        { pathArray: [outer, inner], sideOrientation: 2 }, scene);
+      plate.parent = root; plate.material = acrylic; parts.add(plate);
+      for (const [index, name] of (['draftingBody-setSquare', 'draftingSetSquareHypotenuse',
+        'draftingSetSquareVertical'] as const).entries()) {
+        rod(name, outer[index], outer[index + 1], 0.0035).material = acrylic;
       }
-    } else if (kind === 'dividers') {
-      edge.set(0.12, -0.12, 0);
-      rod('draftingDividerLegA', new Vector3(0.06, 0.08, 0), tip, 0.006);
-      rod('draftingDividerLegB', new Vector3(0.06, 0.08, 0), edge, 0.006);
-      rod('draftingDividerHinge', new Vector3(0.04, 0.08, 0), new Vector3(0.08, 0.08, 0), 0.012);
-    } else if (kind === 'tape') {
+    } else if (kind === 'offset') {
       tip.set(-0.12, -0.12, 0); edge.set(0.12, -0.12, 0);
-      const housing = MeshBuilder.CreateBox('draftingTapeHousing', { width: 0.07, height: 0.065, depth: 0.04 }, scene);
-      housing.parent = root; housing.position.copyFrom(tip); housing.material = pencilMaterial; parts.add(housing);
-      rod('draftingTapeBlade', tip, edge, 0.009).material = pencilMaterial;
-      rod('draftingTapeHook', edge, edge.add(new Vector3(0, 0.025, 0)), 0.004);
+      rod('draftingBody-offset', tip, edge, 0.009);
+      rod('draftingOffsetParallel', tip.add(new Vector3(0, 0, 0.08)), edge.add(new Vector3(0, 0, 0.08)), 0.009);
+      rod('draftingOffsetLink', tip, tip.add(new Vector3(0, 0, 0.08)), 0.006);
+    } else if (kind === 'dividers') {
+      // Proven form: steel bow dividers — tapered legs from a boxed hinge
+      // under a turned handle, tied by a quadrant arc with a wing nut.
+      edge.set(0.12, -0.12, 0);
+      const hinge = new Vector3(0.06, 0.08, 0);
+      turned('draftingDividerLegA', hinge, tip, 0.011, 0.0025);
+      turned('draftingDividerLegB', hinge, edge, 0.011, 0.0025);
+      const boss = MeshBuilder.CreateBox('draftingDividerHinge', { width: 0.026, height: 0.03, depth: 0.018 }, scene);
+      boss.parent = root; boss.position.set(0.06, 0.085, 0); boss.material = metal; parts.add(boss);
+      turned('draftingDividerHandle', new Vector3(0.06, 0.1, 0), new Vector3(0.06, 0.135, 0), 0.013, 0.009);
+      const quadrant = Array.from({ length: 13 }, (_, step) => {
+        const t = step / 12;
+        return Vector3.Lerp(Vector3.Lerp(hinge, tip, 0.52), Vector3.Lerp(hinge, edge, 0.52), t)
+          .add(new Vector3(0, -0.012 * Math.sin(t * Math.PI), 0));
+      });
+      const arc = MeshBuilder.CreateTube('draftingDividerQuadrant', { path: quadrant, radius: 0.0022, tessellation: 6 }, scene);
+      arc.parent = root; arc.material = metal; parts.add(arc);
+      const nut = MeshBuilder.CreateCylinder('draftingDividerNut', { height: 0.012, diameter: 0.012, tessellation: 6 }, scene);
+      nut.parent = root; nut.position.copyFrom(quadrant[3]); nut.rotation.x = Math.PI / 2;
+      nut.material = graphite; parts.add(nut);
+    } else if (kind === 'tape') {
+      // Proven form: a rounded tape-measure case, a flat yellow blade with a
+      // printed scale, and a metal end hook.
+      tip.set(-0.12, -0.12, 0); edge.set(0.12, -0.12, 0);
+      const housing = MeshBuilder.CreateBox('draftingTapeHousing', { width: 0.066, height: 0.056, depth: 0.044 }, scene);
+      housing.parent = root; housing.position.set(-0.12, -0.096, 0); housing.material = graphite; parts.add(housing);
+      const drum = MeshBuilder.CreateCylinder('draftingTapeDrum', { height: 0.046, diameter: 0.062, tessellation: 16 }, scene);
+      drum.parent = root; drum.position.set(-0.12, -0.072, 0); drum.rotation.x = Math.PI / 2;
+      drum.material = pencilMaterial; parts.add(drum);
+      const blade = MeshBuilder.CreateBox('draftingTapeBlade', { width: 0.21, height: 0.0018, depth: 0.019 }, scene);
+      blade.parent = root; blade.position.set(0.015, -0.12, 0); blade.material = pencilMaterial; parts.add(blade);
+      graduations('tapeScale', 0.2, 0.016, new Vector3(0.015, -0.1185, 0), (ctx, canvas) => {
+        ctx.font = 'bold 40px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+        for (let step = 0; step <= 10; step++) {
+          const x = (step / 10) * (canvas.width - 64) + 32;
+          ctx.fillRect(x - 2, 0, 4, step % 2 ? 18 : 30);
+          if (step % 2 === 0) ctx.fillText(String(step), x, 34);
+        }
+      });
+      const hook = MeshBuilder.CreateBox('draftingTapeHook', { width: 0.004, height: 0.012, depth: 0.019 }, scene);
+      hook.parent = root; hook.position.set(0.121, -0.115, 0); hook.material = metal; parts.add(hook);
     } else if (kind === 'spline') {
       tip.set(-0.12, -0.12, 0); edge.set(0.12, -0.12, 0);
       const curve = sampleDraftSpline([tip, new Vector3(0, -0.12, 0.2), edge])
@@ -1040,59 +1132,121 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
       const sleeve = MeshBuilder.CreateBox('fieldEraserSleeve', { width: 0.035, height: 0.041, depth: 0.041 }, scene);
       sleeve.parent = root; sleeve.position.y = -0.1; sleeve.material = felt; parts.add(sleeve);
     } else if (kind === 'ruler') {
+      // Proven form: a flat aluminum scale whose beveled front edge is the
+      // ruling edge, one engraved graduation strip, and a raised finger bar.
       tip.x = -0.12; edge.x = 0.12;
-      const body = MeshBuilder.CreateBox('fieldRulerBody', { width: 0.26, height: 0.004, depth: 0.035 }, scene);
-      body.parent = root; body.position.set(0, -0.118, 0.015); body.material = plastic; parts.add(body);
-      rod('fieldRulerEdge', tip, edge, 0.006);
-      for (let index = 0; index <= 12; index++) {
-        const x = -0.12 + index * 0.02;
-        rod('fieldRulerTick', new Vector3(x, -0.12, 0), new Vector3(x, -0.12, index % 3 ? 0.015 : 0.025), 0.0015);
-        if (index % 3 === 0) marking(String(index), new Vector3(x, -0.114, 0.025), 0.008);
-      }
-    } else if (kind === 'protractor') {
-      const path = Array.from({ length: 33 }, (_, i) => new Vector3(Math.cos(i * Math.PI / 32) * 0.12,
-        -0.12, Math.sin(i * Math.PI / 32) * 0.12));
-      const arc = MeshBuilder.CreateTube('fieldProtractorArc', { path, radius: 0.004, tessellation: 6 }, scene);
-      arc.parent = root; arc.material = metal; parts.add(arc);
-      const band = MeshBuilder.CreateRibbon('fieldProtractorBody', {
-        pathArray: [path, path.map(point => new Vector3(point.x * 0.72, point.y, point.z * 0.72))],
-        sideOrientation: 2,
+      const body = MeshBuilder.CreateBox('fieldRulerBody', { width: 0.26, height: 0.005, depth: 0.044 }, scene);
+      body.parent = root; body.position.set(0, -0.1185, 0.026); body.material = metal; parts.add(body);
+      const bevel = MeshBuilder.CreateRibbon('fieldRulerEdge', {
+        pathArray: [
+          [new Vector3(-0.13, -0.121, 0), new Vector3(0.13, -0.121, 0)],
+          [new Vector3(-0.13, -0.116, 0.008), new Vector3(0.13, -0.116, 0.008)],
+        ], sideOrientation: 2,
       }, scene);
-      band.parent = root; band.material = plastic; parts.add(band);
-      rod('fieldProtractorBase', new Vector3(-0.12, -0.12, 0), new Vector3(0.12, -0.12, 0), 0.004);
+      bevel.parent = root; bevel.material = metal; parts.add(bevel);
+      const bar = MeshBuilder.CreateBox('fieldRulerGrip', { width: 0.2, height: 0.008, depth: 0.014 }, scene);
+      bar.parent = root; bar.position.set(0, -0.112, 0.038); bar.material = metal; parts.add(bar);
+      graduations('rulerScale', 0.26, 0.028, new Vector3(0, -0.1155, 0.021), (ctx, canvas) => {
+        ctx.font = 'bold 44px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+        for (let half = 0; half <= 24; half++) {
+          const x = ((half * 0.01 + 0.01) / 0.26) * canvas.width;
+          ctx.fillRect(x - 2, 0, 4, half % 2 ? 16 : half % 6 ? 26 : 40);
+          if (half % 6 === 0) ctx.fillText(String(half / 2), x, 46);
+        }
+      });
+    } else if (kind === 'protractor') {
+      // Proven form: a clear semicircular protractor with a printed dual
+      // degree scale, a reinforced rim, and an origin notch on the baseline.
       edge.x = 0.12;
-      for (let angle = 0; angle <= 180; angle += 15) {
-        const theta = angle * Math.PI / 180;
-        rod('fieldProtractorTick', new Vector3(Math.cos(theta) * 0.1, -0.12, Math.sin(theta) * 0.1),
-          new Vector3(Math.cos(theta) * 0.12, -0.12, Math.sin(theta) * 0.12), 0.0015);
-        if (angle % 30 === 0) marking(String(angle),
-          new Vector3(Math.cos(theta) * 0.087, -0.118, Math.sin(theta) * 0.087), 0.012);
-      }
+      const rimPath = Array.from({ length: 33 }, (_, i) => new Vector3(Math.cos(i * Math.PI / 32) * 0.12,
+        -0.12, Math.sin(i * Math.PI / 32) * 0.12));
+      const arc = MeshBuilder.CreateTube('fieldProtractorArc', { path: rimPath, radius: 0.003, tessellation: 6 }, scene);
+      arc.parent = root; arc.material = acrylic; parts.add(arc);
+      const disc = MeshBuilder.CreateDisc('fieldProtractorBody',
+        { radius: 0.12, tessellation: 48, arc: 0.5, sideOrientation: 2 }, scene);
+      disc.parent = root; disc.rotation.x = Math.PI / 2; disc.position.y = -0.1205;
+      disc.material = acrylic; parts.add(disc);
+      rod('fieldProtractorBase', new Vector3(-0.125, -0.12, 0), new Vector3(0.125, -0.12, 0), 0.0025)
+        .material = acrylic;
+      rod('fieldProtractorNotch', new Vector3(0, -0.1195, 0), new Vector3(0, -0.1195, 0.012), 0.0012);
+      graduations('protractorScale', 0.26, 0.13, new Vector3(0, -0.1185, 0.065), (ctx, canvas) => {
+        const cx = canvas.width / 2, cy = canvas.height, r = canvas.height - 10;
+        ctx.lineWidth = 4;
+        for (let angle = 0; angle <= 180; angle += 5) {
+          const theta = angle * Math.PI / 180;
+          const inner = angle % 10 ? 0.93 : angle % 30 ? 0.88 : 0.82;
+          ctx.beginPath();
+          ctx.moveTo(cx + Math.cos(theta) * r * inner, cy - Math.sin(theta) * r * inner);
+          ctx.lineTo(cx + Math.cos(theta) * r * 0.985, cy - Math.sin(theta) * r * 0.985);
+          ctx.stroke();
+        }
+        ctx.font = 'bold 44px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        for (let angle = 0; angle <= 180; angle += 30) {
+          const theta = angle * Math.PI / 180;
+          ctx.fillText(String(angle), cx + Math.cos(theta) * r * 0.72, cy - Math.sin(theta) * r * 0.72);
+          if (angle % 180 !== 0) {
+            ctx.font = '30px Arial';
+            ctx.fillText(String(180 - angle), cx + Math.cos(theta) * r * 0.58, cy - Math.sin(theta) * r * 0.58);
+            ctx.font = 'bold 44px Arial';
+          }
+        }
+      });
     } else if (kind === 'compass') {
+      // Proven form: a bow compass — knurled spinning knob over a yoke head,
+      // a tapered steel needle leg with a chuck, and a pencil leg whose lead
+      // clamp slides with the radius. The pencil leg and lead stay updatable
+      // tubes so radius adjustment reuses their geometry.
       edge.x = 0.12;
-      rod('fieldCompassPivotLeg', new Vector3(0.06, 0.08, 0), tip, 0.006);
       const hinge = new Vector3(0.06, 0.08, 0);
+      turned('fieldCompassPivotLeg', hinge, new Vector3(0.012, -0.08, 0), 0.011, 0.006);
+      turned('fieldCompassChuck', new Vector3(0.016, -0.066, 0), new Vector3(0.004, -0.102, 0), 0.009, 0.006);
+      turned('fieldCompassNeedle', new Vector3(0.004, -0.102, 0), tip, 0.0025, 0.0004);
       const pencil = MeshBuilder.CreateTube('fieldCompassPencilLeg', {
-        path: [hinge, edge], radius: 0.006, tessellation: 6, cap: 3, updatable: true,
+        path: [hinge, edge], radius: 0.0055, tessellation: 8, cap: 3, updatable: true,
       }, scene);
       pencil.parent = root;
       pencil.material = pencilMaterial;
       compassPencil = pencil;
-      rod('fieldCompassNeedle', new Vector3(0, -0.1, 0), tip, 0.002).material = graphite;
       const lead = MeshBuilder.CreateTube('fieldCompassLead', {
         path: [new Vector3(0.114, -0.1, 0), edge], radius: 0.002, tessellation: 6, cap: 3, updatable: true,
       }, scene);
       lead.parent = root; lead.material = graphite;
       compassLead = lead;
+      const sleeve = MeshBuilder.CreateCylinder('fieldCompassSleeve',
+        { height: 0.034, diameterTop: 0.012, diameterBottom: 0.009, tessellation: 10 }, scene);
+      sleeve.parent = root; sleeve.material = metal;
+      compassSleeve = sleeve;
+      const screw = MeshBuilder.CreateTube('fieldCompassScrew', {
+        path: [Vector3.Lerp(hinge, tip, 0.5), Vector3.Lerp(hinge, edge, 0.5)],
+        radius: 0.0018, tessellation: 6, cap: 3, updatable: true,
+      }, scene);
+      screw.parent = root; screw.material = metal; screw.isPickable = false;
+      const placeCompassFittings = () => {
+        const edgeTarget = new Vector3(edge.x, edge.y, edge.z);
+        const along = edgeTarget.subtract(hinge);
+        sleeve.position.copyFrom(hinge.add(along.scale(0.82)));
+        sleeve.rotationQuaternion = Quaternion.FromUnitVectorsToRef(Vector3.Up(),
+          along.normalize(), sleeve.rotationQuaternion ?? new Quaternion());
+        MeshBuilder.CreateTube('fieldCompassScrew', {
+          path: [Vector3.Lerp(hinge, tip, 0.5), Vector3.Lerp(hinge, edgeTarget, 0.5)], instance: screw,
+        });
+      };
+      placeCompassFittings();
       updateCompassRadius = radius => {
         edge.x = radius;
         MeshBuilder.CreateTube('fieldCompassPencilLeg', { path: [hinge, edge], instance: pencil });
         MeshBuilder.CreateTube('fieldCompassLead', {
           path: [new Vector3(radius - 0.006, -0.1, 0), edge], instance: lead,
         });
+        placeCompassFittings();
       };
-      rod('fieldCompassHinge', new Vector3(0.045, 0.08, 0), new Vector3(0.075, 0.08, 0), 0.01);
-      rod('fieldCompassKnob', new Vector3(0.06, 0.08, 0), new Vector3(0.06, 0.115, 0), 0.009);
+      // Yoke head and knurled knob.
+      const yoke = MeshBuilder.CreateBox('fieldCompassHinge', { width: 0.03, height: 0.024, depth: 0.016 }, scene);
+      yoke.parent = root; yoke.position.set(0.06, 0.086, 0); yoke.material = metal; parts.add(yoke);
+      turned('fieldCompassKnob', new Vector3(0.06, 0.098, 0), new Vector3(0.06, 0.128, 0), 0.013, 0.011);
+      const knurl = MeshBuilder.CreateTorus('fieldCompassKnurl',
+        { diameter: 0.0135, thickness: 0.0022, tessellation: 12 }, scene);
+      knurl.parent = root; knurl.position.set(0.06, 0.12, 0); knurl.material = graphite; parts.add(knurl);
     } else {
       edge.x = 0.12;
       const outline = buildToolGuide(kind, Vector3.Zero(), new Vector3(0.12, 0, 0));
@@ -1258,7 +1412,8 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
         }
       }
       tool.compassRadiusPanel = new CompassRadiusGrip(radiusRoot,
-        new Set([compassPencil, compassLead]), radiusRoot, new Vector3(0.02, 0.095, 0.012));
+        new Set(compassSleeve ? [compassPencil, compassLead, compassSleeve] : [compassPencil, compassLead]),
+        radiusRoot, new Vector3(0.02, 0.095, 0.012));
     }
     if (!label) {
       for (const node of [root, ...root.getDescendants()]) node.name += `-copy-${root.uniqueId}`;
@@ -2104,7 +2259,7 @@ function createFieldDrawingTools(deps: DrawingDependencies) {
   }
   return { action, pointer, cameraCopiesAllowed, updateTableStatus, tableMode: () => tableMode,
     pointerActive: () => pointerStroke !== null, active: () => selected !== null || tableMode,
-    selectNear, snapToSelected, snapToNearby,
+    selectNear, snapToSelected, snapToNearby, guidePointsNear,
     clearGuides: () => {
       const count = guides.length;
       guides.splice(0).forEach(disposeGuide);

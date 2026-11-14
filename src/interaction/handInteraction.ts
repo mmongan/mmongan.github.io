@@ -25,6 +25,7 @@ import { scene } from '../scene/engine';
 import { isDraftingTableMode, selectDrawingGuideNear, getNearbyDrawingGuidePose } from './fieldDrawingTools';
 import {
   findRobotRoot,
+  animateHeldMarcherWalk,
   getGlobalCountIndex,
   getMarcherRenderingGroup,
   getRobotCounts,
@@ -95,6 +96,12 @@ export interface MarcherGrab {
   landingGhost?: TransformNode;
   recordMove?: () => void;
   turfAnchor?: { position: Vector3; target: Vector3 };
+  // Grounded walking drag: previous grounded position, accumulated step
+  // phase, eased stride amplitude, and whether travel steered the facing.
+  walkPrev?: Vector3;
+  walkPhase?: number;
+  walkAmplitude?: number;
+  walkHeading?: boolean;
 }
 
 export interface HandPathDependencies {
@@ -129,6 +136,9 @@ export interface HandPathDependencies {
   activateChartButton: (action: NonNullable<ReturnType<typeof getHandMenuHit>>) => void;
   notifyPlacement: (message: string) => void;
   captureMarcherMove: (robot: TransformNode) => () => void;
+  // Called after a dragged marcher lands snapped onto a drafting guide, so
+  // the rest of its form can walk over and fill the guide's positions.
+  marcherDroppedOnGuide?: (robot: TransformNode, position: Vector3) => void;
 }
 
 export function createHandInteraction(paths: HandPathDependencies) {
@@ -329,6 +339,21 @@ export function createHandInteraction(paths: HandPathDependencies) {
     grab.originalRenderingGroup = null;
   }
 
+  // Grounded root-local position under a world point held anywhere above the
+  // field footprint (height ignored), or null off the field.
+  function projectToTurf(worldPosition: Vector3): Vector3 | null {
+    const field = scene.getMeshByName('field');
+    if (!field || !field.isEnabled()) return null;
+    const fieldMatrix = field.computeWorldMatrix(true);
+    const local = Vector3.TransformCoordinates(worldPosition, Matrix.Invert(fieldMatrix));
+    if (Math.abs(local.x) > FIELD_WIDTH_YARDS / 2 || Math.abs(local.z) > FIELD_LENGTH_YARDS / 2) return null;
+    local.y = 0;
+    const grounded = Vector3.TransformCoordinates(Vector3.TransformCoordinates(local, fieldMatrix),
+      Matrix.Invert(pathRoot.computeWorldMatrix(true)));
+    grounded.y += 0.02;
+    return grounded;
+  }
+
   function isTouchingTurf(worldPosition: Vector3, radius = 0.05): boolean {
     const field = scene.getMeshByName('field');
     if (!field || !field.isEnabled()) return false;
@@ -419,6 +444,33 @@ export function createHandInteraction(paths: HandPathDependencies) {
       const yawDelta = facingYaw - grab.initialFacingYaw;
       yaw = grab.initialRotationY + Math.atan2(Math.sin(yawDelta), Math.cos(yawDelta));
     }
+    // A marcher dragged over the field walks along the turf toward the drag
+    // instead of lifting into the air: ground the target, face the travel
+    // direction once it is clearly moving, and swing the legs by distance.
+    const grounded = projectToTurf(Vector3.TransformCoordinates(position, pathMatrix));
+    if (grounded) {
+      position = new Vector3(position.x, grounded.y, position.z);
+      const previous = grab.walkPrev ?? grab.robot.position;
+      const dx = position.x - previous.x;
+      const dz = position.z - previous.z;
+      const travel = Math.hypot(dx, dz);
+      if (travel > 0.004) {
+        const heading = Math.atan2(dx, dz);
+        const current = grab.walkHeading ? grab.robot.rotation.y : yaw;
+        const turn = Math.atan2(Math.sin(heading - current), Math.cos(heading - current));
+        yaw = current + turn * Math.min(1, travel * 10);
+        grab.walkHeading = true;
+        grab.walkPhase = (grab.walkPhase ?? 0) + travel / 0.625;
+        grab.walkAmplitude = Math.min(1, (grab.walkAmplitude ?? 0) + travel * 4);
+      } else {
+        grab.walkAmplitude = Math.max(0, (grab.walkAmplitude ?? 0) - 0.08);
+      }
+      animateHeldMarcherWalk(grab.robot, grab.walkPhase ?? 0, grab.walkAmplitude ?? 0);
+      grab.walkPrev = position.clone();
+    } else if (grab.walkAmplitude) {
+      grab.walkAmplitude = 0;
+      animateHeldMarcherWalk(grab.robot, grab.walkPhase ?? 0, 0);
+    }
     if (tryManualMarcherPose(grab.robot, position, yaw, grab.robot.isEnabled())) grab.robot.setEnabled(true);
     updateMarcherLandingGhost(grab);
   }
@@ -491,7 +543,9 @@ export function createHandInteraction(paths: HandPathDependencies) {
       return;
     }
     if (landing.guideFacing) setPlacedMarcherFacing(grab.robot, dropYaw);
-    else commitMarcherTwist(grab, dropYaw);
+    // A walking drag steers the facing by travel; that is not a deliberate
+    // wrist twist, so it never commits a fixed route facing.
+    else if (!grab.walkHeading) commitMarcherTwist(grab, dropYaw);
     handPlacementDrafts.delete(grab.robot);
     const oldPath = robotPaths.get(grab.robot);
     if (oldPath) {
@@ -513,6 +567,9 @@ export function createHandInteraction(paths: HandPathDependencies) {
       .forEach(rebuildFormationConnections);
     if (grab.robot === getSelectedRobot()) refreshStepHandles();
     grab.recordMove?.();
+    // Landed snapped onto a drafting guide: the rest of the marcher's form
+    // walks over to fill in the guide's remaining positions.
+    if (landing.guideFacing) paths.marcherDroppedOnGuide?.(grab.robot, position.clone());
   }
 
   function findMarcherNearHand(point: Vector3, handoffFrom?: string): TransformNode | null {
