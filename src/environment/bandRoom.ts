@@ -17,6 +17,7 @@ import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
 import { scene } from '../scene/engine';
+import { bandRoomToggle } from '../ui/dom';
 import { getARScale, getARScaleRange, isARTabletopModeActive } from '../xr/ar';
 
 // Interior footprint in meters, centered on the local-floor origin where the
@@ -214,7 +215,7 @@ function placeAroundPlayer(root: TransformNode) {
 // passthrough, and only while the field is below full 1:1 scale.
 export function updateBandRoomVisibility() {
   const inXR = scene.activeCamera?.getClassName() === 'WebXRCamera';
-  const show = inXR && !isARTabletopModeActive() &&
+  const show = !!bandRoomToggle?.checked && inXR && !isARTabletopModeActive() &&
     getARScale() < getARScaleRange().max - 1e-6;
   if (show === visible) return;
   visible = show;

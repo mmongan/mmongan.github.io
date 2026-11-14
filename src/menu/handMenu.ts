@@ -29,7 +29,7 @@ export type HandMenuHit =
   | { action: "formationLetter"; letter: FormationLetter }
   | { action: "drillChartPad" | "recallPanels" | "xrSettings" | "xrSettingsHide" }
   | { action: "marcherDrumGame" }
-  | { action: "xrSetting"; setting: "fullScale" | "tabletop" | "giant" | "seated" | "grid" | "snap" }
+  | { action: "xrSetting"; setting: "fullScale" | "tabletop" | "giant" | "seated" | "grid" | "snap" | "bandRoom" }
   | { action: 'football'; command: import('../robot/footballPlayMode').FootballCommand }
   | { action: "musicStandSummon" }
   | { action: "marcherPOV" }

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import type { HandMenuHit } from './handMenu';
-import { sittingModeToggle, fieldGridToggle, gridSnapToggle } from '../ui/dom';
+import { bandRoomToggle, sittingModeToggle, fieldGridToggle, gridSnapToggle } from '../ui/dom';
 
 export type SettingsPanelControl = [label: string, action: HandMenuHit, toggle?: HTMLInputElement | null];
 
@@ -24,7 +24,8 @@ export const SETTINGS_PANEL_ROWS: SettingsPanelControl[][] = [
   [['Projector', { action: 'fieldProjector', command: 'show' }],
     ['Marcher POV', { action: 'marcherPOV' }],
     ['Reset panels/signs', { action: 'recallPanels' }]],
-  [['Drum Game', { action: 'marcherDrumGame' }]],
+  [['Drum Game', { action: 'marcherDrumGame' }],
+    ['Band room', { action: 'xrSetting', setting: 'bandRoom' }, bandRoomToggle]],
   [['Commit form', { action: 'commitFormation' }],
     ['Undo edit', { action: 'undoErase' }], ['Redo edit', { action: 'redoErase' }]],
 ];

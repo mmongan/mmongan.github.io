@@ -25,7 +25,8 @@ class Control extends EventTarget {
   click() { this.clicks++; this.checked = !this.checked; this.dispatchEvent(new Event('change')); }
 }
 const controls = Object.fromEntries(['xrSettingsPanelButton', 'xrSettingsPanelToggle', 'fullScaleVRButton',
-  'tabletopScaleButton', 'giantModeButton', 'sittingModeToggle', 'fieldGridToggle', 'gridSnapToggle']
+  'tabletopScaleButton', 'giantModeButton', 'sittingModeToggle', 'fieldGridToggle', 'gridSnapToggle',
+  'bandRoomToggle']
   .map(name => [name, new Control()]));
 const engine = new NullEngine(), scene = new Scene(engine);
 const labels = [];
@@ -90,7 +91,8 @@ try {
   context.summonXRSettingsPanel();
   assert.ok(Vector3.Distance(root.position, firstPosition.add(new Vector3(4, 0, 0))) < 1e-6);
   for (const [setting, name] of [['fullScale', 'fullScaleVRButton'], ['tabletop', 'tabletopScaleButton'],
-    ['giant', 'giantModeButton'], ['seated', 'sittingModeToggle'], ['grid', 'fieldGridToggle'], ['snap', 'gridSnapToggle']]) {
+    ['giant', 'giantModeButton'], ['seated', 'sittingModeToggle'], ['grid', 'fieldGridToggle'], ['snap', 'gridSnapToggle'],
+    ['bandRoom', 'bandRoomToggle']]) {
     context.executeXRSetting(setting);
     assert.equal(controls[name].clicks, 1, `${setting} uses the existing DOM control and its listeners`);
   }

@@ -11,7 +11,7 @@ import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
 import { scene } from '../scene/engine';
 import {
-  xrSettingsPanelButton, xrSettingsPanelToggle, fullScaleVRButton, tabletopScaleButton,
+  bandRoomToggle, xrSettingsPanelButton, xrSettingsPanelToggle, fullScaleVRButton, tabletopScaleButton,
   giantModeButton, sittingModeToggle, fieldGridToggle, gridSnapToggle,
   footballFormationSelect, footballPlaySelect,
   footballTackleDefender, footballTackleCarrier, footballTackleEvents, footballTackleCount,
@@ -39,7 +39,7 @@ let panel: FloatingPanel | null = null;
 export function executeXRSetting(setting: XRSetting) {
   const control = {
     fullScale: fullScaleVRButton, tabletop: tabletopScaleButton, giant: giantModeButton,
-    seated: sittingModeToggle, grid: fieldGridToggle, snap: gridSnapToggle,
+    seated: sittingModeToggle, grid: fieldGridToggle, snap: gridSnapToggle, bandRoom: bandRoomToggle,
   }[setting];
   if (!control) throw new Error(`The ${setting} settings control is unavailable.`);
   if (control.disabled) {

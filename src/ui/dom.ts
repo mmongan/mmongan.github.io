@@ -46,6 +46,7 @@ export const fieldLevelInputs = Array.from(
 );
 export const videoScreenSizeInput = document.getElementById("videoScreenSize") as HTMLInputElement | null;
 export const videoScreenSizeValue = document.getElementById("videoScreenSizeValue") as HTMLOutputElement | null;
+export const bandRoomToggle = document.getElementById("bandRoomToggle") as HTMLInputElement | null;
 export const floorCalibrationToggle = document.getElementById("floorCalibrationToggle") as HTMLInputElement | null;
 export const swapControllerRolesToggle = document.getElementById("swapControllerRolesToggle") as HTMLInputElement | null;
 export const handThumbJogToggle = document.getElementById("handThumbJogToggle") as HTMLInputElement | null;

@@ -32,9 +32,10 @@ class FakeDynamicTexture {
   update() {}
   dispose() {}
 }
+const bandRoomToggle = { checked: true };
 const context = vm.createContext({
   scene, Mesh, MeshBuilder, TransformNode, StandardMaterial, Color3, Vector3,
-  DynamicTexture: FakeDynamicTexture,
+  DynamicTexture: FakeDynamicTexture, bandRoomToggle,
   getARScale: () => arScale,
   getARScaleRange: () => ({ min: 1 / 120, max: 1 }),
   isARTabletopModeActive: () => arTabletop,
@@ -101,6 +102,17 @@ assert.equal(root.isEnabled(), false, 'Hidden in AR passthrough');
 arTabletop = false;
 vm.runInContext('updateBandRoomVisibility()', context);
 assert.equal(root.isEnabled(), true, 'Returns when AR passthrough ends at tabletop scale');
+
+// The Settings toggle gates everything and defaults to off in the HTML.
+bandRoomToggle.checked = false;
+vm.runInContext('updateBandRoomVisibility()', context);
+assert.equal(root.isEnabled(), false, 'Hidden while the band room toggle is off');
+bandRoomToggle.checked = true;
+vm.runInContext('updateBandRoomVisibility()', context);
+assert.equal(root.isEnabled(), true, 'Toggle re-enables the room');
+const html = readFileSync(new URL('../src/index.html', import.meta.url), 'utf8');
+assert.match(html, /<input id="bandRoomToggle" type="checkbox" \/>/,
+  'Band room toggle exists and defaults to unchecked');
 
 scene.activeCamera = null;
 scene.dispose();
