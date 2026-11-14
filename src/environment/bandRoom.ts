@@ -183,6 +183,33 @@ function buildBandRoom(): TransformNode {
   return root;
 }
 
+// The XR camera keeps the desktop camera's world position when a session
+// starts, so the player can stand anywhere in world space. Center the room
+// on the player's tracked floor position and face its podium wall the way
+// they are looking, then re-sync the frozen child matrices.
+function placeAroundPlayer(root: TransformNode) {
+  const camera = scene.activeCamera as unknown as {
+    globalPosition: Vector3;
+    realWorldHeight?: number;
+    getDirection?: (axis: Vector3) => Vector3;
+  } | null;
+  if (!camera?.globalPosition) return;
+  const height = Number.isFinite(camera.realWorldHeight) && (camera.realWorldHeight ?? 0) > 0.3
+    ? camera.realWorldHeight! : 1.6;
+  root.position.set(camera.globalPosition.x, camera.globalPosition.y - height, camera.globalPosition.z);
+  const forward = camera.getDirection?.(new Vector3(0, 0, 1));
+  if (forward && Math.hypot(forward.x, forward.z) > 1e-3) {
+    // The room's podium/whiteboard wall is at local -Z; put it in front.
+    root.rotation.y = Math.atan2(forward.x, forward.z) + Math.PI;
+  }
+  for (const mesh of root.getChildMeshes()) {
+    if (!mesh.isWorldMatrixFrozen) continue;
+    mesh.unfreezeWorldMatrix();
+    mesh.computeWorldMatrix(true);
+    mesh.freezeWorldMatrix();
+  }
+}
+
 // Per-frame visibility: only inside an immersive session that is not AR
 // passthrough, and only while the field is below full 1:1 scale.
 export function updateBandRoomVisibility() {
@@ -192,6 +219,7 @@ export function updateBandRoomVisibility() {
   if (show === visible) return;
   visible = show;
   roomRoot ??= buildBandRoom();
+  if (show) placeAroundPlayer(roomRoot);
   roomRoot.setEnabled(show);
 }
 

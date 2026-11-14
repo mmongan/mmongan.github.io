@@ -66,10 +66,27 @@ arScale = 0.05;
 vm.runInContext('updateBandRoomVisibility()', context);
 assert.equal(root.isEnabled(), false, 'Hidden outside immersive sessions');
 
-// Immersive VR at reduced scale: shown.
-scene.activeCamera = { getClassName: () => 'WebXRCamera' };
+// Immersive VR at reduced scale: shown, centered on the player's tracked
+// floor position and facing the way they look (the XR camera inherits the
+// desktop camera's arbitrary world position, so origin placement is wrong).
+scene.activeCamera = {
+  getClassName: () => 'WebXRCamera',
+  globalPosition: new Vector3(-28.5, 2.1, 7),
+  realWorldHeight: 1.7,
+  getDirection: () => new Vector3(1, 0, 0),
+};
 vm.runInContext('updateBandRoomVisibility()', context);
 assert.equal(root.isEnabled(), true, 'Shown in reduced-scale immersive VR');
+assert.ok(Math.abs(root.position.x - -28.5) < 1e-6 && Math.abs(root.position.z - 7) < 1e-6,
+  'Room centers on the player, not the world origin');
+assert.ok(Math.abs(root.position.y - 0.4) < 1e-6, 'Room floor sits on the tracked floor');
+assert.ok(Math.abs(root.rotation.y - (Math.PI / 2 + Math.PI)) < 1e-6,
+  'Podium wall faces the direction the player is looking');
+assert.ok(root.getChildMeshes().every(mesh => mesh.isWorldMatrixFrozen),
+  'Child matrices are re-frozen after placement');
+assert.ok(root.getChildMeshes().some(mesh =>
+  Math.abs(mesh.getBoundingInfo().boundingBox.centerWorld.x - -28.5) < 10),
+  'Frozen world matrices re-synced to the new placement');
 
 // Full 1:1 VR scale: hidden (the stadium itself is the environment).
 arScale = 1;
