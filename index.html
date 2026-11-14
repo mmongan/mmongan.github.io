@@ -12,8 +12,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       name="description"
       content="Babylon.js WebXR VR and AR demo for Meta Quest 3"
     />
-    <title>OpenChartxr</title>
-    <script type="module" crossorigin src="/assets/index-rKmhArqX.js"></script>
+    <title>OpenChartxr</title>
+    <script type="module" crossorigin src="/assets/index-DPG_Kyvb.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/rolldown-runtime-B0Z9INg1.js">
     <link rel="modulepreload" crossorigin href="/assets/engineStore-Bn2tApal.js">
     <link rel="modulepreload" crossorigin href="/assets/internalTexture-B3djGrls.js">
@@ -151,6 +151,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <button id="tabletopScaleButton" class="xr-button secondary">Tabletop scale</button>
           <button id="giantModeButton" class="xr-button secondary">Giant mode (fit room)</button>
           <p>Desktop always uses full 1:1 field scale, including drafting. Tabletop and Giant scaling are available only in immersive VR/AR.</p>
+          <label class="radio-option">
+            <input id="bandRoomToggle" type="checkbox" />
+            <span>Band room scene around tabletop/Giant VR</span>
+          </label>
           <button id="marcherPOVModeButton" class="xr-button secondary" type="button" aria-pressed="false">Marcher POV (eye-level camera follow)</button>
           <label class="settings-label" for="marcherPOVSelect">POV marcher</label>
           <select id="marcherPOVSelect" aria-label="POV marcher"><option value="">Select a marcher</option></select>
@@ -706,6 +710,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </div>
       </div>
     </div>
-
+
   </body>
 </html>
