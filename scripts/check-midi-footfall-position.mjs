@@ -39,6 +39,7 @@ const context = vm.createContext({
   playbackPpq: 480, playbackCountTicks: [],
   transportRevision: 0,
   frameDrillState: null, frameMusicState: null, playbackTimingRevision: 0,
+  applyTorsoDynamics() {}, applyTorsoIdle() {},
   getDrillTransportState: () => ({ beat: drillBeat }),
   getMusicTransportState: () => ({ beat: musicBeat }),
   resolveSegmentGait: () => ({
@@ -473,7 +474,9 @@ const solePosition = (leg, knee, ankle) => {
   center.y -= context.marcherShoeGroundDepth(pitch);
   center.z -= context.marcherShoeRollOffset(pitch);
   center.scaleInPlace(bodyScale);
-  center.y += parts.body.position.y;
+  // The legs hang from legRoot; the torso-dynamics bob on parts.body no
+  // longer moves the planted feet, so the sole proxy follows legRoot.
+  center.y += parts.legRoot.position.y;
   return Vector3.TransformCoordinates(center, Matrix.RotationY(robot.rotation.y)).add(robot.position);
 };
 const contactSlipAt = (beat, leg, knee, ankle) => {

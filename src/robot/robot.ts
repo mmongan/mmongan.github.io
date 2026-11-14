@@ -1490,6 +1490,56 @@ function getGaitStepPhaseOffsets(state: PlayerState, styleIndex: number): number
   return offsets;
 }
 
+// Procedural torso dynamics layered over the solved legs: weight transfer
+// (lateral sway over the planted foot), gait bob (sink at contact, rise at
+// midstance), shoulder counter-rotation peaking at the step contacts, a
+// slight forward lean while marching, banking through turns, and a
+// phase-lagged bob on the held instrument so it reads as carried mass.
+// Everything derives from the step phase and count progress alone, so a pose
+// remains a pure function of the beat (seeks and reverse scrubbing
+// reconstruct it exactly). Legs stay planted (legRoot untouched); the jacket
+// hem overlap hides the hip shift.
+const TORSO_BOB = 0.016;
+const TORSO_SWAY = 0.008;
+const TORSO_TWIST = 0.035;
+const TORSO_LEAN = 0.03;
+const TORSO_BANK_PER_RADIAN = 0.08;
+const TORSO_BANK_LIMIT = 0.06;
+
+function applyTorsoDynamics(parts: NonNullable<ReturnType<typeof marcherParts.get>>,
+  stepUnits: number, turnDelta: number, turnProgress: number) {
+  const stride = stepUnits * Math.PI;
+  const bob = Math.abs(Math.sin(stride)) * TORSO_BOB;
+  parts.body.position.y = bob;
+  parts.body.position.x = Math.sin(stride) * TORSO_SWAY;
+  parts.body.rotation.x = TORSO_LEAN;
+  parts.body.rotation.y = Math.cos(stride) * TORSO_TWIST;
+  // Bank into the turn over the count that blends the facing change.
+  const bell = 4 * turnProgress * (1 - turnProgress);
+  parts.body.rotation.z = Math.max(-TORSO_BANK_LIMIT,
+    Math.min(TORSO_BANK_LIMIT, turnDelta * TORSO_BANK_PER_RADIAN)) * bell;
+  parts.instrumentRoot.position.y = Math.abs(Math.sin(stride - 0.5)) * TORSO_BOB * 0.85;
+  parts.legRoot.position.y = 0;
+}
+
+// Idle life while the transport plays and the marcher holds a set: breathing
+// and a barely-visible weight sway, phased per marcher and driven by the
+// music clock so it stays deterministic and scrub-reconstructible. A paused
+// editor stays frozen because paused frames skip re-posing entirely.
+function applyTorsoIdle(robot: TransformNode, parts: NonNullable<ReturnType<typeof marcherParts.get>>,
+  musicBeat: number) {
+  const seed = (robot.uniqueId % 97) * 0.41;
+  const playing = globalPlayback.playing;
+  const breath = playing ? (Math.sin(musicBeat * 0.9 + seed) + 1) * 0.0025 : 0;
+  parts.body.position.y = breath;
+  parts.body.position.x = playing ? Math.sin(musicBeat * 0.35 + seed) * 0.0035 : 0;
+  parts.body.rotation.x = 0;
+  parts.body.rotation.y = 0;
+  parts.body.rotation.z = 0;
+  parts.instrumentRoot.position.y = breath;
+  parts.legRoot.position.y = 0;
+}
+
 function wrapAngle(angle: number): number {
   return Math.atan2(Math.sin(angle), Math.cos(angle));
 }
@@ -1675,12 +1725,21 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState,
     alignMarcherKnee(parts.leftThigh, parts.leftKnee);
     alignMarcherKnee(parts.rightThigh, parts.rightKnee);
     applyInstrumentPose(parts, instrumentRest);
-    parts.body.position.y = 0;
-    parts.instrumentRoot.position.y = 0;
-    parts.legRoot.position.y = 0;
+    applyTorsoIdle(robot, parts, musicBeat);
     limitedStrideCounts.delete(robot);
     return;
   }
+  const stepsPerCount = resolved!.stepsPerCount;
+  const savedPhase = from.stepPhase;
+  const phase = savedPhase !== undefined
+    ? gaitPhaseAtBeat(savedPhase + forwardProgress * stepsPerCount, 1)
+    : !state.footballMotion && repeatOptions.songLength > 0
+    ? gaitPhaseAtBeat(midiPulseAtBeat(musicBeat, playbackBeatUnits), stepsPerCount)
+    : gaitPhaseAtBeat(
+      getGaitStepPhaseOffsets(state, parts.gaitIndex)[segmentStart] + forwardProgress * stepsPerCount,
+      1
+    );
+  const stepUnits = phase.stepNumber + phase.progress;
   let bakedPose: BakedLegPose | undefined;
   if (!sample && legAnimationBakingEnabled && state.legBake) {
     // Exact reverse integer boundaries use the preceding segment's gait.
@@ -1721,18 +1780,10 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState,
   if (bakedPose) {
     reportLimited(bakedPose.limited);
     applyLegPose(bakedPose);
+    applyTorsoDynamics(parts, stepUnits,
+      previous ? wrapAngle(targetBodyYaw - previous.bodyYaw) : 0, forwardProgress);
     return;
   }
-  const stepsPerCount = resolved!.stepsPerCount;
-  const savedPhase = from.stepPhase;
-  const phase = savedPhase !== undefined
-    ? gaitPhaseAtBeat(savedPhase + forwardProgress * stepsPerCount, 1)
-    : !state.footballMotion && repeatOptions.songLength > 0
-    ? gaitPhaseAtBeat(midiPulseAtBeat(musicBeat, playbackBeatUnits), stepsPerCount)
-    : gaitPhaseAtBeat(
-      getGaitStepPhaseOffsets(state, parts.gaitIndex)[segmentStart] + forwardProgress * stepsPerCount,
-      1
-    );
   const stepNumber = phase.stepNumber;
   const gaitProgress = phase.progress;
   const gait = MARCHING_GAITS[gaitIndex];
@@ -1950,6 +2001,8 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState,
   }
   reportLimited(pose.limited);
   applyLegPose(pose);
+  applyTorsoDynamics(parts, stepUnits,
+    previous ? wrapAngle(targetBodyYaw - previous.bodyYaw) : 0, forwardProgress);
 }
 
 // Procedural step cycle for a marcher being walked across the turf by a grab.
