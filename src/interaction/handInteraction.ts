@@ -7,6 +7,9 @@ import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
 import { HighlightLayer } from '@babylonjs/core/Layers/highlightLayer';
 import { Matrix, Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
 import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
+import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
+import type { LinesMesh } from '@babylonjs/core/Meshes/linesMesh.pure';
+import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
 import { WebXRHandJoint, WebXRHandTracking } from '@babylonjs/core/XR/features/WebXRHandTracking.pure';
 import {
@@ -66,6 +69,10 @@ const MARCHER_TWIST_COMMIT_RADIANS = (20 * Math.PI) / 180;
 // While a held marcher's feet touch the turf, hand/controller motion is scaled
 // down so the final spot can be fine-tuned without jitter.
 const TURF_PRECISION_SCALE = 0.35;
+// Laser-pointer marcher drags: the marcher pursues the projected turf dot at
+// a brisk field pace and turns toward it at a bounded rate.
+const MARCH_DRAG_SPEED_YARDS_PER_SECOND = 2.5;
+const MARCH_DRAG_TURN_RATE_RADIANS_PER_SECOND = 10;
 
 export interface HandSegment {
   kind: 'formation' | 'path';
@@ -96,9 +103,12 @@ export interface MarcherGrab {
   landingGhost?: TransformNode;
   recordMove?: () => void;
   turfAnchor?: { position: Vector3; target: Vector3 };
-  // Grounded walking drag: previous grounded position, accumulated step
-  // phase, eased stride amplitude, and whether travel steered the facing.
-  walkPrev?: Vector3;
+  // Laser-pointer drag: the projected turf dot the marcher marches toward,
+  // its visuals, accumulated step phase, eased stride amplitude, and whether
+  // travel steered the facing.
+  dotTarget?: Vector3;
+  dotMesh?: Mesh;
+  beamMesh?: LinesMesh;
   walkPhase?: number;
   walkAmplitude?: number;
   walkHeading?: boolean;
@@ -367,9 +377,8 @@ export function createHandInteraction(paths: HandPathDependencies) {
       Number.isFinite(height) && Math.abs(height) <= tolerance + 1e-6 * pathUp.length();
   }
 
-  function getMarcherLandingPosition(grab: MarcherGrab) {
+  function landingFromWorld(grab: MarcherGrab, world: Vector3) {
     const field = scene.getMeshByName('field');
-    const world = grab.robot.computeWorldMatrix(true).getTranslation();
     if (!field || !grab.robot.isEnabled() || !isTouchingTurf(world, 0.25)) return null;
     const fieldMatrix = field.computeWorldMatrix(true);
     const local = Vector3.TransformCoordinates(world, Matrix.Invert(fieldMatrix));
@@ -385,6 +394,55 @@ export function createHandInteraction(paths: HandPathDependencies) {
     }
     return canPlaceManualMarcherPose(grab.robot, position, yaw, sweep)
       ? { position, rotationY: yaw, guideBlocked: !!snapped, guideFacing: false } : null;
+  }
+
+  function getMarcherLandingPosition(grab: MarcherGrab) {
+    // A laser drag lands at the aimed dot; if that spot is blocked (or no dot
+    // is active), the marcher's own ground position is the honest landing.
+    if (grab.dotTarget) {
+      const landing = landingFromWorld(grab,
+        Vector3.TransformCoordinates(grab.dotTarget, pathRoot.computeWorldMatrix(true)));
+      if (landing) return landing;
+    }
+    return landingFromWorld(grab, grab.robot.computeWorldMatrix(true).getTranslation());
+  }
+
+  let dragDotMaterial: StandardMaterial | null = null;
+  function updateDragLaser(grab: MarcherGrab, handWorld: Vector3, dotLocal: Vector3) {
+    const dotWorld = Vector3.TransformCoordinates(dotLocal, pathRoot.computeWorldMatrix(true));
+    if (!grab.dotMesh) {
+      if (!dragDotMaterial) {
+        dragDotMaterial = new StandardMaterial('marcherDragDotMaterial', scene);
+        dragDotMaterial.emissiveColor = new Color3(0.3, 0.95, 1);
+        dragDotMaterial.diffuseColor = Color3.Black();
+        dragDotMaterial.disableLighting = true;
+        dragDotMaterial.alpha = 0.85;
+        dragDotMaterial.backFaceCulling = false;
+      }
+      const dot = MeshBuilder.CreateDisc('marcherDragDot', { radius: 0.22, tessellation: 24 }, scene);
+      dot.rotation.x = Math.PI / 2;
+      dot.parent = pathRoot;
+      dot.isPickable = false;
+      dot.material = dragDotMaterial;
+      grab.dotMesh = dot;
+    }
+    grab.dotMesh.position.set(dotLocal.x, dotLocal.y + 0.01, dotLocal.z);
+    grab.dotMesh.setEnabled(true);
+    const points = [handWorld.clone(), dotWorld];
+    if (!grab.beamMesh) {
+      const beam = MeshBuilder.CreateLines('marcherDragBeam', { points, updatable: true }, scene);
+      beam.color = new Color3(0.3, 0.95, 1);
+      beam.isPickable = false;
+      grab.beamMesh = beam;
+    } else {
+      MeshBuilder.CreateLines('marcherDragBeam', { points, instance: grab.beamMesh });
+      grab.beamMesh.setEnabled(true);
+    }
+  }
+
+  function hideDragLaser(grab: MarcherGrab) {
+    grab.dotMesh?.setEnabled(false);
+    grab.beamMesh?.setEnabled(false);
   }
 
   function updateMarcherLandingGhost(grab: MarcherGrab) {
@@ -414,6 +472,8 @@ export function createHandInteraction(paths: HandPathDependencies) {
     if (!grab || grab.robot.isDisposed()) {
       grab?.ghost?.dispose();
       grab?.landingGhost?.dispose();
+      grab?.dotMesh?.dispose();
+      grab?.beamMesh?.dispose();
       marcherGrabs.delete(handedness);
       return;
     }
@@ -444,32 +504,52 @@ export function createHandInteraction(paths: HandPathDependencies) {
       const yawDelta = facingYaw - grab.initialFacingYaw;
       yaw = grab.initialRotationY + Math.atan2(Math.sin(yawDelta), Math.cos(yawDelta));
     }
-    // A marcher dragged over the field walks along the turf toward the drag
-    // instead of lifting into the air: ground the target, face the travel
-    // direction once it is clearly moving, and swing the legs by distance.
-    const grounded = projectToTurf(Vector3.TransformCoordinates(position, pathMatrix));
-    if (grounded) {
-      position = new Vector3(position.x, grounded.y, position.z);
-      const previous = grab.walkPrev ?? grab.robot.position;
-      const dx = position.x - previous.x;
-      const dz = position.z - previous.z;
-      const travel = Math.hypot(dx, dz);
-      if (travel > 0.004) {
+    // Laser-pointer drag for existing marchers: the drag projects a dot onto
+    // the turf and the marcher marches toward it at field pace, turning at a
+    // bounded rate and swinging its legs by distance covered. Brand-new
+    // palette drafts stay carried in the hand until placed.
+    const draft = handPlacementDrafts.has(grab.robot) || [...placementDrafts.values()].includes(grab.robot);
+    const dot = draft ? null : projectToTurf(Vector3.TransformCoordinates(position, pathMatrix));
+    if (dot) {
+      grab.dotTarget = dot.clone();
+      updateDragLaser(grab, point, dot);
+      const dt = Math.min(0.1, (scene.getEngine().getDeltaTime() || 16) / 1000);
+      const current = grab.robot.position;
+      const dx = dot.x - current.x;
+      const dz = dot.z - current.z;
+      const distance = Math.hypot(dx, dz);
+      const step = Math.min(distance, MARCH_DRAG_SPEED_YARDS_PER_SECOND * dt);
+      let walked: Vector3;
+      if (distance > 0.05) {
         const heading = Math.atan2(dx, dz);
-        const current = grab.walkHeading ? grab.robot.rotation.y : yaw;
-        const turn = Math.atan2(Math.sin(heading - current), Math.cos(heading - current));
-        yaw = current + turn * Math.min(1, travel * 10);
+        const from = grab.walkHeading ? grab.robot.rotation.y : yaw;
+        const turn = Math.atan2(Math.sin(heading - from), Math.cos(heading - from));
+        yaw = from + turn * Math.min(1, MARCH_DRAG_TURN_RATE_RADIANS_PER_SECOND * dt);
         grab.walkHeading = true;
-        grab.walkPhase = (grab.walkPhase ?? 0) + travel / 0.625;
-        grab.walkAmplitude = Math.min(1, (grab.walkAmplitude ?? 0) + travel * 4);
+        grab.walkPhase = (grab.walkPhase ?? 0) + step / 0.625;
+        grab.walkAmplitude = Math.min(1, (grab.walkAmplitude ?? 0) + dt * 6);
+        walked = new Vector3(current.x + (dx / distance) * step, dot.y, current.z + (dz / distance) * step);
       } else {
-        grab.walkAmplitude = Math.max(0, (grab.walkAmplitude ?? 0) - 0.08);
+        // Arrived: hold the dot, ease to standing; wrist yaw refines facing.
+        grab.walkAmplitude = Math.max(0, (grab.walkAmplitude ?? 0) - dt * 5);
+        walked = new Vector3(dot.x, dot.y, dot.z);
       }
       animateHeldMarcherWalk(grab.robot, grab.walkPhase ?? 0, grab.walkAmplitude ?? 0);
-      grab.walkPrev = position.clone();
-    } else if (grab.walkAmplitude) {
+      if (tryManualMarcherPose(grab.robot, walked, yaw, grab.robot.isEnabled())) grab.robot.setEnabled(true);
+      updateMarcherLandingGhost(grab);
+      return;
+    }
+    grab.dotTarget = undefined;
+    hideDragLaser(grab);
+    if (grab.walkAmplitude) {
       grab.walkAmplitude = 0;
       animateHeldMarcherWalk(grab.robot, grab.walkPhase ?? 0, 0);
+    }
+    if (!draft) {
+      // Aiming off the field: the marcher holds its ground; releasing here
+      // commits the spot where it stands.
+      updateMarcherLandingGhost(grab);
+      return;
     }
     if (tryManualMarcherPose(grab.robot, position, yaw, grab.robot.isEnabled())) grab.robot.setEnabled(true);
     updateMarcherLandingGhost(grab);
@@ -504,6 +584,8 @@ export function createHandInteraction(paths: HandPathDependencies) {
     if (!grab) return;
     grab.ghost?.dispose();
     grab.landingGhost?.dispose();
+    grab.dotMesh?.dispose();
+    grab.beamMesh?.dispose();
     restoreMarcherRendering(grab);
     if (grab.robot.isDisposed()) return;
     const field = scene.getMeshByName('field');

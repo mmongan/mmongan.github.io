@@ -36,13 +36,15 @@ const grabs = new Map(), drafts = new Set(), notices = [];
 const guides = [];
 let placed;
 const context = vm.createContext({
-  scene, Matrix, Quaternion, Vector3, Color3, Observable, Mesh, InstancedMesh,
+  scene, Matrix, Quaternion, Vector3, Color3, Observable, Mesh, InstancedMesh, MeshBuilder,
   TransformNode, StandardMaterial, pathRoot, guides,
   FIELD_WIDTH_YARDS: 53.333, FIELD_LENGTH_YARDS: 120,
   marcherGrabs: grabs, handPlacementDrafts: drafts, placementDrafts: new Map(),
   formationPull: null, fingerPath: null,
   GRABBED_MARCHER_RENDERING_GROUP: 2, TURF_PRECISION_SCALE: 0.35,
   MARCHER_TWIST_COMMIT_RADIANS: 20 * Math.PI / 180,
+  MARCH_DRAG_SPEED_YARDS_PER_SECOND: 2.5, MARCH_DRAG_TURN_RATE_RADIANS_PER_SECOND: 10,
+  StandardMaterial,
   getMarcherRenderingGroup: () => 0, setMarcherRenderingGroup() {},
   captureMarcherMove: () => () => {}, setRobotHeld() {}, selectRobot() {}, setRobotFacing() {}, setPlacedMarcherFacing() {},
   animateHeldMarcherWalk() {}, paths: {},
@@ -100,13 +102,24 @@ try {
         const robot = marcher('held', new Vector3(0, 0.5, 0));
         const grab = begin(robot, source, draft);
         assert.equal(grab.landingGhost, undefined, 'No landing preview far above the ground');
-        move(robot, new Vector3(2, -0.21, 3), 0.4);
+        // Existing marchers pursue the laser dot, so pump several frames: the
+        // marcher turns toward the dot and marches a few steps while the
+        // landing preview sits at the dot itself. Palette drafts stay carried.
+        for (let frame = 0; frame < 60; frame++) move(robot, new Vector3(2, -0.21, 3), 0.4);
         assert.ok(grab.landingGhost?.isEnabled(), 'Quarter-yard ground tolerance shows a landing ghost');
         near(grab.landingGhost.position, new Vector3(2, -0.46, 3), 'Preview projects feet to turf');
-        // A drag that travels over the field is a walking drag: facing follows
-        // the travel direction rather than the wrist yaw.
-        assert.ok(Math.abs(grab.landingGhost.rotation.y - Math.atan2(2, 3)) < 1e-3,
-          'Landing ghost faces the walking direction');
+        if (draft) {
+          assert.ok(Math.abs(grab.landingGhost.rotation.y - 0.4) < 1e-6,
+            'Carried draft preview follows the wrist facing');
+        } else {
+          assert.ok(Math.abs(grab.landingGhost.rotation.y - Math.atan2(2, 3)) < 1e-3,
+            'Marching preview faces the laser dot');
+          assert.ok(grab.dotMesh?.isEnabled() && grab.beamMesh?.isEnabled(),
+            'Laser beam and turf dot are visible while dragging');
+          const toDot = Math.hypot(2 - robot.position.x, 3 - robot.position.z);
+          assert.ok(toDot < Math.hypot(2, 3) - 0.1 && toDot > 0.05,
+            'Marcher marches toward the dot at a bounded pace rather than teleporting');
+        }
         assert.ok(grab.landingGhost.getChildMeshes().length > 0, 'Preview contains actual marcher geometry');
         assert.ok(grab.landingGhost.getChildMeshes().every(mesh => !mesh.isPickable && !mesh.checkCollisions));
         if (!draft) near(grab.ghost.position, Vector3.Zero(), 'Original-position ghost is not moved');
@@ -163,7 +176,10 @@ try {
   const held = begin(cancelled);
   const ghost = held.landingGhost;
   move(cancelled, new Vector3(30, -0.25, 0));
-  assert.equal(ghost.isEnabled(), false, 'Moving beyond field bounds hides landing ghost');
+  // Aiming beyond the field bounds drops the laser dot: the marcher holds its
+  // ground and the preview stays honest at the spot it would keep.
+  assert.ok(ghost.isEnabled(), 'Off-field aim keeps the preview at the held ground');
+  near(ghost.position, new Vector3(0, -0.46, 0), 'Held ground preview stays under the marcher');
   // Over the field a drag can no longer lift the marcher into the air: the
   // grab walks it along the turf, so the landing preview stays live even
   // with the hand raised. Off-field moves (above) still float and hide it.
