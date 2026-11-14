@@ -28,8 +28,6 @@ const SKULL_PROFILE: Array<[number, number]> = [
 const EYE_RADIUS = 0.144;
 const EAR_Y = 1.25;
 const EAR_RADIUS = 0.142;
-const MOUTH_Y = 1.195;
-const MOUTH_RADIUS = 0.132;
 
 function headSides(geometry: InstrumentGeometry) {
   return geometry.low ? Math.max(4, HEAD_SIDES / 2) : HEAD_SIDES;
@@ -55,6 +53,20 @@ function frontFaceZ(geometry: InstrumentGeometry, radius: number) {
 
 function sideFaceX(geometry: InstrumentGeometry, radius: number) {
   return radius * Math.cos(Math.PI / headSides(geometry));
+}
+
+// Flat-front surface depth of the full-detail skull at height `y`, so features
+// seated on the sloping chin and brow sit against the face instead of floating
+// at the head's widest ring's depth.
+function faceSurfaceZ(geometry: InstrumentGeometry, y: number) {
+  for (let index = 0; index < SKULL_PROFILE.length - 1; index++) {
+    const [radius0, y0] = SKULL_PROFILE[index];
+    const [radius1, y1] = SKULL_PROFILE[index + 1];
+    if (y >= y0 && y <= y1 && y1 > y0) {
+      return frontFaceZ(geometry, radius0 + (radius1 - radius0) * (y - y0) / (y1 - y0));
+    }
+  }
+  return frontFaceZ(geometry, EYE_RADIUS);
 }
 
 // Appends the smooth-shaded head. At low detail the ears and mouth are skipped.
@@ -100,15 +112,21 @@ function createRobotEyesTemplate(scene: Scene): Mesh {
     span(x - 0.011, 1.277, eyeZ + 0.004, x + 0.011, 1.291, eyeZ + 0.008, iris);
     span(x - 0.005, 1.28, eyeZ + 0.007, x + 0.005, 1.289, eyeZ + 0.01, pupil);
     // Dark upper lash line settles the stare into an open-eyed look.
-    span(x - 0.022, 1.293, eyeZ - 0.001, x + 0.022, 1.2965, eyeZ + 0.0085, FACE_DETAIL);
+    span(x - 0.022, 1.293, eyeZ - 0.004, x + 0.022, 1.2965, eyeZ + 0.0025, FACE_DETAIL);
     // Two slim brow segments, lifted clear of the lashes with a raised outer
-    // end, keep the expression relaxed rather than glowering.
-    span(side * 0.022, 1.309, eyeZ - 0.002, side * 0.047, 1.315, eyeZ + 0.006, brow);
-    span(side * 0.045, 1.3115, eyeZ - 0.002, side * 0.067, 1.3175, eyeZ + 0.006, brow);
+    // end, keep the expression relaxed rather than glowering. The forehead
+    // curves back above the eye band, so they seat on the measured surface.
+    const browZ = faceSurfaceZ(geometry, 1.313);
+    span(side * 0.022, 1.309, browZ - 0.0045, side * 0.047, 1.315, browZ + 0.0035, brow);
+    span(side * 0.045, 1.3115, browZ - 0.0045, side * 0.067, 1.3175, browZ + 0.0035, brow);
   }
-  const mouthZ = frontFaceZ(geometry, MOUTH_RADIUS);
-  span(-0.028, MOUTH_Y - 0.003, mouthZ - 0.004, 0.028, MOUTH_Y + 0.002, mouthZ + 0.007, LIPS);
-  span(-0.019, MOUTH_Y - 0.012, mouthZ - 0.003, 0.019, MOUTH_Y - 0.003, mouthZ + 0.0085, lowerLip);
+  // The chin recedes below the head's widest ring, so each lip seats against
+  // the measured surface at its own height (barely proud, back embedded)
+  // instead of hovering at the equator depth.
+  const lipLineZ = faceSurfaceZ(geometry, 1.1955);
+  span(-0.028, 1.193, lipLineZ - 0.0045, 0.028, 1.198, lipLineZ + 0.0035, LIPS);
+  const lowerLipZ = faceSurfaceZ(geometry, 1.19);
+  span(-0.019, 1.1865, lowerLipZ - 0.006, 0.019, 1.193, lowerLipZ + 0.0025, lowerLip);
   const material = new StandardMaterial("robotEyesMaterial", scene);
   material.diffuseColor = Color3.White();
   material.specularColor = new Color3(0.15, 0.15, 0.15);
