@@ -88,7 +88,7 @@ context.floorCalibrationToggle.checked = true;
 assert.equal(api.selectNear(new Vector3(5, -0.46, 7), 0.75, false), false, 'Floor calibration blocks selection');
 assert.ok(notices.some(message => message.includes('snap')), 'Selection explains snapping');
 
-const landing = section(hand, '  function getMarcherLandingPosition(', '  function updateMarcherLandingGhost(');
+const landing = section(hand, '  function landingFromWorld(', '  function getMarcherLandingPosition(');
 assert.ok(landing.indexOf('isTouchingTurf') < landing.indexOf('getNearbyDrawingGuidePose(position)'),
   'Snapping only happens after the release passes the ground-distance check');
 assert.match(landing, /canPlaceManualMarcherPose\(grab\.robot, snapped\.position/);
