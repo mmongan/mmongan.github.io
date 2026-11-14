@@ -387,9 +387,9 @@ function loadMidiFromUrl(input: string, name = input, preserveBakedGaits = false
 export function initMidiPlayback() {
   setPlaybackStartGuard(() => {
     if (isMidiPlaybackReady()) return true;
-    const message = 'Play is waiting for music: finish sample preloading and click, trigger, or pinch to enable browser audio.';
-    status(message);
-    if (midiPlaybackHint) { midiPlaybackHint.hidden = false; midiPlaybackHint.textContent = message; }
+    // Settings' music status and the 3D Play sign explain the pending start;
+    // no pop-up banner over the view.
+    status('Play is waiting for music: finish sample preloading and click, trigger, or pinch to enable browser audio.');
     return false;
   });
   const repeatDrill = document.getElementById('repeatDrill') as HTMLInputElement | null;

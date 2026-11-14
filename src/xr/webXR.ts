@@ -365,7 +365,7 @@ export function initXR(teleportGrid: Mesh) {
     if (switchingToFullScaleVR) return;
     switchingToFullScaleVR = true;
     updateEntryButtons();
-    entryStatus(`Opening ${mode === 'immersive-vr' ? 'VR' : 'AR'}...`);
+    // No "Opening..." banner: the entry status surfaces errors only.
     try {
       if (fullScale) {
         if (isMarcherPOVActive()) setMarcherPOVEnabled(false);
@@ -881,9 +881,9 @@ export function initXR(teleportGrid: Mesh) {
       entryStatus(`Could not check XR support: ${error instanceof Error ? error.message : String(error)}`);
     }
     updateEntryButtons();
-  })).then(() => {
-    if (![...sessionSupport.values()].some(Boolean)) entryStatus('VR/AR requires a compatible browser and headset. Desktop playback is available.');
-  });
+  }));
+  // No support banner on unsupported browsers: the hidden entry buttons and
+  // the Settings playback-only notice already say desktop is view-only.
 
   // Keep teleportation in sync with the field's current scale.
   scene.onBeforeAnimationsObservable.add(() => {

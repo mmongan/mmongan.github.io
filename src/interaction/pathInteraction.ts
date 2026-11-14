@@ -776,26 +776,16 @@ function createStandingMarcher(position: Vector3) {
   return robot;
 }
 
-let placementNotice: HTMLOutputElement | null = null;
-let placementNoticeTimeout: ReturnType<typeof setTimeout> | undefined;
+// No pop-up toast over the view: edit and status messages surface through the
+// Settings outputs (formation editor, football, and music statuses) and the
+// in-scene signs; the console keeps a trace for messages with no other home.
 function showPlacementNotice(message: string) {
-  if (!placementNotice) {
-    placementNotice = document.createElement("output");
-    placementNotice.className = "placement-collision-notice";
-    placementNotice.setAttribute("role", "status");
-    document.body.appendChild(placementNotice);
-  }
-  placementNotice.textContent = message;
-  placementNotice.hidden = false;
-  clearTimeout(placementNoticeTimeout);
-  placementNoticeTimeout = setTimeout(() => { if (placementNotice) placementNotice.hidden = true; }, 2000);
+  console.info(message);
 }
 const placementBlockedObserver = onManualPlacementBlocked.add(() =>
   showPlacementNotice("Move blocked: leave room for the marcher's body and instrument."));
 scene.onDisposeObservable.addOnce(() => {
   onManualPlacementBlocked.remove(placementBlockedObserver);
-  clearTimeout(placementNoticeTimeout);
-  placementNotice?.remove();
 });
 
 placementModeToggle?.addEventListener("change", () => {
