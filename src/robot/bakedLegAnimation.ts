@@ -114,40 +114,51 @@ function pack(pose: BakedLegPose): Float32Array {
   ], value => Math.abs(value) < 1e-10 ? 0 : value);
 }
 
+// Scratch reused by every interpolate/unpack call: playback consumes each
+// returned pose immediately (applyLegPose copies the values onto the rig), so
+// one shared buffer and pose avoid ~35 allocations per marcher per frame.
+// Callers must not retain the result across another poseAt/interpolate call.
+const interpolateScratch = new Float64Array(COMPONENTS);
+const scratchLeg = (): LegPose => ({
+  thighLength: MARCHER_THIGH_LENGTH, kneeAngle: 0,
+  legRotation: new Quaternion(), kneeRotation: new Quaternion(), ankleRotation: new Quaternion(),
+});
+const unpackScratch: BakedLegPose = { legs: [scratchLeg(), scratchLeg()], hipHalfSpacing: 0, limited: false };
+
 function interpolate(samples: Float32Array, progress: number, channels?: Uint8Array): Float64Array {
   const t = progress * 3;
-  const weights = [
-    -(t - 1) * (t - 2) * (t - 3) / 6,
-    t * (t - 2) * (t - 3) / 2,
-    -t * (t - 1) * (t - 3) / 2,
-    t * (t - 1) * (t - 2) / 6,
-  ];
-  const result = new Float64Array(COMPONENTS);
+  const weight0 = -(t - 1) * (t - 2) * (t - 3) / 6;
+  const weight1 = t * (t - 2) * (t - 3) / 2;
+  const weight2 = -t * (t - 1) * (t - 3) / 2;
+  const weight3 = t * (t - 1) * (t - 2) / 6;
+  const result = interpolateScratch;
+  result.fill(0);
   for (let component = 3; component < 24; component += 4) result[component] = 1;
   const stride = channels?.length ?? COMPONENTS;
   for (let index = 0; index < stride; index++) {
     const component = channels ? channels[index] : index;
-    result[component] = 0;
-    for (let sample = 0; sample < 4; sample++) {
-      result[component] += weights[sample] * samples[sample * stride + index];
-    }
+    result[component] = weight0 * samples[index] + weight1 * samples[stride + index] +
+      weight2 * samples[2 * stride + index] + weight3 * samples[3 * stride + index];
   }
   for (let offset = 0; offset < 24; offset += 4) {
-    const length = Math.hypot(...result.subarray(offset, offset + 4));
+    const length = Math.sqrt(result[offset] ** 2 + result[offset + 1] ** 2 +
+      result[offset + 2] ** 2 + result[offset + 3] ** 2);
     for (let component = offset; component < offset + 4; component++) result[component] /= length;
   }
   return result;
 }
 
 function unpack(values: Float64Array, limited: boolean): BakedLegPose {
-  const leg = (offset: number, knee: number): LegPose => ({
-    thighLength: MARCHER_THIGH_LENGTH,
-    kneeAngle: Math.max(0, Math.min(1.35, values[knee])),
-    legRotation: Quaternion.FromArray(values, offset),
-    kneeRotation: Quaternion.FromArray(values, offset + 4),
-    ankleRotation: Quaternion.FromArray(values, offset + 8),
-  });
-  return { legs: [leg(0, 24), leg(12, 25)], hipHalfSpacing: values[26], limited };
+  for (const [index, offset, knee] of [[0, 0, 24], [1, 12, 25]] as const) {
+    const leg = unpackScratch.legs[index];
+    leg.kneeAngle = Math.max(0, Math.min(1.35, values[knee]));
+    leg.legRotation.copyFromFloats(values[offset], values[offset + 1], values[offset + 2], values[offset + 3]);
+    leg.kneeRotation.copyFromFloats(values[offset + 4], values[offset + 5], values[offset + 6], values[offset + 7]);
+    leg.ankleRotation.copyFromFloats(values[offset + 8], values[offset + 9], values[offset + 10], values[offset + 11]);
+  }
+  unpackScratch.hipHalfSpacing = values[26];
+  unpackScratch.limited = limited;
+  return unpackScratch;
 }
 
 // Musical-count curves are built cooperatively; unresolved or discontinuous intervals use live IK.

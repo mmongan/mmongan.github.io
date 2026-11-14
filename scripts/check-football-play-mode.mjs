@@ -403,6 +403,9 @@ try {
     const hip = rig.getChildren()[0];
     const knee = hip.getChildren().find(node => node.name === 'marcherKnee');
     hip.rotation.x = .35; knee.rotation.x = .4;
+    // Direct rig pokes bypass the transport; paused frames with an unchanged
+    // beat legitimately skip re-posing, so advance the clock a hair.
+    beat = 5.26;
     scene.onBeforeRenderObservable.notifyObservers(scene);
     const thigh = scene.getMeshByName('football-thigh-offense-QB-0');
     hip.computeWorldMatrix(true); knee.computeWorldMatrix(true); thigh.computeWorldMatrix(true);
@@ -421,7 +424,9 @@ try {
       const receiver = players.find(entry => entry.player.id === lastEvent.toId).robot;
       const prior = line.getVerticesData('position')[96];
       schedules.get(receiver)[lastEvent.endCount].position.x += 1;
-      scene.onBeforeRenderObservable.notifyObservers(scene);
+      // Live-edit detection is a polling safety net throttled to every fourth
+      // frame (editors clear the clearance caches directly); pump the window.
+      for (let frame = 0; frame < 4; frame++) scene.onBeforeRenderObservable.notifyObservers(scene);
       assert.ok(Math.abs(line.getVerticesData('position')[96] - prior - 1) < 1e-5,
         'Flight guide refreshes after live endpoint edits');
       assert.equal(line.isPickable, false); assert.equal(halo.isPickable, false);
@@ -642,7 +647,9 @@ try {
         'Cached cadence matches the original full-history arm phase');
       const savedX = route[1].position.x;
       route[1].position.x += 3;
-      movementCalls = 0; scene.onBeforeRenderObservable.notifyObservers(scene);
+      movementCalls = 0;
+      // In-place edits are caught by the throttled poll; pump its window.
+      for (let frame = 0; frame < 4; frame++) scene.onBeforeRenderObservable.notifyObservers(scene);
       assert.ok(movementCalls > 200, 'In-place route edits rebuild cached cumulative cadence');
       movementCalls = 0; scene.onBeforeRenderObservable.notifyObservers(scene);
       assert.ok(movementCalls <= 44, 'Edited routes return to constant current-count gait work');

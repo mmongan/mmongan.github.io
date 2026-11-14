@@ -519,11 +519,23 @@ export function createHandInteraction(paths: HandPathDependencies) {
     let nearest: TransformNode | null = null;
     let nearestDistance = 0.025;
     const handoffRobot = handoffFrom ? marcherGrabs.get(handoffFrom)?.robot : null;
+    const grabbedRobots = [...marcherGrabs.values()].map((grab) => grab.robot);
     scene.meshes.forEach((mesh) => {
       if (!mesh.isEnabled() || !mesh.isVisible || !mesh.isPickable) return;
+      // Cheap reject on the cached bounding sphere (at most one frame stale,
+      // covered by the margin) before any parent walk or forced matrix work:
+      // this runs per tracked hand per frame over every scene mesh.
+      const sphere = mesh.getBoundingInfo().boundingSphere;
+      if (sphere) {
+        const dx = sphere.centerWorld.x - point.x;
+        const dy = sphere.centerWorld.y - point.y;
+        const dz = sphere.centerWorld.z - point.z;
+        const reach = sphere.radiusWorld + 0.1;
+        if (dx * dx + dy * dy + dz * dz > reach * reach) return;
+      }
       const robot = findRobotRoot(mesh);
       if (!robot || robot === fingerPath?.robot) return;
-      if (robot !== handoffRobot && [...marcherGrabs.values()].some((grab) => grab.robot === robot)) return;
+      if (robot !== handoffRobot && grabbedRobots.includes(robot)) return;
       mesh.computeWorldMatrix(true);
       const bounds = mesh.getBoundingInfo().boundingBox;
       const distance = Math.hypot(

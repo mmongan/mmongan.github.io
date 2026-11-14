@@ -77,6 +77,8 @@ const observerContext = vm.createContext({
   MARCHING_GAITS: [{ tempoFactor: 1 }],
   applyGlobalCountToAllRobots: () => { updates++; },
   playbackIsPrepared: () => true, notifyDrillTransport() {}, pendingPlaybackStart: false,
+  lastAppliedPoseKey: '', getDrillTransportState: () => ({ beat: 0, revision: 0, lastBeat: 256, playing: false }),
+  drillPoseKey: () => 'x', updateAllJacketLegPlanes() {},
 });
 vm.runInContext(`${stripTypeScriptTypes(observerSource, { mode: 'transform' })}
 globalThis.ensure = ensureSharedObserver;`, observerContext);

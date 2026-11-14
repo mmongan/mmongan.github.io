@@ -103,7 +103,12 @@ function status(message: string, error = false) {
   onMidiStatusChangedObservable.notifyObservers();
 }
 
+// Paused transports request a stop every frame; silencing an already-silent
+// synth loops every sampler voice for nothing, so stop once per transition.
+let voicesStopped = false;
 function stopVoices() {
+  if (voicesStopped) return;
+  voicesStopped = true;
   synth?.stop();
 }
 
@@ -260,6 +265,7 @@ function updatePlayback(fromClock = false) {
   const plan = fromClock ? timeline.tick(context.currentTime)
     : timeline.synchronize(footballMusicTransport.resolve(getMusicTransportState(), context.currentTime), context.currentTime);
   if (plan.reset) stopVoices();
+  if (plan.scheduled.length) voicesStopped = false;
   plan.scheduled.forEach(note => synth!.start(note));
 }
 

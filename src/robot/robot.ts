@@ -937,6 +937,9 @@ export interface RobotCount {
 // (below) is shared by every robot so the whole band marches on one clock.
 interface PlayerState {
   footballMotion?: FootballMotion;
+  // JSON of footballMotion, cached when set: the per-frame bake key must not
+  // re-stringify it for every marcher.
+  footballMotionKey?: string;
   points: Vector3[];
   stepSizeYards: number;
   counts: RobotCount[];
@@ -1006,6 +1009,9 @@ let repeatOptions = { drill: false, song: false, songLength: 0 };
 let playbackTempoMap: ReadonlyArray<PlaybackTempoEvent> | null = null;
 let playbackBeatUnits: ReadonlyArray<MidiBeatUnit> = [];
 let playbackPpq = 480;
+// Bumped whenever playbackPpq/playbackCountTicks are replaced, so per-frame
+// bake keys compare one integer instead of joining every count's tick.
+let playbackTimingRevision = 0;
 let playbackCountTicks: number[] = [];
 
 export function captureFieldPlayback() {
@@ -1026,6 +1032,7 @@ export function restoreFieldPlayback(snapshot: ReturnType<typeof captureFieldPla
   playbackBeatUnits = snapshot.beatUnits.map(unit => ({ ...unit }));
   playbackPpq = snapshot.ppq;
   playbackCountTicks = [...snapshot.countTicks];
+  playbackTimingRevision++;
   transportRevision++;
   players.forEach(state => { invalidateLegBake(state); state.stepCache = undefined; state.gaitPhaseCache = undefined; });
   applyGlobalCountToAllRobots();
@@ -1049,6 +1056,7 @@ export function restoreDrillMidiTiming(timing: OpenChartTiming) {
   const beat = getDrillTransportState().beat;
   playbackPpq = timing.ppq;
   playbackCountTicks = [...timing.countTicks];
+  playbackTimingRevision++;
   playbackTempoMap = timing.tempos.map(event => ({
     beat: midiBeatToDrillCount(event.tick / timing.ppq, playbackCountTicks, playbackPpq), bpm: event.bpm,
   }));
@@ -1101,6 +1109,7 @@ export function setPlaybackTempoMap(tempoMap: ReadonlyArray<PlaybackTempoEvent> 
   const oldPpq = playbackPpq;
   playbackPpq = ppq;
   playbackCountTicks = playbackCountTicks.map(tick => tick * ppq / oldPpq);
+  playbackTimingRevision++;
   playbackTempoMap = tempoMap?.map(event => ({
     beat: midiBeatToDrillCount(event.beat, playbackCountTicks, playbackPpq), bpm: event.bpm,
   })) ?? null;
@@ -1109,7 +1118,10 @@ export function setPlaybackTempoMap(tempoMap: ReadonlyArray<PlaybackTempoEvent> 
 }
 
 export function getMusicTransportState(): DrillTransportState {
-  const state = getDrillTransportState();
+  return musicTransportFrom(getDrillTransportState());
+}
+
+function musicTransportFrom(state: DrillTransportState): DrillTransportState {
   const frame = repeatElapsed === null ? null : resolveRepeatPlayback(repeatElapsed, state.lastBeat, repeatOptions);
   const count = frame?.songBeat ?? state.beat;
   return { ...state,
@@ -1200,12 +1212,13 @@ export function getDrillTransportState(): DrillTransportState {
   const direction = Math.sign(globalPlayback.speedMultiplier);
   const startBeat = globalPlayback.countIndex;
   const endBeat = globalPlayback.countIndex + (direction < 0 ? -1 : direction > 0 ? 1 : 0);
+  // One roster walk per state: the max count index is O(marchers).
+  const lastBeat = getMaxCountIndex();
   const beat = repeatElapsed !== null
-    ? resolveRepeatPlayback(repeatElapsed, getMaxCountIndex(), repeatOptions).drillBeat
+    ? resolveRepeatPlayback(repeatElapsed, lastBeat, repeatOptions).drillBeat
     : advanceBeatBySeconds(startBeat, endBeat, globalPlayback.stepAccumulatorSeconds);
   const tempoBeat = direction < 0 ? beat - TEMPO_BOUNDARY_EPSILON : beat;
   const cadence = 1 / getCountInterval(tempoBeat);
-  const lastBeat = getMaxCountIndex();
   return {
     beat: Math.min(lastBeat, Math.max(0, beat)),
     beatsPerSecond: cadence * globalPlayback.speedMultiplier,
@@ -1213,6 +1226,20 @@ export function getDrillTransportState(): DrillTransportState {
     lastBeat,
     revision: transportRevision,
   };
+}
+
+// Shared per-frame transport snapshot: applyGlobalCountToAllRobots computes
+// the drill and music states once and every marcher's pose application reads
+// them, instead of each marcher re-walking the roster (O(n^2) per frame).
+let frameDrillState: DrillTransportState | null = null;
+let frameMusicState: DrillTransportState | null = null;
+// Bumped by every pose-affecting mutation; with the transport state it forms
+// the key that lets paused frames skip re-posing the whole band.
+let playbackPosesRevision = 0;
+let lastAppliedPoseKey = "";
+
+export function invalidatePlaybackPoses() {
+  playbackPosesRevision++;
 }
 
 export function getDrillTimelinePosition() {
@@ -1234,9 +1261,9 @@ export function snapDrillToWholeBeat(): number {
   return target;
 }
 
-function notifyDrillTransport(discontinuity = false) {
+function notifyDrillTransport(discontinuity = false, state?: DrillTransportState) {
   if (discontinuity) transportRevision++;
-  onDrillTransportChangedObservable.notifyObservers(getDrillTransportState());
+  onDrillTransportChangedObservable.notifyObservers(discontinuity || !state ? getDrillTransportState() : state);
 }
 
 const players = new Map<TransformNode, PlayerState>();
@@ -1355,6 +1382,7 @@ export function setRobotFootballMotion(robot: TransformNode, motion: FootballMot
   const state = players.get(robot);
   if (!state) return;
   state.footballMotion = motion ?? undefined;
+  state.footballMotionKey = motion ? JSON.stringify(motion) : undefined;
   clearBakedCountGaits(state);
   state.gaitPhaseCache = undefined;
   state.stepCache = undefined;
@@ -1419,7 +1447,8 @@ function resolveSegmentGait(
   const travelYaw = dx * dx + dz * dz > 0.0001 ? Math.atan2(dx, dz) : from.rotationY;
   const bodyYaw = to.facingY ?? from.facingY ?? travelYaw;
   const musicBeat = drillCountToMidiBeat(segmentStart, playbackCountTicks, playbackPpq) +
-    getMusicTransportState().beat - drillCountToMidiBeat(getDrillTransportState().beat, playbackCountTicks, playbackPpq);
+    (frameMusicState ?? getMusicTransportState()).beat -
+    drillCountToMidiBeat((frameDrillState ?? getDrillTransportState()).beat, playbackCountTicks, playbackPpq);
   const pulse = midiPulseAtBeat(musicBeat, playbackBeatUnits);
   const quarterNotesPerPulse = repeatOptions.songLength > 0
     ? (midiBeatAtPulse(pulse + 1, playbackBeatUnits) - musicBeat) /
@@ -1544,6 +1573,9 @@ function scheduleLegBake(table: BakedLegAnimation) {
 }
 
 function invalidateLegBake(state: PlayerState) {
+  // Every pose-affecting edit funnels through here (routes, gaits, music,
+  // football motion, grabs), so it doubles as the paused-frame invalidator.
+  playbackPosesRevision++;
   if (!state.legBake) return;
   if (state.legBake.release) state.legBake.release();
   else {
@@ -1582,13 +1614,13 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState,
     contact?: (pose: BakedLegPose, position: Vector3, yaw: number, left: boolean, progress: number) => void;
     parts?: NonNullable<ReturnType<typeof marcherParts.get>> }): BakedLegPose | undefined {
   if (!sample && ghostBandPreview) {
-    ghostBandPreview.update(robot, state.counts, getDrillTransportState().beat);
+    ghostBandPreview.update(robot, state.counts, (frameDrillState ?? getDrillTransportState()).beat);
     return;
   }
   if ((!sample && heldRobots.has(robot)) || state.counts.length === 0) return;
   const last = state.counts.length - 1;
-  const drillBeat = sample?.drillBeat ?? getDrillTransportState().beat;
-  const musicBeat = sample?.musicBeat ?? getMusicTransportState().beat;
+  const drillBeat = sample?.drillBeat ?? (frameDrillState ?? getDrillTransportState()).beat;
+  const musicBeat = sample?.musicBeat ?? (frameMusicState ?? getMusicTransportState()).beat;
   const index = Math.min(Math.floor(drillBeat), last);
   const count = state.counts[index];
   const parts = sample?.parts ?? marcherParts.get(robot);
@@ -1603,8 +1635,10 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState,
     return;
   }
   const clockOffset = Math.round((drillCountToMidiBeat(drillBeat, playbackCountTicks, playbackPpq) - musicBeat) * 1e8) / 1e8;
-  const bakeKey = [parts.gaitIndex, JSON.stringify(state.footballMotion), clockOffset, repeatOptions.songLength, repeatOptions.drill,
-    playbackPpq, playbackCountTicks.join(",")].join(":");
+  // Revision-based key: joining every count tick and re-stringifying the
+  // football motion per marcher per frame dominated the bake-hit frame cost.
+  const bakeKey = [parts.gaitIndex, state.footballMotionKey ?? "", clockOffset, repeatOptions.songLength, repeatOptions.drill,
+    playbackPpq, playbackTimingRevision].join(":");
   if (!sample && state.legBake &&
     (state.legBake.counts !== state.counts || state.legBake.beatUnits !== playbackBeatUnits ||
       state.legBake.key !== bakeKey)) invalidateLegBake(state);
@@ -1750,8 +1784,11 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState,
       const solved = pose.legs[index];
       knee.position.y = -solved.thighLength;
       knee.rotation.x = solved.kneeAngle;
-      knee.rotationQuaternion = solved.kneeRotation;
-      ankle.rotationQuaternion = solved.ankleRotation;
+      // Copy, never retain: baked poses come from a shared scratch object.
+      if (knee.rotationQuaternion) knee.rotationQuaternion.copyFrom(solved.kneeRotation);
+      else knee.rotationQuaternion = solved.kneeRotation.clone();
+      if (ankle.rotationQuaternion) ankle.rotationQuaternion.copyFrom(solved.ankleRotation);
+      else ankle.rotationQuaternion = solved.ankleRotation.clone();
       solved.legRotation.toEulerAnglesToRef(leg.rotation);
       leg.position.set((index === 0 ? -1 : 1) * pose.hipHalfSpacing, 0.69, 0);
       shoe.rotation.y = 0;
@@ -2012,6 +2049,7 @@ const preparedRobotAnimations = new Map<TransformNode, (beat: number) => Prepare
 
 export function setRobotPreparedAnimation(robot: TransformNode,
   sampler: ((beat: number) => PreparedRobotAnimationFrame | null) | null) {
+  invalidatePlaybackPoses();
   if (sampler) preparedRobotAnimations.set(robot, sampler);
   else {
     preparedRobotAnimations.delete(robot);
@@ -2117,14 +2155,36 @@ export function getRobotFootprintSource(robot: TransformNode) {
   };
 }
 
-function applyGlobalCountToAllRobots() {
-  players.forEach((state, robot) => applyGlobalCount(robot, state));
+// Everything that can change a paused marcher's pose, folded into one key.
+// While playing the key is never consulted; while paused an unchanged key
+// means every pose application would be identical to the previous frame's.
+function drillPoseKey(state: DrillTransportState): string {
+  return [state.revision, state.beat, state.lastBeat, playbackPosesRevision, players.size, heldRobots.size,
+    preparedRobotAnimations.size, legAnimationBakingEnabled, globalPlayback.speedMultiplier,
+    ghostBandPreview ? 1 : 0, ghostBandAnchorBeat].join(":");
+}
+
+function updateAllJacketLegPlanes() {
   allRobots.forEach((robot) => {
     const parts = marcherParts.get(robot);
     if (!parts) return;
     updateJacketLegPlanes([parts.leftThigh, parts.rightThigh, parts.leftCalf, parts.rightCalf], parts.body);
   });
-  notifyDrillTransport();
+}
+
+function applyGlobalCountToAllRobots() {
+  frameDrillState = getDrillTransportState();
+  frameMusicState = musicTransportFrom(frameDrillState);
+  const state = frameDrillState;
+  try {
+    players.forEach((playerState, robot) => applyGlobalCount(robot, playerState));
+  } finally {
+    frameDrillState = null;
+    frameMusicState = null;
+  }
+  lastAppliedPoseKey = drillPoseKey(state);
+  updateAllJacketLegPlanes();
+  notifyDrillTransport(false, state);
 }
 
 // The longest registered route determines the full drill's length in counts.
@@ -2220,6 +2280,18 @@ function ensureSharedObserver(scene: Scene) {
       }
     }
 
+    // Paused with nothing changed: every marcher's pose application would
+    // reproduce the previous frame exactly, so skip the O(marchers) pass.
+    // Jacket clip planes still track world-matrix motion (AR grabs), and the
+    // transport still notifies with this frame's shared snapshot.
+    if (!globalPlayback.playing && !pendingPlaybackStart && lastAppliedPoseKey !== "") {
+      const state = getDrillTransportState();
+      if (drillPoseKey(state) === lastAppliedPoseKey) {
+        updateAllJacketLegPlanes();
+        notifyDrillTransport(false, state);
+        return;
+      }
+    }
     applyGlobalCountToAllRobots();
   });
 }
@@ -2242,7 +2314,8 @@ export function registerRobotPath(
   const oldState = players.get(robot);
   if (oldState) invalidateLegBake(oldState);
   players.set(robot, { points, stepSizeYards: resolvedStepSize, counts, fixedFacingY,
-    footballMotion: oldState?.footballMotion });
+    footballMotion: oldState?.footballMotion, footballMotionKey: oldState?.footballMotionKey });
+  invalidatePlaybackPoses();
   applyFixedFacing(players.get(robot)!);
   applyGlobalCount(robot, players.get(robot)!);
   recalculateCollisionMarkers(scene);
@@ -2297,7 +2370,8 @@ export function registerRobotCounts(
   const oldState = players.get(robot);
   if (oldState) invalidateLegBake(oldState);
   players.set(robot, { points: positions, stepSizeYards: DEFAULT_STEP_SIZE_YARDS, counts,
-    footballMotion: oldState?.footballMotion });
+    footballMotion: oldState?.footballMotion, footballMotionKey: oldState?.footballMotionKey });
+  invalidatePlaybackPoses();
   applyGlobalCount(robot, players.get(robot)!);
   if (!skipCollisionRefresh) recalculateCollisionMarkers(scene);
 }
@@ -3238,6 +3312,7 @@ export function restoreMarcherSchedule(
   players.set(robot, {
     points: counts.map((count) => count.position.clone()), stepSizeYards: snapshot.stepSizeYards,
     counts, fixedFacingY: snapshot.fixedFacingY, footballMotion: oldState?.footballMotion,
+    footballMotionKey: oldState?.footballMotionKey,
   });
   robot.setEnabled(true);
   applyGlobalCount(robot, players.get(robot)!);

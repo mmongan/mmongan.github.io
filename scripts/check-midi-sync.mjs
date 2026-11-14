@@ -89,6 +89,7 @@ const transportContext = vm.createContext({
   MARCHING_GAITS: [{ tempoFactor: 1 }, { tempoFactor: 2 }], selectedMarchingGait: 0,
   playbackTempoMap: null, repeatElapsed: null, getMaxCountIndex: () => 16, transportRevision: 7,
   playbackCountTicks: [], playbackPpq: 480,
+  playbackTimingRevision: 0, frameDrillState: null, frameMusicState: null,
 });
 vm.runInContext(stripTypeScriptTypes(readFileSync(new URL('../src/audio/drillMidiTiming.ts', import.meta.url), 'utf8'))
   .replace(/export /g, ''), transportContext);

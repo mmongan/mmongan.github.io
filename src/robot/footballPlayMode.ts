@@ -380,10 +380,28 @@ export function createFootballVisuals(
     const stepPrefixes = new Map<TransformNode, number[]>();
     const routeSnapshots = new Map<TransformNode, Float64Array>();
     let clearanceSignature = '';
+    // Set by edit detection; with an unchanged transport it lets paused
+    // frames skip the full per-player football re-pose.
+    let footballPosesDirty = true;
+    let lastFootballUpdateKey = '';
+    let lastClearanceCalibration = !!floorCalibrationToggle?.checked;
+    let clearanceFrame = 0;
     const clearanceObserver = scene.onBeforeRenderObservable.add(() => {
-      const signature = JSON.stringify([floorCalibrationToggle?.checked, visibleFromCount, returnStart,
-        seatInsertions, tackles, events, sequence]);
-      let changed = signature !== clearanceSignature;
+      // The numeric route/scale compare below is cheap and must react within
+      // a frame (tabletop scaling); the JSON event signature is edit polling,
+      // so a few frames of latency are invisible and it runs throttled.
+      // Calibration changes what samplePositions computes, so it must clear
+      // the cache the same frame it flips, never on the throttled poll.
+      const calibrating = !!floorCalibrationToggle?.checked;
+      let changed = calibrating !== lastClearanceCalibration;
+      lastClearanceCalibration = calibrating;
+      const polling = clearanceFrame++ % 4 === 0;
+      if (polling) {
+        const signature = JSON.stringify([visibleFromCount, returnStart,
+          seatInsertions, tackles, events, sequence]);
+        if (signature !== clearanceSignature) changed = true;
+        clearanceSignature = signature;
+      }
       for (const { robot } of players) {
         const counts = getRobotCounts(robot);
         const length = 4 + (counts?.length ?? 0) * 4;
@@ -398,18 +416,25 @@ export function createFootballVisuals(
         };
         compare(0, Number(robot.isDisposed())); compare(1, Number(robot.isEnabled()));
         compare(2, robot.scaling.x); compare(3, robot.scaling.z);
-        for (let index = 0; counts && index < counts.length; index++) {
+        // Route endpoints change only through editors (which clear the caches
+        // directly); the full per-count sweep rides the throttled poll.
+        for (let index = 0; polling && counts && index < counts.length; index++) {
           const count = counts[index], offset = 4 + index * 4;
           compare(offset, count.position.x); compare(offset + 1, count.position.z);
           compare(offset + 2, count.rotationY ?? NaN); compare(offset + 3, count.facingY ?? NaN);
         }
       }
       if (changed) {
-        positionCache.clear(); stepPrefixes.clear(); clearanceSignature = signature;
+        positionCache.clear(); stepPrefixes.clear();
+        footballPosesDirty = true;
       }
     }, -1, true);
     disposeClearance = () => scene.onBeforeRenderObservable.remove(clearanceObserver);
-    const samplePositions = (beat: number) => {
+    const samplePositions = (rawBeat: number) => {
+      // Quantized key: robot playback and the frame update pass the same beat
+      // through slightly different float paths; without rounding, every frame
+      // re-ran the whole-field separation solver two or three times.
+      const beat = Math.round(rawBeat * 1048576) / 1048576;
       const cached = positionCache.get(beat);
       if (cached) return cached;
       const activeTackles = activeTacklesAt(beat);
@@ -735,7 +760,18 @@ export function createFootballVisuals(
           !!floorCalibrationToggle?.checked}`;
         if (key === staticPoseKey) return;
         staticPoseKey = key;
+        update();
+        return;
       }
+      // While paused with no edits and unchanged controls, every player's
+      // re-pose would reproduce the previous frame; skip the O(players) pass.
+      const transport = getDrillTransportState();
+      const key = [transport.beat, transport.revision, transport.playing, transport.lastBeat,
+        !!floorCalibrationToggle?.checked, !!footballBallHighlight?.checked,
+        !!footballFlightPath?.checked].join(':');
+      if (!footballPosesDirty && key === lastFootballUpdateKey) return;
+      footballPosesDirty = false;
+      lastFootballUpdateKey = key;
       update();
     });
     disposeObserver = () => { scene.onBeforeRenderObservable.remove(observer); };

@@ -97,6 +97,7 @@ Object.assign(context, {
   recalculateCollisionMarkers() {}, applyGlobalCount() {}, rebuildFormationConnections() {},
   updateSegmentHandleVisibility() {}, refreshPathLineAppearance() {}, saveStoredPaths() {},
   updateRobotPathLine() {}, createSegment,
+  playbackPosesRevision: 0,
   selectRobot(selected) { context.selectedRobot = selected; },
   removeRobotPath(target) {
     robotPaths.delete(target);

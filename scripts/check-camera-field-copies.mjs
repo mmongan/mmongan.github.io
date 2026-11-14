@@ -150,6 +150,7 @@ try {
     let playbackTempoMap = [{ beat: 0, bpm: 96 }, { beat: 8, bpm: 120 }];
     let playbackBeatUnits = [{ beat: 0, numerator: 6, denominator: 8 }];
     let playbackPpq = 960, playbackCountTicks = [0, 480, 1440], transportRevision = 0;
+    let playbackTimingRevision = 0;
     function applyGlobalCountToAllRobots() { applications++; }
   `, playbackContext);
   vm.runInContext(transform(playbackSource), playbackContext);

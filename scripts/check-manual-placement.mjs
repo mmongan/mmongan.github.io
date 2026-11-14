@@ -122,7 +122,7 @@ try {
   const context = vm.createContext({
     players, allRobots: new Set([editA, editB]), tryManualMarcherPose,
     getChartPageTimeline: () => ({ authoredCounts: [] }), authorChartPage() {},
-    pendingLegBakes: new Set(),
+    pendingLegBakes: new Set(), playbackPosesRevision: 0,
     applyGlobalCount: () => applied++, recalculateCollisionMarkers: () => {},
   });
   const robotSource = readFileSync(new URL('../src/robot/robot.ts', import.meta.url), 'utf8');

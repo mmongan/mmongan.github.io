@@ -131,7 +131,18 @@ function updateFollower() {
   }
 }
 
+let listRefreshCountdown = 0;
+
 function refreshMarcherList() {
+  // Roster names change rarely; stringifying every marcher's name each frame
+  // is wasted work. Poll every 30 frames; selection sync below stays cheap.
+  if (listRefreshCountdown-- > 0) {
+    const selectedRobot = getSelected();
+    const value = selectedRobot ? String(selectedRobot.uniqueId) : '';
+    if (marcherPOVSelect && marcherPOVSelect.value !== value) marcherPOVSelect.value = value;
+    return;
+  }
+  listRefreshCountdown = 30;
   const marchers = getMarchers().filter(robot => !robot.isDisposed() && robot.isEnabled());
   const signature = JSON.stringify(marchers.map(robot => [robot.uniqueId, getObjectName(robot)]));
   if (marcherPOVSelect && signature !== listSignature) {
@@ -147,7 +158,8 @@ function refreshMarcherList() {
     }));
   }
   const selected = getSelected();
-  if (marcherPOVSelect) marcherPOVSelect.value = selected ? String(selected.uniqueId) : '';
+  const value = selected ? String(selected.uniqueId) : '';
+  if (marcherPOVSelect && marcherPOVSelect.value !== value) marcherPOVSelect.value = value;
 }
 
 export function initMarcherPOV(

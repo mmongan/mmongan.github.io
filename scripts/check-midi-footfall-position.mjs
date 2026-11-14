@@ -38,6 +38,7 @@ const context = vm.createContext({
   playbackBeatUnits: [],
   playbackPpq: 480, playbackCountTicks: [],
   transportRevision: 0,
+  frameDrillState: null, frameMusicState: null, playbackTimingRevision: 0,
   getDrillTransportState: () => ({ beat: drillBeat }),
   getMusicTransportState: () => ({ beat: musicBeat }),
   resolveSegmentGait: () => ({

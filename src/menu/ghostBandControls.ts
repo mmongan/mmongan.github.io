@@ -8,9 +8,14 @@ import {
 } from '../robot/robot';
 
 export function initGhostBandControls() {
-  const refresh = () => {
+  // Transport notifications arrive every frame; only touch the DOM (and
+  // build the strings) when a displayed value actually changed.
+  let lastKey = '';
+  const refresh = (transport = getDrillTransportState()) => {
     const active = isGhostBandPreviewEnabled();
-    const transport = getDrillTransportState();
+    const key = `${active}:${transport.beat}:${transport.lastBeat}:${active ? getGhostBandAnchorBeat() : 0}`;
+    if (key === lastKey) return;
+    lastKey = key;
     if (ghostBandToggle) ghostBandToggle.checked = active;
     if (ghostBandTimeline) {
       ghostBandTimeline.disabled = !active;
