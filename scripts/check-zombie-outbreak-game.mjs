@@ -84,6 +84,7 @@ const statuses = [];
 let presentationCount = 0;
 let registered = null;
 let controllers = new Map();
+let arScale = 1;
 
 const context = vm.createContext({
   Matrix, Quaternion, TargetCamera, Vector3, Color3, Mesh, MeshBuilder, StandardMaterial, TransformNode, scene,
@@ -91,7 +92,8 @@ const context = vm.createContext({
   getActiveControllers: () => controllers,
   isGripPressed: controller => !!controller.squeezePressed,
   setSceneManipulationLocked: value => { locked = value; },
-  getARScale: () => 1, getARScaleRange: () => ({ min: 1 / 120, max: 1 }),
+  getARScale: () => arScale, setARScale: value => { arScale = value; },
+  getARScaleRange: () => ({ min: 1 / 120, max: 1 }),
   animateHeldMarcherWalk: (robot, phase, amplitude) => walks.push({ robot, phase, amplitude }),
   captureMarcherSchedules: () => snapshots,
   createPresentationMarcher: () => { presentationCount++; return makeMarcher(`referee${presentationCount}`); },
@@ -572,11 +574,17 @@ cameraClass = 'FreeCamera';
 snapshots = bandSnapshots();
 quad.position.set(0, 0, 10);
 assert.equal(registered.tryStart(), 'declined', 'An unforced desktop request keeps the cinematic');
+// Outbreak! is locked into 1:1: a shrunk (tabletop) field scales up to
+// full size for the run and the saved scale comes back when it ends.
+arScale = 1 / 20;
 assert.equal(registered.tryStart(true), 'started', 'Outbreak! starts the survival game on desktop');
+assert.equal(arScale, 1, 'Starting the game locks the field into 1:1');
 vm.runInContext('strikeZone(1, 2000000)', context);
 assert.ok(vm.runInContext('stepDistanceLeft', context) > 0,
   'A desktop key strike on the called drum plays a step');
 registered.stop();
+assert.equal(arScale, 1 / 20, 'Ending the game restores the saved field scale');
+arScale = 1;
 cameraClass = 'WebXRCamera';
 
 // Marching the whole show while aligned ends the run as a win.

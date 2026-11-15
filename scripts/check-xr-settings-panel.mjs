@@ -31,6 +31,7 @@ const controls = Object.fromEntries(['xrSettingsPanelButton', 'xrSettingsPanelTo
 const engine = new NullEngine(), scene = new Scene(engine);
 const labels = [];
 const context = vm.createContext({
+  isZombieOutbreakGameActive: () => false,
   scene, Mesh, MeshBuilder, TransformNode, StandardMaterial, Matrix, Quaternion, Vector3, Plane, Color3, Ray, Observable, ...controls,
   footballFormationSelect: { selectedOptions: [{ text: 'Shotgun' }] },
   footballPlaySelect: { selectedOptions: [{ text: 'Slants' }] },

@@ -34,6 +34,7 @@ const toggle = {
 };
 const context = vm.createContext({
   isMenuActionAvailable: () => true,
+  isZombieOutbreakGameActive: () => false,
   scene, MeshBuilder, TransformNode, StandardMaterial, Vector3, Color3,
   instrumentPanelButton: null,
   instrumentPanelToggle: toggle,
