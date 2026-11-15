@@ -1,7 +1,7 @@
 {
   "name": "mmongan.github.io",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Babylon.js WebXR VR/AR demo for Quest 3",
   "homepage": "https://github.com/mmongan/mmongan.github.io#readme",
   "bugs": {
