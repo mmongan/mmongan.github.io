@@ -17,7 +17,7 @@ const engine = new NullEngine();
 const scene = new Scene(engine);
 try {
   const names = ['Trumpet', 'Mellophone', 'Trombone', 'Euphonium', 'Sousaphone', 'Saxophone',
-    'BariSaxophone', 'Clarinet', 'Flute', 'Snare', 'Tenor', 'BassDrum', 'Glockenspiel',
+    'BariSaxophone', 'Clarinet', 'Flute', 'Snare', 'Tenor', 'TenorSticks', 'BassDrum', 'Glockenspiel',
     'GuardFlag', 'GuardRifle', 'GuardSabre', 'Cymbal'];
   const templates = {};
   names.forEach((name, i) => {

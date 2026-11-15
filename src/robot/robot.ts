@@ -28,7 +28,7 @@ import { FLUTE_MOUTHPIECE_TIP, getFluteTemplate } from './fluteModel';
 import { getSousaphoneTemplate, SOUSAPHONE_MOUTHPIECE_TIP, SOUSAPHONE_VALVE_GRIP, sousaphoneLoopPoint } from './sousaphoneModel';
 import {
   BASS_DRUM_GRIPS, getBassDrumTemplate, getGlockenspielTemplate, getSnareTemplate, GLOCKENSPIEL_GRIPS, getTenorTemplate, SNARE_GRIPS, TENOR_GRIPS,
-  CYMBAL_GRIPS, getCymbalTemplate,
+  CYMBAL_GRIPS, getCymbalTemplate, getTenorSticksTemplate,
 } from './percussionModels';
 import { getMellophoneTemplate, MELLOPHONE_MOUTHPIECE_TIP } from './mellophoneModel';
 import { getRobotEyesTemplate } from './robotFaceModel';
@@ -799,7 +799,13 @@ export function getMarcherInstrument(robot: TransformNode): MarcherInstrument | 
 }
 
 function createInstrumentMesh(robot: TransformNode, instrument: MarcherInstrument, root: TransformNode): ModelPart {
-  return createModelPart(INSTRUMENTS[instrument].template, robot.getScene(), "marcherHorn", root, robot);
+  const horn = createModelPart(INSTRUMENTS[instrument].template, robot.getScene(), "marcherHorn", root, robot);
+  // The quads' modeled sticks ride the horn as their own part so marcher
+  // POV can hide them while the viewer's controller drumsticks stand in.
+  if (instrument === 'tenors') {
+    createModelPart(getTenorSticksTemplate, robot.getScene(), "marcherDrumsticks", horn, robot);
+  }
+  return horn;
 }
 
 // Swaps a marcher's instrument mesh, moving its gloves onto the new grips.

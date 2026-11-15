@@ -69,12 +69,21 @@ function createTenorTemplate(scene: Scene): Mesh {
     geometry.drum(new Vector3(side * 0.25, 0.8, 0.26), Vector3.Up(), 0.09, 0.12, 8, NAVY_SHELL, PEARL);
   }
   carrier(geometry, 0.8, 0.31);
+  return buildInstrumentTemplate("tenorTemplate", geometry, scene);
+}
+
+// The quads' stick pair lives on its own shared template (same
+// instrument-local coordinates, parented onto the horn at zero offset) so
+// marcher POV can hide the modeled sticks while the viewer's controller
+// drumsticks stand in.
+function createTenorSticksTemplate(scene: Scene): Mesh {
+  const geometry = new InstrumentGeometry("instrument");
   TENOR_GRIPS.forEach((grip, index) => {
     const side = index === 0 ? -1 : 1;
     geometry.stick(grip.add(new Vector3(side * 0.02, 0.02, -0.06)), new Vector3(side * 0.09, 0.885, 0.43), 0.008, WOOD,
       0.012, FELT);
   });
-  return buildInstrumentTemplate("tenorTemplate", geometry, scene);
+  return buildInstrumentTemplate("tenorSticksTemplate", geometry, scene);
 }
 
 // Bass drum: on its side at chest height, heads facing left and right, a
@@ -143,6 +152,7 @@ function createGlockenspielTemplate(scene: Scene): Mesh {
 // Shared, hidden source meshes; clone them (clones share geometry and material).
 export const getSnareTemplate = cachedInstrumentTemplate(createSnareTemplate);
 export const getTenorTemplate = cachedInstrumentTemplate(createTenorTemplate);
+export const getTenorSticksTemplate = cachedInstrumentTemplate(createTenorSticksTemplate);
 export const getBassDrumTemplate = cachedInstrumentTemplate(createBassDrumTemplate);
 export const getGlockenspielTemplate = cachedInstrumentTemplate(createGlockenspielTemplate);
 export const getCymbalTemplate = cachedInstrumentTemplate(createCymbalTemplate);

@@ -18,7 +18,7 @@ const TOP_DOWN_LAYER = 0x10000000;
 // animated arms would fight them.
 // Football players: neck/face/helmet/nose/eyes and the floating role plate.
 const SELF_HEAD_MESH =
-  /^(marcherTrim|robotEyes|marcherFaceSkin|marcherZombieTrim|marcherZombieFace|marcherUpperArm|marcherForearm|marcherHand)$|^football-(neck|face|helmet|stripe|jaw|mask|nose|eye-white|iris|pupil|brow|mouth|role)-/;
+  /^(marcherTrim|robotEyes|marcherFaceSkin|marcherZombieTrim|marcherZombieFace|marcherUpperArm|marcherForearm|marcherHand|marcherDrumsticks)$|^football-(neck|face|helmet|stripe|jaw|mask|nose|eye-white|iris|pupil|brow|mouth|role)-/;
 
 function isPOVSelfHiddenMesh(mesh: AbstractMesh): boolean {
   return SELF_HEAD_MESH.test(mesh.name);

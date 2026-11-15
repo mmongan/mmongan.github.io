@@ -16,7 +16,10 @@ import { getSaxophoneTemplate } from '../robot/saxophoneModel';
 import { getBariSaxophoneTemplate } from '../robot/bariSaxophoneModel';
 import { getClarinetTemplate } from '../robot/clarinetModel';
 import { getFluteTemplate } from '../robot/fluteModel';
-import { getSnareTemplate, getTenorTemplate, getBassDrumTemplate, getGlockenspielTemplate, getCymbalTemplate } from '../robot/percussionModels';
+import {
+  getSnareTemplate, getTenorTemplate, getTenorSticksTemplate, getBassDrumTemplate,
+  getGlockenspielTemplate, getCymbalTemplate,
+} from '../robot/percussionModels';
 import { getGuardFlagTemplate, getGuardRifleTemplate, getGuardSabreTemplate } from '../robot/colorGuardModels';
 
 const templates: Record<MarcherInstrument, ModelTemplate> = {
@@ -58,5 +61,18 @@ export function addInstrumentButtonModel(button: AbstractMesh, instrument: March
   material.specularColor = new Color3(0.15, 0.15, 0.15);
   model.material = material;
   model.onDisposeObservable.addOnce(() => material.dispose());
+  // The quads' sticks live on their own template (so POV can hide them on
+  // the field); the miniature carries them back as a child.
+  if (instrument === 'tenors') {
+    const sticks = getTenorSticksTemplate(scene, 'low').clone(`handMenuInstrumentSticks-${instrument}`, model, true);
+    if (sticks) {
+      sticks.isVisible = true;
+      sticks.setEnabled(true);
+      sticks.isPickable = false;
+      sticks.position.setAll(0);
+      sticks.material = material;
+      return { root: pivot, meshes: [model, sticks] };
+    }
+  }
   return { root: pivot, meshes: [model] };
 }

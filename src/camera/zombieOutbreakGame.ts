@@ -97,6 +97,11 @@ const DRUM_ZONES: { center: Vector3; radius: number }[] = [
 ];
 const STICK_LENGTH = 0.34;
 const HIT_COOLDOWN_MS = 200;
+// During the game the player's quads ride this much farther forward
+// (instrument-local units) than the parade mount, putting the heads at a
+// natural stick-striking distance from the chest; the strike zones and the
+// called-drum ring follow the horn's matrix automatically.
+export const PLAYER_DRUM_FORWARD = 0.16;
 // Each correct (called) hit takes one marching stride toward the facing,
 // played out at step speed. Chained calls approach 3.75 yd/s — just ahead
 // of the horde — while a silent drummer stands still and is caught.
@@ -132,6 +137,8 @@ let callbacks: GameCallbacks | null = null;
 let active = false;
 let player: Runner | null = null;
 let playerHorn: Mesh | null = null;
+// The horn's parade-mount position, restored when the game ends.
+let playerHornHome: Vector3 | null = null;
 let chasers: Runner[] = [];
 let victims: Victim[] = [];
 let bystanders: TransformNode[] = [];
@@ -228,6 +235,14 @@ function ensureStick(handedness: string, grip: TransformNode) {
   mesh.rotation.x = Math.PI / 2;
   mesh.material = stickMaterial;
   mesh.isPickable = false;
+  // A rounded bead heads each stick, centered on the hit-test tip point.
+  const bead = MeshBuilder.CreateSphere(`zombieOutbreakStickBead-${handedness}`, {
+    diameter: 0.026, segments: 10,
+  }, scene);
+  bead.parent = mesh;
+  bead.position.y = STICK_LENGTH / 2;
+  bead.material = stickMaterial;
+  bead.isPickable = false;
   const stick = { mesh, grip };
   sticks.set(handedness, stick);
   return stick;
@@ -623,6 +638,10 @@ function stopGame(message?: string) {
     }
     setRobotHeld(robot, false);
   };
+  if (playerHorn && !playerHorn.isDisposed() && playerHornHome) {
+    playerHorn.position.copyFrom(playerHornHome);
+  }
+  playerHornHome = null;
   if (player) release(player.robot, undefined);
   for (const { robot } of chasers) release(robot, savedColors.get(robot));
   for (const victim of victims) release(victim.robot, victim.color);
@@ -866,6 +885,10 @@ function tryStartGame(force = false): ZombieGameStart {
   pauseAll();
   savedColors = new Map();
   playerHorn = quad.robot.getChildMeshes(false).find(mesh => mesh.name === 'marcherHorn') as Mesh ?? null;
+  if (playerHorn) {
+    playerHornHome = playerHorn.position.clone();
+    playerHorn.position.z += PLAYER_DRUM_FORWARD;
+  }
   player = { robot: quad.robot, heading: quad.robot.rotation.y, stridePhase: 0 };
   setRobotHeld(quad.robot, true);
   chasers = clarinets.map((snapshot) => {

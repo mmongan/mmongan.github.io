@@ -172,6 +172,9 @@ const referee = scene.transformNodes.find(node => node.name === 'referee1');
 assert.ok(referee.getChildMeshes(false).filter(mesh => mesh.name === 'zombieRefereeStripe').length === 4,
   'Referees wear four black stripes over a white uniform');
 assert.ok(colors.get(referee).equals(Color3.White()), 'Referee base uniform is white');
+const playerHornMesh = quad.getChildMeshes(false).find(mesh => mesh.name === 'marcherHorn');
+assert.ok(Math.abs(playerHornMesh.position.z - 0.16) < 1e-9,
+  "The player's drums shift forward to a natural striking distance");
 const ghosts = scene.meshes.filter(mesh => mesh.name.startsWith('zombieGhostDrum') && mesh.isEnabled());
 assert.equal(ghosts.length, 6, 'A trail of ghost drums rides the authored route');
 assert.ok(ghosts[0].material.alpha > ghosts[5].material.alpha + 0.1,
@@ -394,6 +397,7 @@ assert.equal(registered.isActive(), false, 'A zombie touch ends the game');
 assert.match(statuses[statuses.length - 1], /horde got you/, 'The ending reports survival');
 assert.equal(heldSet.size, 0, 'Every held marcher returns to its schedule');
 assert.equal(zombifiedSet.size, 0, 'Game over restores every zombified skin and face');
+assert.equal(playerHornMesh.position.z, 0, 'The drums return to their parade mount');
 assert.equal(flute.rotation.x, 0, 'The fallen stand back up');
 assert.ok(colors.get(clarinet).b > colors.get(clarinet).g, 'Clarinet uniforms are restored');
 assert.ok(poseSets.filter(entry => entry.pose === 'playing').length >= 2, 'Instrument poses restore');

@@ -668,7 +668,7 @@ Route-only data occupies 16 bytes per count; baked data occupies 104 bytes per c
 
 ## Outbreak! — zombie survival game
 
-You are the quad (tenors) drummer, seen in first person through marcher POV — your marcher's own head and arms are hidden, because your real hands and their controller drumsticks take their place — and the zombie clarinets are after *you*. The drill is the course: march your own show while the horde marches theirs, and survive to the final count. The whole game is session-only — stopping it (or losing) restores every schedule, uniform, and pose exactly as they were.
+You are the quad (tenors) drummer, seen in first person through marcher POV — your marcher's own head, arms, and modeled drumsticks are hidden, because your real hands and their bead-headed controller drumsticks take their place — and the zombie clarinets are after *you*. The drill is the course: march your own show while the horde marches theirs, and survive to the final count. The whole game is session-only — stopping it (or losing) restores every schedule, uniform, and pose exactly as they were.
 
 ### Starting a run
 
@@ -681,7 +681,7 @@ You are the quad (tenors) drummer, seen in first person through marcher POV — 
 
 - **Follow the ghost drums.** A trail of translucent ghost drums rides your authored drill route at a steady cadence, each one fainter than the last — the lead ghost marks where you should be right now, and the fading trail shows where the route goes next.
 - **Steer with your sticks.** In VR you march where your drumsticks point — the average when both controllers are connected — so your head stays free to look around at the horde. On desktop, with no controllers, mouse/arrow look steers instead. The drums themselves do not steer.
-- **Step by drumming the call.** A pulsing gold ring marks the *called* drum. Strike it — with a controller drumstick tip in VR, or the number keys **1–4** (drums left to right) on desktop — and you take one marching stride toward where you face; the ring then jumps to another drum. Wrong drums play nothing, and a silent or sloppy drummer stands frozen. Chaining correct hits is just faster than the horde.
+- **Step by drumming the call.** During a run your quads ride a little farther out than the parade mount, putting the heads at a natural stick-striking distance (they return to the mount when the run ends). A pulsing gold ring marks the *called* drum. Strike it — with a controller drumstick tip in VR, or the number keys **1–4** (drums left to right) on desktop — and you take one marching stride toward where you face; the ring then jumps to another drum. Wrong drums play nothing, and a silent or sloppy drummer stands frozen. Chaining correct hits is just faster than the horde.
 
 ### Rules of the field
 
