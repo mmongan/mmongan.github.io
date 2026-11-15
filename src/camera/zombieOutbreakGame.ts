@@ -58,7 +58,7 @@ type GameCallbacks = {
 // (the XR session or POV camera is still settling), retried per frame.
 export type ZombieGameStart = 'started' | 'retry' | 'declined';
 
-type DrumStick = { mesh: Mesh; grip: TransformNode };
+type DrumStick = { mesh: Mesh; grip: TransformNode; material: StandardMaterial };
 
 interface Runner {
   robot: TransformNode;
@@ -275,16 +275,18 @@ function ensureStick(handedness: string, grip: TransformNode) {
   const existing = sticks.get(handedness);
   if (existing?.grip === grip) return existing;
   existing?.mesh.dispose();
-  stickMaterial ??= new StandardMaterial('zombieOutbreakStickMaterial', scene);
-  stickMaterial.diffuseColor = Color3.FromHexString('#d8ad67');
-  stickMaterial.emissiveColor = Color3.FromHexString('#392511');
+  existing?.material.dispose();
+  // Each stick owns its material so it can wear its hand's call color.
+  const material = new StandardMaterial(`zombieOutbreakStickMaterial-${handedness}`, scene);
+  material.diffuseColor.copyFrom(STICK_NEUTRAL_DIFFUSE);
+  material.emissiveColor.copyFrom(STICK_NEUTRAL_EMISSIVE);
   const mesh = MeshBuilder.CreateCylinder(`zombieOutbreakStick-${handedness}`, {
     height: STICK_LENGTH, diameter: 0.012, tessellation: 8,
   }, scene);
   mesh.parent = grip;
   mesh.position.z = STICK_LENGTH / 2;
   mesh.rotation.x = Math.PI / 2;
-  mesh.material = stickMaterial;
+  mesh.material = material;
   mesh.isPickable = false;
   // A rounded bead heads each stick, centered on the hit-test tip point.
   const bead = MeshBuilder.CreateSphere(`zombieOutbreakStickBead-${handedness}`, {
@@ -292,18 +294,113 @@ function ensureStick(handedness: string, grip: TransformNode) {
   }, scene);
   bead.parent = mesh;
   bead.position.y = STICK_LENGTH / 2;
-  bead.material = stickMaterial;
+  bead.material = material;
   bead.isPickable = false;
-  const stick = { mesh, grip };
+  const stick = { mesh, grip, material };
   sticks.set(handedness, stick);
   return stick;
 }
 
 function clearSticks() {
-  sticks.forEach(({ mesh }) => mesh.dispose());
+  sticks.forEach(({ mesh, material }) => { mesh.dispose(); material.dispose(); });
   sticks.clear();
-  stickMaterial?.dispose();
-  stickMaterial = null;
+}
+
+// The sticks wear the call like the rings do: a stick whose hand has an
+// outstanding called drum is tinted that hand's color — gold right, cyan
+// left — and drops back to plain hickory once its half lands, its hand
+// has no call, or it is busy holding the drum handle.
+function updateStickColors() {
+  for (const [handedness, stick] of sticks) {
+    const hand = handedness === 'left' || handedness === 'right' ? handedness : null;
+    const called = hand !== null && handedness !== handleGrabHand &&
+      !satisfiedHands.has(hand) && currentCall.some(half => half.hand === hand);
+    if (called) {
+      const color = Color3.FromHexString(hand === 'right' ? CALL_RIGHT_COLOR : CALL_LEFT_COLOR);
+      stick.material.diffuseColor.copyFrom(color);
+      stick.material.emissiveColor.copyFrom(color.scale(0.55));
+    } else {
+      stick.material.diffuseColor.copyFrom(STICK_NEUTRAL_DIFFUSE);
+      stick.material.emissiveColor.copyFrom(STICK_NEUTRAL_EMISSIVE);
+    }
+  }
+}
+
+// The drum-carriage grab handle: a stubby amber bar on the near rail
+// between the outer drums, clear of every strike zone.
+function createDrumHandle() {
+  if (!playerHorn) return;
+  drumHandleMaterial = new StandardMaterial('zombieOutbreakDrumHandleMaterial', scene);
+  drumHandleMaterial.diffuseColor = Color3.FromHexString('#d8ad67');
+  drumHandleMaterial.emissiveColor = Color3.FromHexString('#392511');
+  drumHandle = MeshBuilder.CreateCylinder('zombieOutbreakDrumHandle', {
+    height: 0.14, diameter: 0.026, tessellation: 10,
+  }, scene);
+  drumHandle.parent = playerHorn;
+  drumHandle.rotation.z = Math.PI / 2;
+  drumHandle.position.set(0, 0.9, 0.16);
+  drumHandle.material = drumHandleMaterial;
+  drumHandle.isPickable = false;
+}
+
+function clearDrumHandle() {
+  drumHandle?.dispose();
+  drumHandle = null;
+  drumHandleMaterial?.dispose();
+  drumHandleMaterial = null;
+  handleGrabHand = null;
+  handleHornFromGrip = null;
+  squeezeWasPressed.clear();
+}
+
+// Manual drum placement: a fresh squeeze with the grip on the handle
+// glues the whole carriage to that hand; moving and twisting the hand
+// drags and tilts the drums (rings, zones, and handle follow the horn's
+// matrix), and releasing leaves the new pose as the horn's local mount —
+// still a child of the marcher, so it keeps swinging with the look-
+// steered body.
+function updateDrumHandle(controllers: ReturnType<typeof getActiveControllers>) {
+  if (!drumHandle || drumHandle.isDisposed() || !playerHorn || playerHorn.isDisposed()) return;
+  if (handleGrabHand !== null) {
+    const controller = controllers.get(handleGrabHand);
+    const parent = playerHorn.parent;
+    if (!controller?.grip || !isGripPressed(controller) || !handleHornFromGrip ||
+      !(parent instanceof TransformNode)) {
+      handleGrabHand = null;
+      handleHornFromGrip = null;
+    } else {
+      controller.grip.computeWorldMatrix(true);
+      const local = handleHornFromGrip.multiply(controller.grip.getWorldMatrix())
+        .multiply(Matrix.Invert(parent.computeWorldMatrix(true)));
+      const position = new Vector3();
+      const rotation = new Quaternion();
+      local.decompose(undefined, rotation, position);
+      playerHorn.rotationQuaternion = null;
+      playerHorn.position.copyFrom(position);
+      playerHorn.rotation.copyFrom(rotation.toEulerAngles());
+    }
+  } else {
+    drumHandle.computeWorldMatrix(true);
+    const handleCenter = drumHandle.getAbsolutePosition();
+    for (const [handedness, controller] of controllers) {
+      if (!controller.grip || !isGripPressed(controller) || squeezeWasPressed.get(handedness)) continue;
+      controller.grip.computeWorldMatrix(true);
+      if (Vector3.Distance(controller.grip.getAbsolutePosition(), handleCenter) >
+        DRUM_HANDLE_GRAB_YARDS) continue;
+      playerHorn.computeWorldMatrix(true);
+      handleGrabHand = handedness;
+      handleHornFromGrip = playerHorn.getWorldMatrix()
+        .multiply(Matrix.Invert(controller.grip.getWorldMatrix()));
+      break;
+    }
+  }
+  for (const [handedness, controller] of controllers) {
+    squeezeWasPressed.set(handedness, isGripPressed(controller));
+  }
+  if (drumHandleMaterial) {
+    drumHandleMaterial.emissiveColor = Color3.FromHexString(
+      handleGrabHand !== null ? '#c79b55' : '#392511');
+  }
 }
 
 // The glowing ring over the called drum, parented to the player's horn so
