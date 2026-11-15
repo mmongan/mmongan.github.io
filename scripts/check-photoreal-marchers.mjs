@@ -164,6 +164,8 @@ for (let index = 0; index < positions.length; index += 3) {
 assert.ok(normals[centerIndex + 2] > 0.5, 'The plate faces forward, not into the skull');
 assert.ok(!faceMesh.isEnabled(), 'Templates stay hidden like every shared template');
 assert.ok(faceMesh.getVerticesData('uv'), 'The template mesh carries UVs');
+const zombieFaceMesh = vm.runInContext('getZombieFaceSkinTemplate(scene)', faceContext);
+assert.ok(zombieFaceMesh.getVerticesData('uv'), 'The zombie face plate carries UVs');
 // The texture carries facial detail, so the plate costs no more vertices
 // than the box-feature face it replaces.
 assert.ok(faceMesh.getTotalVertices() <= 120,
@@ -209,8 +211,10 @@ assert.match(robot, /registerMarcherShadedMaterial\(material, TINTED_PART_SPECUL
   'Held-clone tinted materials register for the preset');
 assert.match(robot, /part\(FACE_SKIN_TEMPLATES\[skin\], "marcherFaceSkin", body\)/,
   'Each marcher gets the face plate matching its skin tone');
-assert.match(robot, /eyes\.setEnabled\(!isMarcherShadingRealistic\(\)\);\s*\r?\n\s*faceSkin\.setEnabled\(isMarcherShadingRealistic\(\)\)/,
-  'New marchers start with the face matching the current realism state');
+assert.match(robot, /part\(getZombieFaceSkinTemplate, "marcherZombieFace", body\);\s*\r?\n\s*applyMarcherFaceParts\(robot\)/,
+  'New marchers get face parts applied for the current realism and zombie state');
+assert.match(robot, /mesh\.setEnabled\(!zombified && realistic\)/,
+  'The realism face yields to zombification');
 assert.match(robot, /applyFaceSkinVisibility\(\);/,
   'Toggling swaps eyes and face skin on existing marchers');
 const povCamera = readFileSync(new URL('../src/camera/marcherPOVCamera.ts', import.meta.url), 'utf8');

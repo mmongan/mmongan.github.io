@@ -75,6 +75,7 @@ const context = vm.createContext({
   captureBakedMarcherSchedules: () => snapshots,
   restoreMarcherSchedule: (robot, snapshot) => restores.push({ robot, snapshot }),
   setRobotColor: (robot, color) => colorSets.push({ robot, color }),
+  setMarcherZombified: () => {},
   setMarcherInstrumentPose: (robot, pose) => poseSets.push({ robot, pose }),
   getDrillTransportState: () => ({ beat }),
   isPlaybackRequested: () => playbackRequested,

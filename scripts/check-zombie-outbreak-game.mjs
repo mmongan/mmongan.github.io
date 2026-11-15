@@ -74,6 +74,7 @@ let tenorTemplateStub = null;
 
 let snapshots = [];
 const heldSet = new Set();
+const zombifiedSet = new Set();
 const colors = new Map([[quad, new Color3(1, 1, 1)], [clarinet, new Color3(0.1, 0.4, 0.8)],
   [flute, new Color3(0.9, 0.9, 0.1)]]);
 const poseSets = [];
@@ -99,6 +100,7 @@ const context = vm.createContext({
   setMarcherInstrumentPose: (robot, pose) => poseSets.push({ robot, pose }),
   setRobotColor: (robot, color) => colors.set(robot, color),
   setRobotHeld: (robot, held) => { if (held) heldSet.add(robot); else heldSet.delete(robot); },
+  setMarcherZombified: (robot, value) => { if (value) zombifiedSet.add(robot); else zombifiedSet.delete(robot); },
   getSharedAudioContext: () => null,
   getMarcherInstrument: robot => instruments.get(robot) ?? null,
   getDrillTransportState: () => ({ beat: 0, playing: false }),
@@ -149,6 +151,7 @@ assert.ok(heldSet.has(quad) && heldSet.has(clarinet), 'Movers are exempted via s
 assert.ok(!heldSet.has(flute), 'Standing marchers keep their scheduled poses');
 const clarinetColor = colors.get(clarinet);
 assert.ok(clarinetColor.g > clarinetColor.r, 'Clarinets turn green at the start');
+assert.ok(zombifiedSet.has(clarinet), 'Zombies get green skin and the zombie face');
 assert.equal(presentationCount, 3, 'Three referees take their posts');
 const referee = scene.transformNodes.find(node => node.name === 'referee1');
 assert.ok(referee.getChildMeshes(false).filter(mesh => mesh.name === 'zombieRefereeStripe').length === 4,
@@ -290,6 +293,35 @@ const curedColor = colors.get(flute);
 assert.ok(curedColor.r > 0.8 && curedColor.b < 0.2, 'The cured marcher gets its uniform back');
 assert.ok(!heldSet.has(trumpet), 'The trumpet player stands through the cure');
 assert.equal(flute.rotation.x, 0, 'The cured marcher stands upright');
+assert.ok(!zombifiedSet.has(flute), 'The cure restores skin and face');
+
+// Clubbed: a drumstick blow to the head fells a zombie for good. The cured
+// flute is bitten again, rises, and takes a stick to the head.
+trumpet.position.set(-6, 0, -14);
+flute.position.copyFrom(clarinet.position).addInPlace(new Vector3(0.25, 0, 0));
+fakeNow += 100;
+vm.runInContext('update()', context);
+assert.ok(heldSet.has(flute), 'A cured marcher can be bitten again');
+fakeNow += 20000;
+vm.runInContext('update()', context);
+vm.runInContext('update()', context);
+assert.equal(vm.runInContext('chasers.length', context), 2, 'The re-bitten marcher rises again');
+clarinet.position.set(-20, 0, -30);
+controllers = new Map([['right', { grip }]]);
+grip.rotation.set(0, 0, 0);
+grip.position.copyFrom(flute.position).addInPlace(new Vector3(0, 1.7, -0.34));
+fakeNow += 100;
+vm.runInContext('update()', context);
+assert.equal(vm.runInContext('chasers.length', context), 1,
+  'A drumstick to the head fells the zombie');
+fakeNow += 600;
+vm.runInContext('update()', context);
+assert.ok(Math.abs(flute.rotation.x) > 1.2, 'The felled zombie drops flat');
+fakeNow += 30000;
+vm.runInContext('update()', context);
+assert.equal(vm.runInContext('chasers.length', context), 1, 'A felled zombie never rises');
+assert.ok(Math.abs(flute.rotation.x) > 1.2, 'It stays down');
+controllers = new Map();
 
 // Caught: a zombie touching the player ends the game and restores the band.
 clarinet.position.copyFrom(quad.position).addInPlace(new Vector3(0.2, 0, 0));
@@ -298,6 +330,7 @@ vm.runInContext('update()', context);
 assert.equal(registered.isActive(), false, 'A zombie touch ends the game');
 assert.match(statuses[statuses.length - 1], /horde got you/, 'The ending reports survival');
 assert.equal(heldSet.size, 0, 'Every held marcher returns to its schedule');
+assert.equal(zombifiedSet.size, 0, 'Game over restores every zombified skin and face');
 assert.equal(flute.rotation.x, 0, 'The fallen stand back up');
 assert.ok(colors.get(clarinet).b > colors.get(clarinet).g, 'Clarinet uniforms are restored');
 assert.ok(poseSets.filter(entry => entry.pose === 'playing').length >= 2, 'Instrument poses restore');
@@ -346,7 +379,8 @@ scene.activeCamera = null;
 scene.dispose();
 engine.dispose();
 console.log('Zombie outbreak game checks passed: VR/quad gating with cinematic fallback, ' +
-  'fading ghost-drum trail on the captured schedule, called-drum marching steps with ' +
-  'steering and cooldown, formation-vs-hunt by drill alignment, referee whistle scares, ' +
+  'fading ghost-drum trail on the captured schedule, stick-pointed steering with desktop ' +
+  'look fallback, called-drum marching steps with cooldown, zombify/restore of skin and ' +
+  'face, head-bonk felling, formation-vs-hunt by drill alignment, referee whistle scares, ' +
   'knockdown/incubation/rise, the trumpet cure, the aligned-finish win, and a full restore ' +
   'on game over.');

@@ -200,7 +200,8 @@ try {
       assert.ok(previousFace.isDisposed(), 'Changing stadium level removes old signs');
       assert.equal(context.getHandMenuHit({ pickedMesh: previousFace }), null, 'Rebuild unregisters old actions');
     }
-    assert.equal(faces().length, 38, 'Both sidelines have media controls, XR panels, and an audience scrimmage sign');
+    assert.equal(faces().length, 40,
+      'Both sidelines have media controls, XR panels, and audience scrimmage/Outbreak! signs');
     for (const side of [-1, 1]) {
       const scrimmage = scene.getMeshByName(`stadiumMediaSignFace-${side}-runScrimmage`);
       assert.ok(scrimmage?.isEnabled(), 'Audience scrimmage signs are visible on desktop too');
@@ -218,6 +219,10 @@ try {
       const draftingAction = context.getHandMenuHit({ pickedMesh: draftingSign });
       assert.equal(draftingAction.action, 'drawingTool');
       assert.equal(draftingAction.tool, 'table', 'Drafting sign enters drafting-table mode');
+      const outbreakSign = scene.getMeshByName(`stadiumMediaSignFace-${side}-panel-OUTBREAK!`);
+      assert.ok(outbreakSign, 'Both sidelines have an audience Outbreak! sign');
+      assert.equal(context.getHandMenuHit({ pickedMesh: outbreakSign }).action, 'zombieOutbreak',
+        'The Outbreak! sign starts the survival game');
     }
     const signFace = faces().find(face => !face.name.includes('-panel-'));
     const sign = signFace.parent;
@@ -287,7 +292,7 @@ try {
   playing = false; transport.notifyObservers({ playing });
   scene.onBeforeRenderObservable.notifyObservers(scene);
   assert.match(visibleIcon().name, /-symbol$/);
-  console.log('Stadium crowd checks passed: tier population, connected spectator joints in every pose, legs clear of the bleacher structure, ten static batches, 38 clickable audience signs including Run Scrimmage, field-facing text, XR-only panel launchers, live Play/Pause, deterministic rebuild, and action cleanup.');
+  console.log('Stadium crowd checks passed: tier population, connected spectator joints in every pose, legs clear of the bleacher structure, ten static batches, 40 clickable audience signs including Run Scrimmage and Outbreak!, field-facing text, XR-only panel launchers, live Play/Pause, deterministic rebuild, and action cleanup.');
 } finally {
   scene.dispose();
   await new Promise(resolve => setTimeout(resolve, 0));

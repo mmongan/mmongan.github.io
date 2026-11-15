@@ -68,7 +68,7 @@ import {
 import {
   CHART_PAGE_DRAFT_KEY, parseChartPageDraft, roundVector, serializeChartPageDraft, type ChartPageDraft,
 } from '../robot/chartPageDraft';
-import { initZombieMode } from '../robot/zombieMode';
+import { initZombieMode, requestZombieOutbreakGame } from '../robot/zombieMode';
 import { initZombieOutbreakGame } from '../camera/zombieOutbreakGame';
 import type { ThumbJogState } from './thumbJogGesture';
 import {
@@ -2437,6 +2437,11 @@ function executeMenuAction(hit: NonNullable<ReturnType<typeof getHandMenuHit>>) 
       break;
     case "marcherDrumGame":
       toggleMarcherDrumGame();
+      break;
+    case "zombieOutbreak":
+      // The audience OUTBREAK! sign: the survival game, like the browser
+      // button (in-session the VR game starts directly).
+      requestZombieOutbreakGame();
       break;
     case "undoErase":
       if (!floorCalibrationToggle?.checked) eraseHistory.undo();

@@ -45,6 +45,7 @@ const PANEL_SIGNS: { label: string; symbol: string; action: HandMenuHit }[] = [
   { label: 'CUTTERS', symbol: 'O', action: { action: 'drawingTool', tool: 'cutters' } },
   { label: 'PAINT', symbol: 'COLOR', action: { action: 'marcherPaint', command: 'show' } },
   { label: 'PROJECTOR', symbol: 'IMAGE', action: { action: 'fieldProjector', command: 'show' } },
+  { label: 'OUTBREAK!', symbol: 'ZOMBIE', action: { action: 'zombieOutbreak' } },
 ];
 const SIGNS = [
   ...MEDIA_SIGNS.map(sign => ({ ...sign, action: { action: sign.action } as HandMenuHit, immersive: false })),
@@ -100,6 +101,11 @@ export function createStadiumCrowd(parent: Mesh) {
         ctx.fillText(returnBand ? '🎺' : '🏈', 256, 155, 460);
         ctx.font = 'bold 49px Arial';
         ctx.fillText(returnBand ? 'RETURN BAND' : 'START SCRIMMAGE', 256, 258, 470);
+      } else if (sign.action.action === 'zombieOutbreak') {
+        ctx.font = '150px "Segoe UI Emoji", "Apple Color Emoji", sans-serif';
+        ctx.fillText('🧟', 256, 155, 460);
+        ctx.font = 'bold 49px Arial';
+        ctx.fillText(sign.label, 256, 258, 470);
       } else if (sign.immersive) {
         ctx.font = 'bold 150px Arial';
         ctx.fillText(sign.symbol, 256, 124, 460);
