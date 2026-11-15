@@ -98,6 +98,10 @@ export function initStartupDisplay() {
     context.font = '36px "Segoe UI", sans-serif';
     const message = latest.message.length > 56 ? `${latest.message.slice(0, 55)}…` : latest.message;
     context.fillText(message, TEXTURE_WIDTH / 2, 402);
+    context.fillStyle = 'rgba(237, 244, 255, 0.55)';
+    context.font = '26px "Segoe UI", sans-serif';
+    context.fillText('Free software — GNU AGPL-3.0-or-later · © 2026 Marty Mongan',
+      TEXTURE_WIDTH / 2, 468);
     texture.update();
   }
 

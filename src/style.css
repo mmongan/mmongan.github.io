@@ -77,6 +77,18 @@ body {
   text-shadow: 0 4px 22px var(--shadow);
 }
 
+.startup-license {
+  margin: 1.2rem 0 0;
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+  opacity: 0.65;
+}
+
+.startup-license a {
+  color: inherit;
+  text-decoration: underline;
+}
+
 .startup-message {
   margin: 0;
   font-size: 1.05rem;
