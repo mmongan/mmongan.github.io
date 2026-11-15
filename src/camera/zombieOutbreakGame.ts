@@ -97,11 +97,13 @@ const DRUM_ZONES: { center: Vector3; radius: number }[] = [
 ];
 const STICK_LENGTH = 0.34;
 const HIT_COOLDOWN_MS = 200;
-// During the game the player's quads ride this much farther forward
-// (instrument-local units) than the parade mount, putting the heads at a
-// natural stick-striking distance from the chest; the strike zones and the
-// called-drum ring follow the horn's matrix automatically.
+// During the game the player's quads ride farther forward and higher
+// (instrument-local units) than the parade mount — a game-ergonomic pose,
+// not the real carriage — putting the heads out in front at chest height
+// where sticks land easily; the strike zones and the called-drum ring
+// follow the horn's matrix automatically.
 export const PLAYER_DRUM_FORWARD = 0.16;
+export const PLAYER_DRUM_RAISE = 0.22;
 // Each correct (called) hit takes one marching stride toward the facing,
 // played out at step speed. Chained calls approach 3.75 yd/s — just ahead
 // of the horde — while a silent drummer stands still and is caught.
@@ -113,6 +115,11 @@ export const PLAYER_STEP_YARDS_PER_SECOND = 3.9;
 // loose to hunt. Reaching the final count still aligned wins the run.
 export const GHOST_CADENCE_COUNTS_PER_SECOND = 1.8;
 export const DRILL_ALIGN_YARDS = 4;
+// Your timing is the horde's leash: every landed strike is scored by how
+// close it fell to the beat, folded into a rolling precision. Dead-on
+// drumming pins formation zombies to their exact drill paths; sloppy
+// timing frees them to wander up to this far off their spots.
+export const ZOMBIE_ROAM_YARDS = 6;
 export const ZOMBIE_RUN_YARDS_PER_SECOND = 3.15;
 export const OUTBREAK_TOUCH_YARDS = 0.8;
 const FALL_MS = 500;
@@ -166,6 +173,11 @@ const GHOST_TRAIL_DRUMS = 6;
 const GHOST_TRAIL_SPACING_COUNTS = 2;
 let ghostDrums: Mesh[] = [];
 let ghostMaterials: StandardMaterial[] = [];
+// The beat ghost: a brighter gold drum at the exact route spot where the
+// player should be standing when the next beat — the strike moment —
+// lands. Its glow swells with the same beat pulse as the called rings.
+let beatGhost: Mesh | null = null;
+let beatGhostMaterial: StandardMaterial | null = null;
 // The called drum: a glowing ring marks the one drum whose strike buys the
 // escape sprint. Any drum steers; only the call grants speed. The next call
 // advances by a deterministic hash of the hit count (never Math.random),
@@ -185,6 +197,9 @@ let satisfiedHands = new Set<'left' | 'right'>();
 let firstHalfAt = 0;
 let targetHits = 0;
 const lastHitByHand = { left: 0, right: 0, any: 0 };
+// Rolling beat accuracy of landed strikes: 1 is metronome-perfect, 0 is a
+// half-beat off. Starts neutral.
+let strikePrecision = 0.5;
 let targetMarkers: { mesh: Mesh; material: StandardMaterial; dimmed: boolean; baseScale: number }[] = [];
 let stickMaterial: StandardMaterial | null = null;
 const sticks = new Map<string, DrumStick>();
@@ -345,6 +360,11 @@ function strikeZone(zoneIndex: number, now: number, hand?: 'left' | 'right') {
   if (!half) return;
   if (satisfiedHands.size === 0) firstHalfAt = now;
   satisfiedHands.add(half.hand);
+  // Score the strike against the beat and fold it into the rolling
+  // precision that leashes the formation zombies.
+  const phase = gameCount % 1;
+  const accuracy = 1 - Math.min(phase, 1 - phase) * 2;
+  strikePrecision += (accuracy - strikePrecision) * 0.35;
   if (satisfiedHands.size < currentCall.length) {
     // Half a double stop: dim that ring and wait for its partner.
     applyTargetCall();
@@ -527,6 +547,16 @@ function createGhostDrums(parent: TransformNode | null) {
     ghostMaterials.push(material);
     ghostDrums.push(ghost);
   }
+  beatGhostMaterial = new StandardMaterial('zombieBeatGhostMaterial', scene);
+  beatGhostMaterial.emissiveColor = Color3.FromHexString('#ffe9a8');
+  beatGhostMaterial.disableLighting = true;
+  beatGhostMaterial.alpha = 0.5;
+  beatGhost = template.clone('zombieBeatGhost', null) as Mesh;
+  beatGhost.setEnabled(true);
+  beatGhost.isVisible = true;
+  beatGhost.isPickable = false;
+  beatGhost.material = beatGhostMaterial;
+  beatGhost.parent = parent;
 }
 
 function clearGhostDrums() {
@@ -534,6 +564,10 @@ function clearGhostDrums() {
   ghostDrums = [];
   ghostMaterials.forEach(material => material.dispose());
   ghostMaterials = [];
+  beatGhost?.dispose();
+  beatGhost = null;
+  beatGhostMaterial?.dispose();
+  beatGhostMaterial = null;
 }
 
 // The brass cure: a cured marcher — a hunting zombie that ran into a
@@ -818,6 +852,18 @@ function update() {
     marker.material.alpha = marker.dimmed ? 0.16 : 0.22 + 0.68 * beatSwell;
     marker.mesh.scaling.setAll(marker.baseScale * (marker.dimmed ? 1 : 1 + 0.28 * beatSwell));
   });
+  // The beat ghost stands at the next whole count: the spot to be standing
+  // on when the flash peaks. Its glow swells with the rings.
+  const nextBeat = Math.floor(gameCount) + 1;
+  const beatPose = nextBeat <= lastScheduledCount ? sampleSchedule(playerSchedule, nextBeat) : null;
+  if (beatGhost && !beatGhost.isDisposed()) {
+    beatGhost.setEnabled(!!beatPose);
+    if (beatPose) {
+      beatGhost.position.copyFrom(beatPose.position);
+      beatGhost.rotation.y = beatPose.rotationY;
+    }
+  }
+  if (beatGhostMaterial) beatGhostMaterial.alpha = 0.3 + 0.45 * beatSwell;
   // Aligned with the ghost, the horde holds formation; strayed, it hunts.
   onDrill = !ghostPose || Vector3.Distance(playerPosition, ghostPose.position) <= DRILL_ALIGN_YARDS;
   if (ghostPose && lastScheduledCount >= 1 && gameCount >= lastScheduledCount && onDrill) {
@@ -838,9 +884,17 @@ function update() {
     }
     if (onDrill) {
       // In formation: the zombie marches its own captured drill path at the
-      // ghost's count, with no knockdowns.
+      // ghost's count, with no knockdowns. How tightly it holds the path is
+      // the player's timing: sloppy strikes loosen the leash and the
+      // zombies wander off their spots.
       const sample = sampleSchedule(scheduleByRobot.get(chaser.robot) ?? [], gameCount);
       if (sample) {
+        const roam = (1 - strikePrecision) * ZOMBIE_ROAM_YARDS;
+        if (roam > 0.05) {
+          const wobble = now / 1500 + chaser.robot.uniqueId;
+          sample.position.x += Math.sin(wobble) * roam;
+          sample.position.z += Math.cos(wobble * 0.8) * roam;
+        }
         const toTarget = sample.position.subtract(fieldPosition(chaser.robot));
         toTarget.y = 0;
         const distance = toTarget.length();
@@ -937,6 +991,7 @@ function tryStartGame(force = false): ZombieGameStart {
   if (playerHorn) {
     playerHornHome = playerHorn.position.clone();
     playerHorn.position.z += PLAYER_DRUM_FORWARD;
+    playerHorn.position.y += PLAYER_DRUM_RAISE;
   }
   player = { robot: quad.robot, heading: quad.robot.rotation.y, stridePhase: 0 };
   setRobotHeld(quad.robot, true);
@@ -978,6 +1033,7 @@ function tryStartGame(force = false): ZombieGameStart {
   targetHits = 0;
   currentCall = [{ zone: 1, hand: 'right' }];
   satisfiedHands.clear();
+  strikePrecision = 0.5;
   createTargetMarkers();
   active = true;
   setSceneManipulationLocked(true);
@@ -987,7 +1043,9 @@ function tryStartGame(force = false): ZombieGameStart {
       ? 'March where you look, and the keys 1-4 strike the drums — hit the glowing one to step. '
       : 'March and face where you look — your drums swing with you. Strike the glowing drum ' +
         'to step (gold calls your right hand, cyan your left; two lit drums want both hands ' +
-        'together for a double stride), and club a zombie over the head to drop it for good. ') +
+        'together for a double stride), and club a zombie over the head to drop it for good. ' +
+        'Strike dead on the pulse: your timing is their leash — sloppy beats let the horde ' +
+        'wander off its drill. ') +
     'Follow the fading trail of ghost drums — march your drill and the horde marches theirs, ' +
     'but stray from the path and they come for you.');
   return 'started';

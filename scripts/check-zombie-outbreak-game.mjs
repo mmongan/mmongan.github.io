@@ -175,26 +175,42 @@ assert.ok(colors.get(referee).equals(Color3.White()), 'Referee base uniform is w
 const playerHornMesh = quad.getChildMeshes(false).find(mesh => mesh.name === 'marcherHorn');
 assert.ok(Math.abs(playerHornMesh.position.z - 0.16) < 1e-9,
   "The player's drums shift forward to a natural striking distance");
+assert.ok(Math.abs(playerHornMesh.position.y - 0.22) < 1e-9,
+  "The player's drums rise to chest height for easy game striking");
 const ghosts = scene.meshes.filter(mesh => mesh.name.startsWith('zombieGhostDrum') && mesh.isEnabled());
 assert.equal(ghosts.length, 6, 'A trail of ghost drums rides the authored route');
 assert.ok(ghosts[0].material.alpha > ghosts[5].material.alpha + 0.1,
   'The ghost trail fades into the distance');
 
 // In formation: while the player stays aligned with the lead ghost, the
-// horde marches its own drill paths — the holding clarinet stays put and
-// nobody is bowled over.
+// horde marches its own drill paths — how tightly is the player's timing.
+// Metronome-perfect strikes pin them to their spots; sloppy timing frees
+// them to roam. Nobody is bowled over in formation either way.
+assert.equal(vm.runInContext('strikePrecision', context), 0.5, 'Precision starts neutral');
 const clarinetPost = clarinet.position.clone();
 flute.position.set(0.3, 0, -20);
+vm.runInContext('strikePrecision = 1', context);
 fakeNow = 500;
 vm.runInContext('update()', context);
 assert.ok(clarinet.position.subtract(clarinetPost).length() < 0.05,
-  'An aligned player keeps the zombies on their own drill paths');
+  'Perfect timing keeps the zombies exactly on their drill paths');
 assert.ok(!heldSet.has(flute), 'No knockdowns while the horde is in formation');
+vm.runInContext('strikePrecision = 0', context);
+fakeNow = 600;
+vm.runInContext('update()', context);
+assert.ok(clarinet.position.subtract(clarinetPost).length() > 0.1,
+  'Sloppy timing frees the zombies to roam off their paths');
+clarinet.position.copyFrom(clarinetPost);
+vm.runInContext('strikePrecision = 0.5', context);
 flute.position.set(6, 0, -14);
 assert.ok(Math.abs(ghosts[0].position.z - 10) < 1.5 && Math.abs(ghosts[0].position.x) < 1e-6,
   'The lead ghost marks the player\'s scheduled spot');
 assert.ok(ghosts[3].position.z > ghosts[0].position.z,
   'Trail drums march ahead along the route');
+const beatGhost = scene.meshes.find(mesh => mesh.name === 'zombieBeatGhost');
+assert.ok(beatGhost.isEnabled(), 'A beat ghost marks the next strike spot');
+assert.ok(Math.abs(beatGhost.position.z - 10.625) < 1e-6,
+  'The beat ghost stands where the player should be at the next beat');
 assert.ok(vm.runInContext(
   'Math.abs(targetMarkers[0].material.alpha - (0.22 + 0.68 * (gameCount % 1) ** 3)) < 1e-9', context),
 'The ring pulse is locked to the ghost cadence beat');
@@ -246,6 +262,8 @@ placeGripOnZone(new Vector3(-0.115, 0.88, 0.42));
 vm.runInContext('update()', context);
 assert.ok(quad.position.x < standing.x - 1e-3,
   'Striking the called drum strides toward the look direction');
+assert.notEqual(vm.runInContext('strikePrecision', context), 0.5,
+  'A landed strike rescores the rolling beat precision');
 const marker2 = scene.meshes.find(mesh => mesh.name === 'zombieOutbreakDrumTarget2');
 assert.ok(marker2.isEnabled(), 'A double stop lights a second ring');
 assert.ok(vm.runInContext('targetMarkers[0].material.emissiveColor.r', context) < 0.5,
@@ -431,6 +449,7 @@ assert.match(statuses[statuses.length - 1], /horde got you/, 'The ending reports
 assert.equal(heldSet.size, 0, 'Every held marcher returns to its schedule');
 assert.equal(zombifiedSet.size, 0, 'Game over restores every zombified skin and face');
 assert.equal(playerHornMesh.position.z, 0, 'The drums return to their parade mount');
+assert.equal(playerHornMesh.position.y, 0, 'The raised drums lower back to the parade mount');
 assert.equal(flute.rotation.x, 0, 'The fallen stand back up');
 assert.ok(colors.get(clarinet).b > colors.get(clarinet).g, 'Clarinet uniforms are restored');
 assert.ok(poseSets.filter(entry => entry.pose === 'playing').length >= 2, 'Instrument poses restore');
