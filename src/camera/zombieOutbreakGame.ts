@@ -185,7 +185,7 @@ let satisfiedHands = new Set<'left' | 'right'>();
 let firstHalfAt = 0;
 let targetHits = 0;
 const lastHitByHand = { left: 0, right: 0, any: 0 };
-let targetMarkers: { mesh: Mesh; material: StandardMaterial; dimmed: boolean }[] = [];
+let targetMarkers: { mesh: Mesh; material: StandardMaterial; dimmed: boolean; baseScale: number }[] = [];
 let stickMaterial: StandardMaterial | null = null;
 const sticks = new Map<string, DrumStick>();
 let referees: Referee[] = [];
@@ -279,7 +279,7 @@ function createTargetMarkers() {
     mesh.parent = playerHorn;
     mesh.material = material;
     mesh.isPickable = false;
-    return { mesh, material, dimmed: false };
+    return { mesh, material, dimmed: false, baseScale: 1 };
   });
   applyTargetCall();
 }
@@ -295,7 +295,8 @@ function applyTargetCall() {
     const zone = DRUM_ZONES[half.zone];
     marker.mesh.position.copyFrom(zone.center);
     marker.mesh.position.y += 0.015;
-    marker.mesh.scaling.setAll(zone.radius * 2);
+    marker.baseScale = zone.radius * 2;
+    marker.mesh.scaling.setAll(marker.baseScale);
     marker.material.emissiveColor =
       Color3.FromHexString(half.hand === 'right' ? CALL_RIGHT_COLOR : CALL_LEFT_COLOR);
     marker.dimmed = satisfiedHands.has(half.hand);
@@ -740,10 +741,6 @@ function update() {
   }
   checkDrumHits(now);
   checkStickBonks(now);
-  // The called drum's ring pulses so it reads at a glance mid-chase.
-  targetMarkers.forEach(({ material, dimmed }) => {
-    material.alpha = dimmed ? 0.16 : 0.55 + 0.3 * Math.sin(now / 110);
-  });
   const deltaSeconds = Math.min(0.1, scene.getEngine().getDeltaTime() / 1000);
   // Steer by facing: the march heads wherever the player is looking — the
   // headset (or desktop POV look) is the rudder — converted from the
@@ -811,6 +808,15 @@ function update() {
     // A drunken wobble that reads as easy prey.
     decoy.robot.rotation.x = 0.2 * Math.sin(now * 0.02);
     return true;
+  });
+  // The rings pulse on the ghost cadence, swelling toward each count and
+  // peaking exactly on the beat — the moment to strike. A pure function of
+  // the gameCount phase, so the flash and the trail share one clock.
+  const beatSwell = (gameCount % 1) ** 3;
+  targetMarkers.forEach((marker) => {
+    if (marker.mesh.isDisposed()) return;
+    marker.material.alpha = marker.dimmed ? 0.16 : 0.22 + 0.68 * beatSwell;
+    marker.mesh.scaling.setAll(marker.baseScale * (marker.dimmed ? 1 : 1 + 0.28 * beatSwell));
   });
   // Aligned with the ghost, the horde holds formation; strayed, it hunts.
   onDrill = !ghostPose || Vector3.Distance(playerPosition, ghostPose.position) <= DRILL_ALIGN_YARDS;

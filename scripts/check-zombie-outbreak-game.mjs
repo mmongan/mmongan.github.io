@@ -195,6 +195,9 @@ assert.ok(Math.abs(ghosts[0].position.z - 10) < 1.5 && Math.abs(ghosts[0].positi
   'The lead ghost marks the player\'s scheduled spot');
 assert.ok(ghosts[3].position.z > ghosts[0].position.z,
   'Trail drums march ahead along the route');
+assert.ok(vm.runInContext(
+  'Math.abs(targetMarkers[0].material.alpha - (0.22 + 0.68 * (gameCount % 1) ** 3)) < 1e-9', context),
+'The ring pulse is locked to the ghost cadence beat');
 
 // The call and the march: the facing steers (the camera is the rudder),
 // drums only play the calls, and only the glowing called drum takes a
