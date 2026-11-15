@@ -30,6 +30,7 @@ const players = new Map([[original, state]]);
 const marcherParts = new Map([[original, { gaitIndex: 3, instrument: 'flute', instrumentPose: 'carry' }]]);
 let refreshes = 0;
 const context = vm.createContext({
+  isZombieOutbreakGameActive: () => false,
   Vector3, players, marcherParts, scene,
   createLowPolyRobot(_scene, gaitIndex) {
     assert.equal(_scene, scene); assert.equal(gaitIndex, 3);

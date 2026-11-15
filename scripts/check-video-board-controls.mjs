@@ -23,6 +23,7 @@ const transform = source => stripTypeScriptTypes(source, { mode: 'transform' }).
 const engine = new NullEngine();
 const scene = new Scene(engine);
 const context = vm.createContext({
+  isZombieOutbreakGameActive: () => false,
   scene, Mesh, MeshBuilder, TransformNode, StandardMaterial, Color3, Axis, Vector3, Ray, Matrix, Quaternion, Plane, Observable,
   __APP_VERSION__: 'test',
   document: { createElement: () => ({ getContext: () => ({

@@ -69,7 +69,7 @@ import {
   CHART_PAGE_DRAFT_KEY, parseChartPageDraft, roundVector, serializeChartPageDraft, type ChartPageDraft,
 } from '../robot/chartPageDraft';
 import { initZombieMode, requestZombieOutbreakGame } from '../robot/zombieMode';
-import { initZombieOutbreakGame } from '../camera/zombieOutbreakGame';
+import { initZombieOutbreakGame, isZombieOutbreakGameActive } from '../camera/zombieOutbreakGame';
 import type { ThumbJogState } from './thumbJogGesture';
 import {
   activeControllers as controllerRegistry,
@@ -2844,7 +2844,7 @@ export function updateRobotPathFromControllers() {
       }
       return;
     }
-    if (!marcherGrab && gripPressed && !wasGripPressed) {
+    if (!marcherGrab && gripPressed && !wasGripPressed && !isZombieOutbreakGameActive()) {
       const gripNode = getControllerPosition(controller);
       // Gripping an instrument button pulls a new marcher of that instrument into the grab.
       const gripPoint = gripNode.getAbsolutePosition();
@@ -2920,8 +2920,13 @@ export function updateRobotPathFromControllers() {
       return;
     }
 
-    if (!eraseMode && !isMarcherPainting() && !isDraftingTableMode() && gripPressed && !wasGripPressed &&
-      !menuInteractionHeld.get(handedness)) {
+    // During the Outbreak! game the squeeze belongs to the drum handle
+    // alone: no marcher grabs, formation pulls, or draft transfers — a
+    // grip near your own carried quads must never start dragging the
+    // marcher out from under the POV (which also fought the handle's
+    // positioning).
+    if (!eraseMode && !isMarcherPainting() && !isDraftingTableMode() && !isZombieOutbreakGameActive() &&
+      gripPressed && !wasGripPressed && !menuInteractionHeld.get(handedness)) {
       const gripPoint = getControllerPosition(controller).getAbsolutePosition();
       if (handInteraction.transferDraftGrab(handedness, gripPoint, "controller",
         handInteraction.getFacingYaw(getControllerRay(controller).direction))) return;

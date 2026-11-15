@@ -119,6 +119,7 @@ const controller = { inputSource: {}, grip: {
   getAbsolutePosition: () => gripPoint, computeWorldMatrix() {},
 }, motionController: { getComponentOfType: () => ({ axes: { x: stickX, y: stickY } }) } };
 const context = vm.createContext({
+  isZombieOutbreakGameActive: () => false,
   controller, handedness: 'left', Vector3,
   gripHeld: new Map(), triggerHeld: new Map(), marcherGrabs: new Map(),
   padGrabButtons: new Map(), menuInteractionHeld: new Map(),

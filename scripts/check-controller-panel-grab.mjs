@@ -27,6 +27,7 @@ let grip = false, trigger = false, stick = 0, remotePalette = false, paletteGrab
 const controller = { inputSource: { gamepad: { buttons: [{}, { get pressed() { return grip; } }] } },
   grip: gripNode };
 const context = vm.createContext({
+  isZombieOutbreakGameActive: () => false,
   scene, Matrix, Quaternion, Vector3, Plane, Mesh, MeshBuilder, TransformNode, StandardMaterial, Color3,
   isARTabletopModeActive: () => false,
   controller, handedness: 'left',

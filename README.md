@@ -678,6 +678,7 @@ You are the quad (tenors) drummer, seen in first person through marcher POV — 
 - The game needs a quad (tenors) player and at least one clarinet on the field, no football mode, and no held marchers. Without a quad player, the cinematic outbreak plays.
 - **Outbreak! is locked into 1:1.** The drill is marched with your body, so starting from a tabletop or Giant-scaled field scales it up to full size for the run; field grabbing and rescaling are locked while you play, and your saved scale comes back when the run ends.
 - **No panels mid-run.** The chart pad, music stand, instrument panel, and floating settings panel will not open during a run — the controller Y button, stadium signs, and scoreboard launchers all wait until the game ends, keeping the field clear while you're chased.
+- **Grips belong to the drum handle.** During a run, squeezing a controller grip never drags marchers, pulls formations, or grabs the field — the squeeze's only job is the drum carriage's grab bar, so re-racking your drums can't accidentally yank a zombie (or your own marcher) out from under you.
 
 ### How to march
 

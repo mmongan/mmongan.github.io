@@ -22,6 +22,7 @@ const robotPaths = new Map([[robot, originalPath]]);
 const storedPaths = [originalPath];
 const segment = { controlPoints: originalPath.map(point => point.clone()) };
 const context = vm.createContext({
+  isZombieOutbreakGameActive: () => false,
   Vector3, players: new Map([[robot, state]]), heldRobots: new Set(),
   sharedScene: null, invalidateLegBake() {}, applyGlobalCount() {},
   robotPaths, storedPaths, pathSegmentByRobot: new Map([[robot, segment]]),
