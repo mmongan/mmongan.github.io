@@ -1,1 +1,0 @@
-var e=`/assets/sql-wasm-CXIAVl5-.wasm`;export{e as default};
