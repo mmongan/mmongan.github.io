@@ -23,7 +23,7 @@ import { RegisterWebXROculusTouchMotionController } from '@babylonjs/core/XR/mot
 import { scene } from '../scene/engine';
 import { connectMidiXRSession } from '../audio/midiPlayback';
 import { setDrillEditingEnabled } from '../interaction/editingMode';
-import { enterVRButton, enterARButton, xrEntryStatus } from '../ui/dom';
+import { enterVRButton, enterARButton, vrZombieModeButton, xrEntryStatus, zombieModeToggle } from '../ui/dom';
 import { onStartupStateChanged } from '../ui/loadingScreen';
 import { connectMarcherPOVXR, isMarcherPOVActive, setMarcherPOVEnabled } from '../camera/marcherPOV';
 import { setTableHeightForPosture } from '../menu/settings';
@@ -406,6 +406,16 @@ export function initXR(teleportGrid: Mesh) {
   fullScaleVRButton?.addEventListener("click", () => { void enterXRMode('immersive-vr', true); });
   enterVRButton?.addEventListener("click", () => { void enterXRMode('immersive-vr'); });
   enterARButton?.addEventListener("click", () => { void enterXRMode('immersive-ar'); });
+  // One click into the horror show: enter immersive VR, and only once the
+  // session is live flip the ordinary zombie toggle, so the outbreak's prey
+  // POV starts on the XR camera. A failed VR entry surfaces its own status
+  // and leaves the band unbitten; the Settings toggle still covers desktop.
+  vrZombieModeButton?.addEventListener("click", () => {
+    void enterXRMode('immersive-vr').then(() => {
+      if (xrExperience?.baseExperience.state !== WebXRState.IN_XR) return;
+      if (zombieModeToggle && !zombieModeToggle.checked) zombieModeToggle.click();
+    });
+  });
   tabletopScaleButton?.addEventListener("click", () => {
     if (switchingToFullScaleVR || xrExperience?.baseExperience.state !== WebXRState.IN_XR) return;
     if (isMarcherPOVActive()) setMarcherPOVEnabled(false);

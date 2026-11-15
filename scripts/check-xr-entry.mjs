@@ -18,6 +18,9 @@ const slice = (from, to) => {
 const button = () => ({ disabled: false, handlers: {},
   addEventListener(type, handler) { this.handlers[type] = handler; } });
 const enterVRButton = button(), enterARButton = button(), fullScaleVRButton = button();
+const vrZombieModeButton = button();
+const zombieModeToggle = { checked: false, clicks: 0,
+  click() { this.clicks++; this.checked = !this.checked; } };
 const launches = [], builds = [], errors = [], scales = [];
 const supported = new Set(['immersive-vr', 'immersive-ar']);
 let disposed = 0;
@@ -32,7 +35,7 @@ const context = vm.createContext({
   setTimeout: (callback, delay) => { timers.set(++timerId, { callback, delay }); return timerId; },
   clearTimeout: id => timers.delete(id),
   scene: { onDisposeObservable: { addOnce: callback => { disposeTimer = callback; } } },
-  enterVRButton, enterARButton, fullScaleVRButton, WebXRState: state,
+  enterVRButton, enterARButton, fullScaleVRButton, vrZombieModeButton, zombieModeToggle, WebXRState: state,
   xrEntryStatus: { hidden: true, textContent: '' },
   xrModeInputs: [{ value: 'immersive-vr' }, { value: 'immersive-ar' }],
   console: { error: message => errors.push(message) },
@@ -134,9 +137,25 @@ await flush();
 assert.equal(launches.at(-1)[0], 'immersive-vr');
 assert.deepEqual(scales, [1], 'Full scale VR remains an explicit full-scale launch');
 await context.experience().baseExperience.exitXRAsync();
+// The browser zombie button enters VR first and only then flips the
+// ordinary outbreak toggle; a refused session never unleashes the horde.
+failEntry = true;
+vrZombieModeButton.handlers.click();
+await flush();
+assert.equal(zombieModeToggle.clicks, 0, 'A failed VR entry never starts the outbreak');
+failEntry = false;
+vrZombieModeButton.handlers.click();
+await flush();
+assert.equal(launches.at(-1)[0], 'immersive-vr', 'The zombie button enters immersive VR');
+assert.equal(zombieModeToggle.clicks, 1, 'The outbreak toggle flips once the session is live');
+assert.equal(zombieModeToggle.checked, true);
+vrZombieModeButton.handlers.click();
+await flush();
+assert.equal(zombieModeToggle.clicks, 1, 'An already-running outbreak is never toggled back off');
+await context.experience().baseExperience.exitXRAsync();
 supported.delete('immersive-ar');
 await context.enterXRMode('immersive-ar');
 assert.match(context.xrEntryStatus.textContent, /not supported/);
 assert.ok(errors.length >= 2, 'Launch errors are surfaced to the UI and logged');
 assert.equal(context.busy(), false);
-console.log('XR entry checks passed: separate VR/AR buttons, preloaded reuse, safe mode switches, serialized preparation, concurrent-click guard, permission retries, full-scale launch and unsupported-device feedback.');
+console.log('XR entry checks passed: separate VR/AR buttons, preloaded reuse, safe mode switches, serialized preparation, concurrent-click guard, permission retries, full-scale launch, VR zombie entry gating and unsupported-device feedback.');
