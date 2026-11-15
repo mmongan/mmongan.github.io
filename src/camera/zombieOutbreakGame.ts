@@ -24,7 +24,7 @@
 // instrument poses, and upright roots. Nothing here touches authored routes,
 // counts, or saves.
 
-import { Matrix, Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
+import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
 import { TargetCamera } from '@babylonjs/core/Cameras/targetCamera.pure';
 import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
 import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
@@ -104,18 +104,19 @@ const HIT_COOLDOWN_MS = 200;
 // follow the horn's matrix automatically.
 export const PLAYER_DRUM_FORWARD = 0.16;
 export const PLAYER_DRUM_RAISE = 0.22;
-// A grab bar on the near rail of the quads: holding a controller squeeze
-// with the grip near the bar grabs the carriage — no precise timing, a
-// squeeze held while reaching in works — and puts it in that hand. The
-// hand's motion drags the drums freely in all three axes, pitching the
-// wrist tilts the heads, and the rings and strike zones ride along. The
-// drag works in the marcher's body frame, which tracks the camera's
-// look, so the pose is relative to the view: wherever you rack them,
-// they stay there in front of you through every turn, with yaw kept
-// squared to the facing. The grabbing hand's stick plays nothing until
-// it lets go, and game over still restores the parade mount. Drum
-// strikes never involve the squeeze, so drumming cannot grab.
-export const DRUM_HANDLE_GRAB_YARDS = 0.2;
+// Grabbing the drums: holding a controller squeeze with the grip at the
+// carriage — within this reach of any drum head, no handle, no precise
+// timing; a squeeze held while reaching in works — grabs the whole
+// carriage into that hand. While held the drums are rigid to the hand in
+// world coordinates: the hand's motion carries them anywhere and the
+// wrist turns them to any angle, even as the body keeps turning with the
+// look, and the rings and strike zones ride along. Releasing bakes the
+// pose back into the marcher's frame, so wherever you rack them they
+// stay there in front of you through every turn. The grabbing hand's
+// stick plays nothing until it lets go, and game over still restores the
+// parade mount. Drum strikes never involve the squeeze, so drumming
+// cannot grab.
+export const DRUM_GRAB_YARDS = 0.3;
 // Each correct (called) hit takes one marching stride toward the facing,
 // played out at step speed. Chained calls approach 3.75 yd/s — just ahead
 // of the horde — while a silent drummer stands still and is caught.
@@ -246,14 +247,11 @@ const sticks = new Map<string, DrumStick>();
 // Plain hickory, worn whenever a stick's hand has no outstanding call.
 const STICK_NEUTRAL_DIFFUSE = Color3.FromHexString('#d8ad67');
 const STICK_NEUTRAL_EMISSIVE = Color3.FromHexString('#392511');
-let drumHandle: Mesh | null = null;
-let drumHandleMaterial: StandardMaterial | null = null;
-let handleGrabHand: string | null = null;
-// Grip position (in the body frame) and wrist pitch at grab time, with
-// the horn pose they map from; the drag applies the deltas only.
-let handleGrabStart: {
-  gripLocal: Vector3; gripPitch: number; hornPosition: Vector3; hornPitch: number;
-} | null = null;
+let drumGrabHand: string | null = null;
+// The horn's world pose expressed in the grabbing grip's frame, captured
+// at grab time; carrying it by the grip's live world matrix keeps the
+// drums rigid to the hand.
+let drumGrabRelative: Matrix | null = null;
 let referees: Referee[] = [];
 let stripeMaterial: StandardMaterial | null = null;
 let burstMaterial: StandardMaterial | null = null;
@@ -335,11 +333,11 @@ function clearSticks() {
 // The sticks wear the call like the rings do: a stick whose hand has an
 // outstanding called drum is tinted that hand's color — gold right, cyan
 // left — and drops back to plain hickory once its half lands, its hand
-// has no call, or it is busy holding the drum handle.
+// has no call, or it is busy holding the drums.
 function updateStickColors() {
   for (const [handedness, stick] of sticks) {
     const hand = handedness === 'left' || handedness === 'right' ? handedness : null;
-    const called = hand !== null && handedness !== handleGrabHand &&
+    const called = hand !== null && handedness !== drumGrabHand &&
       !satisfiedHands.has(hand) && currentCall.some(half => half.hand === hand);
     if (called) {
       const color = Color3.FromHexString(hand === 'right' ? CALL_RIGHT_COLOR : CALL_LEFT_COLOR);
@@ -388,93 +386,47 @@ function clearTurnArrow() {
   turnArrowMaterial = null;
 }
 
-// The drum-carriage grab handle: a stubby amber bar on the near rail
-// between the outer drums, clear of every strike zone.
-function createDrumHandle() {
-  if (!playerHorn) return;
-  drumHandleMaterial = new StandardMaterial('zombieOutbreakDrumHandleMaterial', scene);
-  drumHandleMaterial.diffuseColor = Color3.FromHexString('#d8ad67');
-  drumHandleMaterial.emissiveColor = Color3.FromHexString('#392511');
-  drumHandle = MeshBuilder.CreateCylinder('zombieOutbreakDrumHandle', {
-    height: 0.2, diameter: 0.035, tessellation: 10,
-  }, scene);
-  drumHandle.parent = playerHorn;
-  drumHandle.rotation.z = Math.PI / 2;
-  drumHandle.position.set(0, 0.9, 0.16);
-  drumHandle.material = drumHandleMaterial;
-  drumHandle.isPickable = false;
-}
-
-function clearDrumHandle() {
-  drumHandle?.dispose();
-  drumHandle = null;
-  drumHandleMaterial?.dispose();
-  drumHandleMaterial = null;
-  handleGrabHand = null;
-  handleGrabStart = null;
-}
-
-// The pitch of the grip's forward direction above or below the horizon:
-// the wrist's tilt, independent of the body's yaw.
-function gripPitch(grip: TransformNode): number {
-  const forward = Vector3.TransformNormal(new Vector3(0, 0, 1), grip.getWorldMatrix());
-  return Math.atan2(-forward.y, Math.max(1e-6, Math.hypot(forward.x, forward.z)));
-}
-
-// The grip's position in the marcher's body frame — the frame the horn
-// is mounted in, which tracks the camera's look. Dragging in this frame
-// makes the racked pose view-relative.
-function gripInBodyFrame(grip: TransformNode, parent: TransformNode): Vector3 {
-  grip.computeWorldMatrix(true);
-  return Vector3.TransformCoordinates(
-    grip.getAbsolutePosition(), Matrix.Invert(parent.computeWorldMatrix(true)));
-}
-
-// Manual drum placement: a squeeze held with the grip near the handle —
-// whether pressed on the bar or on the way in — puts the carriage in
-// that hand. The hand's motion drags the horn's mount
-// freely in all three axes of the body frame (so the pose stays put
-// relative to the view through every turn), the wrist pitch tilts the
-// heads, and yaw stays squared to the facing. Releasing leaves the new
-// mount in place.
-function updateDrumHandle(controllers: ReturnType<typeof getActiveControllers>) {
-  if (!drumHandle || drumHandle.isDisposed() || !playerHorn || playerHorn.isDisposed()) return;
+// Manual drum placement: a squeeze held with the grip at the carriage —
+// within reach of any drum head, whether pressed there or on the way in —
+// grabs the drums into that hand. While held, the horn's world pose is
+// the grab-time offset carried by the grip's live world matrix, mapped
+// back into the marcher's frame each frame, so the drums stay rigid to
+// the hand in world coordinates — any position, any angle — even as the
+// body keeps turning with the look. Releasing bakes the held pose into
+// plain Euler angles on the mount, so it rides the view again.
+function updateDrumGrab(controllers: ReturnType<typeof getActiveControllers>) {
+  if (!playerHorn || playerHorn.isDisposed()) return;
   const parent = playerHorn.parent;
-  if (handleGrabHand !== null) {
-    const controller = controllers.get(handleGrabHand);
-    if (!controller?.grip || !isGripPressed(controller) || !handleGrabStart ||
-      !(parent instanceof TransformNode)) {
-      handleGrabHand = null;
-      handleGrabStart = null;
+  if (!(parent instanceof TransformNode)) return;
+  if (drumGrabHand !== null) {
+    const controller = controllers.get(drumGrabHand);
+    if (!controller?.grip || !isGripPressed(controller) || !drumGrabRelative) {
+      if (playerHorn.rotationQuaternion) {
+        playerHorn.rotation.copyFrom(playerHorn.rotationQuaternion.toEulerAngles());
+        playerHorn.rotationQuaternion = null;
+      }
+      drumGrabHand = null;
+      drumGrabRelative = null;
     } else {
-      const gripLocal = gripInBodyFrame(controller.grip, parent);
-      playerHorn.rotationQuaternion = null;
-      playerHorn.position.copyFrom(handleGrabStart.hornPosition)
-        .addInPlace(gripLocal.subtract(handleGrabStart.gripLocal));
-      playerHorn.rotation.x =
-        handleGrabStart.hornPitch + (gripPitch(controller.grip) - handleGrabStart.gripPitch);
+      const hornWorld = drumGrabRelative.multiply(controller.grip.computeWorldMatrix(true));
+      const hornLocal = hornWorld.multiply(Matrix.Invert(parent.computeWorldMatrix(true)));
+      const rotation = playerHorn.rotationQuaternion ?? new Quaternion();
+      hornLocal.decompose(undefined, rotation, playerHorn.position);
+      playerHorn.rotationQuaternion = rotation;
     }
-  } else if (parent instanceof TransformNode) {
-    drumHandle.computeWorldMatrix(true);
-    const handleCenter = drumHandle.getAbsolutePosition();
+  } else {
+    playerHorn.computeWorldMatrix(true);
+    const hornMatrix = playerHorn.getWorldMatrix();
     for (const [handedness, controller] of controllers) {
       if (!controller.grip || !isGripPressed(controller)) continue;
-      controller.grip.computeWorldMatrix(true);
-      if (Vector3.Distance(controller.grip.getAbsolutePosition(), handleCenter) >
-        DRUM_HANDLE_GRAB_YARDS) continue;
-      handleGrabHand = handedness;
-      handleGrabStart = {
-        gripLocal: gripInBodyFrame(controller.grip, parent),
-        gripPitch: gripPitch(controller.grip),
-        hornPosition: playerHorn.position.clone(),
-        hornPitch: playerHorn.rotation.x,
-      };
+      const gripPosition = controller.grip.computeWorldMatrix(true).getTranslation();
+      const nearDrums = DRUM_ZONES.some(zone => Vector3.Distance(
+        gripPosition, Vector3.TransformCoordinates(zone.center, hornMatrix)) <= DRUM_GRAB_YARDS);
+      if (!nearDrums) continue;
+      drumGrabHand = handedness;
+      drumGrabRelative = hornMatrix.multiply(Matrix.Invert(controller.grip.getWorldMatrix()));
       break;
     }
-  }
-  if (drumHandleMaterial) {
-    drumHandleMaterial.emissiveColor = Color3.FromHexString(
-      handleGrabHand !== null ? '#c79b55' : '#392511');
   }
 }
 
@@ -582,8 +534,8 @@ function checkDrumHits(now: number) {
   playerHorn.computeWorldMatrix(true);
   const hornMatrix = playerHorn.getWorldMatrix();
   for (const [handedness, { grip }] of sticks) {
-    // The hand holding the drum handle is adjusting, not drumming.
-    if (handedness === handleGrabHand) continue;
+    // The hand holding the drums is adjusting, not drumming.
+    if (handedness === drumGrabHand) continue;
     grip.computeWorldMatrix(true);
     const tip = Vector3.TransformCoordinates(new Vector3(0, 0, STICK_LENGTH), grip.getWorldMatrix());
     for (let index = 0; index < DRUM_ZONES.length; index++) {
@@ -873,7 +825,7 @@ function checkStickBonks(now: number) {
   if (!(parent instanceof TransformNode) || sticks.size === 0) return;
   const inverse = Matrix.Invert(parent.getWorldMatrix());
   for (const [handedness, { grip }] of sticks) {
-    if (handedness === handleGrabHand) continue;
+    if (handedness === drumGrabHand) continue;
     grip.computeWorldMatrix(true);
     const tip = Vector3.TransformCoordinates(Vector3.TransformCoordinates(
       new Vector3(0, 0, STICK_LENGTH), grip.getWorldMatrix()), inverse);
@@ -964,7 +916,8 @@ function stopGame(message?: string) {
     }
     setRobotHeld(robot, false);
   };
-  clearDrumHandle();
+  drumGrabHand = null;
+  drumGrabRelative = null;
   clearTurnArrow();
   if (playerHorn && !playerHorn.isDisposed() && playerHornHome) {
     playerHorn.position.copyFrom(playerHornHome);
@@ -1018,7 +971,7 @@ function update() {
       sticks.delete(handedness);
     }
   }
-  updateDrumHandle(controllers);
+  updateDrumGrab(controllers);
   updateStickColors();
   checkDrumHits(now);
   checkStickBonks(now);
@@ -1322,7 +1275,6 @@ function tryStartGame(force = false): ZombieGameStart {
     playerHornHomeRotation = playerHorn.rotation.clone();
     playerHorn.position.z += PLAYER_DRUM_FORWARD;
     playerHorn.position.y += PLAYER_DRUM_RAISE;
-    createDrumHandle();
   }
   player = { robot: quad.robot, heading: quad.robot.rotation.y, stridePhase: 0 };
   createTurnArrow(quad.robot);

@@ -357,46 +357,63 @@ controllers = new Map();
 povCamera.rotation.y = 0;
 vm.runInContext('stepDistanceLeft = 0', context);
 
-// The drum handle: a fresh squeeze with the grip on the bar grabs the
-// whole carriage; moving and twisting the hand repositions and tilts the
-// drums, the adjusting hand's stick plays nothing, and releasing leaves
-// the new pose riding the marcher.
-const handle = scene.meshes.find(mesh => mesh.name === 'zombieOutbreakDrumHandle');
-assert.ok(handle && handle.parent === playerHornMesh, 'A grab handle rides the drum carriage');
-// Settle the heading on the new look first, so the drag asserts exercise
+// Grabbing the drums: a squeeze held with the grip at a drum head grabs
+// the whole carriage — there is no handle mesh — and while held the
+// drums are rigid to the hand in world coordinates: the hand's motion
+// carries them anywhere and the wrist turns them to any angle. The
+// grabbing hand's stick plays nothing, and releasing bakes the pose back
+// onto the marcher's mount.
+assert.ok(!scene.meshes.some(mesh => mesh.name === 'zombieOutbreakDrumHandle'),
+  'No handle mesh: the drums themselves are the grab target');
+// Settle the heading on the new look first, so the grab asserts exercise
 // the hand motion alone in a steady body frame.
 fakeNow += 100;
 vm.runInContext('update()', context);
 grip.rotation.set(0, 0, 0);
-handle.computeWorldMatrix(true);
-grip.position.copyFrom(handle.getAbsolutePosition());
+playerHornMesh.computeWorldMatrix(true);
+const grabbedDrum = new Vector3(-0.115, 0.88, 0.42);
+grip.position.copyFrom(
+  Vector3.TransformCoordinates(grabbedDrum, playerHornMesh.getWorldMatrix()));
 controllers = new Map([['right', { grip, squeezePressed: true }]]);
 fakeNow += 300;
 vm.runInContext('update()', context);
-assert.equal(vm.runInContext('handleGrabHand', context), 'right',
-  'A fresh squeeze on the bar grabs the carriage');
-const hornMount = playerHornMesh.position.clone();
-grip.position.y += 0.3;
-grip.position.x += 0.2;
-grip.position.z -= 0.1;
-grip.rotation.x = 0.4;
+assert.equal(vm.runInContext('drumGrabHand', context), 'right',
+  'A held squeeze at a drum head grabs the carriage');
+const hornWorldBefore = playerHornMesh.getAbsolutePosition().clone();
+grip.position.addInPlace(new Vector3(0.2, 0.3, -0.1));
 fakeNow += 100;
 vm.runInContext('update()', context);
-assert.ok(Math.abs(playerHornMesh.position.y - (hornMount.y + 0.3)) < 1e-6 &&
-  Math.abs(playerHornMesh.position.x - (hornMount.x + 0.2)) < 1e-6 &&
-  Math.abs(playerHornMesh.position.z - (hornMount.z - 0.1)) < 1e-6,
-'The hand drags the drums freely in all three axes, relative to the view');
-assert.ok(Math.abs(playerHornMesh.rotation.x - 0.4) < 1e-6, 'Pitching the wrist tilts the drums');
-assert.equal(playerHornMesh.rotation.y, 0, 'The drums stay yaw-squared to the facing');
+playerHornMesh.computeWorldMatrix(true);
+const hornWorldAfter = playerHornMesh.getAbsolutePosition();
+assert.ok(Math.abs(hornWorldAfter.x - (hornWorldBefore.x + 0.2)) < 1e-5 &&
+  Math.abs(hornWorldAfter.y - (hornWorldBefore.y + 0.3)) < 1e-5 &&
+  Math.abs(hornWorldAfter.z - (hornWorldBefore.z - 0.1)) < 1e-5,
+  'The hand carries the drums in world coordinates');
+grip.rotation.set(0.4, 0.6, 0);
+fakeNow += 100;
+vm.runInContext('update()', context);
+playerHornMesh.computeWorldMatrix(true);
+grip.computeWorldMatrix(true);
+assert.ok(Vector3.Distance(
+  Vector3.TransformCoordinates(grabbedDrum, playerHornMesh.getWorldMatrix()),
+  grip.getAbsolutePosition()) < 1e-5,
+  'The grabbed drum head stays pinned to the twisting hand');
+const hornForward = Vector3.TransformNormal(new Vector3(0, 0, 1), playerHornMesh.getWorldMatrix());
+assert.ok(Math.abs(Math.atan2(hornForward.x, hornForward.z) - 0.6) < 0.01,
+  'The wrist yaws the drums to any angle');
+assert.ok(hornForward.y < -0.3, 'The wrist pitches the drums to any angle');
 assert.equal(vm.runInContext('stepDistanceLeft', context), 0,
   'The adjusting hand strikes nothing');
 grip.position.y += 5;
 controllers = new Map([['right', { grip, squeezePressed: false }]]);
 fakeNow += 100;
 vm.runInContext('update()', context);
-assert.equal(vm.runInContext('handleGrabHand', context), null, 'Releasing the squeeze lets go');
-assert.ok(Math.abs(playerHornMesh.rotation.x - 0.4) < 0.05,
+assert.equal(vm.runInContext('drumGrabHand', context), null, 'Releasing the squeeze lets go');
+assert.equal(playerHornMesh.rotationQuaternion, null,
+  'Release bakes the held pose into plain Euler angles on the mount');
+assert.ok(Math.abs(playerHornMesh.rotation.y - 0.6) < 0.01,
   'The adjusted pose keeps riding the marcher');
+grip.rotation.set(0, 0, 0);
 controllers = new Map();
 // The stride plays out, then a silent drummer stands still.
 fakeNow += 100;
@@ -550,8 +567,7 @@ assert.equal(zombifiedSet.size, 0, 'Game over restores every zombified skin and 
 assert.equal(playerHornMesh.position.z, 0, 'The drums return to their parade mount');
 assert.equal(playerHornMesh.position.y, 0, 'The raised drums lower back to the parade mount');
 assert.equal(playerHornMesh.rotation.x, 0, 'The tilted drums level back to the parade mount');
-assert.ok(!scene.meshes.some(mesh => mesh.name === 'zombieOutbreakDrumHandle' && !mesh.isDisposed()),
-  'The grab handle is disposed with the game');
+assert.equal(playerHornMesh.rotation.y, 0, 'The twisted drums square back to the parade mount');
 assert.ok(!scene.transformNodes.some(node => node.name === 'zombieTurnArrow'),
   'The turn arrow is disposed with the game');
 assert.equal(flute.rotation.x, 0, 'The fallen stand back up');
@@ -611,7 +627,7 @@ scene.dispose();
 engine.dispose();
 console.log('Zombie outbreak game checks passed: VR/quad gating with cinematic fallback, ' +
   'fading ghost-drum trail on the captured schedule, fading future footsteps, the strayed-player guide ghost, the turn arrow, look-steered marching with the drums ' +
-  'swinging to the facing, the free-position drum handle, call-colored sticks, one-hit-one-step marching, ' +
+  'swinging to the facing, the world-rigid any-angle drum grab, call-colored sticks, one-hit-one-step marching, ' +
   'hand-colored call enforcement with double-stop pairs, called-drum steps with per-hand cooldowns, ' +
   'zombify/restore of skin and ' +
   'face, head-bonk felling, corpse trips and trumpet corpse revival, formation-vs-hunt by ' +
