@@ -146,7 +146,6 @@ let savedColors = new Map<TransformNode, Color3>();
 let wasPlaying = false;
 let startedPOV = false;
 let startTime = 0;
-let lastHitTime = 0;
 // Marching distance still owed from correct hits; zero means standing.
 let stepDistanceLeft = 0;
 // Tripped over a corpse: no steps play until the stumble wears off.
@@ -171,16 +170,22 @@ let ghostMaterials: StandardMaterial[] = [];
 // escape sprint. Any drum steers; only the call grants speed. The next call
 // advances by a deterministic hash of the hit count (never Math.random),
 // always landing on a different drum.
-let targetZoneIndex = 1;
-let targetHits = 0;
-let targetMarker: Mesh | null = null;
-let targetMaterial: StandardMaterial | null = null;
-// The call also names the hand, alternating like a sticking: gold calls
-// the right stick, cyan the left — the project's left/right color language
-// (as on the marcher footprints). Desktop keys are hand-agnostic.
+// The call names drums AND hands, like a sticking: gold calls the right
+// stick, cyan the left — the project's left/right color language (as on
+// the marcher footprints). Some calls are double stops: two drums lit at
+// once, one per hand, struck together within the pairing window for a
+// double stride. Desktop keys are hand-agnostic and may complete a double
+// with two quick presses. The sequence advances by a deterministic hash.
 const CALL_RIGHT_COLOR = '#ffc83d';
 const CALL_LEFT_COLOR = '#4fd9e0';
-let targetHand: 'left' | 'right' = 'right';
+export const DOUBLE_WINDOW_MS = 300;
+interface CallHalf { zone: number; hand: 'left' | 'right' }
+let currentCall: CallHalf[] = [{ zone: 1, hand: 'right' }];
+let satisfiedHands = new Set<'left' | 'right'>();
+let firstHalfAt = 0;
+let targetHits = 0;
+const lastHitByHand = { left: 0, right: 0, any: 0 };
+let targetMarkers: { mesh: Mesh; material: StandardMaterial; dimmed: boolean }[] = [];
 let stickMaterial: StandardMaterial | null = null;
 const sticks = new Map<string, DrumStick>();
 let referees: Referee[] = [];
@@ -263,68 +268,96 @@ function clearSticks() {
 
 // The glowing ring over the called drum, parented to the player's horn so
 // it rides the carried quads through every turn.
-function createTargetMarker() {
+function createTargetMarkers() {
   if (!playerHorn) return;
-  targetMaterial ??= (() => {
-    const material = new StandardMaterial('zombieOutbreakTargetMaterial', scene);
+  targetMarkers = [0, 1].map((index) => {
+    const material = new StandardMaterial(`zombieOutbreakTargetMaterial${index}`, scene);
     material.disableLighting = true;
-    return material;
-  })();
-  targetMarker = MeshBuilder.CreateTorus('zombieOutbreakDrumTarget', {
-    diameter: 1, thickness: 0.09, tessellation: 24,
-  }, scene);
-  targetMarker.parent = playerHorn;
-  targetMarker.material = targetMaterial;
-  targetMarker.isPickable = false;
+    const mesh = MeshBuilder.CreateTorus(index === 0 ? 'zombieOutbreakDrumTarget' : 'zombieOutbreakDrumTarget2', {
+      diameter: 1, thickness: 0.09, tessellation: 24,
+    }, scene);
+    mesh.parent = playerHorn;
+    mesh.material = material;
+    mesh.isPickable = false;
+    return { mesh, material, dimmed: false };
+  });
   applyTargetCall();
 }
 
-// Repositions the ring on the called drum and tints it for the called hand.
+// Lays the ring(s) on the called drum(s), tinted for the called hand; a
+// satisfied half of a double stop dims until the pair completes.
 function applyTargetCall() {
-  if (targetMaterial) {
-    targetMaterial.emissiveColor =
-      Color3.FromHexString(targetHand === 'right' ? CALL_RIGHT_COLOR : CALL_LEFT_COLOR);
+  targetMarkers.forEach((marker, index) => {
+    if (marker.mesh.isDisposed()) return;
+    const half = currentCall[index];
+    marker.mesh.setEnabled(!!half);
+    if (!half) return;
+    const zone = DRUM_ZONES[half.zone];
+    marker.mesh.position.copyFrom(zone.center);
+    marker.mesh.position.y += 0.015;
+    marker.mesh.scaling.setAll(zone.radius * 2);
+    marker.material.emissiveColor =
+      Color3.FromHexString(half.hand === 'right' ? CALL_RIGHT_COLOR : CALL_LEFT_COLOR);
+    marker.dimmed = satisfiedHands.has(half.hand);
+  });
+}
+
+// The next call in the deterministic sequence: roughly a quarter are double
+// stops on two different drums (the left hand on the leftward drum).
+function advanceCall() {
+  targetHits += 1;
+  satisfiedHands.clear();
+  const hash = (targetHits * 2654435761) >>> 0;
+  const first = hash % DRUM_ZONES.length;
+  if (hash % 4 === 1) {
+    const second = (first + 1 + ((hash >>> 8) % (DRUM_ZONES.length - 1))) % DRUM_ZONES.length;
+    const [lo, hi] = first < second ? [first, second] : [second, first];
+    currentCall = [{ zone: lo, hand: 'left' }, { zone: hi, hand: 'right' }];
+  } else {
+    currentCall = [{ zone: first, hand: hash % 2 === 0 ? 'right' : 'left' }];
   }
-  positionTargetMarker();
+  applyTargetCall();
 }
 
-function positionTargetMarker() {
-  if (!targetMarker) return;
-  const zone = DRUM_ZONES[targetZoneIndex];
-  targetMarker.position.copyFrom(zone.center);
-  targetMarker.position.y += 0.015;
-  targetMarker.scaling.setAll(zone.radius * 2);
-}
-
-function clearTargetMarker() {
-  targetMarker?.dispose();
-  targetMarker = null;
-  targetMaterial?.dispose();
-  targetMaterial = null;
+function clearTargetMarkers() {
+  targetMarkers.forEach(({ mesh, material }) => {
+    mesh.dispose();
+    material.dispose();
+  });
+  targetMarkers = [];
 }
 
 // One strike on drum `zoneIndex`, from a stick tip or a desktop key: only
 // the called (glowing) drum plays a marching step, and the call then jumps
 // to a different drum. The cooldown debounces all strikes.
 function strikeZone(zoneIndex: number, now: number, hand?: 'left' | 'right') {
-  // A stumbling drummer's sticks play nothing until the stumble wears off.
-  if (!player || now - lastHitTime < HIT_COOLDOWN_MS || now < stumbleUntil) return;
-  lastHitTime = now;
-  if (zoneIndex !== targetZoneIndex) return;
-  // The call names a hand too: a strike from the other stick is a miss.
-  if (hand && hand !== targetHand) return;
-  stepDistanceLeft += PLAYER_STEP_YARDS;
-  targetHits += 1;
-  targetZoneIndex = (targetZoneIndex + 1 +
-    ((targetHits * 2654435761 >>> 0) % (DRUM_ZONES.length - 1))) % DRUM_ZONES.length;
-  targetHand = targetHand === 'right' ? 'left' : 'right';
-  applyTargetCall();
+  // A stumbling drummer's sticks play nothing until the stumble wears off,
+  // and each hand debounces on its own so a double stop can land together.
+  if (!player || now < stumbleUntil) return;
+  const gate = hand ?? 'any';
+  if (now - lastHitByHand[gate] < HIT_COOLDOWN_MS) return;
+  lastHitByHand[gate] = now;
+  // A half-played double stop that aged past the window starts over.
+  if (satisfiedHands.size > 0 && now - firstHalfAt > DOUBLE_WINDOW_MS) satisfiedHands.clear();
+  const half = currentCall.find(part => part.zone === zoneIndex &&
+    (!hand || part.hand === hand) && !satisfiedHands.has(part.hand));
+  if (!half) return;
+  if (satisfiedHands.size === 0) firstHalfAt = now;
+  satisfiedHands.add(half.hand);
+  if (satisfiedHands.size < currentCall.length) {
+    // Half a double stop: dim that ring and wait for its partner.
+    applyTargetCall();
+    return;
+  }
+  // The whole call lands: one stride per called drum.
+  stepDistanceLeft += PLAYER_STEP_YARDS * currentCall.length;
+  advanceCall();
 }
 
 // Strike detection for the controller drumsticks: a stick tip inside one of
 // your own drum heads.
 function checkDrumHits(now: number) {
-  if (!player || !playerHorn || now - lastHitTime < HIT_COOLDOWN_MS) return;
+  if (!player || !playerHorn) return;
   playerHorn.computeWorldMatrix(true);
   const hornMatrix = playerHorn.getWorldMatrix();
   for (const [handedness, { grip }] of sticks) {
@@ -335,9 +368,11 @@ function checkDrumHits(now: number) {
       const center = Vector3.TransformCoordinates(zone.center, hornMatrix);
       if (Vector3.DistanceSquared(tip, center) > zone.radius * zone.radius) continue;
       // The striking hand rides along so the call's sticking is enforced.
+      // Each stick strikes independently, letting a double stop land with
+      // both hands in the same frame.
       strikeZone(index, now,
         handedness === 'left' ? 'left' : handedness === 'right' ? 'right' : undefined);
-      return;
+      break;
     }
   }
 }
@@ -637,7 +672,7 @@ function stopGame(message?: string) {
   active = false;
   setSceneManipulationLocked(false);
   clearSticks();
-  clearTargetMarker();
+  clearTargetMarkers();
   clearGhostDrums();
   corpseContacts.clear();
   scheduleByRobot = new Map();
@@ -706,7 +741,9 @@ function update() {
   checkDrumHits(now);
   checkStickBonks(now);
   // The called drum's ring pulses so it reads at a glance mid-chase.
-  if (targetMaterial) targetMaterial.alpha = 0.55 + 0.3 * Math.sin(now / 110);
+  targetMarkers.forEach(({ material, dimmed }) => {
+    material.alpha = dimmed ? 0.16 : 0.55 + 0.3 * Math.sin(now / 110);
+  });
   const deltaSeconds = Math.min(0.1, scene.getEngine().getDeltaTime() / 1000);
   // Steer by facing: the march heads wherever the player is looking — the
   // headset (or desktop POV look) is the rudder — converted from the
@@ -923,17 +960,19 @@ function tryStartGame(force = false): ZombieGameStart {
   onDrill = true;
   createGhostDrums(fieldRoot instanceof TransformNode ? fieldRoot : null);
   startTime = performance.now();
-  lastHitTime = 0;
+  lastHitByHand.left = 0;
+  lastHitByHand.right = 0;
+  lastHitByHand.any = 0;
   stepDistanceLeft = 0;
   stumbleUntil = 0;
   corpseContacts.clear();
   decoys = [];
   // The first call is an inner drum, so the opening escape note does not
   // wheel the run hard to one side.
-  targetZoneIndex = 1;
   targetHits = 0;
-  targetHand = 'right';
-  createTargetMarker();
+  currentCall = [{ zone: 1, hand: 'right' }];
+  satisfiedHands.clear();
+  createTargetMarkers();
   active = true;
   setSceneManipulationLocked(true);
   const desktop = scene.activeCamera?.getClassName() !== 'WebXRCamera';
@@ -941,8 +980,8 @@ function tryStartGame(force = false): ZombieGameStart {
     (desktop
       ? 'March where you look, and the keys 1-4 strike the drums — hit the glowing one to step. '
       : 'March and face where you look — your drums swing with you. Strike the glowing drum ' +
-        'to step (gold calls your right hand, cyan your left), and club a zombie over the ' +
-        'head to drop it for good. ') +
+        'to step (gold calls your right hand, cyan your left; two lit drums want both hands ' +
+        'together for a double stride), and club a zombie over the head to drop it for good. ') +
     'Follow the fading trail of ghost drums — march your drill and the horde marches theirs, ' +
     'but stray from the path and they come for you.');
   return 'started';

@@ -222,7 +222,7 @@ assert.ok(Math.abs(vm.runInContext('player.heading', context) - -0.75) < 1e-6,
   'The march faces where the player looks');
 assert.ok(Math.abs(quad.rotation.y - -0.75) < 1e-6,
   'The carried drums swing with the look');
-assert.ok(vm.runInContext('targetMaterial.emissiveColor.r', context) > 0.9,
+assert.ok(vm.runInContext('targetMarkers[0].material.emissiveColor.r', context) > 0.9,
   'The opening call is gold: the right hand');
 controllers = new Map([['right', { grip }]]);
 grip.rotation.y = 0.6;
@@ -234,38 +234,50 @@ assert.ok(Math.abs(vm.runInContext('player.heading', context) - -0.75) < 1e-6,
 assert.equal(vm.runInContext('stepDistanceLeft', context), 0,
   'A wrong-drum hit plays no step');
 // Past the cooldown, strike the called inner-left drum with the called
-// right hand: the player strides toward the look direction, and the call
-// jumps to a different drum with the other hand, in cyan.
+// right hand: the player strides toward the look direction, and the next
+// call in the sequence is a double stop — cyan left ring and gold right
+// ring on two different drums.
 const standing = quad.position.clone();
 fakeNow += 300;
 placeGripOnZone(new Vector3(-0.115, 0.88, 0.42));
 vm.runInContext('update()', context);
 assert.ok(quad.position.x < standing.x - 1e-3,
   'Striking the called drum strides toward the look direction');
-assert.ok(Math.abs(marker.position.x - -0.115) > 1e-6 || Math.abs(marker.position.z - 0.42) > 1e-6,
-  'The call moves to a new drum after a correct hit');
-assert.ok(vm.runInContext('targetMaterial.emissiveColor.r', context) < 0.5,
-  'The next call turns cyan: the left hand');
-// An immediate strike on the new call is debounced by the hit cooldown.
-const calledX = marker.position.x;
+const marker2 = scene.meshes.find(mesh => mesh.name === 'zombieOutbreakDrumTarget2');
+assert.ok(marker2.isEnabled(), 'A double stop lights a second ring');
+assert.ok(vm.runInContext('targetMarkers[0].material.emissiveColor.r', context) < 0.5,
+  'The left half of the double wears cyan');
+assert.ok(vm.runInContext('targetMarkers[1].material.emissiveColor.r', context) > 0.9,
+  'The right half of the double wears gold');
+// An immediate right-stick strike is debounced by that hand's cooldown.
 placeGripOnZone(new Vector3(0.25, 0.87, 0.26));
 vm.runInContext('update()', context);
-assert.equal(marker.position.x, calledX, 'The hit cooldown debounces rapid strikes');
-// Past the cooldown, the wrong hand on the called drum is a miss; the
-// called left hand plays the step.
+assert.equal(vm.runInContext('satisfiedHands.size', context), 0,
+  'The hit cooldown debounces rapid strikes');
+// Past the cooldown, the right stick on the LEFT-hand half is a miss.
+fakeNow += 300;
+placeGripOnZone(new Vector3(-0.115, 0.88, 0.42));
+vm.runInContext('update()', context);
+assert.equal(vm.runInContext('satisfiedHands.size', context), 0,
+  'The wrong hand on a called drum plays no half');
+// The right half lands and waits, paying nothing yet.
 fakeNow += 300;
 placeGripOnZone(new Vector3(0.25, 0.87, 0.26));
 vm.runInContext('update()', context);
+assert.equal(vm.runInContext('satisfiedHands.size', context), 1,
+  'Half the double stop lands and waits for its partner');
 assert.equal(vm.runInContext('stepDistanceLeft', context), 0,
-  'The wrong hand on the called drum plays no step');
+  'Half a double stop pays nothing yet');
+// The left stick completes the pair inside the window: two strides.
 controllers = new Map([['left', { grip }]]);
-fakeNow += 300;
-placeGripOnZone(new Vector3(0.25, 0.87, 0.26));
+fakeNow += 100;
+placeGripOnZone(new Vector3(-0.115, 0.88, 0.42));
 vm.runInContext('update()', context);
-assert.ok(vm.runInContext('stepDistanceLeft', context) > 0,
-  'The called hand plays the step');
+assert.ok(vm.runInContext('stepDistanceLeft', context) > 0.75,
+  'A completed double stop pays two strides');
 controllers = new Map();
 povCamera.rotation.y = 0;
+vm.runInContext('stepDistanceLeft = 0', context);
 // The stride plays out, then a silent drummer stands still.
 fakeNow += 100;
 vm.runInContext('update()', context);
@@ -367,11 +379,11 @@ fakeNow += 100;
 vm.runInContext('update()', context);
 assert.equal(vm.runInContext('stepDistanceLeft', context), 0,
   'Marching over a corpse trips the drummer');
-vm.runInContext(`strikeZone(targetZoneIndex, ${fakeNow + 50})`, context);
+vm.runInContext(`strikeZone(currentCall[0].zone, ${fakeNow + 50})`, context);
 assert.equal(vm.runInContext('stepDistanceLeft', context), 0,
   'A stumbling drummer cannot step');
 fakeNow += 2000;
-vm.runInContext(`strikeZone(targetZoneIndex, ${fakeNow})`, context);
+vm.runInContext(`strikeZone(currentCall[0].zone, ${fakeNow})`, context);
 assert.ok(vm.runInContext('stepDistanceLeft', context) > 0, 'The stumble wears off');
 vm.runInContext('stepDistanceLeft = 0', context);
 
@@ -465,7 +477,7 @@ scene.dispose();
 engine.dispose();
 console.log('Zombie outbreak game checks passed: VR/quad gating with cinematic fallback, ' +
   'fading ghost-drum trail on the captured schedule, look-steered marching with the drums ' +
-  'swinging to the facing, hand-colored call enforcement, called-drum steps with cooldown, ' +
+  'swinging to the facing, hand-colored call enforcement with double-stop pairs, called-drum steps with per-hand cooldowns, ' +
   'zombify/restore of skin and ' +
   'face, head-bonk felling, corpse trips and trumpet corpse revival, formation-vs-hunt by ' +
   'drill alignment, referee whistle scares, ' +
