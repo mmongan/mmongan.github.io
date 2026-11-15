@@ -106,12 +106,14 @@ export const PLAYER_DRUM_FORWARD = 0.16;
 export const PLAYER_DRUM_RAISE = 0.22;
 // A short grab bar on the near rail of the quads: squeezing a controller
 // grip on it (a fresh squeeze, so resting fingers mid-drumming never
-// grab) puts the carriage's height and tilt in that hand — raising or
-// lowering the hand sets the drum height, pitching the wrist tilts the
-// heads, and the rings and strike zones ride along. The forward offset
-// and yaw stay the game mount's, so the drums keep swinging squarely with
-// the facing. The grabbing hand's stick plays nothing until it lets go,
-// and game over still restores the parade mount.
+// grab) puts the carriage in that hand — the hand's motion drags the
+// drums freely in all three axes, pitching the wrist tilts the heads,
+// and the rings and strike zones ride along. The drag works in the
+// marcher's body frame, which tracks the camera's look, so the pose is
+// relative to the view: wherever you rack them, they stay there in front
+// of you through every turn, with yaw kept squared to the facing. The
+// grabbing hand's stick plays nothing until it lets go, and game over
+// still restores the parade mount.
 export const DRUM_HANDLE_GRAB_YARDS = 0.11;
 // Each correct (called) hit takes one marching stride toward the facing,
 // played out at step speed. Chained calls approach 3.75 yd/s — just ahead
@@ -244,9 +246,11 @@ const STICK_NEUTRAL_EMISSIVE = Color3.FromHexString('#392511');
 let drumHandle: Mesh | null = null;
 let drumHandleMaterial: StandardMaterial | null = null;
 let handleGrabHand: string | null = null;
-// Grip height and wrist pitch at grab time, with the horn pose they map
-// from; the drag applies the deltas only.
-let handleGrabStart: { gripY: number; gripPitch: number; hornY: number; hornPitch: number } | null = null;
+// Grip position (in the body frame) and wrist pitch at grab time, with
+// the horn pose they map from; the drag applies the deltas only.
+let handleGrabStart: {
+  gripLocal: Vector3; gripPitch: number; hornPosition: Vector3; hornPitch: number;
+} | null = null;
 // Last frame's squeeze state per hand, so only a fresh squeeze grabs.
 const squeezeWasPressed = new Map<string, boolean>();
 let referees: Referee[] = [];
