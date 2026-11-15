@@ -122,26 +122,41 @@ vm.runInContext(stripTypeScriptTypes(source, { mode: 'transform' })
 vm.runInContext(`initZombieOutbreakGame({
   selectMarcher: robot => { globalThis.selected = robot; },
   startPOV: () => { globalThis.povOn(); },
+  stopPOV: () => { globalThis.povOff(); },
   isPOVActive: () => globalThis.povActive(),
   status: message => globalThis.pushStatus(message),
 })`, context);
-context.povOn = () => { povActive = true; };
+let povEngages = true;
+context.povOn = () => { if (povEngages) povActive = true; };
+context.povOff = () => { povActive = false; };
 context.povActive = () => povActive;
 context.pushStatus = message => statuses.push(message);
 assert.ok(registered, 'The game registers itself with zombie mode');
 
 // Guards: desktop and quad-less bands fall back to the scripted cinematic.
 snapshots = bandSnapshots();
-assert.equal(registered.tryStart(), false, 'Desktop falls back to the cinematic outbreak');
+assert.equal(registered.tryStart(), 'declined', 'Desktop falls back to the cinematic outbreak');
 cameraClass = 'WebXRCamera';
 snapshots = bandSnapshots().slice(1);
-assert.equal(registered.tryStart(), false, 'No quad player on the field: no survival game');
+assert.equal(registered.tryStart(), 'declined', 'No quad player on the field: no survival game');
+// POV not engaging (the XR session still settling) keeps the request
+// pending instead of degrading to the sideline or the cinematic.
+snapshots = bandSnapshots();
+povEngages = false;
+assert.equal(registered.tryStart(), 'retry', 'An unengaged POV retries rather than declines');
+assert.equal(registered.isActive(), false);
+povEngages = true;
 
 // Start: POV on the quad, transport paused, zombies tinted and exempted,
 // striped referees posted, ghost trail strung along the route.
 snapshots = bandSnapshots();
 playing = true;
-assert.equal(registered.tryStart(), true, 'VR with a quad and clarinets starts the game');
+// POV already following another marcher (the cinematic's sousaphone, say)
+// restarts onto the quad player rather than keeping the old target.
+povActive = true;
+context.selected = clarinet;
+assert.equal(registered.tryStart(), 'started', 'VR with a quad and clarinets starts the game');
+assert.equal(context.selected, quad, 'The game re-targets POV onto the quad player');
 assert.equal(registered.isActive(), true);
 assert.equal(context.selected, quad, 'The quad player is selected for POV');
 assert.equal(povActive, true);
@@ -348,8 +363,8 @@ assert.ok(scene.meshes.every(mesh => !mesh.name.startsWith('zombieGhostDrum') ||
 cameraClass = 'FreeCamera';
 snapshots = bandSnapshots();
 quad.position.set(0, 0, 10);
-assert.equal(registered.tryStart(), false, 'An unforced desktop request keeps the cinematic');
-assert.equal(registered.tryStart(true), true, 'Outbreak! starts the survival game on desktop');
+assert.equal(registered.tryStart(), 'declined', 'An unforced desktop request keeps the cinematic');
+assert.equal(registered.tryStart(true), 'started', 'Outbreak! starts the survival game on desktop');
 vm.runInContext('strikeZone(1, 2000000)', context);
 assert.ok(vm.runInContext('stepDistanceLeft', context) > 0,
   'A desktop key strike on the called drum plays a step');
@@ -363,7 +378,7 @@ snapshots = [
   { robot: quad, instrument: 'tenors', counts: route(0, 10, 2, 0.625) },
   { robot: clarinet, instrument: 'clarinet', counts: route(0, -20, 1, 0) },
 ];
-assert.equal(registered.tryStart(), true, 'The game restarts for another run');
+assert.equal(registered.tryStart(), 'started', 'The game restarts for another run');
 for (let i = 0; i < 10 && registered.isActive(); i++) {
   fakeNow += 100;
   vm.runInContext('update()', context);

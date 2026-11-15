@@ -86,14 +86,20 @@ let initOptions: { scene: Scene; allowed: () => boolean; notify: (message: strin
 // when it can start (VR, full scale, a quad player and clarinets on the
 // field), a requested outbreak becomes the playable chase instead of the
 // scripted cinematic.
-let gameHooks: { tryStart: (force?: boolean) => boolean; stop: () => void; isActive: () => boolean } | null = null;
+type GameHooks = {
+  // 'started' runs the game, 'retry' keeps the request pending for the
+  // per-frame stage (XR session or POV still settling), and 'declined'
+  // falls back to the scripted cinematic.
+  tryStart: (force?: boolean) => 'started' | 'retry' | 'declined';
+  stop: () => void;
+  isActive: () => boolean;
+};
+let gameHooks: GameHooks | null = null;
 // Set while the 🧟 Outbreak! button's request is pending: the game then
 // starts on any platform instead of only in immersive VR.
 let gameRequested = false;
 
-export function registerZombieOutbreakGame(hooks: {
-  tryStart: (force?: boolean) => boolean; stop: () => void; isActive: () => boolean;
-}) {
+export function registerZombieOutbreakGame(hooks: GameHooks) {
   gameHooks = hooks;
 }
 // A requested outbreak that could not start yet (typically the startup show
@@ -416,12 +422,18 @@ function attemptRequestedOutbreak() {
   }
   // With a quad player on the field, the outbreak is the playable chase: in
   // immersive VR for any request, and on every platform when the Outbreak!
-  // button asked for the game; everywhere else the scripted cinematic runs.
-  if (gameHooks?.tryStart(gameRequested)) {
+  // button or audience sign asked for the game; everywhere else the
+  // scripted cinematic runs.
+  const gameStart = gameHooks?.tryStart(gameRequested);
+  if (gameStart === 'started') {
     outbreakRequested = false;
     gameRequested = false;
     return;
   }
+  // The game wants to start but the XR session or POV camera is still
+  // settling; the per-frame stage keeps retrying while the toggle stays
+  // checked instead of degrading to the cinematic.
+  if (gameStart === 'retry') return;
   const error = enableZombieMode(initOptions.scene);
   if (!error) {
     outbreakRequested = false;

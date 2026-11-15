@@ -48,9 +48,15 @@ import { FIELD_LENGTH_YARDS, FIELD_WIDTH_YARDS } from '../field/constants';
 type GameCallbacks = {
   selectMarcher: (robot: TransformNode) => void;
   startPOV: () => void;
+  stopPOV: () => void;
   isPOVActive: () => boolean;
   status: (message: string) => void;
 };
+
+// tryStart outcomes: 'started' runs the game, 'declined' falls zombie mode
+// back to the scripted cinematic, and 'retry' keeps the request pending
+// (the XR session or POV camera is still settling), retried per frame.
+export type ZombieGameStart = 'started' | 'retry' | 'declined';
 
 type DrumStick = { mesh: Mesh; grip: TransformNode };
 
@@ -729,27 +735,32 @@ function update() {
   updateVictims(now);
 }
 
-// Attempts to start the survival game; false falls zombie mode back to the
-// scripted cinematic outbreak (no quad player, or an unforced request
-// outside immersive VR).
-function tryStartGame(force = false): boolean {
-  if (active) return true;
-  if (!callbacks) return false;
+// Attempts to start the survival game; 'declined' falls zombie mode back
+// to the scripted cinematic outbreak (no quad player, or an unforced
+// request outside immersive VR).
+function tryStartGame(force = false): ZombieGameStart {
+  if (active) return 'started';
+  if (!callbacks) return 'declined';
   // The Settings toggle's request becomes the game only in immersive VR;
-  // the Outbreak! button forces it on any platform — on desktop the POV
-  // look steers and the 1-4 keys strike the drums.
-  if (!force && scene.activeCamera?.getClassName() !== 'WebXRCamera') return false;
-  if (getARScale() < getARScaleRange().max) return false;
+  // the Outbreak! button and audience sign force it on any platform — on
+  // desktop the POV look steers and the 1-4 keys strike the drums.
+  if (!force && scene.activeCamera?.getClassName() !== 'WebXRCamera') return 'declined';
+  if (getARScale() < getARScaleRange().max) return 'declined';
   const snapshots = captureMarcherSchedules().filter(snapshot => !snapshot.robot.isDisposed());
   const quad = snapshots.find(snapshot => snapshot.instrument === 'tenors');
   const clarinets = snapshots.filter(snapshot => snapshot.instrument === 'clarinet');
-  if (!quad || !clarinets.length) return false;
+  if (!quad || !clarinets.length) return 'declined';
+  // Always ride the quad player's eyes: if POV is already following someone
+  // else (say, the cinematic's doomed sousaphone from an earlier run),
+  // restart it onto the quad rather than keeping the old target.
   callbacks.selectMarcher(quad.robot);
-  if (!callbacks.isPOVActive()) {
-    callbacks.startPOV();
-    startedPOV = callbacks.isPOVActive();
-    if (!startedPOV) return false;
-  }
+  if (callbacks.isPOVActive()) callbacks.stopPOV();
+  callbacks.startPOV();
+  startedPOV = callbacks.isPOVActive();
+  // POV not engaging usually means the XR session is still settling right
+  // after entry; keep the request pending instead of degrading to the
+  // sideline or the cinematic.
+  if (!startedPOV) return 'retry';
   wasPlaying = isAnyPlaying();
   pauseAll();
   savedColors = new Map();
@@ -799,7 +810,7 @@ function tryStartGame(force = false): boolean {
         'glowing drum to step. Club a zombie over the head to drop it for good. ') +
     'Follow the fading trail of ghost drums — march your drill and the horde marches theirs, ' +
     'but stray from the path and they come for you.');
-  return true;
+  return 'started';
 }
 
 scene.onBeforeRenderObservable.add(update);

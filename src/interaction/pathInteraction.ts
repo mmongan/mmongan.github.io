@@ -3921,6 +3921,7 @@ export function initInteraction() {
   initZombieOutbreakGame({
     selectMarcher: robot => selectRobot(robot),
     startPOV: () => setMarcherPOVEnabled(true),
+    stopPOV: () => setMarcherPOVEnabled(false),
     isPOVActive: isMarcherPOVActive,
     status: showPlacementNotice,
   });
