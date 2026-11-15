@@ -13,7 +13,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       content="Babylon.js WebXR VR and AR demo for Meta Quest 3"
     />
     <title>OpenChartxr</title>
-    <script type="module" crossorigin src="/assets/index-ChvtTig4.js"></script>
+    <script type="module" crossorigin src="/assets/index-TbVhAZ2v.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/rolldown-runtime-B0Z9INg1.js">
     <link rel="modulepreload" crossorigin href="/assets/engineStore-Bn2tApal.js">
     <link rel="modulepreload" crossorigin href="/assets/internalTexture-B3djGrls.js">
@@ -79,6 +79,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <button id="settingsButton" class="icon-button" aria-label="Settings" title="Settings" data-xr-editing hidden>⚙</button>
         <button id="enterVRButton" class="xr-button" type="button">Enter VR</button>
         <button id="enterARButton" class="xr-button secondary" type="button">Enter AR</button>
+        <button id="vrZombieModeButton" class="xr-button secondary" type="button">🧟 VR Zombie Mode</button>
         <button id="marcherPOVExitButton" class="xr-button" type="button" hidden>Exit POV</button>
       </div>
       <output id="xrEntryStatus" class="status-panel" aria-live="polite" hidden></output>
@@ -154,6 +155,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <label class="radio-option">
             <input id="bandRoomToggle" type="checkbox" />
             <span>Band room scene around tabletop/Giant VR</span>
+          </label>
+          <label class="radio-option">
+            <input id="zombieModeToggle" type="checkbox" />
+            <span>Zombie clarinets (at count 8 they hunger for tubas)</span>
           </label>
           <button id="marcherPOVModeButton" class="xr-button secondary" type="button" aria-pressed="false">Marcher POV (eye-level camera follow)</button>
           <label class="settings-label" for="marcherPOVSelect">POV marcher</label>
