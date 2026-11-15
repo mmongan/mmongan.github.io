@@ -216,6 +216,26 @@ assert.ok(vm.runInContext(
   'Math.abs(targetMarkers[0].material.alpha - (0.22 + 0.68 * (gameCount % 1) ** 3)) < 1e-9', context),
 'The ring pulse is locked to the ghost cadence beat');
 
+// The future footsteps: one sole print per upcoming count, left foot on
+// odd counts (cyan) just left of the route line, right foot (gold) on
+// even counts to its right, fading into the future.
+const prints = scene.meshes.filter(mesh => mesh.name.startsWith('zombieFootprint'));
+assert.equal(prints.length, 16, 'Future footsteps are strung along the route');
+assert.ok(prints.every(print => print.isEnabled()),
+  'Every upcoming marching count leaves a print');
+assert.ok(Math.abs(prints[0].position.x - -0.12) < 1e-6 &&
+  Math.abs(prints[0].position.z - 10.625) < 1e-6,
+'The next step is the left foot, just left of the route line');
+assert.ok(prints[0].material.emissiveColor.b > prints[0].material.emissiveColor.r,
+  'Left prints wear cyan');
+assert.ok(Math.abs(prints[1].position.x - 0.12) < 1e-6 &&
+  Math.abs(prints[1].position.z - 11.25) < 1e-6,
+'The following step is the right foot, right of the line');
+assert.ok(prints[1].material.emissiveColor.r > prints[1].material.emissiveColor.b,
+  'Right prints wear gold');
+assert.ok(prints[0].material.alpha > prints[15].material.alpha + 0.2,
+  'The footsteps fade into the future');
+
 // Strayed, a guide ghost stands a few yards from the player in the exact
 // direction of the drill spot — some turn always finds it — and leads
 // the walk back; on the path it stands down and the trail leads.
@@ -536,6 +556,8 @@ assert.ok(marker.isDisposed(), 'The called-drum ring leaves with the game');
 
 assert.ok(scene.meshes.every(mesh => !mesh.name.startsWith('zombieGhostDrum') || mesh.isDisposed()),
   'The ghost trail leaves with the game');
+assert.ok(scene.meshes.every(mesh => !mesh.name.startsWith('zombieFootprint') || mesh.isDisposed()),
+  'The future footsteps leave with the game');
 
 // The Outbreak! button forces the game on any platform; the Settings
 // toggle's unforced request still falls back to the cinematic on desktop.
@@ -573,7 +595,7 @@ scene.activeCamera = null;
 scene.dispose();
 engine.dispose();
 console.log('Zombie outbreak game checks passed: VR/quad gating with cinematic fallback, ' +
-  'fading ghost-drum trail on the captured schedule, the strayed-player guide ghost, the turn arrow, look-steered marching with the drums ' +
+  'fading ghost-drum trail on the captured schedule, fading future footsteps, the strayed-player guide ghost, the turn arrow, look-steered marching with the drums ' +
   'swinging to the facing, the height/tilt drum handle, call-colored sticks, one-hit-one-step marching, ' +
   'hand-colored call enforcement with double-stop pairs, called-drum steps with per-hand cooldowns, ' +
   'zombify/restore of skin and ' +
