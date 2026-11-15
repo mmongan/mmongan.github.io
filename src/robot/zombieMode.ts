@@ -27,7 +27,8 @@ import { Vector3 } from '@babylonjs/core/Maths/math.vector';
 import { Color3 } from '@babylonjs/core/Maths/math.color';
 import {
   captureBakedMarcherSchedules, getDrillTransportState, isPlaybackRequested,
-  playAll, restoreMarcherSchedule, seekToCount, setMarcherInstrumentPose, setRobotColor,
+  playAll, restoreMarcherSchedule, seekToCount, setMarcherInstrumentPose, setMarcherZombified,
+  setRobotColor,
 } from './robot';
 import type { InstrumentPose, MarcherScheduleSnapshot, RobotCount } from './robot';
 import { FIELD_LENGTH_YARDS, FIELD_WIDTH_YARDS } from '../field/constants';
@@ -445,7 +446,9 @@ export function disableZombieMode() {
     if (!robot.isDisposed()) robot.setEnabled(true);
   });
   infected.forEach(({ robot }) => {
-    if (!robot.isDisposed()) robot.rotation.x = 0;
+    if (robot.isDisposed()) return;
+    robot.rotation.x = 0;
+    setMarcherZombified(robot, false);
   });
   saved.forEach((snapshot) => {
     if (!snapshot.robot.isDisposed()) restoreMarcherSchedule(snapshot.robot, snapshot, scene);
@@ -484,6 +487,9 @@ export function updateZombieMode() {
     if (turned !== victim.turned) {
       victim.turned = turned;
       setRobotColor(robot, turned ? ZOMBIE_SKIN : victim.originalColor);
+      // Green skin and the zombie face turn with the uniform, and revert
+      // the same beat-gated way when scrubbing back.
+      setMarcherZombified(robot, turned);
       setMarcherInstrumentPose(robot, turned ? 'rest' : victim.originalPose);
     }
   });

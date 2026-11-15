@@ -284,11 +284,70 @@ function paintPhotoFace(ctx: CanvasRenderingContext2D, size: number, tone: FaceT
   ctx.drawImage(off, 0, 0);
 }
 
+// The zombie face: the outbreak's green complexion with sunken bloodshot
+// eyes, an angry scowl, and a gaping mouth. Material-cache tone index 3 —
+// never part of the complexion rotation, never photo-mapped.
+const ZOMBIE_FACE_TONE = 3;
+
+function paintZombieFace(ctx: CanvasRenderingContext2D, size: number) {
+  const { point, spanX, spanY, ellipse, soft } = facePainting(ctx, size);
+  // Base matches the zombie uniform green so the plate blends into the
+  // green-skinned zombie trim around it.
+  ctx.fillStyle = '#78a854';
+  ctx.fillRect(0, 0, size, size);
+  for (const side of [-1, 1]) {
+    const [hollowX, hollowY] = point(side * 0.052, 1.228);
+    soft(hollowX, hollowY, spanX(0.03, 1.228), spanY(0.018), 'rgba(24,46,16,0.4)');
+    const [socketX, socketY] = point(side * 0.043, 1.286);
+    soft(socketX, socketY, spanX(0.03, 1.286), spanY(0.014), 'rgba(16,28,10,0.55)');
+  }
+  for (const side of [-1, 1]) {
+    const [eyeX, eyeY] = point(side * 0.043, 1.284);
+    const eyeRx = spanX(0.0215, 1.284);
+    const eyeRy = spanY(0.0085);
+    ellipse(eyeX, eyeY, eyeRx, eyeRy, '#d8d2a0');
+    ctx.strokeStyle = 'rgba(138,42,26,0.8)';
+    ctx.lineWidth = Math.max(1, spanY(0.0018));
+    ctx.beginPath();
+    ctx.ellipse(eyeX, eyeY, eyeRx, eyeRy, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    const irisR = spanY(0.0085);
+    ellipse(eyeX, eyeY, irisR, irisR, '#8a9a4a');
+    ellipse(eyeX, eyeY, spanY(0.0024), spanY(0.0024), '#141008');
+    // Angry brows slanting down toward the nose.
+    const [browIn, browInY] = point(side * 0.02, 1.3);
+    const [browTail, browTailY] = point(side * 0.066, 1.317);
+    ctx.strokeStyle = '#263312';
+    ctx.lineCap = 'round';
+    ctx.lineWidth = Math.max(2, spanY(0.005));
+    ctx.beginPath();
+    ctx.moveTo(browIn, browInY);
+    ctx.lineTo(browTail, browTailY);
+    ctx.stroke();
+  }
+  // A gaping dark mouth with a few broken teeth.
+  const [mouthX, mouthY] = point(0, 1.191);
+  const mouthRx = spanX(0.026, 1.191);
+  const mouthRy = spanY(0.0095);
+  ellipse(mouthX, mouthY, mouthRx, mouthRy, '#241310');
+  ctx.fillStyle = '#cfc9a8';
+  for (const offset of [-0.55, 0, 0.55]) {
+    ctx.fillRect(mouthX + mouthRx * offset - spanX(0.0035, 1.191) / 2, mouthY - mouthRy,
+      Math.max(1, spanX(0.0035, 1.191)), Math.max(1, spanY(0.003)));
+  }
+  soft(mouthX, mouthY + spanY(0.009), mouthRx, spanY(0.004), 'rgba(24,46,16,0.45)');
+}
+
 interface FaceSkinTextureEntry { texture: DynamicTexture; tone: number }
 const liveFaceTextures = new Set<FaceSkinTextureEntry>();
 
 function paintFaceTexture(entry: FaceSkinTextureEntry) {
   const ctx = entry.texture.getContext() as CanvasRenderingContext2D;
+  if (entry.tone === ZOMBIE_FACE_TONE) {
+    paintZombieFace(ctx, TEXTURE_SIZE);
+    entry.texture.update();
+    return;
+  }
   const photoIndex = photoForTone(entry.tone, facePhotos.length);
   if (photoIndex >= 0) paintPhotoFace(ctx, TEXTURE_SIZE, FACE_SKIN_TONES[entry.tone], facePhotos[photoIndex]);
   else paintFace(ctx, TEXTURE_SIZE, FACE_SKIN_TONES[entry.tone]);
@@ -407,3 +466,8 @@ function createFaceSkinTemplate(scene: Scene, tone: number): Mesh {
 // robotEyes features it replaces, keeps the expression at every distance.
 export const FACE_SKIN_TEMPLATES: readonly ModelTemplate[] = [0, 1, 2].map(
   tone => cachedInstrumentTemplate(scene => createFaceSkinTemplate(scene, tone)));
+
+// The zombie face plate for the outbreak modes, swapped in per marcher by
+// robot.ts's zombification.
+export const getZombieFaceSkinTemplate: ModelTemplate =
+  cachedInstrumentTemplate(scene => createFaceSkinTemplate(scene, ZOMBIE_FACE_TONE));

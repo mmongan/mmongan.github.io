@@ -35,9 +35,10 @@ import { getRobotEyesTemplate } from './robotFaceModel';
 import {
   getMarcherCalfTemplate, getMarcherForearmTemplate, getMarcherGloveTemplate, getMarcherJacketTemplate,
   getMarcherShoeTemplate, getMarcherThighTemplate, getMarcherKneeTemplate, MARCHER_SKIN_TEMPLATES, getMarcherUpperArmTemplate,
-  isMarcherShadingRealistic, registerMarcherShadedMaterial, setMarcherShadingRealism,
+  getMarcherZombieTrimTemplate, isMarcherShadingRealistic, registerMarcherShadedMaterial,
+  setMarcherShadingRealism,
 } from './marcherBodyModel';
-import { FACE_SKIN_TEMPLATES } from './marcherFaceSkin';
+import { FACE_SKIN_TEMPLATES, getZombieFaceSkinTemplate } from './marcherFaceSkin';
 import { getSaxophoneTemplate, SAXOPHONE_MOUTHPIECE_TIP } from './saxophoneModel';
 import { BARI_SAXOPHONE_MOUTHPIECE_TIP, getBariSaxophoneTemplate } from './bariSaxophoneModel';
 import { EUPHONIUM_MOUTHPIECE_TIP, getEuphoniumTemplate } from './euphoniumModel';
@@ -95,7 +96,7 @@ const bodyTemplates = new Set<ModelTemplate>([
   getMarcherCalfTemplate, getMarcherForearmTemplate, getMarcherGloveTemplate,
   getMarcherJacketTemplate, getMarcherShoeTemplate, getMarcherThighTemplate,
   ...MARCHER_SKIN_TEMPLATES, getMarcherUpperArmTemplate, getMarcherKneeTemplate, getRobotEyesTemplate,
-  ...FACE_SKIN_TEMPLATES,
+  ...FACE_SKIN_TEMPLATES, getMarcherZombieTrimTemplate, getZombieFaceSkinTemplate,
 ]);
 
 function getTemplateDetail(template: ModelTemplate): ModelDetail {
@@ -288,16 +289,36 @@ function setMarcherDetail(detail: ModelDetail) {
 
 onARScaleChangedObservable.add(() => setMarcherDetail(getMarcherDetail()));
 lowPolygonMarchersToggle?.addEventListener("change", () => setMarcherDetail(getMarcherDetail()));
+// Zombification swaps the skin-colored trim and face for the shared green
+// zombie trim and face; de-zombifying restores the complexion and whichever
+// face the realism toggle selects. Session-only presentation state.
+const zombifiedMarchers = new WeakSet<TransformNode>();
+
+export function setMarcherZombified(robot: TransformNode, zombified: boolean) {
+  if (robot.isDisposed()) return;
+  if (zombified === zombifiedMarchers.has(robot)) return;
+  if (zombified) zombifiedMarchers.add(robot);
+  else zombifiedMarchers.delete(robot);
+  applyMarcherFaceParts(robot);
+}
+
+function applyMarcherFaceParts(robot: TransformNode) {
+  const zombified = zombifiedMarchers.has(robot);
+  const realistic = isMarcherShadingRealistic();
+  robot.getChildMeshes(false).forEach((mesh) => {
+    if (mesh.name === "marcherTrim") mesh.setEnabled(!zombified);
+    else if (mesh.name === "marcherZombieTrim") mesh.setEnabled(zombified);
+    else if (mesh.name === "marcherZombieFace") mesh.setEnabled(zombified);
+    else if (mesh.name === "robotEyes") mesh.setEnabled(!zombified && !realistic);
+    else if (mesh.name === "marcherFaceSkin") mesh.setEnabled(!zombified && realistic);
+  });
+}
+
 // Photorealistic faces swap the shared box-feature eyes for the painted
 // face-skin plate; the classic features return exactly on disable.
 function applyFaceSkinVisibility() {
-  const realistic = isMarcherShadingRealistic();
   allRobots.forEach((robot) => {
-    if (robot.isDisposed()) return;
-    robot.getChildMeshes(false).forEach((mesh) => {
-      if (mesh.name === "robotEyes") mesh.setEnabled(!realistic);
-      else if (mesh.name === "marcherFaceSkin") mesh.setEnabled(realistic);
-    });
+    if (!robot.isDisposed()) applyMarcherFaceParts(robot);
   });
 }
 
@@ -833,12 +854,14 @@ function createMarcherModel(scene: Scene, gaitIndex: number, skinIndex?: number)
 
   part(getMarcherJacketTemplate, "marcherJacket", body, true);
   part(MARCHER_SKIN_TEMPLATES[skin], "marcherTrim", body);
-  // Classic geometric face features and the photorealistic painted face
-  // skin coexist as parts; the active one follows the realism toggle.
-  const eyes = part(getRobotEyesTemplate, "robotEyes", body);
-  const faceSkin = part(FACE_SKIN_TEMPLATES[skin], "marcherFaceSkin", body);
-  eyes.setEnabled(!isMarcherShadingRealistic());
-  faceSkin.setEnabled(isMarcherShadingRealistic());
+  // Classic geometric face features, the photorealistic painted face skin,
+  // and the zombie trim/face coexist as parts; which ones show follows the
+  // realism toggle and the marcher's zombification state.
+  part(getRobotEyesTemplate, "robotEyes", body);
+  part(FACE_SKIN_TEMPLATES[skin], "marcherFaceSkin", body);
+  part(getMarcherZombieTrimTemplate, "marcherZombieTrim", body);
+  part(getZombieFaceSkinTemplate, "marcherZombieFace", body);
+  applyMarcherFaceParts(robot);
 
   const appendages = ([-1, 1] as const).map((side) => {
     const leg = new TransformNode("marcherLeg", scene);
