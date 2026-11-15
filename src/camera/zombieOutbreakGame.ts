@@ -142,6 +142,10 @@ let startTime = 0;
 let lastHitTime = 0;
 // Marching distance still owed from correct hits; zero means standing.
 let stepDistanceLeft = 0;
+// Tripped over a corpse: no steps play until the stumble wears off.
+let stumbleUntil = 0;
+// Corpses the player currently overlaps, so one contact trips only once.
+const corpseContacts = new Set<TransformNode>();
 // The ghost's position along the authored schedule, in counts.
 let gameCount = 0;
 let lastScheduledCount = 0;
@@ -272,7 +276,8 @@ function clearTargetMarker() {
 // the called (glowing) drum plays a marching step, and the call then jumps
 // to a different drum. The cooldown debounces all strikes.
 function strikeZone(zoneIndex: number, now: number) {
-  if (!player || now - lastHitTime < HIT_COOLDOWN_MS) return;
+  // A stumbling drummer's sticks play nothing until the stumble wears off.
+  if (!player || now - lastHitTime < HIT_COOLDOWN_MS || now < stumbleUntil) return;
   lastHitTime = now;
   if (zoneIndex === targetZoneIndex) {
     stepDistanceLeft += PLAYER_STEP_YARDS;
@@ -460,16 +465,17 @@ function clearGhostDrums() {
   ghostMaterials = [];
 }
 
-// The brass cure: running into a trumpet player turns a zombie back into a
-// normal uninfected marcher — uniform and instrument pose restored, and
-// released back to its scheduled drill spot among the bystanders, where it
-// can be bitten again. The trumpet player stands unharmed.
-function cureZombie(chaser: Runner) {
-  const robot = chaser.robot;
+// The brass cure: a cured marcher — a hunting zombie that ran into a
+// trumpet player, or a corpse lying near one — turns back into a normal
+// uninfected marcher: uniform, skin, face, and instrument pose restored,
+// upright, and released back to its scheduled drill spot among the
+// bystanders, where it can be bitten again. Trumpet players stand unharmed.
+function cureMarcher(robot: TransformNode) {
   const color = savedColors.get(robot) ?? victims.find(victim => victim.robot === robot)?.color;
-  chasers = chasers.filter(other => other !== chaser);
+  chasers = chasers.filter(chaser => chaser.robot !== robot);
   victims = victims.filter(victim => victim.robot !== robot);
   savedColors.delete(robot);
+  corpseContacts.delete(robot);
   if (color) setRobotColor(robot, color);
   setMarcherZombified(robot, false);
   setMarcherInstrumentPose(robot, getInstrumentPose());
@@ -480,6 +486,13 @@ function cureZombie(chaser: Runner) {
 
 const BONK_HEAD_HEIGHT_YARDS = 1.7;
 export const BONK_RADIUS_YARDS = 0.35;
+// Dead zombies are obstacles: marching over a corpse trips the drummer —
+// owed steps are lost and the sticks are useless for a moment — so the
+// clean line swings around the fallen, even when that leaves the drill
+// path. A trumpet player standing near a corpse wakes it cured.
+export const CORPSE_TRIP_YARDS = 0.9;
+export const CORPSE_STUMBLE_MS = 1500;
+export const CORPSE_CURE_YARDS = 1.5;
 
 // A drumstick blow to the head fells a zombie for good: it drops where it
 // stands through the victim fall animation and never rises (an infinite
@@ -566,6 +579,7 @@ function stopGame(message?: string) {
   clearSticks();
   clearTargetMarker();
   clearGhostDrums();
+  corpseContacts.clear();
   scheduleByRobot = new Map();
   playerSchedule = [];
   // Stand everyone up and hand them back to their schedules: releasing a
@@ -674,6 +688,26 @@ function update() {
       ghost.rotation.y = pose.rotationY;
     }
   });
+  // Dead zombies are obstacles: entering a corpse's patch mid-march trips
+  // the drummer — owed steps are lost and the sticks go quiet for a moment
+  // — so the line swings around the fallen even when it leaves the path.
+  // A corpse lying near a trumpet player is woken cured.
+  for (const victim of [...victims]) {
+    if (Number.isFinite(victim.riseStart) || victim.robot.isDisposed()) continue;
+    const corpse = fieldPosition(victim.robot);
+    const inside = Vector3.Distance(corpse, playerPosition) <= CORPSE_TRIP_YARDS;
+    if (inside && !corpseContacts.has(victim.robot) && travel > 1e-6 && now >= stumbleUntil) {
+      stumbleUntil = now + CORPSE_STUMBLE_MS;
+      stepDistanceLeft = 0;
+    }
+    if (inside) corpseContacts.add(victim.robot);
+    else corpseContacts.delete(victim.robot);
+    if (bystanders.some(standing => !standing.isDisposed() &&
+      getMarcherInstrument(standing) === 'trumpet' &&
+      Vector3.Distance(fieldPosition(standing), corpse) <= CORPSE_CURE_YARDS)) {
+      cureMarcher(victim.robot);
+    }
+  }
   // Aligned with the ghost, the horde holds formation; strayed, it hunts.
   onDrill = !ghostPose || Vector3.Distance(playerPosition, ghostPose.position) <= DRILL_ALIGN_YARDS;
   if (ghostPose && lastScheduledCount >= 1 && gameCount >= lastScheduledCount && onDrill) {
@@ -726,7 +760,7 @@ function update() {
       if (standing.isDisposed()) continue;
       if (Vector3.Distance(fieldPosition(standing), fieldPosition(chaser.robot)) > OUTBREAK_TOUCH_YARDS) continue;
       if (getMarcherInstrument(standing) === 'trumpet') {
-        cureZombie(chaser);
+        cureMarcher(chaser.robot);
         break;
       }
       knockVictim(standing, chaser, now);
@@ -795,6 +829,8 @@ function tryStartGame(force = false): ZombieGameStart {
   startTime = performance.now();
   lastHitTime = 0;
   stepDistanceLeft = 0;
+  stumbleUntil = 0;
+  corpseContacts.clear();
   // The first call is an inner drum, so the opening escape note does not
   // wheel the run hard to one side.
   targetZoneIndex = 1;

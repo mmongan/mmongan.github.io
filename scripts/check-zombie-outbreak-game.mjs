@@ -338,6 +338,31 @@ assert.equal(vm.runInContext('chasers.length', context), 1, 'A felled zombie nev
 assert.ok(Math.abs(flute.rotation.x) > 1.2, 'It stays down');
 controllers = new Map();
 
+// Corpses are obstacles: marching into one trips the drummer — owed steps
+// are lost and the sticks go quiet until the stumble wears off.
+quad.position.copyFrom(flute.position).addInPlace(new Vector3(0.5, 0, 0));
+vm.runInContext('stepDistanceLeft = 0.75; stumbleUntil = 0; corpseContacts.clear();', context);
+fakeNow += 100;
+vm.runInContext('update()', context);
+assert.equal(vm.runInContext('stepDistanceLeft', context), 0,
+  'Marching over a corpse trips the drummer');
+vm.runInContext(`strikeZone(targetZoneIndex, ${fakeNow + 50})`, context);
+assert.equal(vm.runInContext('stepDistanceLeft', context), 0,
+  'A stumbling drummer cannot step');
+fakeNow += 2000;
+vm.runInContext(`strikeZone(targetZoneIndex, ${fakeNow})`, context);
+assert.ok(vm.runInContext('stepDistanceLeft', context) > 0, 'The stumble wears off');
+vm.runInContext('stepDistanceLeft = 0', context);
+
+// A trumpet player standing near a corpse wakes it cured.
+trumpet.position.copyFrom(flute.position).addInPlace(new Vector3(1, 0, 0));
+fakeNow += 100;
+vm.runInContext('update()', context);
+assert.ok(!heldSet.has(flute), 'A trumpet wakes the fallen corpse cured');
+assert.equal(flute.rotation.x, 0, 'The cured corpse stands back up');
+assert.ok(!zombifiedSet.has(flute), 'The cured corpse sheds the zombie look');
+trumpet.position.set(-6, 0, -14);
+
 // Caught: a zombie touching the player ends the game and restores the band.
 clarinet.position.copyFrom(quad.position).addInPlace(new Vector3(0.2, 0, 0));
 fakeNow += 100;
@@ -396,6 +421,7 @@ engine.dispose();
 console.log('Zombie outbreak game checks passed: VR/quad gating with cinematic fallback, ' +
   'fading ghost-drum trail on the captured schedule, stick-pointed steering with desktop ' +
   'look fallback, called-drum marching steps with cooldown, zombify/restore of skin and ' +
-  'face, head-bonk felling, formation-vs-hunt by drill alignment, referee whistle scares, ' +
+  'face, head-bonk felling, corpse trips and trumpet corpse revival, formation-vs-hunt by ' +
+  'drill alignment, referee whistle scares, ' +
   'knockdown/incubation/rise, the trumpet cure, the aligned-finish win, and a full restore ' +
   'on game over.');
