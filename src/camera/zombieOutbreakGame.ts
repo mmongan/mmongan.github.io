@@ -544,8 +544,11 @@ function strikeZone(zoneIndex: number, now: number, hand?: 'left' | 'right') {
     applyTargetCall();
     return;
   }
-  // The whole call lands: one stride per called drum.
-  stepDistanceLeft += PLAYER_STEP_YARDS * currentCall.length;
+  // The whole call lands: one stride per called drum. One distinct hit,
+  // one distinct step — a strike landing while a step is still playing
+  // out starts this call's steps fresh instead of banking distance, so
+  // drumming ahead of your feet never blurs the march into a glide.
+  stepDistanceLeft = PLAYER_STEP_YARDS * currentCall.length;
   advanceCall();
 }
 
@@ -918,6 +921,7 @@ function stopGame(message?: string) {
     setRobotHeld(robot, false);
   };
   clearDrumHandle();
+  clearTurnArrow();
   if (playerHorn && !playerHorn.isDisposed() && playerHornHome) {
     playerHorn.position.copyFrom(playerHornHome);
     if (playerHornHomeRotation) {
@@ -1082,6 +1086,34 @@ function update() {
       if (guideGhostMaterial) guideGhostMaterial.alpha = 0.4 + 0.3 * beatSwell;
     }
   }
+  // Facing is steering, so facing away from the drill is marching away
+  // from it. When the heading strays past the threshold from the drill
+  // direction — toward the spot when strayed, along the route when
+  // aligned — the floating arrow ahead of the face spins to the wrapped
+  // heading error, pointing the way to turn. Holds show nothing.
+  if (turnArrow && !turnArrow.isDisposed()) {
+    let target: Vector3 | null = null;
+    if (ghostPose) {
+      if (Vector3.Distance(playerPosition, ghostPose.position) > DRILL_ALIGN_YARDS) {
+        target = ghostPose.position;
+      } else {
+        const ahead = sampleSchedule(playerSchedule, Math.min(lastScheduledCount, gameCount + 2));
+        if (ahead && Vector3.Distance(playerPosition, ahead.position) > 0.75) target = ahead.position;
+      }
+    }
+    let error = 0;
+    if (target) {
+      error = Math.atan2(target.x - playerPosition.x, target.z - playerPosition.z) - player.heading;
+      while (error > Math.PI) error -= 2 * Math.PI;
+      while (error < -Math.PI) error += 2 * Math.PI;
+    }
+    const show = target !== null && Math.abs(error) > TURN_ARROW_MIN_RAD;
+    turnArrow.setEnabled(show);
+    if (show) {
+      turnArrow.rotation.y = error;
+      if (turnArrowMaterial) turnArrowMaterial.alpha = 0.55 + 0.35 * beatSwell;
+    }
+  }
   // Aligned with the ghost, the horde holds formation; strayed, it hunts.
   onDrill = !ghostPose || Vector3.Distance(playerPosition, ghostPose.position) <= DRILL_ALIGN_YARDS;
   if (ghostPose && lastScheduledCount >= 1 && gameCount >= lastScheduledCount && onDrill) {
@@ -1214,6 +1246,7 @@ function tryStartGame(force = false): ZombieGameStart {
     createDrumHandle();
   }
   player = { robot: quad.robot, heading: quad.robot.rotation.y, stridePhase: 0 };
+  createTurnArrow(quad.robot);
   setRobotHeld(quad.robot, true);
   chasers = clarinets.map((snapshot) => {
     savedColors.set(snapshot.robot, getRobotColor(snapshot.robot).clone());
