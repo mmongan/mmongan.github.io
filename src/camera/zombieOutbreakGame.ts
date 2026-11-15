@@ -3,10 +3,10 @@
 
 // Zombie outbreak survival game: the immersive-VR form of zombie mode. You
 // are a quad (tenor drum) player seen through the existing marcher POV, and
-// the zombie clarinets chase YOU instead of the tubas. Steer with the
-// sticks: the march follows where the controllers point (averaged when
-// both are connected), leaving the head free to look around at the horde;
-// without controllers (desktop) the POV look steers instead. Escape is
+// the zombie clarinets chase YOU instead of the tubas. Steer by facing:
+// you march wherever you look — headset in VR, POV look on desktop — and
+// the carried quads swing with the look, keeping the drums and the called
+// ring squarely in front; the controllers only strike. Escape is
 // earned one correct note at a time: a
 // glowing ring calls out one drum, and only striking the called drum with
 // the controller drumsticks takes a marching stride toward the facing
@@ -175,6 +175,12 @@ let targetZoneIndex = 1;
 let targetHits = 0;
 let targetMarker: Mesh | null = null;
 let targetMaterial: StandardMaterial | null = null;
+// The call also names the hand, alternating like a sticking: gold calls
+// the right stick, cyan the left — the project's left/right color language
+// (as on the marcher footprints). Desktop keys are hand-agnostic.
+const CALL_RIGHT_COLOR = '#ffc83d';
+const CALL_LEFT_COLOR = '#4fd9e0';
+let targetHand: 'left' | 'right' = 'right';
 let stickMaterial: StandardMaterial | null = null;
 const sticks = new Map<string, DrumStick>();
 let referees: Referee[] = [];
@@ -261,7 +267,6 @@ function createTargetMarker() {
   if (!playerHorn) return;
   targetMaterial ??= (() => {
     const material = new StandardMaterial('zombieOutbreakTargetMaterial', scene);
-    material.emissiveColor = Color3.FromHexString('#ffc83d');
     material.disableLighting = true;
     return material;
   })();
@@ -271,6 +276,15 @@ function createTargetMarker() {
   targetMarker.parent = playerHorn;
   targetMarker.material = targetMaterial;
   targetMarker.isPickable = false;
+  applyTargetCall();
+}
+
+// Repositions the ring on the called drum and tints it for the called hand.
+function applyTargetCall() {
+  if (targetMaterial) {
+    targetMaterial.emissiveColor =
+      Color3.FromHexString(targetHand === 'right' ? CALL_RIGHT_COLOR : CALL_LEFT_COLOR);
+  }
   positionTargetMarker();
 }
 
@@ -292,17 +306,19 @@ function clearTargetMarker() {
 // One strike on drum `zoneIndex`, from a stick tip or a desktop key: only
 // the called (glowing) drum plays a marching step, and the call then jumps
 // to a different drum. The cooldown debounces all strikes.
-function strikeZone(zoneIndex: number, now: number) {
+function strikeZone(zoneIndex: number, now: number, hand?: 'left' | 'right') {
   // A stumbling drummer's sticks play nothing until the stumble wears off.
   if (!player || now - lastHitTime < HIT_COOLDOWN_MS || now < stumbleUntil) return;
   lastHitTime = now;
-  if (zoneIndex === targetZoneIndex) {
-    stepDistanceLeft += PLAYER_STEP_YARDS;
-    targetHits += 1;
-    targetZoneIndex = (targetZoneIndex + 1 +
-      ((targetHits * 2654435761 >>> 0) % (DRUM_ZONES.length - 1))) % DRUM_ZONES.length;
-    positionTargetMarker();
-  }
+  if (zoneIndex !== targetZoneIndex) return;
+  // The call names a hand too: a strike from the other stick is a miss.
+  if (hand && hand !== targetHand) return;
+  stepDistanceLeft += PLAYER_STEP_YARDS;
+  targetHits += 1;
+  targetZoneIndex = (targetZoneIndex + 1 +
+    ((targetHits * 2654435761 >>> 0) % (DRUM_ZONES.length - 1))) % DRUM_ZONES.length;
+  targetHand = targetHand === 'right' ? 'left' : 'right';
+  applyTargetCall();
 }
 
 // Strike detection for the controller drumsticks: a stick tip inside one of
@@ -311,14 +327,16 @@ function checkDrumHits(now: number) {
   if (!player || !playerHorn || now - lastHitTime < HIT_COOLDOWN_MS) return;
   playerHorn.computeWorldMatrix(true);
   const hornMatrix = playerHorn.getWorldMatrix();
-  for (const { grip } of sticks.values()) {
+  for (const [handedness, { grip }] of sticks) {
     grip.computeWorldMatrix(true);
     const tip = Vector3.TransformCoordinates(new Vector3(0, 0, STICK_LENGTH), grip.getWorldMatrix());
     for (let index = 0; index < DRUM_ZONES.length; index++) {
       const zone = DRUM_ZONES[index];
       const center = Vector3.TransformCoordinates(zone.center, hornMatrix);
       if (Vector3.DistanceSquared(tip, center) > zone.radius * zone.radius) continue;
-      strikeZone(index, now);
+      // The striking hand rides along so the call's sticking is enforced.
+      strikeZone(index, now,
+        handedness === 'left' ? 'left' : handedness === 'right' ? 'right' : undefined);
       return;
     }
   }
@@ -690,32 +708,20 @@ function update() {
   // The called drum's ring pulses so it reads at a glance mid-chase.
   if (targetMaterial) targetMaterial.alpha = 0.55 + 0.3 * Math.sin(now / 110);
   const deltaSeconds = Math.min(0.1, scene.getEngine().getDeltaTime() / 1000);
-  // Steer with the sticks: the march follows where the controllers point
-  // (averaged when both are connected), leaving the head free to look
-  // around at the horde. Without controllers (desktop) the POV look steers.
-  // Directions convert from world into field-local space, so tabletop/room
-  // transforms of the field never skew the march.
+  // Steer by facing: the march heads wherever the player is looking — the
+  // headset (or desktop POV look) is the rudder — converted from the
+  // camera's world forward into field-local space so tabletop/room
+  // transforms never skew the march. Because the marcher's body turns to
+  // the heading even while standing, the carried quads (and the called
+  // ring on them) swing with the look, always squarely in front; the
+  // controllers only strike.
   const fieldParent = player.robot.parent;
-  if (fieldParent instanceof TransformNode) {
-    const inverse = Matrix.Invert(fieldParent.getWorldMatrix());
-    const pointing = Vector3.Zero();
-    for (const { grip } of sticks.values()) {
-      grip.computeWorldMatrix(true);
-      pointing.addInPlace(Vector3.TransformNormal(Vector3.Forward(), grip.getWorldMatrix()));
-    }
-    if (sticks.size > 0) {
-      const local = Vector3.TransformNormal(pointing, inverse);
-      local.y = 0;
-      // Opposed sticks cancel out; the march then keeps its last heading.
-      if (local.lengthSquared() > 1e-6) player.heading = Math.atan2(local.x, local.z);
-    } else {
-      const camera = scene.activeCamera;
-      if (camera instanceof TargetCamera) {
-        const look = Vector3.TransformNormal(camera.getDirection(Vector3.Forward()), inverse);
-        look.y = 0;
-        if (look.lengthSquared() > 1e-6) player.heading = Math.atan2(look.x, look.z);
-      }
-    }
+  const camera = scene.activeCamera;
+  if (camera instanceof TargetCamera && fieldParent instanceof TransformNode) {
+    const look = Vector3.TransformNormal(camera.getDirection(Vector3.Forward()),
+      Matrix.Invert(fieldParent.getWorldMatrix()));
+    look.y = 0;
+    if (look.lengthSquared() > 1e-6) player.heading = Math.atan2(look.x, look.z);
   }
   // The player advances only while a called step is still underway.
   const travel = Math.min(stepDistanceLeft, PLAYER_STEP_YARDS_PER_SECOND * deltaSeconds);
@@ -926,6 +932,7 @@ function tryStartGame(force = false): ZombieGameStart {
   // wheel the run hard to one side.
   targetZoneIndex = 1;
   targetHits = 0;
+  targetHand = 'right';
   createTargetMarker();
   active = true;
   setSceneManipulationLocked(true);
@@ -933,8 +940,9 @@ function tryStartGame(force = false): ZombieGameStart {
   callbacks.status('Zombie outbreak: you are the quad player. ' +
     (desktop
       ? 'March where you look, and the keys 1-4 strike the drums — hit the glowing one to step. '
-      : 'Your drumsticks steer: march where they point, look around freely, and strike the ' +
-        'glowing drum to step. Club a zombie over the head to drop it for good. ') +
+      : 'March and face where you look — your drums swing with you. Strike the glowing drum ' +
+        'to step (gold calls your right hand, cyan your left), and club a zombie over the ' +
+        'head to drop it for good. ') +
     'Follow the fading trail of ghost drums — march your drill and the horde marches theirs, ' +
     'but stray from the path and they come for you.');
   return 'started';

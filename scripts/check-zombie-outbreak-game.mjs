@@ -213,26 +213,29 @@ const placeGripOnZone = (center) => {
   grip.position.copyFrom(Vector3.TransformCoordinates(center, horn.getWorldMatrix())
     .subtract(stickForward.scale(0.34)));
 };
-// With no controllers connected, the POV look steers (desktop play).
-povCamera.rotation.y = 0.4;
+// Steering: the march and the carried drums face where the player looks;
+// the controllers only strike. The opening call is gold: the right hand.
+povCamera.rotation.y = -0.75;
 fakeNow = 950;
 vm.runInContext('update()', context);
-assert.ok(Math.abs(vm.runInContext('player.heading', context) - 0.4) < 1e-6,
-  'Without controllers the look direction steers the march');
-povCamera.rotation.y = 0;
-// Connected controllers take over: the march follows where the drumsticks
-// point, leaving the head free to look around.
+assert.ok(Math.abs(vm.runInContext('player.heading', context) - -0.75) < 1e-6,
+  'The march faces where the player looks');
+assert.ok(Math.abs(quad.rotation.y - -0.75) < 1e-6,
+  'The carried drums swing with the look');
+assert.ok(vm.runInContext('targetMaterial.emissiveColor.r', context) > 0.9,
+  'The opening call is gold: the right hand');
 controllers = new Map([['right', { grip }]]);
-grip.rotation.y = -0.75;
+grip.rotation.y = 0.6;
 placeGripOnZone(new Vector3(-0.25, 0.87, 0.26));
 fakeNow = 1000;
 vm.runInContext('update()', context);
 assert.ok(Math.abs(vm.runInContext('player.heading', context) - -0.75) < 1e-6,
-  'The march follows where the drumsticks point, not the head');
+  'Controller pointing does not steer the march');
 assert.equal(vm.runInContext('stepDistanceLeft', context), 0,
   'A wrong-drum hit plays no step');
-// Past the cooldown, strike the called inner-left drum: the player strides
-// toward the look direction and the call jumps to a different drum.
+// Past the cooldown, strike the called inner-left drum with the called
+// right hand: the player strides toward the look direction, and the call
+// jumps to a different drum with the other hand, in cyan.
 const standing = quad.position.clone();
 fakeNow += 300;
 placeGripOnZone(new Vector3(-0.115, 0.88, 0.42));
@@ -241,11 +244,26 @@ assert.ok(quad.position.x < standing.x - 1e-3,
   'Striking the called drum strides toward the look direction');
 assert.ok(Math.abs(marker.position.x - -0.115) > 1e-6 || Math.abs(marker.position.z - 0.42) > 1e-6,
   'The call moves to a new drum after a correct hit');
+assert.ok(vm.runInContext('targetMaterial.emissiveColor.r', context) < 0.5,
+  'The next call turns cyan: the left hand');
 // An immediate strike on the new call is debounced by the hit cooldown.
 const calledX = marker.position.x;
 placeGripOnZone(new Vector3(0.25, 0.87, 0.26));
 vm.runInContext('update()', context);
 assert.equal(marker.position.x, calledX, 'The hit cooldown debounces rapid strikes');
+// Past the cooldown, the wrong hand on the called drum is a miss; the
+// called left hand plays the step.
+fakeNow += 300;
+placeGripOnZone(new Vector3(0.25, 0.87, 0.26));
+vm.runInContext('update()', context);
+assert.equal(vm.runInContext('stepDistanceLeft', context), 0,
+  'The wrong hand on the called drum plays no step');
+controllers = new Map([['left', { grip }]]);
+fakeNow += 300;
+placeGripOnZone(new Vector3(0.25, 0.87, 0.26));
+vm.runInContext('update()', context);
+assert.ok(vm.runInContext('stepDistanceLeft', context) > 0,
+  'The called hand plays the step');
 controllers = new Map();
 povCamera.rotation.y = 0;
 // The stride plays out, then a silent drummer stands still.
@@ -446,8 +464,9 @@ scene.activeCamera = null;
 scene.dispose();
 engine.dispose();
 console.log('Zombie outbreak game checks passed: VR/quad gating with cinematic fallback, ' +
-  'fading ghost-drum trail on the captured schedule, stick-pointed steering with desktop ' +
-  'look fallback, called-drum marching steps with cooldown, zombify/restore of skin and ' +
+  'fading ghost-drum trail on the captured schedule, look-steered marching with the drums ' +
+  'swinging to the facing, hand-colored call enforcement, called-drum steps with cooldown, ' +
+  'zombify/restore of skin and ' +
   'face, head-bonk felling, corpse trips and trumpet corpse revival, formation-vs-hunt by ' +
   'drill alignment, referee whistle scares, ' +
   'knockdown/incubation/rise, the trumpet cure, the aligned-finish win, and a full restore ' +
