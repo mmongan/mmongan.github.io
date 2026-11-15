@@ -545,6 +545,14 @@ function updateVictims(now: number) {
   }
 }
 
+// End-of-run score line: felled zombies carry an infinite rise time and
+// count as clubbed, not turned.
+function runTally(): string {
+  const turned = victims.filter(victim => Number.isFinite(victim.riseStart)).length;
+  const clubbed = victims.length - turned;
+  return `${turned} marchers turned${clubbed ? `, ${clubbed} zombies clubbed` : ''}`;
+}
+
 function stopGame(message?: string) {
   if (!active) return;
   active = false;
@@ -561,6 +569,7 @@ function stopGame(message?: string) {
   const release = (robot: TransformNode, color: Color3 | undefined) => {
     if (robot.isDisposed()) return;
     robot.rotation.x = 0;
+    setMarcherZombified(robot, false);
     if (color) {
       setRobotColor(robot, color);
       setMarcherInstrumentPose(robot, bandPose);
@@ -609,6 +618,7 @@ function update() {
     }
   }
   checkDrumHits(now);
+  checkStickBonks(now);
   // The called drum's ring pulses so it reads at a glance mid-chase.
   if (targetMaterial) targetMaterial.alpha = 0.55 + 0.3 * Math.sin(now / 110);
   const deltaSeconds = Math.min(0.1, scene.getEngine().getDeltaTime() / 1000);
@@ -661,8 +671,8 @@ function update() {
   // Aligned with the ghost, the horde holds formation; strayed, it hunts.
   onDrill = !ghostPose || Vector3.Distance(playerPosition, ghostPose.position) <= DRILL_ALIGN_YARDS;
   if (ghostPose && lastScheduledCount >= 1 && gameCount >= lastScheduledCount && onDrill) {
-    stopGame(`You marched the whole show and the horde never got you — ${victims.length} marchers ` +
-      'turned. Toggle zombie mode to run again.');
+    stopGame(`You marched the whole show and the horde never got you — ${runTally()}. ` +
+      'Toggle zombie mode to run again.');
     return;
   }
   updateReferees(now);
@@ -672,7 +682,7 @@ function update() {
     gap.y = 0;
     if (gap.length() <= OUTBREAK_TOUCH_YARDS) {
       const survived = Math.round((now - startTime) / 1000);
-      stopGame(`The horde got you after ${survived}s — ${victims.length} marchers turned. ` +
+      stopGame(`The horde got you after ${survived}s — ${runTally()}. ` +
         'Toggle zombie mode to run again.');
       return;
     }
@@ -786,7 +796,7 @@ function tryStartGame(force = false): boolean {
     (desktop
       ? 'March where you look, and the keys 1-4 strike the drums — hit the glowing one to step. '
       : 'Your drumsticks steer: march where they point, look around freely, and strike the ' +
-        'glowing drum to step. ') +
+        'glowing drum to step. Club a zombie over the head to drop it for good. ') +
     'Follow the fading trail of ghost drums — march your drill and the horde marches theirs, ' +
     'but stray from the path and they come for you.');
   return true;
