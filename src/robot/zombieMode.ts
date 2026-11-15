@@ -80,6 +80,12 @@ let state: ZombieState | null = null;
 // Set by initZombieMode: the outbreak reuses the existing marcher POV system
 // (selection plus setMarcherPOVEnabled) — never a second camera follower.
 let povHooks: { start: (robot: TransformNode) => void; stop: () => void } | null = null;
+let initOptions: { scene: Scene; allowed: () => boolean; notify: (message: string) => void } | null = null;
+// A requested outbreak that could not start yet (typically the startup show
+// is still loading, so there are no clarinets to turn). The per-frame stage
+// keeps retrying while the toggle stays checked.
+let outbreakRequested = false;
+let waitNotified = false;
 
 export function isZombieModeActive(): boolean {
   return state !== null;
@@ -327,7 +333,40 @@ export function enableZombieMode(scene: Scene): string | null {
   return null;
 }
 
+// Starts the outbreak now when possible, and otherwise keeps the request
+// pending: the per-frame stage retries until the show (and its clarinets)
+// has loaded. The Settings toggle stays checked while a request waits, and
+// unchecking it cancels the request.
+export function requestZombieMode() {
+  if (!initOptions || state) return;
+  if (zombieModeToggle) zombieModeToggle.checked = true;
+  outbreakRequested = true;
+  waitNotified = false;
+  attemptRequestedOutbreak();
+}
+
+function attemptRequestedOutbreak() {
+  if (!outbreakRequested || state || !initOptions) return;
+  if (!initOptions.allowed()) {
+    outbreakRequested = false;
+    if (zombieModeToggle) zombieModeToggle.checked = false;
+    initOptions.notify('Finish football mode and release held marchers before unleashing the zombies.');
+    return;
+  }
+  const error = enableZombieMode(initOptions.scene);
+  if (!error) {
+    outbreakRequested = false;
+    return;
+  }
+  // Usually the startup show is still loading; keep waiting, but say so once.
+  if (!waitNotified) {
+    waitNotified = true;
+    initOptions.notify(`${error} Waiting for the show to load…`);
+  }
+}
+
 export function disableZombieMode() {
+  outbreakRequested = false;
   if (!state) return;
   const { scene, saved, eaten, infected, povStarted } = state;
   state = null;
@@ -349,7 +388,10 @@ export function disableZombieMode() {
 // and reverse playback stay exact. Replacing the show disposes every saved
 // robot, which simply ends the outbreak.
 export function updateZombieMode() {
-  if (!state) return;
+  if (!state) {
+    if (outbreakRequested) attemptRequestedOutbreak();
+    if (!state) return;
+  }
   if (state.saved.every(snapshot => snapshot.robot.isDisposed())) {
     state = null;
     if (zombieModeToggle) zombieModeToggle.checked = false;
@@ -385,26 +427,16 @@ export function initZombieMode(options: {
   stopPOV: () => void;
 }) {
   povHooks = { start: options.startPOV, stop: options.stopPOV };
+  initOptions = { scene: options.scene, allowed: options.allowed, notify: options.notify };
   const toggle = zombieModeToggle;
   if (!toggle) return;
   toggle.addEventListener('change', () => {
-    if (!toggle.checked) {
-      disableZombieMode();
-      return;
-    }
-    if (!options.allowed()) {
-      toggle.checked = false;
-      options.notify('Finish football mode and release held marchers before unleashing the zombies.');
-      return;
-    }
-    const error = enableZombieMode(options.scene);
-    if (error) {
-      toggle.checked = false;
-      options.notify(error);
-    }
+    if (toggle.checked) requestZombieMode();
+    else disableZombieMode();
   });
   options.scene.onDisposeObservable.addOnce(() => {
     state = null;
+    outbreakRequested = false;
     toggle.checked = false;
   });
 }

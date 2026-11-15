@@ -231,6 +231,36 @@ assert.equal(vm.runInContext('enableZombieMode(scene)', context), null);
 assert.equal(seeks.length, 2, 'A pending Play is never cancelled by the outbreak seek');
 playbackRequested = false;
 
+// A requested outbreak (toggle or VR button) waits for the show to load
+// instead of giving up, and a cancelled request never fires later.
+vm.runInContext('disableZombieMode()', context);
+const notices = [];
+context.__notify = message => notices.push(message);
+context.__allowed = () => true;
+vm.runInContext('initOptions = { scene, allowed: __allowed, notify: __notify };', context);
+zombieModeToggle.checked = false;
+snapshots = [];
+vm.runInContext('requestZombieMode()', context);
+assert.equal(zombieModeToggle.checked, true, 'A request checks the Settings toggle immediately');
+assert.equal(vm.runInContext('isZombieModeActive()', context), false, 'No band yet: the outbreak waits');
+assert.equal(notices.length, 1, 'The wait is reported once');
+vm.runInContext('updateZombieMode()', context);
+vm.runInContext('updateZombieMode()', context);
+assert.equal(notices.length, 1, 'Retries do not repeat the notice');
+snapshots = makeSnapshots();
+vm.runInContext('updateZombieMode()', context);
+assert.equal(vm.runInContext('isZombieModeActive()', context), true,
+  'The outbreak starts by itself once the show has loaded');
+vm.runInContext('disableZombieMode()', context);
+snapshots = [];
+vm.runInContext('requestZombieMode()', context);
+vm.runInContext('disableZombieMode()', context);
+snapshots = makeSnapshots();
+vm.runInContext('updateZombieMode()', context);
+assert.equal(vm.runInContext('isZombieModeActive()', context), false,
+  'Unchecking the toggle cancels a waiting request');
+vm.runInContext('enableZombieMode(scene)', context);
+
 // Replacing the show disposes the saved robots; the outbreak quietly ends.
 for (const robot of [clarinetRobot, tubaRobot, trumpetRobot, tromboneRobot]) robot.disposed = true;
 vm.runInContext('updateZombieMode()', context);

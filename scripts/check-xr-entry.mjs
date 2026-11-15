@@ -19,8 +19,7 @@ const button = () => ({ disabled: false, handlers: {},
   addEventListener(type, handler) { this.handlers[type] = handler; } });
 const enterVRButton = button(), enterARButton = button(), fullScaleVRButton = button();
 const vrZombieModeButton = button();
-const zombieModeToggle = { checked: false, clicks: 0,
-  click() { this.clicks++; this.checked = !this.checked; } };
+let zombieRequests = 0;
 const launches = [], builds = [], errors = [], scales = [];
 const supported = new Set(['immersive-vr', 'immersive-ar']);
 let disposed = 0;
@@ -35,7 +34,8 @@ const context = vm.createContext({
   setTimeout: (callback, delay) => { timers.set(++timerId, { callback, delay }); return timerId; },
   clearTimeout: id => timers.delete(id),
   scene: { onDisposeObservable: { addOnce: callback => { disposeTimer = callback; } } },
-  enterVRButton, enterARButton, fullScaleVRButton, vrZombieModeButton, zombieModeToggle, WebXRState: state,
+  enterVRButton, enterARButton, fullScaleVRButton, vrZombieModeButton,
+  requestZombieMode: () => { zombieRequests++; }, WebXRState: state,
   xrEntryStatus: { hidden: true, textContent: '' },
   xrModeInputs: [{ value: 'immersive-vr' }, { value: 'immersive-ar' }],
   console: { error: message => errors.push(message) },
@@ -137,21 +137,18 @@ await flush();
 assert.equal(launches.at(-1)[0], 'immersive-vr');
 assert.deepEqual(scales, [1], 'Full scale VR remains an explicit full-scale launch');
 await context.experience().baseExperience.exitXRAsync();
-// The browser zombie button enters VR first and only then flips the
-// ordinary outbreak toggle; a refused session never unleashes the horde.
+// The browser zombie button tries VR first, then always requests the
+// outbreak: in the headset when the session opened, on the desktop viewer
+// when VR is unavailable or refused.
 failEntry = true;
 vrZombieModeButton.handlers.click();
 await flush();
-assert.equal(zombieModeToggle.clicks, 0, 'A failed VR entry never starts the outbreak');
+assert.equal(zombieRequests, 1, 'A refused VR session still starts desktop zombie mode');
 failEntry = false;
 vrZombieModeButton.handlers.click();
 await flush();
 assert.equal(launches.at(-1)[0], 'immersive-vr', 'The zombie button enters immersive VR');
-assert.equal(zombieModeToggle.clicks, 1, 'The outbreak toggle flips once the session is live');
-assert.equal(zombieModeToggle.checked, true);
-vrZombieModeButton.handlers.click();
-await flush();
-assert.equal(zombieModeToggle.clicks, 1, 'An already-running outbreak is never toggled back off');
+assert.equal(zombieRequests, 2, 'The outbreak is requested after the session attempt settles');
 await context.experience().baseExperience.exitXRAsync();
 supported.delete('immersive-ar');
 await context.enterXRMode('immersive-ar');
