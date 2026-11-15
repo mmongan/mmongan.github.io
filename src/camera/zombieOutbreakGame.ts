@@ -216,6 +216,16 @@ let turnArrowMaterial: StandardMaterial | null = null;
 // with two quick presses. The sequence advances by a deterministic hash.
 const CALL_RIGHT_COLOR = '#ffc83d';
 const CALL_LEFT_COLOR = '#4fd9e0';
+// The future footsteps: flat sole prints on the turf at each upcoming
+// count of the drill — cyan left, gold right, the same left/right color
+// language as the sticks and rings (odd counts land the left foot, as
+// drill steps off on the left) — fading as they reach into the future.
+// A count with no travel (a hold) leaves no print. They share the ghost
+// trail's lifecycle and parent, so tabletop transforms carry them.
+const FUTURE_FOOTPRINTS = 16;
+const FOOT_OFFSET_YARDS = 0.12;
+const FOOTPRINT_MIN_TRAVEL_YARDS = 0.05;
+let footprints: { mesh: Mesh; material: StandardMaterial }[] = [];
 export const DOUBLE_WINDOW_MS = 300;
 interface CallHalf { zone: number; hand: 'left' | 'right' }
 let currentCall: CallHalf[] = [{ zone: 1, hand: 'right' }];
@@ -746,6 +756,21 @@ function createGhostDrums(parent: TransformNode | null) {
   guideGhost.isPickable = false;
   guideGhost.material = guideGhostMaterial;
   guideGhost.parent = parent;
+  for (let index = 0; index < FUTURE_FOOTPRINTS; index++) {
+    const material = new StandardMaterial(`zombieFootprintMaterial${index}`, scene);
+    material.disableLighting = true;
+    material.alpha = 0;
+    const mesh = MeshBuilder.CreateDisc(`zombieFootprint${index}`, {
+      radius: 0.15, tessellation: 16, sideOrientation: Mesh.DOUBLESIDE,
+    }, scene);
+    mesh.rotation.x = Math.PI / 2;
+    mesh.scaling.set(0.55, 1.1, 1);
+    mesh.isPickable = false;
+    mesh.material = material;
+    mesh.parent = parent;
+    mesh.setEnabled(false);
+    footprints.push({ mesh, material });
+  }
 }
 
 function clearGhostDrums() {
@@ -761,6 +786,8 @@ function clearGhostDrums() {
   guideGhost = null;
   guideGhostMaterial?.dispose();
   guideGhostMaterial = null;
+  footprints.forEach(({ mesh, material }) => { mesh.dispose(); material.dispose(); });
+  footprints = [];
 }
 
 // The brass cure: a cured marcher — a hunting zombie that ran into a
@@ -1067,6 +1094,33 @@ function update() {
     }
   }
   if (beatGhostMaterial) beatGhostMaterial.alpha = 0.3 + 0.45 * beatSwell;
+  // The future footsteps: one sole print per upcoming count, alternating
+  // feet (odd counts left, stepping off on the left), set just off the
+  // route's centreline across the direction of travel and turned to face
+  // it, fading into the future. The nearest print swells with the beat —
+  // it is where the next strike's step lands. Holds leave no prints.
+  footprints.forEach((print, index) => {
+    if (print.mesh.isDisposed()) return;
+    const at = Math.floor(gameCount) + 1 + index;
+    const pose = at <= lastScheduledCount ? sampleSchedule(playerSchedule, at) : null;
+    const previous = pose ? sampleSchedule(playerSchedule, at - 1) : null;
+    const travel = pose && previous ? pose.position.subtract(previous.position) : null;
+    if (travel) travel.y = 0;
+    const stepping = !!travel && travel.length() > FOOTPRINT_MIN_TRAVEL_YARDS;
+    print.mesh.setEnabled(stepping);
+    if (!stepping || !pose || !travel) return;
+    const heading = Math.atan2(travel.x, travel.z);
+    const left = at % 2 === 1;
+    const lateral = (left ? 1 : -1) * FOOT_OFFSET_YARDS;
+    print.mesh.position.set(
+      pose.position.x - Math.cos(heading) * lateral,
+      pose.position.y + 0.02,
+      pose.position.z + Math.sin(heading) * lateral);
+    print.mesh.rotation.y = heading;
+    print.material.emissiveColor = Color3.FromHexString(left ? CALL_LEFT_COLOR : CALL_RIGHT_COLOR);
+    print.material.alpha = Math.max(0.06, 0.5 * (1 - index / FUTURE_FOOTPRINTS)) +
+      (index === 0 ? 0.25 * beatSwell : 0);
+  });
   // Strayed past the alignment radius, the trail can be anywhere — even
   // behind the player. The guide ghost closes the gap: it stands a few
   // yards out in the exact direction of the current drill spot, so some
