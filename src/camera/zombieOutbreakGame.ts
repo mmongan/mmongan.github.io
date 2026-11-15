@@ -504,6 +504,8 @@ function checkDrumHits(now: number) {
   playerHorn.computeWorldMatrix(true);
   const hornMatrix = playerHorn.getWorldMatrix();
   for (const [handedness, { grip }] of sticks) {
+    // The hand holding the drum handle is adjusting, not drumming.
+    if (handedness === handleGrabHand) continue;
     grip.computeWorldMatrix(true);
     const tip = Vector3.TransformCoordinates(new Vector3(0, 0, STICK_LENGTH), grip.getWorldMatrix());
     for (let index = 0; index < DRUM_ZONES.length; index++) {
@@ -679,6 +681,16 @@ function createGhostDrums(parent: TransformNode | null) {
   beatGhost.isPickable = false;
   beatGhost.material = beatGhostMaterial;
   beatGhost.parent = parent;
+  guideGhostMaterial = new StandardMaterial('zombieGuideGhostMaterial', scene);
+  guideGhostMaterial.emissiveColor = Color3.FromHexString('#b9f3ff');
+  guideGhostMaterial.disableLighting = true;
+  guideGhostMaterial.alpha = 0.55;
+  guideGhost = template.clone('zombieGuideGhost', null) as Mesh;
+  guideGhost.setEnabled(false);
+  guideGhost.isVisible = true;
+  guideGhost.isPickable = false;
+  guideGhost.material = guideGhostMaterial;
+  guideGhost.parent = parent;
 }
 
 function clearGhostDrums() {
@@ -690,6 +702,10 @@ function clearGhostDrums() {
   beatGhost = null;
   beatGhostMaterial?.dispose();
   beatGhostMaterial = null;
+  guideGhost?.dispose();
+  guideGhost = null;
+  guideGhostMaterial?.dispose();
+  guideGhostMaterial = null;
 }
 
 // The brass cure: a cured marcher — a hunting zombie that ran into a
@@ -761,7 +777,8 @@ function checkStickBonks(now: number) {
   const parent = player.robot.parent;
   if (!(parent instanceof TransformNode) || sticks.size === 0) return;
   const inverse = Matrix.Invert(parent.getWorldMatrix());
-  for (const { grip } of sticks.values()) {
+  for (const [handedness, { grip }] of sticks) {
+    if (handedness === handleGrabHand) continue;
     grip.computeWorldMatrix(true);
     const tip = Vector3.TransformCoordinates(Vector3.TransformCoordinates(
       new Vector3(0, 0, STICK_LENGTH), grip.getWorldMatrix()), inverse);
@@ -848,10 +865,16 @@ function stopGame(message?: string) {
     }
     setRobotHeld(robot, false);
   };
+  clearDrumHandle();
   if (playerHorn && !playerHorn.isDisposed() && playerHornHome) {
     playerHorn.position.copyFrom(playerHornHome);
+    if (playerHornHomeRotation) {
+      playerHorn.rotationQuaternion = null;
+      playerHorn.rotation.copyFrom(playerHornHomeRotation);
+    }
   }
   playerHornHome = null;
+  playerHornHomeRotation = null;
   if (player) release(player.robot, undefined);
   for (const { robot } of chasers) release(robot, savedColors.get(robot));
   for (const victim of victims) release(victim.robot, victim.color);
@@ -895,6 +918,8 @@ function update() {
       sticks.delete(handedness);
     }
   }
+  updateDrumHandle(controllers);
+  updateStickColors();
   checkDrumHits(now);
   checkStickBonks(now);
   const deltaSeconds = Math.min(0.1, scene.getEngine().getDeltaTime() / 1000);
@@ -986,6 +1011,25 @@ function update() {
     }
   }
   if (beatGhostMaterial) beatGhostMaterial.alpha = 0.3 + 0.45 * beatSwell;
+  // Strayed past the alignment radius, the trail can be anywhere — even
+  // behind the player. The guide ghost closes the gap: it stands a few
+  // yards out in the exact direction of the current drill spot, so some
+  // turn always finds a ghost drum, and it keeps leading the walk back
+  // until the trail takes over. On the path it stands down.
+  if (guideGhost && !guideGhost.isDisposed()) {
+    const toSpot = ghostPose ? ghostPose.position.subtract(playerPosition) : null;
+    if (toSpot) toSpot.y = 0;
+    const gap = toSpot ? toSpot.length() : 0;
+    const leading = !!toSpot && gap > DRILL_ALIGN_YARDS;
+    guideGhost.setEnabled(leading);
+    if (leading && toSpot) {
+      const direction = toSpot.scale(1 / gap);
+      guideGhost.position.copyFrom(playerPosition)
+        .addInPlace(direction.scale(Math.min(GUIDE_GHOST_LEAD_YARDS, gap)));
+      guideGhost.rotation.y = Math.atan2(direction.x, direction.z);
+      if (guideGhostMaterial) guideGhostMaterial.alpha = 0.4 + 0.3 * beatSwell;
+    }
+  }
   // Aligned with the ghost, the horde holds formation; strayed, it hunts.
   onDrill = !ghostPose || Vector3.Distance(playerPosition, ghostPose.position) <= DRILL_ALIGN_YARDS;
   if (ghostPose && lastScheduledCount >= 1 && gameCount >= lastScheduledCount && onDrill) {
@@ -1112,8 +1156,10 @@ function tryStartGame(force = false): ZombieGameStart {
   playerHorn = quad.robot.getChildMeshes(false).find(mesh => mesh.name === 'marcherHorn') as Mesh ?? null;
   if (playerHorn) {
     playerHornHome = playerHorn.position.clone();
+    playerHornHomeRotation = playerHorn.rotation.clone();
     playerHorn.position.z += PLAYER_DRUM_FORWARD;
     playerHorn.position.y += PLAYER_DRUM_RAISE;
+    createDrumHandle();
   }
   player = { robot: quad.robot, heading: quad.robot.rotation.y, stridePhase: 0 };
   setRobotHeld(quad.robot, true);

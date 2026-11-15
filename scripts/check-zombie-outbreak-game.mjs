@@ -89,6 +89,7 @@ const context = vm.createContext({
   Matrix, TargetCamera, Vector3, Color3, Mesh, MeshBuilder, StandardMaterial, TransformNode, scene,
   performance: { now: () => fakeNow },
   getActiveControllers: () => controllers,
+  isGripPressed: controller => !!controller.squeezePressed,
   setSceneManipulationLocked: value => { locked = value; },
   getARScale: () => 1, getARScaleRange: () => ({ min: 1 / 120, max: 1 }),
   animateHeldMarcherWalk: (robot, phase, amplitude) => walks.push({ robot, phase, amplitude }),
@@ -214,6 +215,25 @@ assert.ok(Math.abs(beatGhost.position.z - 10.625) < 1e-6,
 assert.ok(vm.runInContext(
   'Math.abs(targetMarkers[0].material.alpha - (0.22 + 0.68 * (gameCount % 1) ** 3)) < 1e-9', context),
 'The ring pulse is locked to the ghost cadence beat');
+
+// Strayed, a guide ghost stands a few yards from the player in the exact
+// direction of the drill spot — some turn always finds it — and leads
+// the walk back; on the path it stands down and the trail leads.
+const guideGhost = scene.meshes.find(mesh => mesh.name === 'zombieGuideGhost');
+assert.ok(guideGhost && !guideGhost.isEnabled(), 'Aligned, no guide ghost is needed');
+const quadHome = quad.position.clone();
+quad.position.set(-9, 0, 10);
+fakeNow = 650;
+vm.runInContext('update()', context);
+assert.ok(guideGhost.isEnabled(), 'Strayed off the path, a guide ghost appears');
+assert.ok(Math.abs(guideGhost.position.x - -6) < 0.5 && Math.abs(guideGhost.position.z - 10) < 0.5,
+  'The guide ghost stands three yards from the player, toward the drill spot');
+assert.ok(Math.abs(guideGhost.rotation.y - Math.PI / 2) < 0.1,
+  'The guide ghost faces the way back to the drill');
+quad.position.copyFrom(quadHome);
+fakeNow = 700;
+vm.runInContext('update()', context);
+assert.ok(!guideGhost.isEnabled(), 'Back on the path, the guide ghost stands down');
 
 // The call and the march: the facing steers (the camera is the rudder),
 // drums only play the calls, and only the glowing called drum takes a
