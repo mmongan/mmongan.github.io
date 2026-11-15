@@ -24,7 +24,7 @@
 // instrument poses, and upright roots. Nothing here touches authored routes,
 // counts, or saves.
 
-import { Matrix, Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
+import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
 import { TargetCamera } from '@babylonjs/core/Cameras/targetCamera.pure';
 import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
 import { Mesh } from '@babylonjs/core/Meshes/mesh.pure';
@@ -32,7 +32,7 @@ import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
 import { scene } from '../scene/engine';
-import { getActiveControllers, setSceneManipulationLocked } from '../interaction/controllers';
+import { getActiveControllers, isGripPressed, setSceneManipulationLocked } from '../interaction/controllers';
 import { getARScale, getARScaleRange } from '../xr/ar';
 import {
   animateHeldMarcherWalk, captureMarcherSchedules, createPresentationMarcher, getDrillTransportState,
@@ -104,6 +104,14 @@ const HIT_COOLDOWN_MS = 200;
 // follow the horn's matrix automatically.
 export const PLAYER_DRUM_FORWARD = 0.16;
 export const PLAYER_DRUM_RAISE = 0.22;
+// A short grab bar on the near rail of the quads: squeezing a controller
+// grip on it (a fresh squeeze, so resting fingers mid-drumming never
+// grab) glues the whole carriage to that hand — drag and tilt it into any
+// pose over the default game mount, with the rings and strike zones
+// riding along. The grabbing hand's stick plays nothing until it lets go,
+// the adjusted pose keeps swinging with the marcher's facing, and game
+// over still restores the parade mount.
+export const DRUM_HANDLE_GRAB_YARDS = 0.11;
 // Each correct (called) hit takes one marching stride toward the facing,
 // played out at step speed. Chained calls approach 3.75 yd/s — just ahead
 // of the horde — while a silent drummer stands still and is caught.
@@ -144,8 +152,9 @@ let callbacks: GameCallbacks | null = null;
 let active = false;
 let player: Runner | null = null;
 let playerHorn: Mesh | null = null;
-// The horn's parade-mount position, restored when the game ends.
+// The horn's parade-mount pose, restored when the game ends.
 let playerHornHome: Vector3 | null = null;
+let playerHornHomeRotation: Vector3 | null = null;
 let chasers: Runner[] = [];
 let victims: Victim[] = [];
 let bystanders: TransformNode[] = [];
@@ -178,6 +187,14 @@ let ghostMaterials: StandardMaterial[] = [];
 // lands. Its glow swells with the same beat pulse as the called rings.
 let beatGhost: Mesh | null = null;
 let beatGhostMaterial: StandardMaterial | null = null;
+// The guide ghost: once the player strays past the alignment radius the
+// trail can be anywhere, even behind them. This brighter ghost drum
+// stands a few yards from the player in the exact direction of the
+// current drill spot — so turning in place always finds a ghost pointing
+// the way — and keeps leading until the trail takes over again.
+export const GUIDE_GHOST_LEAD_YARDS = 3;
+let guideGhost: Mesh | null = null;
+let guideGhostMaterial: StandardMaterial | null = null;
 // The called drum: a glowing ring marks the one drum whose strike buys the
 // escape sprint. Any drum steers; only the call grants speed. The next call
 // advances by a deterministic hash of the hit count (never Math.random),
@@ -201,8 +218,16 @@ const lastHitByHand = { left: 0, right: 0, any: 0 };
 // half-beat off. Starts neutral.
 let strikePrecision = 0.5;
 let targetMarkers: { mesh: Mesh; material: StandardMaterial; dimmed: boolean; baseScale: number }[] = [];
-let stickMaterial: StandardMaterial | null = null;
 const sticks = new Map<string, DrumStick>();
+// Plain hickory, worn whenever a stick's hand has no outstanding call.
+const STICK_NEUTRAL_DIFFUSE = Color3.FromHexString('#d8ad67');
+const STICK_NEUTRAL_EMISSIVE = Color3.FromHexString('#392511');
+let drumHandle: Mesh | null = null;
+let drumHandleMaterial: StandardMaterial | null = null;
+let handleGrabHand: string | null = null;
+let handleHornFromGrip: Matrix | null = null;
+// Last frame's squeeze state per hand, so only a fresh squeeze grabs.
+const squeezeWasPressed = new Map<string, boolean>();
 let referees: Referee[] = [];
 let stripeMaterial: StandardMaterial | null = null;
 let burstMaterial: StandardMaterial | null = null;

@@ -148,7 +148,7 @@ function resetSingleControllerMove() {
   singleControllerMove = null;
 }
 
-function isGripPressed(controller: WebXRInputSource): boolean {
+export function isGripPressed(controller: WebXRInputSource): boolean {
   const motionController = controller.motionController;
   if (!motionController) return false;
   const squeeze = motionController.getComponentOfType('squeeze');
