@@ -230,10 +230,17 @@ assert.ok(Math.abs(guideGhost.position.x - -6) < 0.5 && Math.abs(guideGhost.posi
   'The guide ghost stands three yards from the player, toward the drill spot');
 assert.ok(Math.abs(guideGhost.rotation.y - Math.PI / 2) < 0.1,
   'The guide ghost faces the way back to the drill');
+// Facing away from the drill, a floating arrow ahead of the face points
+// the way to turn back to the path.
+const turnArrow = scene.transformNodes.find(node => node.name === 'zombieTurnArrow');
+assert.ok(turnArrow.isEnabled(), 'Facing away from the drill, a floating turn arrow appears');
+assert.ok(Math.abs(turnArrow.rotation.y - Math.PI / 2) < 0.1,
+  'The arrow points the turn back toward the drill path');
 quad.position.copyFrom(quadHome);
 fakeNow = 700;
 vm.runInContext('update()', context);
 assert.ok(!guideGhost.isEnabled(), 'Back on the path, the guide ghost stands down');
+assert.ok(!turnArrow.isEnabled(), 'Facing along the drill, the arrow rests');
 
 // The call and the march: the facing steers (the camera is the rudder),
 // drums only play the calls, and only the glowing called drum takes a
@@ -319,6 +326,8 @@ placeGripOnZone(new Vector3(-0.115, 0.88, 0.42));
 vm.runInContext('update()', context);
 assert.ok(vm.runInContext('stepDistanceLeft', context) > 0.75,
   'A completed double stop pays two strides');
+assert.ok(vm.runInContext('stepDistanceLeft', context) <= 1.5 + 1e-9,
+  'One distinct hit per step: strikes never bank distance beyond the call');
 const leftStick = scene.meshes.find(mesh => mesh.name === 'zombieOutbreakStick-left');
 assert.ok(leftStick.material.emissiveColor.b > 0.3,
   "The left stick wears the call's cyan while its half is outstanding");
@@ -332,10 +341,6 @@ vm.runInContext('stepDistanceLeft = 0', context);
 // the new pose riding the marcher.
 const handle = scene.meshes.find(mesh => mesh.name === 'zombieOutbreakDrumHandle');
 assert.ok(handle && handle.parent === playerHornMesh, 'A grab handle rides the drum carriage');
-// Let the heading settle on the new look before grabbing, so the test
-// exercises the drag itself rather than a body turn folding in.
-fakeNow += 100;
-vm.runInContext('update()', context);
 grip.rotation.set(0, 0, 0);
 handle.computeWorldMatrix(true);
 grip.position.copyFrom(handle.getAbsolutePosition());
@@ -349,8 +354,11 @@ grip.position.y += 0.3;
 grip.rotation.x = 0.4;
 fakeNow += 100;
 vm.runInContext('update()', context);
-assert.ok(playerHornMesh.position.y > hornLift + 0.2, 'Dragging the handle repositions the drums');
-assert.ok(Math.abs(playerHornMesh.rotation.x - 0.4) < 0.05, 'Twisting the handle tilts the drums');
+assert.ok(Math.abs(playerHornMesh.position.y - (hornLift + 0.3)) < 1e-6,
+  'Raising the handle raises the drums with the hand');
+assert.ok(Math.abs(playerHornMesh.rotation.x - 0.4) < 1e-6, 'Pitching the wrist tilts the drums');
+assert.ok(Math.abs(playerHornMesh.position.z - 0.16) < 1e-9 && playerHornMesh.rotation.y === 0,
+  'The grab adjusts only height and tilt: forward offset and yaw hold');
 assert.equal(vm.runInContext('stepDistanceLeft', context), 0,
   'The adjusting hand strikes nothing');
 grip.position.y += 5;
@@ -515,6 +523,8 @@ assert.equal(playerHornMesh.position.y, 0, 'The raised drums lower back to the p
 assert.equal(playerHornMesh.rotation.x, 0, 'The tilted drums level back to the parade mount');
 assert.ok(!scene.meshes.some(mesh => mesh.name === 'zombieOutbreakDrumHandle' && !mesh.isDisposed()),
   'The grab handle is disposed with the game');
+assert.ok(!scene.transformNodes.some(node => node.name === 'zombieTurnArrow'),
+  'The turn arrow is disposed with the game');
 assert.equal(flute.rotation.x, 0, 'The fallen stand back up');
 assert.ok(colors.get(clarinet).b > colors.get(clarinet).g, 'Clarinet uniforms are restored');
 assert.ok(poseSets.filter(entry => entry.pose === 'playing').length >= 2, 'Instrument poses restore');
@@ -563,8 +573,8 @@ scene.activeCamera = null;
 scene.dispose();
 engine.dispose();
 console.log('Zombie outbreak game checks passed: VR/quad gating with cinematic fallback, ' +
-  'fading ghost-drum trail on the captured schedule, the strayed-player guide ghost, look-steered marching with the drums ' +
-  'swinging to the facing, the squeeze-grab drum handle, call-colored sticks, ' +
+  'fading ghost-drum trail on the captured schedule, the strayed-player guide ghost, the turn arrow, look-steered marching with the drums ' +
+  'swinging to the facing, the height/tilt drum handle, call-colored sticks, one-hit-one-step marching, ' +
   'hand-colored call enforcement with double-stop pairs, called-drum steps with per-hand cooldowns, ' +
   'zombify/restore of skin and ' +
   'face, head-bonk felling, corpse trips and trumpet corpse revival, formation-vs-hunt by ' +
