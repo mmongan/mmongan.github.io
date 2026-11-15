@@ -361,6 +361,10 @@ vm.runInContext('stepDistanceLeft = 0', context);
 // the new pose riding the marcher.
 const handle = scene.meshes.find(mesh => mesh.name === 'zombieOutbreakDrumHandle');
 assert.ok(handle && handle.parent === playerHornMesh, 'A grab handle rides the drum carriage');
+// Settle the heading on the new look first, so the drag asserts exercise
+// the hand motion alone in a steady body frame.
+fakeNow += 100;
+vm.runInContext('update()', context);
 grip.rotation.set(0, 0, 0);
 handle.computeWorldMatrix(true);
 grip.position.copyFrom(handle.getAbsolutePosition());
@@ -369,16 +373,19 @@ fakeNow += 300;
 vm.runInContext('update()', context);
 assert.equal(vm.runInContext('handleGrabHand', context), 'right',
   'A fresh squeeze on the bar grabs the carriage');
-const hornLift = playerHornMesh.position.y;
+const hornMount = playerHornMesh.position.clone();
 grip.position.y += 0.3;
+grip.position.x += 0.2;
+grip.position.z -= 0.1;
 grip.rotation.x = 0.4;
 fakeNow += 100;
 vm.runInContext('update()', context);
-assert.ok(Math.abs(playerHornMesh.position.y - (hornLift + 0.3)) < 1e-6,
-  'Raising the handle raises the drums with the hand');
+assert.ok(Math.abs(playerHornMesh.position.y - (hornMount.y + 0.3)) < 1e-6 &&
+  Math.abs(playerHornMesh.position.x - (hornMount.x + 0.2)) < 1e-6 &&
+  Math.abs(playerHornMesh.position.z - (hornMount.z - 0.1)) < 1e-6,
+'The hand drags the drums freely in all three axes, relative to the view');
 assert.ok(Math.abs(playerHornMesh.rotation.x - 0.4) < 1e-6, 'Pitching the wrist tilts the drums');
-assert.ok(Math.abs(playerHornMesh.position.z - 0.16) < 1e-9 && playerHornMesh.rotation.y === 0,
-  'The grab adjusts only height and tilt: forward offset and yaw hold');
+assert.equal(playerHornMesh.rotation.y, 0, 'The drums stay yaw-squared to the facing');
 assert.equal(vm.runInContext('stepDistanceLeft', context), 0,
   'The adjusting hand strikes nothing');
 grip.position.y += 5;
@@ -596,7 +603,7 @@ scene.dispose();
 engine.dispose();
 console.log('Zombie outbreak game checks passed: VR/quad gating with cinematic fallback, ' +
   'fading ghost-drum trail on the captured schedule, fading future footsteps, the strayed-player guide ghost, the turn arrow, look-steered marching with the drums ' +
-  'swinging to the facing, the height/tilt drum handle, call-colored sticks, one-hit-one-step marching, ' +
+  'swinging to the facing, the free-position drum handle, call-colored sticks, one-hit-one-step marching, ' +
   'hand-colored call enforcement with double-stop pairs, called-drum steps with per-hand cooldowns, ' +
   'zombify/restore of skin and ' +
   'face, head-bonk felling, corpse trips and trumpet corpse revival, formation-vs-hunt by ' +

@@ -421,28 +421,39 @@ function gripPitch(grip: TransformNode): number {
   return Math.atan2(-forward.y, Math.max(1e-6, Math.hypot(forward.x, forward.z)));
 }
 
+// The grip's position in the marcher's body frame — the frame the horn
+// is mounted in, which tracks the camera's look. Dragging in this frame
+// makes the racked pose view-relative.
+function gripInBodyFrame(grip: TransformNode, parent: TransformNode): Vector3 {
+  grip.computeWorldMatrix(true);
+  return Vector3.TransformCoordinates(
+    grip.getAbsolutePosition(), Matrix.Invert(parent.computeWorldMatrix(true)));
+}
+
 // Manual drum placement: a fresh squeeze with the grip on the handle puts
-// the carriage's height and tilt in that hand. Only the vertical motion
-// and the wrist pitch apply — the horn keeps the mount's forward offset
-// and yaw, so the drums stay squarely in front and keep swinging with the
-// look-steered body — and releasing leaves the new height and tilt as the
-// horn's local mount.
+// the carriage in that hand. The hand's motion drags the horn's mount
+// freely in all three axes of the body frame (so the pose stays put
+// relative to the view through every turn), the wrist pitch tilts the
+// heads, and yaw stays squared to the facing. Releasing leaves the new
+// mount in place.
 function updateDrumHandle(controllers: ReturnType<typeof getActiveControllers>) {
   if (!drumHandle || drumHandle.isDisposed() || !playerHorn || playerHorn.isDisposed()) return;
+  const parent = playerHorn.parent;
   if (handleGrabHand !== null) {
     const controller = controllers.get(handleGrabHand);
-    if (!controller?.grip || !isGripPressed(controller) || !handleGrabStart) {
+    if (!controller?.grip || !isGripPressed(controller) || !handleGrabStart ||
+      !(parent instanceof TransformNode)) {
       handleGrabHand = null;
       handleGrabStart = null;
     } else {
-      controller.grip.computeWorldMatrix(true);
+      const gripLocal = gripInBodyFrame(controller.grip, parent);
       playerHorn.rotationQuaternion = null;
-      playerHorn.position.y =
-        handleGrabStart.hornY + (controller.grip.getAbsolutePosition().y - handleGrabStart.gripY);
+      playerHorn.position.copyFrom(handleGrabStart.hornPosition)
+        .addInPlace(gripLocal.subtract(handleGrabStart.gripLocal));
       playerHorn.rotation.x =
         handleGrabStart.hornPitch + (gripPitch(controller.grip) - handleGrabStart.gripPitch);
     }
-  } else {
+  } else if (parent instanceof TransformNode) {
     drumHandle.computeWorldMatrix(true);
     const handleCenter = drumHandle.getAbsolutePosition();
     for (const [handedness, controller] of controllers) {
@@ -452,9 +463,9 @@ function updateDrumHandle(controllers: ReturnType<typeof getActiveControllers>) 
         DRUM_HANDLE_GRAB_YARDS) continue;
       handleGrabHand = handedness;
       handleGrabStart = {
-        gripY: controller.grip.getAbsolutePosition().y,
+        gripLocal: gripInBodyFrame(controller.grip, parent),
         gripPitch: gripPitch(controller.grip),
-        hornY: playerHorn.position.y,
+        hornPosition: playerHorn.position.clone(),
         hornPitch: playerHorn.rotation.x,
       };
       break;
