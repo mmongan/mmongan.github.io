@@ -104,17 +104,18 @@ const HIT_COOLDOWN_MS = 200;
 // follow the horn's matrix automatically.
 export const PLAYER_DRUM_FORWARD = 0.16;
 export const PLAYER_DRUM_RAISE = 0.22;
-// A short grab bar on the near rail of the quads: squeezing a controller
-// grip on it (a fresh squeeze, so resting fingers mid-drumming never
-// grab) puts the carriage in that hand — the hand's motion drags the
-// drums freely in all three axes, pitching the wrist tilts the heads,
-// and the rings and strike zones ride along. The drag works in the
-// marcher's body frame, which tracks the camera's look, so the pose is
-// relative to the view: wherever you rack them, they stay there in front
-// of you through every turn, with yaw kept squared to the facing. The
-// grabbing hand's stick plays nothing until it lets go, and game over
-// still restores the parade mount.
-export const DRUM_HANDLE_GRAB_YARDS = 0.11;
+// A grab bar on the near rail of the quads: holding a controller squeeze
+// with the grip near the bar grabs the carriage — no precise timing, a
+// squeeze held while reaching in works — and puts it in that hand. The
+// hand's motion drags the drums freely in all three axes, pitching the
+// wrist tilts the heads, and the rings and strike zones ride along. The
+// drag works in the marcher's body frame, which tracks the camera's
+// look, so the pose is relative to the view: wherever you rack them,
+// they stay there in front of you through every turn, with yaw kept
+// squared to the facing. The grabbing hand's stick plays nothing until
+// it lets go, and game over still restores the parade mount. Drum
+// strikes never involve the squeeze, so drumming cannot grab.
+export const DRUM_HANDLE_GRAB_YARDS = 0.2;
 // Each correct (called) hit takes one marching stride toward the facing,
 // played out at step speed. Chained calls approach 3.75 yd/s — just ahead
 // of the horde — while a silent drummer stands still and is caught.
@@ -251,8 +252,6 @@ let handleGrabHand: string | null = null;
 let handleGrabStart: {
   gripLocal: Vector3; gripPitch: number; hornPosition: Vector3; hornPitch: number;
 } | null = null;
-// Last frame's squeeze state per hand, so only a fresh squeeze grabs.
-const squeezeWasPressed = new Map<string, boolean>();
 let referees: Referee[] = [];
 let stripeMaterial: StandardMaterial | null = null;
 let burstMaterial: StandardMaterial | null = null;
@@ -395,7 +394,7 @@ function createDrumHandle() {
   drumHandleMaterial.diffuseColor = Color3.FromHexString('#d8ad67');
   drumHandleMaterial.emissiveColor = Color3.FromHexString('#392511');
   drumHandle = MeshBuilder.CreateCylinder('zombieOutbreakDrumHandle', {
-    height: 0.14, diameter: 0.026, tessellation: 10,
+    height: 0.2, diameter: 0.035, tessellation: 10,
   }, scene);
   drumHandle.parent = playerHorn;
   drumHandle.rotation.z = Math.PI / 2;
@@ -411,7 +410,6 @@ function clearDrumHandle() {
   drumHandleMaterial = null;
   handleGrabHand = null;
   handleGrabStart = null;
-  squeezeWasPressed.clear();
 }
 
 // The pitch of the grip's forward direction above or below the horizon:
@@ -430,8 +428,9 @@ function gripInBodyFrame(grip: TransformNode, parent: TransformNode): Vector3 {
     grip.getAbsolutePosition(), Matrix.Invert(parent.computeWorldMatrix(true)));
 }
 
-// Manual drum placement: a fresh squeeze with the grip on the handle puts
-// the carriage in that hand. The hand's motion drags the horn's mount
+// Manual drum placement: a squeeze held with the grip near the handle —
+// whether pressed on the bar or on the way in — puts the carriage in
+// that hand. The hand's motion drags the horn's mount
 // freely in all three axes of the body frame (so the pose stays put
 // relative to the view through every turn), the wrist pitch tilts the
 // heads, and yaw stays squared to the facing. Releasing leaves the new
@@ -457,7 +456,7 @@ function updateDrumHandle(controllers: ReturnType<typeof getActiveControllers>) 
     drumHandle.computeWorldMatrix(true);
     const handleCenter = drumHandle.getAbsolutePosition();
     for (const [handedness, controller] of controllers) {
-      if (!controller.grip || !isGripPressed(controller) || squeezeWasPressed.get(handedness)) continue;
+      if (!controller.grip || !isGripPressed(controller)) continue;
       controller.grip.computeWorldMatrix(true);
       if (Vector3.Distance(controller.grip.getAbsolutePosition(), handleCenter) >
         DRUM_HANDLE_GRAB_YARDS) continue;
@@ -470,9 +469,6 @@ function updateDrumHandle(controllers: ReturnType<typeof getActiveControllers>) 
       };
       break;
     }
-  }
-  for (const [handedness, controller] of controllers) {
-    squeezeWasPressed.set(handedness, isGripPressed(controller));
   }
   if (drumHandleMaterial) {
     drumHandleMaterial.emissiveColor = Color3.FromHexString(
