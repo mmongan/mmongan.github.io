@@ -668,7 +668,7 @@ Route-only data occupies 16 bytes per count; baked data occupies 104 bytes per c
 
 ## Outbreak! — zombie survival game
 
-You are the quad (tenors) drummer, seen in first person through marcher POV, and the zombie clarinets are after *you*. The drill is the course: march your own show while the horde marches theirs, and survive to the final count. The whole game is session-only — stopping it (or losing) restores every schedule, uniform, and pose exactly as they were.
+You are the quad (tenors) drummer, seen in first person through marcher POV — your marcher's own head and arms are hidden, because your real hands and their controller drumsticks take their place — and the zombie clarinets are after *you*. The drill is the course: march your own show while the horde marches theirs, and survive to the final count. The whole game is session-only — stopping it (or losing) restores every schedule, uniform, and pose exactly as they were.
 
 ### Starting a run
 

@@ -12,10 +12,13 @@ const TOP_DOWN_LAYER = 0x10000000;
 // Only the followed performer's head stays hidden in POV: it surrounds the
 // eye point and would fill the view. The jacket, arms, gloves, legs, shoes
 // and instrument remain visible, so looking down shows your own robot body.
-// Marchers: `marcherTrim` is the merged neck/head/shako/plume, plus eyes.
+// Marchers: `marcherTrim` is the merged neck/head/shako/plume, plus eyes,
+// and the arms/gloves are hidden too — in VR your real hands (and their
+// controller drumsticks) stand in for the marcher's, so the marcher's own
+// animated arms would fight them.
 // Football players: neck/face/helmet/nose/eyes and the floating role plate.
 const SELF_HEAD_MESH =
-  /^(marcherTrim|robotEyes|marcherFaceSkin|marcherZombieTrim|marcherZombieFace)$|^football-(neck|face|helmet|stripe|jaw|mask|nose|eye-white|iris|pupil|brow|mouth|role)-/;
+  /^(marcherTrim|robotEyes|marcherFaceSkin|marcherZombieTrim|marcherZombieFace|marcherUpperArm|marcherForearm|marcherHand)$|^football-(neck|face|helmet|stripe|jaw|mask|nose|eye-white|iris|pupil|brow|mouth|role)-/;
 
 function isPOVSelfHiddenMesh(mesh: AbstractMesh): boolean {
   return SELF_HEAD_MESH.test(mesh.name);
