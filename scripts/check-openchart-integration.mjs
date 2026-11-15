@@ -58,7 +58,7 @@ const context = vm.createContext({
   clearAllRobots: () => { cleared++; robots.length = 0; context.robotPaths.clear(); },
   forgetOtherChartPageGuides() {},
   createLowPolyRobot: (_scene, gaitIndex = 0) => {
-    const robot = { instrument: selected, gaitIndex, instrumentRestPose: false, color: bandColor, stepSizeYards: 0.625 };
+    const robot = { instrument: selected, gaitIndex, instrumentPose: 'playing', color: bandColor, stepSizeYards: 0.625 };
     robots.push(robot);
     return robot;
   },
@@ -97,7 +97,7 @@ const context = vm.createContext({
         legYawOffset: 0, inPlace: false, sideways: false, label: 'Auto',
       } : count.bakedGait,
     })),
-    instrument: robot.instrument, gaitIndex: robot.gaitIndex, instrumentRestPose: robot.instrumentRestPose,
+    instrument: robot.instrument, gaitIndex: robot.gaitIndex, instrumentPose: robot.instrumentPose,
     color: robot.color, stepSizeYards: robot.stepSizeYards, fixedFacingY: robot.fixedFacingY,
   })),
   getMarchTempo: () => 96,
@@ -161,7 +161,7 @@ robots[0].counts[1].bakedGait = {
 robots[0].counts[2].bakedGait = null;
 robots[0].instrument = 'flute';
 robots[0].gaitIndex = 1;
-robots[0].instrumentRestPose = true;
+robots[0].instrumentPose = 'carry';
 robots[0].color = new Color3(0.8, 0.2, 0.1);
 robots[0].stepSizeYards = 0.4;
 robots[0].fixedFacingY = -0.7;
@@ -210,7 +210,7 @@ assert.equal(robots[0].counts[1].bakedGait.sideways, true);
 assert.equal(robots[0].counts[1].bakedGait.label, 'Sideways double time');
 assert.equal(robots[0].counts[2].bakedGait, null, 'Final halt stays explicit');
 assert.equal(robots[0].gaitIndex, 1);
-assert.equal(robots[0].instrumentRestPose, true);
+assert.equal(robots[0].instrumentPose, 'carry');
 assert.equal(robots[0].stepSizeYards, 0.4);
 assert.equal(robots[0].fixedFacingY, -0.7);
 assert.equal(robots[0].color.r, 0.8);

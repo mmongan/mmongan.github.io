@@ -166,10 +166,10 @@ try {
   assert.equal(playbackContext.applications, 1, 'Restored transport reapplies the actual marcher pose');
   const scheduleContext = vm.createContext({
     allRobots: new Set([robot]), marcherParts: new Map([[robot, {
-      gaitIndex: 2, instrument: 'snare', instrumentRestPose: false,
+      gaitIndex: 2, instrument: 'snare', instrumentPose: 'playing',
     }]]), players: new Map(), DEFAULT_STEP_SIZE_YARDS: .625,
     getRobotColor: () => new Color3(.2, .4, .8), ensureSharedObserver() {},
-    setMarcherInstrument() {}, setMarcherInstrumentRestPose() {}, setRobotColor() {},
+    setMarcherInstrument() {}, setMarcherInstrumentPose() {}, setRobotColor() {},
     invalidateLegBake() {}, applyGlobalCount() {},
   });
   vm.runInContext(transform(robotSource.slice(robotSource.indexOf('export function captureMarcherSchedules()'),
@@ -194,7 +194,7 @@ try {
     editorSource.indexOf('// Saves every marcher, the open chart page, and drafting'));
   const marcher = new TransformNode('editorSnapshotMarcher', scene);
   marcher.position.set(1.234567, 0, 2.345678);
-  let records = [{ robot: marcher, gaitIndex: 2, instrument: 'snare', instrumentRestPose: false,
+  let records = [{ robot: marcher, gaitIndex: 2, instrument: 'snare', instrumentPose: 'playing',
     color: new Color3(.3, .6, .9), stepSizeYards: .625, label: 'S1',
     counts: [{ position: marcher.position.clone(), rotationY: .7, facingY: .9,
       stepPhase: .25, bakedGait: { gaitIndex: 2, stepsPerCount: .5 } }] }];

@@ -387,11 +387,20 @@ interface InstrumentSpec {
   grips: [Vector3, Vector3];
   mouthpiece: Vector3;
   playRotation: Vector3;
+  // Carry: upright at the chest while marching. Rest: lowered to the waist
+  // ("horns down") while standing. Worn instruments keep one pose throughout.
+  carryPosition: Vector3;
+  carryRotation: Vector3;
   restPosition: Vector3;
   restRotation: Vector3;
   // Body-space directions the [left, right] elbows bend toward while playing.
   elbowBends?: [Vector3, Vector3];
 }
+
+// How the whole band holds its instruments: on the lips, carried upright at
+// the chest, or lowered to a horns-down rest.
+export type InstrumentPose = "playing" | "carry" | "rest";
+const INSTRUMENT_POSE_CYCLE: readonly InstrumentPose[] = ["playing", "carry", "rest"];
 
 const DEFAULT_ELBOW_BENDS: [Vector3, Vector3] = [new Vector3(-0.6, -1, -0.2), new Vector3(0.6, -1, -0.2)];
 // Center of the lip line on the face template (the lips seat against the
@@ -407,6 +416,8 @@ function wornInstrument(label: string, template: ModelTemplate, grips: [Vector3,
     label, template, grips,
     mouthpiece: MARCHER_MOUTH,
     playRotation: Vector3.Zero(),
+    carryPosition: Vector3.Zero(),
+    carryRotation: Vector3.Zero(),
     restPosition: Vector3.Zero(),
     restRotation: Vector3.Zero(),
   };
@@ -421,8 +432,10 @@ const INSTRUMENTS: Record<MarcherInstrument, InstrumentSpec> = {
     grips: [new Vector3(-0.055, 0, -0.01), new Vector3(0.05, 0, 0.07)],
     mouthpiece: new Vector3(0, 0.25, 0),
     playRotation: new Vector3(-Math.PI / 2, 0, 0),
-    restPosition: new Vector3(0, 0.86, 0.32),
-    restRotation: Vector3.Zero(),
+    carryPosition: new Vector3(0, 0.86, 0.32),
+    carryRotation: Vector3.Zero(),
+    restPosition: new Vector3(0, 0.6, 0.3),
+    restRotation: new Vector3(-0.6, 0, 0),
   },
   // Held like the trumpet (same valve layout), with a longer leadpipe and a
   // much larger forward bell. Carried upright with the bell down.
@@ -432,8 +445,10 @@ const INSTRUMENTS: Record<MarcherInstrument, InstrumentSpec> = {
     grips: [new Vector3(-0.06, 0, -0.01), new Vector3(0.05, 0, 0.07)],
     mouthpiece: MELLOPHONE_MOUTHPIECE_TIP,
     playRotation: new Vector3(-Math.PI / 2, 0, 0),
-    restPosition: new Vector3(0, 0.82, 0.34),
-    restRotation: Vector3.Zero(),
+    carryPosition: new Vector3(0, 0.82, 0.34),
+    carryRotation: Vector3.Zero(),
+    restPosition: new Vector3(0, 0.58, 0.32),
+    restRotation: new Vector3(-0.6, 0, 0),
   },
   // Held down and slightly out to the right; left hand on the upper key stack,
   // right hand on the lower one. Local +Y runs up the body, -Z toward the player.
@@ -443,8 +458,10 @@ const INSTRUMENTS: Record<MarcherInstrument, InstrumentSpec> = {
     grips: [new Vector3(-0.025, 0.17, -0.06), new Vector3(0.025, -0.07, -0.065)],
     mouthpiece: SAXOPHONE_MOUTHPIECE_TIP,
     playRotation: new Vector3(-0.25, 0, 0.35),
-    restPosition: new Vector3(0.05, 0.66, 0.24),
-    restRotation: new Vector3(0, 0, 0.2),
+    carryPosition: new Vector3(0.05, 0.66, 0.24),
+    carryRotation: new Vector3(0, 0, 0.2),
+    restPosition: new Vector3(0.03, 0.52, 0.22),
+    restRotation: new Vector3(0, 0, 0.08),
   },
   // Held like the alto but hanging lower and further out to the right on its
   // harness, so the long body and bow clear the legs; the pigtail loop rises
@@ -455,8 +472,10 @@ const INSTRUMENTS: Record<MarcherInstrument, InstrumentSpec> = {
     grips: [new Vector3(-0.03, 0.17, -0.07), new Vector3(0.03, -0.13, -0.075)],
     mouthpiece: BARI_SAXOPHONE_MOUTHPIECE_TIP,
     playRotation: new Vector3(-0.2, 0, 0.42),
-    restPosition: new Vector3(0.1, 0.62, 0.28),
-    restRotation: new Vector3(0, 0, 0.15),
+    carryPosition: new Vector3(0.1, 0.62, 0.28),
+    carryRotation: new Vector3(0, 0, 0.15),
+    restPosition: new Vector3(0.08, 0.48, 0.26),
+    restRotation: new Vector3(0, 0, 0.06),
   },
   // Slide forward at first position, bell section over the left shoulder.
   // Left hand rests beside the receiver, right hand holds the brass slide crosspiece.
@@ -467,8 +486,10 @@ const INSTRUMENTS: Record<MarcherInstrument, InstrumentSpec> = {
     grips: [new Vector3(-0.055, 0.02, 0), new Vector3(0.055, TROMBONE_SLIDE_STAY_Y, 0)],
     mouthpiece: TROMBONE_MOUTHPIECE_TIP,
     playRotation: new Vector3(-Math.PI / 2, 0, 0),
-    restPosition: new Vector3(0.02, 0.95, 0.3),
-    restRotation: Vector3.Zero(),
+    carryPosition: new Vector3(0.02, 0.95, 0.3),
+    carryRotation: Vector3.Zero(),
+    restPosition: new Vector3(0.02, 0.62, 0.3),
+    restRotation: new Vector3(-0.5, 0, 0),
   },
   // Front-bell horn held like the mellophone but much heavier: left hand
   // under the leadpipe wrap, right hand over the valve buttons, bell forward.
@@ -479,8 +500,10 @@ const INSTRUMENTS: Record<MarcherInstrument, InstrumentSpec> = {
     grips: [new Vector3(-0.075, -0.04, -0.02), new Vector3(0.06, 0, 0.09)],
     mouthpiece: EUPHONIUM_MOUTHPIECE_TIP,
     playRotation: new Vector3(-Math.PI / 2, 0, 0),
-    restPosition: new Vector3(0, 0.84, 0.38),
-    restRotation: Vector3.Zero(),
+    carryPosition: new Vector3(0, 0.84, 0.38),
+    carryRotation: Vector3.Zero(),
+    restPosition: new Vector3(0, 0.58, 0.36),
+    restRotation: new Vector3(-0.45, 0, 0),
   },
   // Angled about 40° below horizontal, left hand on the upper joint and right
   // hand on the lower joint, fingers over the front keys. Carried upright.
@@ -490,8 +513,10 @@ const INSTRUMENTS: Record<MarcherInstrument, InstrumentSpec> = {
     grips: [new Vector3(-0.012, 0.13, 0.025), new Vector3(0.012, -0.03, 0.025)],
     mouthpiece: CLARINET_MOUTHPIECE_TIP,
     playRotation: new Vector3(-0.87, 0, 0),
-    restPosition: new Vector3(0, 0.82, 0.3),
-    restRotation: Vector3.Zero(),
+    carryPosition: new Vector3(0, 0.82, 0.3),
+    carryRotation: Vector3.Zero(),
+    restPosition: new Vector3(0, 0.56, 0.26),
+    restRotation: new Vector3(-0.25, 0, 0),
   },
   // Held level out to the right with the lip plate under the lips and the
   // foot angled slightly forward; both hands under the tube, left hand nearer
@@ -503,8 +528,10 @@ const INSTRUMENTS: Record<MarcherInstrument, InstrumentSpec> = {
     grips: [new Vector3(0.01, -0.12, -0.012), new Vector3(0.01, -0.33, -0.012)],
     mouthpiece: FLUTE_MOUTHPIECE_TIP,
     playRotation: new Vector3(-Math.PI / 2, -0.25, Math.PI / 2),
-    restPosition: new Vector3(0, 0.98, 0.3),
-    restRotation: Vector3.Zero(),
+    carryPosition: new Vector3(0, 0.98, 0.3),
+    carryRotation: Vector3.Zero(),
+    restPosition: new Vector3(0, 0.7, 0.26),
+    restRotation: new Vector3(0, 0, 0.6),
     elbowBends: [new Vector3(-1, -0.5, 0), DEFAULT_ELBOW_BENDS[1]],
   },
   // Worn, so it is modelled in instrument-root coordinates and never rotates:
@@ -516,6 +543,8 @@ const INSTRUMENTS: Record<MarcherInstrument, InstrumentSpec> = {
     grips: [sousaphoneLoopPoint((3 * Math.PI) / 4), SOUSAPHONE_VALVE_GRIP],
     mouthpiece: SOUSAPHONE_MOUTHPIECE_TIP,
     playRotation: Vector3.Zero(),
+    carryPosition: Vector3.Zero(),
+    carryRotation: Vector3.Zero(),
     restPosition: Vector3.Zero(),
     restRotation: Vector3.Zero(),
   },
@@ -531,7 +560,7 @@ const INSTRUMENTS: Record<MarcherInstrument, InstrumentSpec> = {
 export const MARCHER_INSTRUMENTS = Object.keys(INSTRUMENTS) as MarcherInstrument[];
 const marcherParts = new Map<TransformNode, {
   gaitIndex: number;
-  instrumentRestPose: boolean;
+  instrumentPose: InstrumentPose;
   instrument: MarcherInstrument;
   gloves: [ModelPart, ModelPart];
   leftLeg: TransformNode;
@@ -550,7 +579,7 @@ const marcherParts = new Map<TransformNode, {
   rightArm: TransformNode;
   leftForearm: TransformNode;
   rightForearm: TransformNode;
-  appliedInstrumentRestPose?: boolean;
+  appliedInstrumentPose?: InstrumentPose;
   horn: ModelPart;
   body: TransformNode;
   instrumentRoot: TransformNode;
@@ -606,13 +635,16 @@ function applyInstrumentPose(parts: {
   rightArm: TransformNode;
   leftForearm: TransformNode;
   rightForearm: TransformNode;
-  appliedInstrumentRestPose?: boolean;
+  appliedInstrumentPose?: InstrumentPose;
   horn: ModelPart;
-}, restPose: boolean) {
-  if (parts.appliedInstrumentRestPose === restPose) return;
-  parts.appliedInstrumentRestPose = restPose;
+}, pose: InstrumentPose) {
+  if (parts.appliedInstrumentPose === pose) return;
+  parts.appliedInstrumentPose = pose;
   const spec = INSTRUMENTS[parts.instrument];
-  if (restPose) {
+  if (pose === "carry") {
+    parts.horn.position.copyFrom(spec.carryPosition);
+    parts.horn.rotation.copyFrom(spec.carryRotation);
+  } else if (pose === "rest") {
     parts.horn.position.copyFrom(spec.restPosition);
     parts.horn.rotation.copyFrom(spec.restRotation);
   } else {
@@ -636,7 +668,7 @@ function applyInstrumentPose(parts: {
     // so the elbow and wrist stay attached.
     const along = Math.min(UPPER_ARM_LENGTH,
       (UPPER_ARM_LENGTH ** 2 - FOREARM_LENGTH ** 2 + distance ** 2) / (2 * distance));
-    const outward = (!restPose && spec.elbowBends ? spec.elbowBends : DEFAULT_ELBOW_BENDS)[index];
+    const outward = (pose === "playing" && spec.elbowBends ? spec.elbowBends : DEFAULT_ELBOW_BENDS)[index];
     const bendDirection = outward.subtract(direction.scale(Vector3.Dot(outward, direction))).normalize();
     const bend = Math.sqrt(Math.max(0, UPPER_ARM_LENGTH ** 2 - along ** 2));
     const elbow = arm.position.add(direction.scale(along)).add(bendDirection.scale(bend));
@@ -663,7 +695,7 @@ export const MARCHING_GAITS = [
 ] as const;
 
 let selectedMarchingGait = 0;
-let instrumentCarryPose = false;
+let bandInstrumentPose: InstrumentPose = "playing";
 
 // Forward styles (Field March, High Step, Parade, Knee-Ankle) turn on automatic
 // gait: each count picks mark time, half/double time, backward or crab walk from
@@ -677,24 +709,26 @@ export function getMarchingGaitLabel(): string {
   return isAutoGaitActive() ? `Auto · ${name}` : name;
 }
 
-export function getInstrumentCarryPose(): boolean {
-  return instrumentCarryPose;
+export function getInstrumentPose(): InstrumentPose {
+  return bandInstrumentPose;
 }
 
-export function toggleInstrumentCarryPose(): boolean {
-  instrumentCarryPose = !instrumentCarryPose;
+// Steps the whole band through playing → carry → rest.
+export function cycleInstrumentPose(): InstrumentPose {
+  bandInstrumentPose = INSTRUMENT_POSE_CYCLE[
+    (INSTRUMENT_POSE_CYCLE.indexOf(bandInstrumentPose) + 1) % INSTRUMENT_POSE_CYCLE.length];
   marcherParts.forEach((parts) => {
-    parts.instrumentRestPose = instrumentCarryPose;
-    applyInstrumentPose(parts, instrumentCarryPose);
+    parts.instrumentPose = bandInstrumentPose;
+    applyInstrumentPose(parts, bandInstrumentPose);
   });
-  return instrumentCarryPose;
+  return bandInstrumentPose;
 }
 
-export function setMarcherInstrumentRestPose(robot: TransformNode, restPose: boolean) {
+export function setMarcherInstrumentPose(robot: TransformNode, pose: InstrumentPose) {
   const parts = marcherParts.get(robot);
   if (!parts) return;
-  parts.instrumentRestPose = restPose;
-  applyInstrumentPose(parts, restPose);
+  parts.instrumentPose = pose;
+  applyInstrumentPose(parts, pose);
 }
 
 let selectedInstrument: MarcherInstrument = "trumpet";
@@ -734,8 +768,8 @@ export function setMarcherInstrument(robot: TransformNode, instrument: MarcherIn
   oldHorn.dispose();
   parts.horn = horn;
   parts.instrument = instrument;
-  parts.appliedInstrumentRestPose = undefined;
-  applyInstrumentPose(parts, parts.instrumentRestPose);
+  parts.appliedInstrumentPose = undefined;
+  applyInstrumentPose(parts, parts.instrumentPose);
 }
 
 export function cycleMarchingGait(direction: -1 | 1): number {
@@ -826,7 +860,7 @@ function createMarcherModel(scene: Scene, gaitIndex: number, skinIndex?: number)
 
   marcherParts.set(robot, {
     gaitIndex: resolvedGaitIndex,
-    instrumentRestPose: instrumentCarryPose,
+    instrumentPose: bandInstrumentPose,
     instrument,
     gloves: [appendages[0].glove, appendages[1].glove],
     leftLeg: appendages[0].leg, rightLeg: appendages[1].leg,
@@ -838,7 +872,7 @@ function createMarcherModel(scene: Scene, gaitIndex: number, skinIndex?: number)
     leftArm: appendages[0].arm, rightArm: appendages[1].arm,
     leftForearm: appendages[0].forearm, rightForearm: appendages[1].forearm, horn, body, instrumentRoot, legRoot,
   });
-  applyInstrumentPose(marcherParts.get(robot)!, instrumentCarryPose);
+  applyInstrumentPose(marcherParts.get(robot)!, bandInstrumentPose);
 
   const marker = getTopDownMarkerSource(scene).createInstance("robotTopDownMarker");
   marker.instancedBuffers.color = Color4.FromColor3(color);
@@ -888,7 +922,7 @@ export function duplicateMarcherSchedule(source: TransformNode, offset: Vector3)
   const robot = createMarcherModel(source.getScene(), parts.gaitIndex, marcherSkinIndices.get(source));
   robot.parent = source.parent;
   setMarcherInstrument(robot, parts.instrument);
-  setMarcherInstrumentRestPose(robot, parts.instrumentRestPose);
+  setMarcherInstrumentPose(robot, parts.instrumentPose);
   const counts = state.counts.map(count => ({ ...count, position: count.position.add(offset) }));
   players.set(robot, {
     points: state.points.map(point => point.add(offset)),
@@ -1686,7 +1720,7 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState,
     parts.leftLeg.rotation.y = 0;
     parts.rightLeg.rotation.y = 0;
   }
-  const instrumentRest = parts.instrumentRestPose;
+  const instrumentPose = parts.instrumentPose;
   const from = state.counts[Math.min(last, Math.max(0, segmentStart))];
   const to = state.counts[Math.min(last, Math.max(0, segmentStart + 1))];
   // Auto mark-time is a leg style for short moves, not permission to freeze
@@ -1736,7 +1770,7 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState,
     attachMarcherThigh(parts.rightThigh, parts.rightLeg, hipHalfSpacing);
     alignMarcherKnee(parts.leftThigh, parts.leftKnee);
     alignMarcherKnee(parts.rightThigh, parts.rightKnee);
-    applyInstrumentPose(parts, instrumentRest);
+    applyInstrumentPose(parts, instrumentPose);
     applyTorsoIdle(robot, parts, musicBeat);
     limitedStrideCounts.delete(robot);
     return;
@@ -1780,7 +1814,7 @@ function applyGlobalCount(robot: TransformNode, state: PlayerState,
     }
     attachMarcherThigh(parts.leftThigh, parts.leftLeg, -pose.hipHalfSpacing, MARCHER_THIGH_LENGTH);
     attachMarcherThigh(parts.rightThigh, parts.rightLeg, pose.hipHalfSpacing, MARCHER_THIGH_LENGTH);
-    applyInstrumentPose(parts, instrumentRest);
+    applyInstrumentPose(parts, instrumentPose);
   };
   const reportLimited = (limited: boolean) => {
     if (limited && limitedStrideCounts.get(robot) !== segmentStart) {
@@ -3105,7 +3139,7 @@ export interface MarcherScheduleSnapshot {
   robot: TransformNode;
   gaitIndex: number;
   instrument: MarcherInstrument;
-  instrumentRestPose: boolean;
+  instrumentPose: InstrumentPose;
   color: Color3;
   stepSizeYards: number;
   fixedFacingY?: number;
@@ -3132,7 +3166,7 @@ export function captureMarcherSchedules(): MarcherScheduleSnapshot[] {
         ...(count.bakedGait && { bakedGait: { ...count.bakedGait } }) }))
       : [{ position: robot.position.clone(), rotationY: robot.rotation.y }];
     snapshots.push({
-      robot, gaitIndex: parts.gaitIndex, instrument: parts.instrument, instrumentRestPose: parts.instrumentRestPose,
+      robot, gaitIndex: parts.gaitIndex, instrument: parts.instrument, instrumentPose: parts.instrumentPose,
       color: getRobotColor(robot).clone(), stepSizeYards: state?.stepSizeYards ?? DEFAULT_STEP_SIZE_YARDS,
       fixedFacingY: state?.fixedFacingY, counts,
       scheduled: !!state,
@@ -3183,7 +3217,7 @@ export function restoreMarcherSchedule(
   if (snapshot.counts.length === 0) return;
   ensureSharedObserver(scene);
   setMarcherInstrument(robot, snapshot.instrument);
-  setMarcherInstrumentRestPose(robot, snapshot.instrumentRestPose);
+  setMarcherInstrumentPose(robot, snapshot.instrumentPose);
   setRobotColor(robot, snapshot.color);
   const counts = snapshot.counts.map((count) => ({ ...count, position: count.position.clone(),
     ...(count.bakedGait && { bakedGait: { ...count.bakedGait } }) }));

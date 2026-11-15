@@ -42,7 +42,7 @@ const context = vm.createContext({
   MIN_MARCH_TEMPO_BPM: 40, MAX_MARCH_TEMPO_BPM: 240,
   getMarchTempo: () => tempo, setMarchTempo: value => { tempo = value; },
   cycleMarchingGait: direction => gaitChanges.push(direction), getMarchingGaitLabel: () => 'March',
-  getInstrumentCarryPose: () => false, toggleInstrumentCarryPose: () => { hornChanges++; },
+  getInstrumentPose: () => 'playing', cycleInstrumentPose: () => { hornChanges++; },
 });
 try {
   for (const file of ['interaction/editingMode', 'menu/handMenu', 'menu/settingsButtonIcons', 'menu/floatingPanel', 'field/scoreboard']) {

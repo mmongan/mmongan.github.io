@@ -111,6 +111,8 @@ let painting = false;
 let nearPaletteHit = null;
 let paletteGrab;
 let draftingTableActive = false;
+let fieldHit = null;
+let fieldEnabled = true;
 const gripPoint = new Vector3(0.2, 0.8, 0.4);
 const direction = Vector3.Forward();
 const controller = { inputSource: {}, grip: {
@@ -129,10 +131,12 @@ const context = vm.createContext({
   getFloatingPanelButtonNearPoint: () => nearPaletteHit, getHandMenuHitNearPoint: () => null,
   pickMenuControl: () => null, getHandMenuHit: () => null,
   pickFloatingPanel: () => null, getControllerPosition: value => value.grip,
-  getControllerRay: () => ({ origin: Vector3.Zero(), direction }),
+  getControllerRay: () => ({ origin: Vector3.Zero(), direction,
+    intersectsMesh: () => ({ pickedPoint: fieldHit }) }),
   scene: {
     getEngine: () => ({ getDeltaTime: () => deltaTime }),
     pickWithRay: () => rayHit ? { hit: true, pickedMesh: meshes[0], pickedPoint: new Vector3(0, 0, 2) } : null,
+    getMeshByName: name => name === 'field' ? { isEnabled: () => fieldEnabled } : null,
   },
   findRobotRoot: () => robot,
   handInteraction: {
@@ -219,6 +223,7 @@ painting = false;
 context.marcherGrabs.set('left', { source: 'controller', rayDistance: -1 });
 context.update();
 assert.ok(moved[1].equals(gripPoint), 'Near-held marcher follows the physical controller');
+assert.equal(moved[4], undefined, 'Near grips keep the carried-point drag with no laser dot');
 stickY = -1;
 context.update();
 assert.ok(moved[1].equalsWithEpsilon(gripPoint.add(new Vector3(0, 0, 0.6))), 'Forward stick extends near grab at the faster base speed');
@@ -241,6 +246,16 @@ assert.equal(begun[4], 2, 'Remote grab preserves picked distance');
 context.marcherGrabs.set('left', { source: 'controller', rayDistance: 2 });
 context.update();
 assert.ok(moved[1].equals(new Vector3(0, 0, 2)), 'Remote grip follows the aim ray at fixed depth');
+fieldHit = new Vector3(3, 0, 5);
+context.update();
+assert.equal(moved[4], fieldHit, 'Ray grab lasers the dot to the controller-pointer field intersection');
+fieldHit = null;
+context.update();
+assert.equal(moved[4], null, 'Pointer missing the field reports no dot so the marcher holds ground');
+fieldEnabled = false;
+context.update();
+assert.equal(moved[4], undefined, 'A disabled field falls back to the carried-point drag');
+fieldEnabled = true;
 stickY = -1;
 context.update();
 assert.ok(moved[1].equalsWithEpsilon(new Vector3(0, 0, 3.1)), 'Forward stick telescopes ray grab farther with reach');

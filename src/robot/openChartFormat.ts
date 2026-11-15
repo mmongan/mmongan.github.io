@@ -13,7 +13,7 @@ const OPEN_CHART_GAIT_CODES = Object.freeze([
   "Field March", "High Step", "Parade", "Crab Walk", "Knee-Ankle March", "Slide",
   "Mark Time", "High Mark Time", "Double Time", "Half Time", "Backward March", "Backward High Step",
 ]);
-export const OPEN_CHART_POSE_CODES = Object.freeze(["playing", "carry"]);
+export const OPEN_CHART_POSE_CODES = Object.freeze(["playing", "carry", "rest"]);
 const OPEN_CHART_MOVEMENT_DESCRIPTION_CODES = Object.freeze([...OPEN_CHART_GAIT_CODES, "Halt"]);
 
 function encodeBuiltin(value: string, codes: readonly string[]): number | string {
@@ -60,7 +60,7 @@ export interface OpenChartMarcher {
 
 export interface OpenChartPerformance {
   gait: string;
-  instrumentPose: "playing" | "carry";
+  instrumentPose: "playing" | "carry" | "rest";
   stepSizeYards: number;
   fixedFacingY?: number;
   gaits: string[];
@@ -167,7 +167,7 @@ function memberColor(value: unknown): [number, number, number] {
 function performanceMetadata(value: unknown): Omit<OpenChartPerformance, "samples"> {
   const data = record(value, "performance");
   const instrumentPose = data.instrumentPose;
-  if (instrumentPose !== "playing" && instrumentPose !== "carry") invalid("unknown instrument pose");
+  if (instrumentPose !== "playing" && instrumentPose !== "carry" && instrumentPose !== "rest") invalid("unknown instrument pose");
   const palette = (value: unknown, name: string) => {
     if (!Array.isArray(value) || !value.length || value.length > MAX_COUNTS) invalid(`invalid ${name} palette`);
     return value.map(entry => text(entry, name));

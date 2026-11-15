@@ -13,7 +13,7 @@ const read = name => readFileSync(new URL(`../src/robot/${name}.ts`, import.meta
 const robotSource = read('robot');
 const slice = (start, end) => robotSource.slice(robotSource.indexOf(start), robotSource.indexOf(end, robotSource.indexOf(start)));
 const robot = { isDisposed: () => false, isEnabled: () => true };
-const parts = { gaitIndex: 0, instrument: 'trumpet', instrumentRestPose: true };
+const parts = { gaitIndex: 0, instrument: 'trumpet', instrumentPose: 'carry' };
 const state = {
   stepSizeYards: 0.5, fixedFacingY: Math.PI / 2,
   counts: Array.from({ length: 5 }, (_, count) => ({
@@ -114,6 +114,8 @@ assert.equal(metadata.marchers[0].instrument, 0, 'Instrument zero is trumpet');
 assert.equal(metadata.marchers[0].performance.gait, 0, 'Gait zero independently means Field March');
 assert.equal(metadata.marchers[0].performance.instrumentPose, 1, 'Pose one is carry');
 assert.equal(context.decodeBuiltin(0, vm.runInContext('OPEN_CHART_POSE_CODES', context), 'pose'), 'playing');
+assert.equal(context.decodeBuiltin(2, vm.runInContext('OPEN_CHART_POSE_CODES', context), 'pose'), 'rest',
+  'Pose two is the horns-down rest (codes are append-only)');
 assert.equal(typeof metadata.marchers[0].instrument, 'number');
 assert.equal(typeof metadata.marchers[0].performance.gait, 'number');
 assert.equal(typeof metadata.marchers[0].performance.instrumentPose, 'number');
@@ -160,7 +162,7 @@ const malformedMetadata = async mutate => {
 await malformedMetadata(data => { data.marchers[0].performance.gait = -1; });
 await malformedMetadata(data => { data.marchers[0].performance.gaits[0] = 99; });
 await malformedMetadata(data => { data.marchers[0].performance.movementDescriptions[0] = 1.5; });
-await malformedMetadata(data => { data.marchers[0].performance.instrumentPose = 2; });
+await malformedMetadata(data => { data.marchers[0].performance.instrumentPose = 3; });
 await malformedMetadata(data => { data.marchers[0].instrument = 17; });
 await malformedMetadata(data => { data.marchers[0].performance.gait = 12; });
 const customNames = ['Custom step', ...gaitNames.slice(1)];
@@ -236,7 +238,7 @@ example.marchers.forEach(marcher => {
   marcher.instrument = context.getOpenMarchSectionInstrument(marcher.section, 'trumpet');
   context.allRobots.add(robot);
   context.marcherParts.set(robot, {
-    gaitIndex: index('Field March'), instrument: marcher.instrument, instrumentRestPose: false,
+    gaitIndex: index('Field March'), instrument: marcher.instrument, instrumentPose: 'playing',
   });
   context.fixtureRobot = robot;
   vm.runInContext('robotColors.set(fixtureRobot, nextRobotColor())', context);

@@ -7,6 +7,7 @@
 // it can be validated before anything in the scene is replaced.
 
 import type { ChartPageTimeline } from './chartPageTimeline';
+import type { InstrumentPose } from './robot';
 
 export const CHART_PAGE_DRAFT_KEY = 'chartxr.chartPageDraft';
 const MAX_MARCHERS = 1000;
@@ -24,7 +25,7 @@ export interface SavedCount {
 export interface SavedMarcher {
   instrument: string;
   gait: number;
-  rest: boolean;
+  rest: InstrumentPose;
   color: SavedVector;
   step: number;
   fixed?: number;
@@ -112,7 +113,11 @@ export function parseChartPageDraft(json: string): ChartPageDraft {
     if (!value || typeof value !== 'object') fail(`marcher ${index} is not an object`);
     const marcher = value as Record<string, unknown>;
     if (typeof marcher.instrument !== 'string') fail(`marcher ${index} has no instrument`);
-    if (typeof marcher.rest !== 'boolean') fail(`marcher ${index} rest pose must be true or false`);
+    // Older drafts saved the carry pose as a boolean; current drafts name the pose.
+    if (typeof marcher.rest !== 'boolean' && marcher.rest !== 'playing' && marcher.rest !== 'carry' &&
+      marcher.rest !== 'rest') fail(`marcher ${index} has an unknown instrument pose`);
+    const rest: InstrumentPose = marcher.rest === true ? 'carry'
+      : marcher.rest === false ? 'playing' : marcher.rest as InstrumentPose;
     if (marcher.label !== undefined && typeof marcher.label !== 'string') fail(`marcher ${index} label must be text`);
     const step = finite(marcher.step, `marcher ${index} step size`);
     if (step <= 0) fail(`marcher ${index} step size must be positive`);
@@ -136,7 +141,7 @@ export function parseChartPageDraft(json: string): ChartPageDraft {
       fail(`marcher ${index} color components must be between zero and one`);
     }
     return {
-      instrument: marcher.instrument, gait: count(marcher.gait, `marcher ${index} gait`), rest: marcher.rest,
+      instrument: marcher.instrument, gait: count(marcher.gait, `marcher ${index} gait`), rest,
       color, step, counts,
       ...(fixed === undefined ? {} : { fixed }),
       ...(marcher.label === undefined ? {} : { label: marcher.label as string }),

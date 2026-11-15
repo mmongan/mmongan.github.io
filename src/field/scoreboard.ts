@@ -16,12 +16,12 @@ import { FieldMountedPanel } from '../menu/floatingPanel';
 import {
   cycleMarchingGait,
   getMarchTempo,
-  getInstrumentCarryPose,
+  getInstrumentPose,
   getMarchingGaitLabel,
   MAX_MARCH_TEMPO_BPM,
   MIN_MARCH_TEMPO_BPM,
   setMarchTempo,
-  toggleInstrumentCarryPose,
+  cycleInstrumentPose,
 } from '../robot/robot';
 
 const TEMPO_SLIDER_SCREENS = new Map<AbstractMesh, (worldX: number) => void>();
@@ -162,7 +162,7 @@ export function createScoreboard(): void {
     boardCtx.textAlign = "center";
     boardCtx.textBaseline = "middle";
     boardCtx.fillText(`‹   ${getMarchingGaitLabel().toUpperCase()}   ›`, 256, 193);
-    boardCtx.fillText(`HORN: ${getInstrumentCarryPose() ? "CARRY" : "PLAY"}`, 256, 211);
+    boardCtx.fillText(`HORN: ${{ playing: "PLAY", carry: "CARRY", rest: "REST" }[getInstrumentPose()]}`, 256, 211);
     boardCtx.font = "bold 15px 'Segoe UI', Arial";
     boardCtx.fillText(`MARCH TEMPO  ${Math.round(tempo)} BPM`, 256, 227);
     boardCtx.fillStyle = "#53695b";
@@ -185,7 +185,7 @@ export function createScoreboard(): void {
     drawTempoSlider();
   });
   HORN_POSE_SCREENS.set(screen, () => {
-    toggleInstrumentCarryPose();
+    cycleInstrumentPose();
     drawTempoSlider();
   });
   screen.onDisposeObservable.addOnce(() => {

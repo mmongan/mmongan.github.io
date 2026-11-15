@@ -27,7 +27,7 @@ const state = { points: [new Vector3(-2, 0, 0), new Vector3(4, 0, 3)],
     { position: new Vector3(4, 0, 3), rotationY: 0.7 }],
   stepSizeYards: 0.625, fixedFacingY: 1.2, stepCache: {}, legBake: {} };
 const players = new Map([[original, state]]);
-const marcherParts = new Map([[original, { gaitIndex: 3, instrument: 'flute', instrumentRestPose: true }]]);
+const marcherParts = new Map([[original, { gaitIndex: 3, instrument: 'flute', instrumentPose: 'carry' }]]);
 let refreshes = 0;
 const context = vm.createContext({
   Vector3, players, marcherParts, scene,
@@ -36,7 +36,7 @@ const context = vm.createContext({
     const robot = makeRobot(); marcherParts.set(robot, { gaitIndex }); return robot;
   },
   setMarcherInstrument(robot, instrument) { marcherParts.get(robot).instrument = instrument; },
-  setMarcherInstrumentRestPose(robot, value) { marcherParts.get(robot).instrumentRestPose = value; },
+  setMarcherInstrumentPose(robot, value) { marcherParts.get(robot).instrumentPose = value; },
   applyGlobalCount(robot, schedule) { assert.equal(players.get(robot), schedule); },
   robotPaths: new Map([[original, state.points]]),
   getRobotCounts: robot => players.get(robot)?.counts,
@@ -60,7 +60,7 @@ assert.equal(copied.fixedFacingY, state.fixedFacingY);
 assert.equal(copied.stepCache, undefined, 'Per-owner runtime caches are not copied');
 assert.equal(copied.legBake, undefined);
 assert.equal(marcherParts.get(copy).instrument, 'flute');
-assert.equal(marcherParts.get(copy).instrumentRestPose, true);
+assert.equal(marcherParts.get(copy).instrumentPose, 'carry');
 copied.counts[0].position.z = 99;
 assert.equal(state.counts[0].position.z, 0, 'Copies own independent route vectors');
 assert.equal(refreshes, 1, 'Collision markers recalculate once per batch');

@@ -68,6 +68,7 @@ import {
 import {
   CHART_PAGE_DRAFT_KEY, parseChartPageDraft, roundVector, serializeChartPageDraft, type ChartPageDraft,
 } from '../robot/chartPageDraft';
+import { initZombieMode } from '../robot/zombieMode';
 import type { ThumbJogState } from './thumbJogGesture';
 import {
   activeControllers as controllerRegistry,
@@ -618,7 +619,7 @@ function saveChartPageDraft() {
     marchers: schedules.map((schedule) => {
       const label = getDrillLabel(schedule.robot);
       return {
-        instrument: schedule.instrument, gait: schedule.gaitIndex, rest: schedule.instrumentRestPose,
+        instrument: schedule.instrument, gait: schedule.gaitIndex, rest: schedule.instrumentPose,
         color: roundVector(schedule.color.r, schedule.color.g, schedule.color.b), step: schedule.stepSizeYards,
         ...(schedule.fixedFacingY === undefined ? {} : { fixed: schedule.fixedFacingY }),
         ...(label ? { label } : {}),
@@ -677,7 +678,7 @@ function resumeChartPageDraft() {
       ...(count.s === undefined ? {} : { styleIndex: count.s }),
     }));
     restoreMarcherSchedule(robot, {
-      instrument: marcher.instrument as MarcherInstrument, instrumentRestPose: marcher.rest,
+      instrument: marcher.instrument as MarcherInstrument, instrumentPose: marcher.rest,
       color: new Color3(...marcher.color), stepSizeYards: marcher.step, fixedFacingY: marcher.fixed, counts,
     }, scene);
     const path = counts.map((count) => count.position.clone());
@@ -2703,8 +2704,8 @@ function beginMarcherGrab(
 }
 
 function moveMarcherGrab(handedness: string, point: Vector3, facingYaw: number | null = null,
-  origin?: Vector3) {
-  handInteraction.moveMarcherGrab(handedness, point, facingYaw, origin);
+  origin?: Vector3, laser?: Vector3 | null) {
+  handInteraction.moveMarcherGrab(handedness, point, facingYaw, origin, laser);
 }
 
 function finishMarcherGrab(handedness: string, commit: boolean) {
@@ -2892,6 +2893,12 @@ export function updateRobotPathFromControllers() {
         } else {
           marcherGrab.rayDistance = Math.min(100, Math.max(0.1, marcherGrab.rayDistance + depthChange));
         }
+        // A ray grab is a true laser pointer: the dot sits where the
+        // controller's pointer meets the field (null when it misses, so the
+        // marcher holds its ground). Near grips keep the carried-point drag.
+        const field = scene.getMeshByName('field');
+        const laser = marcherGrab.rayDistance >= 0 && field?.isEnabled()
+          ? ray.intersectsMesh(field).pickedPoint : undefined;
         moveMarcherGrab(
           handedness,
           marcherGrab.rayDistance < 0
@@ -2901,6 +2908,7 @@ export function updateRobotPathFromControllers() {
           facingYaw === null ? null : facingYaw + marcherGrab.controllerYawOffset,
           // The drag laser shoots from the controller, not the carried point.
           ray.origin,
+          laser,
         );
       }
       return;
@@ -3751,7 +3759,7 @@ function spawnOpenChartDrill(drill: OpenChartShow, autoPlay = false): number {
     updateRobotPathLine(robotPrimitives, path);
     if (performance && marcher.performance) {
       restoreMarcherSchedule(robotPrimitives, {
-        instrument: instruments[index], instrumentRestPose: marcher.performance.instrumentPose === "carry",
+        instrument: instruments[index], instrumentPose: marcher.performance.instrumentPose,
         color,
         stepSizeYards: marcher.performance.stepSizeYards, fixedFacingY: marcher.performance.fixedFacingY,
         counts: performance.counts.map(({ height, ...count }, countIndex) => ({
@@ -3891,6 +3899,18 @@ export function initInteraction() {
       if (selectedRobot === robot) refreshStepHandles();
     },
     notify: showPlacementNotice,
+  });
+  initZombieMode({
+    scene,
+    allowed: () => !footballVisuals && marcherGrabs.size === 0,
+    notify: showPlacementNotice,
+    startPOV: (robot) => {
+      selectRobot(robot);
+      setMarcherPOVEnabled(true);
+    },
+    stopPOV: () => {
+      if (isMarcherPOVActive()) setMarcherPOVEnabled(false);
+    },
   });
   const cameraFields = createCameraFieldCopies({
     field: pathRoot,

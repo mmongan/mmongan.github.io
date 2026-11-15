@@ -13,7 +13,7 @@ const robotSource = readFileSync(new URL('../src/robot/robot.ts', import.meta.ur
 const gaitSource = readFileSync(new URL('../src/robot/gaitSelection.ts', import.meta.url), 'utf8');
 const node = () => ({ position: Vector3.Zero(), rotation: Vector3.Zero() });
 const parts = {
-  gaitIndex: 0, instrumentRestPose: false, body: node(), instrumentRoot: node(), legRoot: node(),
+  gaitIndex: 0, instrumentPose: 'playing', body: node(), instrumentRoot: node(), legRoot: node(),
   leftLeg: node(), rightLeg: node(), leftKnee: node(), rightKnee: node(),
   leftAnkle: node(), rightAnkle: node(), leftThigh: node(), rightThigh: node(),
   leftShoe: node(), rightShoe: node(),
@@ -1219,7 +1219,7 @@ assert.ok(sampledContacts.length > 0 && sampledContacts.some(contact => !Number.
   'Footfall events include sub-count contacts');
 const savedPerformance = context.packOpenChartPerformance({
   counts: state.counts, gaitIndex: parts.gaitIndex,
-  instrumentRestPose: false, color: { r: 0.2, g: 0.4, b: 0.6 }, stepSizeYards: 0.625,
+  instrumentPose: 'playing', color: { r: 0.2, g: 0.4, b: 0.6 }, stepSizeYards: 0.625,
 }, vm.runInContext('MARCHING_GAITS.map(gait => gait.name)', context));
 const savedShow = {
   name: 'Footfalls', tempoBpm: 120, widthYards: 53.333,

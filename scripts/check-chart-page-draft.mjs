@@ -30,9 +30,9 @@ const draft = {
   transition: { shape: 'sCurve', pace: 'ease', styleIndex: null },
   page: { count: 8, previous: 0, next: 16, waiting: [1] },
   marchers: [
-    { instrument: 'trumpet', gait: 0, rest: false, color: [1, 0.5, 0], step: 0.625, label: 'T1',
+    { instrument: 'trumpet', gait: 0, rest: 'playing', color: [1, 0.5, 0], step: 0.625, label: 'T1',
       counts: [{ p: [0, 0, 0], r: 0 }, { p: [1, 0, 2], r: 0.5, f: 1, s: 2 }] },
-    { instrument: 'snare', gait: 1, rest: true, color: [0, 0, 1], step: 0.625, fixed: Math.PI,
+    { instrument: 'snare', gait: 1, rest: 'rest', color: [0, 0, 1], step: 0.625, fixed: Math.PI,
       counts: [{ p: [5, 0, 5], r: 0 }] },
   ],
   drafting: null,
@@ -45,6 +45,10 @@ const broken = mutate => {
   mutate(copy);
   return () => parseChartPageDraft(JSON.stringify(copy));
 };
+assert.equal(parseChartPageDraft(JSON.stringify({ ...draft,
+  marchers: draft.marchers.map(m => ({ ...m, rest: true })) })).marchers[0].rest, 'carry',
+  'Older drafts with a boolean carry flag still load');
+assert.throws(broken(d => { d.marchers[0].rest = 'unknown'; }), /unknown instrument pose/);
 assert.throws(() => parseChartPageDraft('not json'), /invalid: not JSON/);
 assert.throws(broken(d => { d.version = 2; }), /unsupported version/);
 assert.throws(broken(d => { d.marchers = []; }), /non-empty/);

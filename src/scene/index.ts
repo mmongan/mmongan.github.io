@@ -7,6 +7,7 @@ import { drillChartPadToggle, fieldLevelInputs, getSelectedFieldLevel } from '..
 import { createSky } from '../environment/sky';
 import { createHorizonGround } from '../environment/ground';
 import { initBandRoom, updateBandRoomVisibility } from '../environment/bandRoom';
+import { updateZombieMode } from '../robot/zombieMode';
 import { createFootballField } from '../field/footballField';
 import {
   initInteraction,
@@ -136,6 +137,7 @@ function renderFrame() {
   runFrameStage('controllerPaths', updateRobotPathFromControllers);
   runFrameStage('videoBoard', () => footballField.updateVideoBoardProgress(getSelectedRobotProgress()));
   runFrameStage('bandRoom', updateBandRoomVisibility);
+  runFrameStage('zombieMode', updateZombieMode);
   runFrameStage('render', () => scene.render());
 }
 
