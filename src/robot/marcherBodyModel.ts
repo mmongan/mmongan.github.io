@@ -32,14 +32,14 @@ const PART_SPECULAR = new Color3(0.12, 0.12, 0.13);
 const PART_SPECULAR_POWER = 12;
 
 // "Photorealistic marchers" is a reversible shading preset on the shared
-// body materials, never a second set of meshes or a texture pipeline: a
-// tighter, brighter satin specular and a soft Fresnel rim sheen push the
-// stylized uniforms toward how real cloth catches stadium light. Every
-// shaded marcher material registers here with its own base values, so
-// enabling applies one preset and disabling restores each material exactly.
-const REALISM_SPECULAR = new Color3(0.28, 0.28, 0.3);
-const REALISM_SPECULAR_POWER = 52;
-const REALISM_RIM_EMISSIVE = new Color3(0.09, 0.09, 0.1);
+// body materials, never a second set of meshes or a texture pipeline: real
+// wool uniforms and skin are matte, so the preset takes the specular DOWN
+// to a faint, tight remnant — less shine than even the default's broad
+// plastic sheen — and adds no rim or emissive glow. Every shaded marcher
+// material registers here with its own base values, so enabling applies
+// one preset and disabling restores each material exactly.
+const REALISM_SPECULAR = new Color3(0.04, 0.04, 0.045);
+const REALISM_SPECULAR_POWER = 24;
 
 const shadedMaterials = new Map<StandardMaterial, { specular: Color3; specularPower: number }>();
 let realisticShading = false;
@@ -50,19 +50,14 @@ function applyShading(material: StandardMaterial) {
   if (realisticShading) {
     material.specularColor = REALISM_SPECULAR.clone();
     material.specularPower = REALISM_SPECULAR_POWER;
-    material.emissiveColor = REALISM_RIM_EMISSIVE.clone();
-    // Grazing angles catch a white rim, facing surfaces stay untouched.
-    material.emissiveFresnelParameters = new FresnelParameters({
-      leftColor: Color3.White(), rightColor: Color3.Black(), bias: 0.18, power: 2.4,
-    });
   } else {
     material.specularColor = base.specular.clone();
     material.specularPower = base.specularPower;
-    material.emissiveColor = Color3.Black();
-    // The accessor is non-nullable; assigning a disabled instance both
-    // clears the rim and marks the shader dirty.
-    material.emissiveFresnelParameters = new FresnelParameters({ isEnabled: false });
   }
+  material.emissiveColor = Color3.Black();
+  // The accessor is non-nullable; assigning a disabled instance clears any
+  // older rim effect and marks the shader dirty.
+  material.emissiveFresnelParameters = new FresnelParameters({ isEnabled: false });
 }
 
 // Registers a marcher material for the realism preset with the base values
@@ -148,22 +143,14 @@ function addMarcherTrim(geometry: InstrumentGeometry, skin: Color4) {
       ({ x, y, z }) => new Vector3(x, y, z > 0 ? z * 1.35 : z));
   });
   // Fixed-color parade furniture lives on the untinted trim so it keeps its
-  // white/brass colors over any jacket tint, at both detail levels. The
-  // jacket narrows depth to z * 0.78; the belt follows the same squash. The
-  // belt and buckle replace the jacket's former waist ring and buckle.
-  geometry.lathe([[.168, .715], [.174, .728], [.174, .775], [.168, .788]], 10, GLOVE,
-    ({ x, y, z }) => new Vector3(x, y, z * 0.78));
-  geometry.box(new Vector3(-.026, .733, .131), new Vector3(.026, .769, .144), BRASS);
+  // brass colors over any jacket tint, at both detail levels. The waist and
+  // shoulders stay clean jacket: no white belt or epaulets (the brass
+  // buckle left with the belt it sat on).
   // Double-breasted brass button rows following the chest curve.
   for (const side of [-1, 1]) {
     for (const [y, z] of [[.78, .121], [.87, .139], [.96, .177]] as const) {
       geometry.box(new Vector3(side * .05 - .011, y, z), new Vector3(side * .05 + .011, y + .022, z + .013), BRASS);
     }
-  }
-  // White shoulder epaulets capping the jacket's shoulder line.
-  for (const side of [-1, 1]) {
-    geometry.lathe([[0, -.01], [.055, -.01], [.062, .002], [.038, .014], [0, .02]], 6, GLOVE,
-      ({ x, y, z }) => new Vector3(side * .2 + x * .9, 1.048 + y, .02 + z * .72));
   }
   // Brass shako badge plate.
   geometry.box(new Vector3(-.03, 1.455, .126), new Vector3(.03, 1.545, .14), BRASS);
@@ -175,6 +162,12 @@ export const MARCHER_SKIN_TEMPLATES = [
   partTemplate("marcherTrimMediumTemplate", geometry => addMarcherTrim(geometry, new Color4(.64, .4, .25, 1))),
   partTemplate("marcherTrimDarkTemplate", geometry => addMarcherTrim(geometry, new Color4(.35, .22, .15, 1))),
 ] as const;
+
+// Zombie skin: the same merged trim with the outbreak's green complexion.
+// Kept out of MARCHER_SKIN_TEMPLATES so the uniqueId-based complexion pick
+// never lands on it; zombification swaps a marcher's trim to this part.
+export const getMarcherZombieTrimTemplate = partTemplate("marcherTrimZombieTemplate",
+  geometry => addMarcherTrim(geometry, new Color4(.47, .66, .33, 1)));
 
 export const getMarcherJacketTemplate = partTemplate("marcherJacketTemplate", (geometry) => {
   geometry.lathe(geometry.low

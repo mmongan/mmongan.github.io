@@ -37,12 +37,24 @@ function createSaxophoneTemplate(scene: Scene): Mesh {
   ], [0.0105, 0.006], 4, EBONY);
   geometry.cap(tip, 4, SAXOPHONE_MOUTHPIECE_TIP.add(new Vector3(0, 0, -0.004)), EBONY);
 
-  // Upper (left hand) and lower (right hand) pearl key stacks and the bell
-  // keys / guard down the bell side (24), skipped at low detail.
+  // Upper (left hand) and lower (right hand) pearl key buttons seated on the
+  // body tube, and brass key cups seated on the bell bow, skipped at low
+  // detail. Each button embeds a few millimeters into the taper and stands
+  // only a little proud, so nothing floats off the tube like a handle.
   geometry.fine(() => {
-    geometry.box(new Vector3(-0.012, 0.12, -0.034), new Vector3(0.012, 0.22, -0.012), PEARL);
-    geometry.box(new Vector3(-0.012, -0.12, -0.04), new Vector3(0.012, -0.02, -0.018), PEARL);
-    geometry.box(new Vector3(-0.01, -0.25, 0.03), new Vector3(0.01, -0.12, 0.05), BRASS);
+    // Body taper: r = 0.018 - y * 0.03 above the waist, 0.018 - y * 0.0259 below.
+    for (const y of [0.135, 0.16, 0.185, 0.21]) {
+      const radius = 0.018 - y * 0.03;
+      geometry.box(new Vector3(-0.008, y - 0.007, -(radius + 0.007)),
+        new Vector3(0.008, y + 0.007, -(radius - 0.003)), PEARL);
+    }
+    for (const y of [-0.03, -0.058, -0.086, -0.114]) {
+      const radius = 0.018 - y * 0.0259;
+      geometry.box(new Vector3(-0.008, y - 0.007, -(radius + 0.007)),
+        new Vector3(0.008, y + 0.007, -(radius - 0.003)), PEARL);
+    }
+    geometry.box(new Vector3(-0.009, -0.225, 0.043), new Vector3(0.009, -0.195, 0.058), BRASS);
+    geometry.box(new Vector3(-0.009, -0.175, 0.037), new Vector3(0.009, -0.145, 0.052), BRASS);
   });
 
   return buildInstrumentTemplate("saxophoneTemplate", geometry, scene);

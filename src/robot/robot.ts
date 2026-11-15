@@ -35,8 +35,9 @@ import { getRobotEyesTemplate } from './robotFaceModel';
 import {
   getMarcherCalfTemplate, getMarcherForearmTemplate, getMarcherGloveTemplate, getMarcherJacketTemplate,
   getMarcherShoeTemplate, getMarcherThighTemplate, getMarcherKneeTemplate, MARCHER_SKIN_TEMPLATES, getMarcherUpperArmTemplate,
-  registerMarcherShadedMaterial, setMarcherShadingRealism,
+  isMarcherShadingRealistic, registerMarcherShadedMaterial, setMarcherShadingRealism,
 } from './marcherBodyModel';
+import { FACE_SKIN_TEMPLATES } from './marcherFaceSkin';
 import { getSaxophoneTemplate, SAXOPHONE_MOUTHPIECE_TIP } from './saxophoneModel';
 import { BARI_SAXOPHONE_MOUTHPIECE_TIP, getBariSaxophoneTemplate } from './bariSaxophoneModel';
 import { EUPHONIUM_MOUTHPIECE_TIP, getEuphoniumTemplate } from './euphoniumModel';
@@ -94,6 +95,7 @@ const bodyTemplates = new Set<ModelTemplate>([
   getMarcherCalfTemplate, getMarcherForearmTemplate, getMarcherGloveTemplate,
   getMarcherJacketTemplate, getMarcherShoeTemplate, getMarcherThighTemplate,
   ...MARCHER_SKIN_TEMPLATES, getMarcherUpperArmTemplate, getMarcherKneeTemplate, getRobotEyesTemplate,
+  ...FACE_SKIN_TEMPLATES,
 ]);
 
 function getTemplateDetail(template: ModelTemplate): ModelDetail {
@@ -286,9 +288,23 @@ function setMarcherDetail(detail: ModelDetail) {
 
 onARScaleChangedObservable.add(() => setMarcherDetail(getMarcherDetail()));
 lowPolygonMarchersToggle?.addEventListener("change", () => setMarcherDetail(getMarcherDetail()));
+// Photorealistic faces swap the shared box-feature eyes for the painted
+// face-skin plate; the classic features return exactly on disable.
+function applyFaceSkinVisibility() {
+  const realistic = isMarcherShadingRealistic();
+  allRobots.forEach((robot) => {
+    if (robot.isDisposed()) return;
+    robot.getChildMeshes(false).forEach((mesh) => {
+      if (mesh.name === "robotEyes") mesh.setEnabled(!realistic);
+      else if (mesh.name === "marcherFaceSkin") mesh.setEnabled(realistic);
+    });
+  });
+}
+
 photorealMarchersToggle?.addEventListener("change", () => {
   setMarcherShadingRealism(!!photorealMarchersToggle?.checked);
   setMarcherDetail(getMarcherDetail());
+  applyFaceSkinVisibility();
 });
 // The default-checked box (or a browser-restored state) takes effect on load.
 setMarcherShadingRealism(!!photorealMarchersToggle?.checked);
@@ -466,7 +482,7 @@ const INSTRUMENTS: Record<MarcherInstrument, InstrumentSpec> = {
   altoSax: {
     label: "Alto saxophone",
     template: getSaxophoneTemplate,
-    grips: [new Vector3(-0.025, 0.17, -0.06), new Vector3(0.025, -0.07, -0.065)],
+    grips: [new Vector3(-0.025, 0.17, -0.035), new Vector3(0.025, -0.07, -0.042)],
     mouthpiece: SAXOPHONE_MOUTHPIECE_TIP,
     playRotation: new Vector3(-0.25, 0, 0.35),
     carryPosition: new Vector3(0.05, 0.66, 0.24),
@@ -480,7 +496,7 @@ const INSTRUMENTS: Record<MarcherInstrument, InstrumentSpec> = {
   bariSax: {
     label: "Baritone saxophone",
     template: getBariSaxophoneTemplate,
-    grips: [new Vector3(-0.03, 0.17, -0.07), new Vector3(0.03, -0.13, -0.075)],
+    grips: [new Vector3(-0.03, 0.17, -0.055), new Vector3(0.03, -0.13, -0.06)],
     mouthpiece: BARI_SAXOPHONE_MOUTHPIECE_TIP,
     playRotation: new Vector3(-0.2, 0, 0.42),
     carryPosition: new Vector3(0.1, 0.62, 0.28),
@@ -817,7 +833,12 @@ function createMarcherModel(scene: Scene, gaitIndex: number, skinIndex?: number)
 
   part(getMarcherJacketTemplate, "marcherJacket", body, true);
   part(MARCHER_SKIN_TEMPLATES[skin], "marcherTrim", body);
-  part(getRobotEyesTemplate, "robotEyes", body);
+  // Classic geometric face features and the photorealistic painted face
+  // skin coexist as parts; the active one follows the realism toggle.
+  const eyes = part(getRobotEyesTemplate, "robotEyes", body);
+  const faceSkin = part(FACE_SKIN_TEMPLATES[skin], "marcherFaceSkin", body);
+  eyes.setEnabled(!isMarcherShadingRealistic());
+  faceSkin.setEnabled(isMarcherShadingRealistic());
 
   const appendages = ([-1, 1] as const).map((side) => {
     const leg = new TransformNode("marcherLeg", scene);

@@ -16,12 +16,13 @@ const FACE_DETAIL = new Color4(0.16, 0.19, 0.23, 1);
 
 const v = (x: number, y: number, z: number) => new Vector3(x, y, z);
 
-const HEAD_SIDES = 16;
+export const HEAD_SIDES = 16;
 // The face is deeper than the back of the head.
-const FRONT_DEPTH = 1.15;
+export const FRONT_DEPTH = 1.15;
 
 // Narrow chin, wider cheeks, and a rounded forehead beneath the shako.
-const SKULL_PROFILE: Array<[number, number]> = [
+// Exported so the photorealistic face-skin plate conforms to this skull.
+export const SKULL_PROFILE: Array<[number, number]> = [
   [0, 1.13], [0.065, 1.14], [0.105, 1.175], [0.132, 1.2], [0.14, 1.235],
   [0.144, 1.285], [0.14, 1.325], [0.125, 1.355], [0, 1.372],
 ];

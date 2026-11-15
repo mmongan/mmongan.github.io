@@ -24,7 +24,7 @@ import { scene } from '../scene/engine';
 import { connectMidiXRSession } from '../audio/midiPlayback';
 import { setDrillEditingEnabled } from '../interaction/editingMode';
 import { enterVRButton, enterARButton, vrZombieModeButton, xrEntryStatus } from '../ui/dom';
-import { requestZombieMode } from '../robot/zombieMode';
+import { requestZombieOutbreakGame } from '../robot/zombieMode';
 import { onStartupStateChanged } from '../ui/loadingScreen';
 import { connectMarcherPOVXR, isMarcherPOVActive, setMarcherPOVEnabled } from '../camera/marcherPOV';
 import { setTableHeightForPosture } from '../menu/settings';
@@ -231,6 +231,14 @@ export function initXR(teleportGrid: Mesh) {
       button.title = supported === false ? `${mode === 'immersive-vr' ? 'VR' : 'AR'} is not supported by this browser or device.`
         : 'Open an immersive session to use editing tools.';
     }
+    if (vrZombieModeButton) {
+      // Outbreak! is offered only once immersive VR support is confirmed
+      // (the button ships hidden); a refused session on a capable device
+      // still falls back to the desktop viewer game.
+      const vrSupported = sessionSupport.get('immersive-vr') === true;
+      vrZombieModeButton.hidden = !vrSupported;
+      vrZombieModeButton.disabled = switchingToFullScaleVR || !vrSupported;
+    }
   }
 
   function getCameraSittingPosture(camera: WebXRCamera): boolean | null {
@@ -362,7 +370,9 @@ export function initXR(teleportGrid: Mesh) {
     floorResetNoticeTimeout = setTimeout(hideFloorResetNotice, 8000);
   }
 
-  async function enterXRMode(mode: XRSessionMode, fullScale = false) {
+  // `quiet` keeps a failed entry out of the visible status banner (still
+  // logged): used where falling back without a session is by design.
+  async function enterXRMode(mode: XRSessionMode, fullScale = false, quiet = false) {
     if (switchingToFullScaleVR) return;
     switchingToFullScaleVR = true;
     updateEntryButtons();
@@ -396,7 +406,7 @@ export function initXR(teleportGrid: Mesh) {
         updateScaleControls(false);
       }
       const message = `Could not open ${mode === 'immersive-vr' ? 'VR' : 'AR'}: ${error instanceof Error ? error.message : String(error)}`;
-      entryStatus(message);
+      if (!quiet) entryStatus(message);
       console.error(message, error);
     } finally {
       switchingToFullScaleVR = false;
@@ -412,8 +422,10 @@ export function initXR(teleportGrid: Mesh) {
   // prey POV starts on the XR camera), on the desktop viewer when VR is
   // unavailable or refused. The request also waits for the show to finish
   // loading, so an eager click right after page load still gets its horde.
+  // The VR attempt is quiet: the desktop fallback is by design, so no
+  // "Could not open VR" banner (failures still log to the console).
   vrZombieModeButton?.addEventListener("click", () => {
-    void enterXRMode('immersive-vr').then(() => requestZombieMode());
+    void enterXRMode('immersive-vr', false, true).then(() => requestZombieOutbreakGame());
   });
   tabletopScaleButton?.addEventListener("click", () => {
     if (switchingToFullScaleVR || xrExperience?.baseExperience.state !== WebXRState.IN_XR) return;

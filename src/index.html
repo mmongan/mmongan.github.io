@@ -33,7 +33,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <button id="settingsButton" class="icon-button" aria-label="Settings" title="Settings" data-xr-editing hidden>⚙</button>
         <button id="enterVRButton" class="xr-button" type="button">Enter VR</button>
         <button id="enterARButton" class="xr-button secondary" type="button">Enter AR</button>
-        <button id="vrZombieModeButton" class="xr-button secondary" type="button">🧟 VR Zombie Mode</button>
+        <button id="vrZombieModeButton" class="xr-button secondary" type="button" hidden>🧟 Outbreak!</button>
         <button id="marcherPOVExitButton" class="xr-button" type="button" hidden>Exit POV</button>
       </div>
       <output id="xrEntryStatus" class="status-panel" aria-live="polite" hidden></output>
@@ -339,8 +339,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           </label>
           <label class="radio-option">
             <input id="photorealMarchersToggle" type="checkbox" checked />
-            <span>Photorealistic marchers (high-detail bodies with satin uniform shading; overrides low-polygon bodies)</span>
+            <span>Photorealistic marchers (high-detail bodies with matte fabric shading; overrides low-polygon bodies)</span>
           </label>
+          <label class="settings-label" for="faceSkinPhotoInput">Photoreal face photos (local images; up to 3, one per complexion group)</label>
+          <input id="faceSkinPhotoInput" type="file" accept="image/png,image/jpeg,image/webp" multiple />
+          <button id="faceSkinPhotoClear" class="xr-button secondary" type="button">Clear face photos</button>
+          <output id="faceSkinPhotoStatus" class="settings-status" aria-live="polite">No face photos loaded; marchers wear painted faces.</output>
           <label class="radio-option">
             <input type="checkbox" id="collisionMarkersToggle" checked />
             <span>Show collision markers</span>

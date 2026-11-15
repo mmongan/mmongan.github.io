@@ -35,7 +35,7 @@ const context = vm.createContext({
   clearTimeout: id => timers.delete(id),
   scene: { onDisposeObservable: { addOnce: callback => { disposeTimer = callback; } } },
   enterVRButton, enterARButton, fullScaleVRButton, vrZombieModeButton,
-  requestZombieMode: () => { zombieRequests++; }, WebXRState: state,
+  requestZombieOutbreakGame: () => { zombieRequests++; }, WebXRState: state,
   xrEntryStatus: { hidden: true, textContent: '' },
   xrModeInputs: [{ value: 'immersive-vr' }, { value: 'immersive-ar' }],
   console: { error: message => errors.push(message) },
@@ -74,6 +74,8 @@ async function createXRExperience() {
 ${slice('  async function enterXRMode(', '  tabletopScaleButton?.addEventListener(')}
 globalThis.experience = () => xrExperience;
 globalThis.busy = () => switchingToFullScaleVR;
+globalThis.sessionSupport = sessionSupport;
+globalThis.updateEntryButtons = updateEntryButtons;
 `;
 vm.runInContext(stripTypeScriptTypes(code, { mode: 'transform' }), context);
 const flush = () => new Promise(resolve => setImmediate(resolve));
@@ -144,6 +146,14 @@ failEntry = true;
 vrZombieModeButton.handlers.click();
 await flush();
 assert.equal(zombieRequests, 1, 'A refused VR session still starts desktop zombie mode');
+assert.ok(!/Could not open/.test(context.xrEntryStatus.textContent),
+  'The zombie button shows no VR error banner: the desktop fallback is by design');
+assert.equal(vrZombieModeButton.hidden, false, 'Outbreak! is offered on VR-capable devices');
+context.sessionSupport.set('immersive-vr', false);
+context.updateEntryButtons();
+assert.equal(vrZombieModeButton.hidden, true, 'Outbreak! is not offered without VR support');
+context.sessionSupport.set('immersive-vr', true);
+context.updateEntryButtons();
 failEntry = false;
 vrZombieModeButton.handlers.click();
 await flush();

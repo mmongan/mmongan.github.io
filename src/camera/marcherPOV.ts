@@ -9,7 +9,7 @@ import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
 import { scene } from '../scene/engine';
 import { camera as desktopCamera, setDesktopMarcherPOV } from './desktopCamera';
 import { MarcherPOVCamera } from './marcherPOVCamera';
-import { getMarcherEyePose } from '../robot/robot';
+import { getInstrumentLabel, getMarcherEyePose, getMarcherInstrument } from '../robot/robot';
 import { marcherPOVSelect, marcherPOVStatus, marcherPOVExitButton, marcherPOVModeButton } from '../ui/dom';
 import {
   initMarcherDrumGame, isMarcherDrumGameActive as isDrumGameActive,
@@ -143,7 +143,10 @@ function refreshMarcherList() {
   }
   listRefreshCountdown = 30;
   const marchers = getMarchers().filter(robot => !robot.isDisposed() && robot.isEnabled());
-  const signature = JSON.stringify(marchers.map(robot => robot.uniqueId));
+  // Instruments are part of the signature so labels refresh when the
+  // instrument panel reassigns a marcher.
+  const instruments = marchers.map(robot => getMarcherInstrument(robot));
+  const signature = JSON.stringify(marchers.map((robot, index) => [robot.uniqueId, instruments[index]]));
   if (marcherPOVSelect && signature !== listSignature) {
     listSignature = signature;
     const placeholder = document.createElement('option');
@@ -152,7 +155,12 @@ function refreshMarcherList() {
     marcherPOVSelect.replaceChildren(placeholder, ...marchers.map((robot, index) => {
       const option = document.createElement('option');
       option.value = String(robot.uniqueId);
-      option.textContent = `Marcher ${index + 1}`;
+      // Keep the stable index and name the instrument, so a player can be
+      // picked by what they play.
+      const instrument = instruments[index];
+      option.textContent = instrument
+        ? `Marcher ${index + 1} — ${getInstrumentLabel(instrument)}`
+        : `Marcher ${index + 1}`;
       return option;
     }));
   }

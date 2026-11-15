@@ -85,10 +85,13 @@ let initOptions: { scene: Scene; allowed: () => boolean; notify: (message: strin
 // when it can start (VR, full scale, a quad player and clarinets on the
 // field), a requested outbreak becomes the playable chase instead of the
 // scripted cinematic.
-let gameHooks: { tryStart: () => boolean; stop: () => void; isActive: () => boolean } | null = null;
+let gameHooks: { tryStart: (force?: boolean) => boolean; stop: () => void; isActive: () => boolean } | null = null;
+// Set while the 🧟 Outbreak! button's request is pending: the game then
+// starts on any platform instead of only in immersive VR.
+let gameRequested = false;
 
 export function registerZombieOutbreakGame(hooks: {
-  tryStart: () => boolean; stop: () => void; isActive: () => boolean;
+  tryStart: (force?: boolean) => boolean; stop: () => void; isActive: () => boolean;
 }) {
   gameHooks = hooks;
 }
@@ -394,18 +397,28 @@ export function requestZombieMode() {
   attemptRequestedOutbreak();
 }
 
+// The 🧟 Outbreak! button's request: the survival game on any platform with
+// a quad player (desktop included), not just immersive VR.
+export function requestZombieOutbreakGame() {
+  gameRequested = true;
+  requestZombieMode();
+}
+
 function attemptRequestedOutbreak() {
   if (!outbreakRequested || state || gameHooks?.isActive() || !initOptions) return;
   if (!initOptions.allowed()) {
     outbreakRequested = false;
+    gameRequested = false;
     if (zombieModeToggle) zombieModeToggle.checked = false;
     initOptions.notify('Finish football mode and release held marchers before unleashing the zombies.');
     return;
   }
-  // In immersive VR with a quad player on the field, the outbreak is the
-  // playable chase; everywhere else it is the scripted cinematic.
-  if (gameHooks?.tryStart()) {
+  // With a quad player on the field, the outbreak is the playable chase: in
+  // immersive VR for any request, and on every platform when the Outbreak!
+  // button asked for the game; everywhere else the scripted cinematic runs.
+  if (gameHooks?.tryStart(gameRequested)) {
     outbreakRequested = false;
+    gameRequested = false;
     return;
   }
   const error = enableZombieMode(initOptions.scene);
@@ -422,6 +435,7 @@ function attemptRequestedOutbreak() {
 
 export function disableZombieMode() {
   outbreakRequested = false;
+  gameRequested = false;
   if (gameHooks?.isActive()) gameHooks.stop();
   if (!state) return;
   const { scene, saved, eaten, infected, povStarted } = state;
