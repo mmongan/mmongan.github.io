@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
+import { isZombieOutbreakGameActive } from '../camera/zombieOutbreakGame';
 import type { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.pure';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
@@ -59,6 +60,8 @@ export function setXRSettingsPanelVisible(visible: boolean) {
 }
 
 export function summonXRSettingsPanel() {
+  // No panels mid-Outbreak!: the run keeps the field clear of floating UI.
+  if (isZombieOutbreakGameActive()) return;
   setXRSettingsPanelVisible(true);
   panel!.placeForViewer(placement);
 }

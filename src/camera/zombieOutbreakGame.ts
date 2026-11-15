@@ -33,7 +33,7 @@ import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pur
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
 import { scene } from '../scene/engine';
 import { getActiveControllers, isGripPressed, setSceneManipulationLocked } from '../interaction/controllers';
-import { getARScale, getARScaleRange } from '../xr/ar';
+import { getARScale, getARScaleRange, setARScale } from '../xr/ar';
 import {
   animateHeldMarcherWalk, captureMarcherSchedules, createPresentationMarcher, getDrillTransportState,
   getInstrumentPose, getMarcherInstrument, getRobotColor, isAnyPlaying, pauseAll, playAll,
@@ -165,6 +165,8 @@ let bystanders: TransformNode[] = [];
 let savedColors = new Map<TransformNode, Color3>();
 let wasPlaying = false;
 let startedPOV = false;
+// The field scale before the game forced 1:1, restored on stop.
+let savedARScale: number | null = null;
 let startTime = 0;
 // Marching distance still owed from correct hits; zero means standing.
 let stepDistanceLeft = 0;
@@ -938,6 +940,10 @@ function stopGame(message?: string) {
   if (!active) return;
   active = false;
   setSceneManipulationLocked(false);
+  if (savedARScale !== null) {
+    setARScale(savedARScale);
+    savedARScale = null;
+  }
   clearSticks();
   clearTargetMarkers();
   clearGhostDrums();
@@ -1283,11 +1289,19 @@ function tryStartGame(force = false): ZombieGameStart {
   // the Outbreak! button and audience sign force it on any platform — on
   // desktop the POV look steers and the 1-4 keys strike the drums.
   if (!force && scene.activeCamera?.getClassName() !== 'WebXRCamera') return 'declined';
-  if (getARScale() < getARScaleRange().max) return 'declined';
   const snapshots = captureMarcherSchedules().filter(snapshot => !snapshot.robot.isDisposed());
   const quad = snapshots.find(snapshot => snapshot.instrument === 'tenors');
   const clarinets = snapshots.filter(snapshot => snapshot.instrument === 'clarinet');
   if (!quad || !clarinets.length) return 'declined';
+  // Outbreak! is locked into 1:1: the drill is marched with your body, so
+  // starting scales a shrunk field (tabletop or Giant) up to full size —
+  // remembering what it was — and the scene-manipulation lock keeps it
+  // there for the whole run. Ending the game restores the saved scale.
+  const fullScale = getARScaleRange().max;
+  if (getARScale() < fullScale) {
+    if (savedARScale === null) savedARScale = getARScale();
+    setARScale(fullScale);
+  }
   // Always ride the quad player's eyes: if POV is already following someone
   // else (say, the cinematic's doomed sousaphone from an earlier run),
   // restart it onto the quad rather than keeping the old target.

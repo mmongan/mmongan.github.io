@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
+import { isZombieOutbreakGameActive } from '../camera/zombieOutbreakGame';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
 import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.pure';
@@ -35,6 +36,8 @@ let updateVisibility: ((visible: boolean) => void) | null = null;
 let placeStand: (() => void) | null = null;
 
 export function summonMusicStand() {
+  // No panels mid-Outbreak!: the run keeps the field clear of floating UI.
+  if (isZombieOutbreakGameActive()) return;
   setMusicStandVisible(true);
   placeStand?.();
 }

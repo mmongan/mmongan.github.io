@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
+import { isZombieOutbreakGameActive } from '../camera/zombieOutbreakGame';
 import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.pure';
 import { Texture } from '@babylonjs/core/Materials/Textures/texture.pure';
 import { Color3 } from '@babylonjs/core/Maths/math.color.pure';
@@ -534,6 +535,8 @@ function placeInFrontOfViewer() {
 }
 
 export function summonDrillChartPad() {
+  // No panels mid-Outbreak!: the run keeps the field clear of floating UI.
+  if (isZombieOutbreakGameActive()) return;
   setDrillChartPadVisible(true);
   placeInFrontOfViewer();
 }

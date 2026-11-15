@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.pure';
+import { isZombieOutbreakGameActive } from '../camera/zombieOutbreakGame';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.pure';
 import type { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.pure';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
@@ -39,6 +40,8 @@ function placePanel() {
 }
 
 export function summonInstrumentPanel() {
+  // No panels mid-Outbreak!: the run keeps the field clear of floating UI.
+  if (isZombieOutbreakGameActive()) return;
   if (!root) initInstrumentPanel();
   root!.setEnabled(true);
   if (instrumentPanelToggle) instrumentPanelToggle.checked = true;
