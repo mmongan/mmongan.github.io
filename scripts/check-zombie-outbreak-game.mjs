@@ -27,7 +27,7 @@ import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.js';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.js';
 import { Color3 } from '@babylonjs/core/Maths/math.color.js';
-import { Matrix, Vector3 } from '@babylonjs/core/Maths/math.vector.js';
+import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 import { TargetCamera } from '@babylonjs/core/Cameras/targetCamera.js';
 
 const engine = new NullEngine();
@@ -86,7 +86,7 @@ let registered = null;
 let controllers = new Map();
 
 const context = vm.createContext({
-  Matrix, TargetCamera, Vector3, Color3, Mesh, MeshBuilder, StandardMaterial, TransformNode, scene,
+  Matrix, Quaternion, TargetCamera, Vector3, Color3, Mesh, MeshBuilder, StandardMaterial, TransformNode, scene,
   performance: { now: () => fakeNow },
   getActiveControllers: () => controllers,
   isGripPressed: controller => !!controller.squeezePressed,
@@ -272,6 +272,9 @@ assert.ok(Math.abs(vm.runInContext('player.heading', context) - -0.75) < 1e-6,
   'Controller pointing does not steer the march');
 assert.equal(vm.runInContext('stepDistanceLeft', context), 0,
   'A wrong-drum hit plays no step');
+const rightStick = scene.meshes.find(mesh => mesh.name === 'zombieOutbreakStick-right');
+assert.ok(rightStick.material.emissiveColor.r > 0.5 && rightStick.material.emissiveColor.b < 0.3,
+  "The right stick wears the call's gold while its hand is called");
 // Past the cooldown, strike the called inner-left drum with the called
 // right hand: the player strides toward the look direction, and the next
 // call in the sequence is a double stop — cyan left ring and gold right
@@ -316,9 +319,48 @@ placeGripOnZone(new Vector3(-0.115, 0.88, 0.42));
 vm.runInContext('update()', context);
 assert.ok(vm.runInContext('stepDistanceLeft', context) > 0.75,
   'A completed double stop pays two strides');
+const leftStick = scene.meshes.find(mesh => mesh.name === 'zombieOutbreakStick-left');
+assert.ok(leftStick.material.emissiveColor.b > 0.3,
+  "The left stick wears the call's cyan while its half is outstanding");
 controllers = new Map();
 povCamera.rotation.y = 0;
 vm.runInContext('stepDistanceLeft = 0', context);
+
+// The drum handle: a fresh squeeze with the grip on the bar grabs the
+// whole carriage; moving and twisting the hand repositions and tilts the
+// drums, the adjusting hand's stick plays nothing, and releasing leaves
+// the new pose riding the marcher.
+const handle = scene.meshes.find(mesh => mesh.name === 'zombieOutbreakDrumHandle');
+assert.ok(handle && handle.parent === playerHornMesh, 'A grab handle rides the drum carriage');
+// Let the heading settle on the new look before grabbing, so the test
+// exercises the drag itself rather than a body turn folding in.
+fakeNow += 100;
+vm.runInContext('update()', context);
+grip.rotation.set(0, 0, 0);
+handle.computeWorldMatrix(true);
+grip.position.copyFrom(handle.getAbsolutePosition());
+controllers = new Map([['right', { grip, squeezePressed: true }]]);
+fakeNow += 300;
+vm.runInContext('update()', context);
+assert.equal(vm.runInContext('handleGrabHand', context), 'right',
+  'A fresh squeeze on the bar grabs the carriage');
+const hornLift = playerHornMesh.position.y;
+grip.position.y += 0.3;
+grip.rotation.x = 0.4;
+fakeNow += 100;
+vm.runInContext('update()', context);
+assert.ok(playerHornMesh.position.y > hornLift + 0.2, 'Dragging the handle repositions the drums');
+assert.ok(Math.abs(playerHornMesh.rotation.x - 0.4) < 0.05, 'Twisting the handle tilts the drums');
+assert.equal(vm.runInContext('stepDistanceLeft', context), 0,
+  'The adjusting hand strikes nothing');
+grip.position.y += 5;
+controllers = new Map([['right', { grip, squeezePressed: false }]]);
+fakeNow += 100;
+vm.runInContext('update()', context);
+assert.equal(vm.runInContext('handleGrabHand', context), null, 'Releasing the squeeze lets go');
+assert.ok(Math.abs(playerHornMesh.rotation.x - 0.4) < 0.05,
+  'The adjusted pose keeps riding the marcher');
+controllers = new Map();
 // The stride plays out, then a silent drummer stands still.
 fakeNow += 100;
 vm.runInContext('update()', context);
@@ -470,6 +512,9 @@ assert.equal(heldSet.size, 0, 'Every held marcher returns to its schedule');
 assert.equal(zombifiedSet.size, 0, 'Game over restores every zombified skin and face');
 assert.equal(playerHornMesh.position.z, 0, 'The drums return to their parade mount');
 assert.equal(playerHornMesh.position.y, 0, 'The raised drums lower back to the parade mount');
+assert.equal(playerHornMesh.rotation.x, 0, 'The tilted drums level back to the parade mount');
+assert.ok(!scene.meshes.some(mesh => mesh.name === 'zombieOutbreakDrumHandle' && !mesh.isDisposed()),
+  'The grab handle is disposed with the game');
 assert.equal(flute.rotation.x, 0, 'The fallen stand back up');
 assert.ok(colors.get(clarinet).b > colors.get(clarinet).g, 'Clarinet uniforms are restored');
 assert.ok(poseSets.filter(entry => entry.pose === 'playing').length >= 2, 'Instrument poses restore');
@@ -518,8 +563,9 @@ scene.activeCamera = null;
 scene.dispose();
 engine.dispose();
 console.log('Zombie outbreak game checks passed: VR/quad gating with cinematic fallback, ' +
-  'fading ghost-drum trail on the captured schedule, look-steered marching with the drums ' +
-  'swinging to the facing, hand-colored call enforcement with double-stop pairs, called-drum steps with per-hand cooldowns, ' +
+  'fading ghost-drum trail on the captured schedule, the strayed-player guide ghost, look-steered marching with the drums ' +
+  'swinging to the facing, the squeeze-grab drum handle, call-colored sticks, ' +
+  'hand-colored call enforcement with double-stop pairs, called-drum steps with per-hand cooldowns, ' +
   'zombify/restore of skin and ' +
   'face, head-bonk felling, corpse trips and trumpet corpse revival, formation-vs-hunt by ' +
   'drill alignment, referee whistle scares, ' +
