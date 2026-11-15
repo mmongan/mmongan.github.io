@@ -674,8 +674,10 @@ You are the quad (tenors) drummer, seen in first person through marcher POV — 
 
 - Click **🧟 Outbreak!** beside Enter VR. The button is offered only on VR-capable devices, appearing once immersive VR support is confirmed. It enters VR and starts the game when the session is live; if the VR session is refused, the same game falls back to the desktop viewer.
 - In the headset, tap the sideline **🧟 OUTBREAK!** audience sign (held up in the stands beside the other panel launchers) to start the game from inside the session.
-- The Settings → *Zombie clarinets* toggle also starts the game, but only in immersive VR at full field scale; on desktop the toggle plays the scripted cinematic outbreak instead.
-- The game needs a quad (tenors) player and at least one clarinet on the field, the field at full 1:1 scale, no football mode, and no held marchers. Without a quad player, the cinematic outbreak plays.
+- The Settings → *Zombie clarinets* toggle also starts the game, but only in immersive VR; on desktop the toggle plays the scripted cinematic outbreak instead.
+- The game needs a quad (tenors) player and at least one clarinet on the field, no football mode, and no held marchers. Without a quad player, the cinematic outbreak plays.
+- **Outbreak! is locked into 1:1.** The drill is marched with your body, so starting from a tabletop or Giant-scaled field scales it up to full size for the run; field grabbing and rescaling are locked while you play, and your saved scale comes back when the run ends.
+- **No panels mid-run.** The chart pad, music stand, instrument panel, and floating settings panel will not open during a run — the controller Y button, stadium signs, and scoreboard launchers all wait until the game ends, keeping the field clear while you're chased.
 
 ### How to march
 
