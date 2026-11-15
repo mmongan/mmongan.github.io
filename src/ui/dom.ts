@@ -55,6 +55,7 @@ export const handThumbJogToggle = document.getElementById("handThumbJogToggle") 
 export const fieldGridToggle = document.getElementById("fieldGridToggle") as HTMLInputElement | null;
 export const fieldGridInterval = document.getElementById("fieldGridInterval") as HTMLInputElement | null;
 export const lowPolygonMarchersToggle = document.getElementById("lowPolygonMarchersToggle") as HTMLInputElement | null;
+export const photorealMarchersToggle = document.getElementById("photorealMarchersToggle") as HTMLInputElement | null;
 export const midiFileInput = document.getElementById("midiFile") as HTMLInputElement | null;
 export const midiAudioButton = document.getElementById("midiAudioButton") as HTMLButtonElement | null;
 export const midiPlaybackHint = document.getElementById("midiPlaybackHint") as HTMLOutputElement | null;

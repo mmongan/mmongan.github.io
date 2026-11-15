@@ -35,6 +35,7 @@ import { getRobotEyesTemplate } from './robotFaceModel';
 import {
   getMarcherCalfTemplate, getMarcherForearmTemplate, getMarcherGloveTemplate, getMarcherJacketTemplate,
   getMarcherShoeTemplate, getMarcherThighTemplate, getMarcherKneeTemplate, MARCHER_SKIN_TEMPLATES, getMarcherUpperArmTemplate,
+  registerMarcherShadedMaterial, setMarcherShadingRealism,
 } from './marcherBodyModel';
 import { getSaxophoneTemplate, SAXOPHONE_MOUTHPIECE_TIP } from './saxophoneModel';
 import { BARI_SAXOPHONE_MOUTHPIECE_TIP, getBariSaxophoneTemplate } from './bariSaxophoneModel';
@@ -43,7 +44,7 @@ import { getTromboneTemplate, TROMBONE_MOUTHPIECE_TIP, TROMBONE_SLIDE_STAY_Y } f
 import { getTrumpetTemplate } from './trumpetModel';
 import type { ModelDetail, ModelTemplate } from './lowPolyInstrument';
 import { isFieldShrunk, onARScaleChangedObservable } from '../xr/ar';
-import { lowPolygonMarchersToggle } from '../ui/dom';
+import { lowPolygonMarchersToggle, photorealMarchersToggle } from '../ui/dom';
 import { registerJacketLegSource, updateJacketLegPlane, updateJacketLegPlanes } from './jacketLegOcclusion';
 import { boundMarcherFootTarget, boundMarcherFootLift, MARCHER_CALF_LENGTH, MARCHER_THIGH_LENGTH,
   MARCHER_SHOE_FORWARD_OFFSET, MARCHER_SHOE_HALF_HEIGHT, marcherSwingLift, marcherGroundFootPitch,
@@ -81,7 +82,10 @@ const modelPartInfo = new WeakMap<AbstractMesh, ModelPartInfo>();
 const partSources = new Map<Scene, Map<ModelTemplate, Mesh>>();
 const TINTED_PART_SPECULAR = new Color3(0.3, 0.3, 0.32);
 function getMarcherDetail(): ModelDetail {
-  return lowPolygonMarchersToggle?.checked || isFieldShrunk() ? "low" : "high";
+  // Photorealistic marchers override the low-polygon preference; the shrunk
+  // field reduction still wins, where marchers are only centimeters tall.
+  const preferLow = lowPolygonMarchersToggle?.checked && !photorealMarchersToggle?.checked;
+  return preferLow || isFieldShrunk() ? "low" : "high";
 }
 
 let marcherDetail: ModelDetail = getMarcherDetail();
@@ -153,9 +157,10 @@ function getTintedPartMaterial(robot: TransformNode): StandardMaterial {
   if (!material) {
     material = new StandardMaterial("robotBodyMaterial", robot.getScene());
     material.diffuseColor = robotColors.get(robot) ?? Color3.White();
-    material.specularColor = TINTED_PART_SPECULAR;
+    material.specularColor = TINTED_PART_SPECULAR.clone();
     material.specularPower = 32;
     tintedPartMaterials.set(robot, material);
+    registerMarcherShadedMaterial(material, TINTED_PART_SPECULAR, 32);
   }
   return material;
 }
@@ -281,6 +286,12 @@ function setMarcherDetail(detail: ModelDetail) {
 
 onARScaleChangedObservable.add(() => setMarcherDetail(getMarcherDetail()));
 lowPolygonMarchersToggle?.addEventListener("change", () => setMarcherDetail(getMarcherDetail()));
+photorealMarchersToggle?.addEventListener("change", () => {
+  setMarcherShadingRealism(!!photorealMarchersToggle?.checked);
+  setMarcherDetail(getMarcherDetail());
+});
+// The default-checked box (or a browser-restored state) takes effect on load.
+setMarcherShadingRealism(!!photorealMarchersToggle?.checked);
 const MARCHER_BUILD_SCALE = 0.64;
 const MARCHER_HEIGHT_METERS = 1.8;
 const METERS_PER_YARD = 0.9144;

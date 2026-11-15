@@ -81,6 +81,17 @@ let state: ZombieState | null = null;
 // (selection plus setMarcherPOVEnabled) — never a second camera follower.
 let povHooks: { start: (robot: TransformNode) => void; stop: () => void } | null = null;
 let initOptions: { scene: Scene; allowed: () => boolean; notify: (message: string) => void } | null = null;
+// The immersive-VR survival game (zombieOutbreakGame.ts) registers here:
+// when it can start (VR, full scale, a quad player and clarinets on the
+// field), a requested outbreak becomes the playable chase instead of the
+// scripted cinematic.
+let gameHooks: { tryStart: () => boolean; stop: () => void; isActive: () => boolean } | null = null;
+
+export function registerZombieOutbreakGame(hooks: {
+  tryStart: () => boolean; stop: () => void; isActive: () => boolean;
+}) {
+  gameHooks = hooks;
+}
 // A requested outbreak that could not start yet (typically the startup show
 // is still loading, so there are no clarinets to turn). The per-frame stage
 // keeps retrying while the toggle stays checked.
@@ -88,7 +99,7 @@ let outbreakRequested = false;
 let waitNotified = false;
 
 export function isZombieModeActive(): boolean {
-  return state !== null;
+  return state !== null || !!gameHooks?.isActive();
 }
 
 // Schedules clamp to their final count, so halted marchers keep a position.
@@ -109,9 +120,15 @@ function paddedCounts(snapshot: MarcherScheduleSnapshot, through: number): Robot
   });
 }
 
+// Fleeing tubas keep a margin inside the boundary, so the escape visibly
+// stays on the turf rather than on the very paint of the sideline.
+export const TUBA_FLEE_MARGIN_YARDS = 1;
+const FLEE_X_LIMIT = FIELD_WIDTH_YARDS / 2 - TUBA_FLEE_MARGIN_YARDS;
+const FLEE_Z_LIMIT = FIELD_LENGTH_YARDS / 2 - TUBA_FLEE_MARGIN_YARDS;
+
 function clampToField(position: Vector3) {
-  position.x = Math.max(-FIELD_WIDTH_YARDS / 2, Math.min(FIELD_WIDTH_YARDS / 2, position.x));
-  position.z = Math.max(-FIELD_LENGTH_YARDS / 2, Math.min(FIELD_LENGTH_YARDS / 2, position.z));
+  position.x = Math.max(-FLEE_X_LIMIT, Math.min(FLEE_X_LIMIT, position.x));
+  position.z = Math.max(-FLEE_Z_LIMIT, Math.min(FLEE_Z_LIMIT, position.z));
 }
 
 // Reproducible per-marcher incubation: random-feeling, identical on replay.
@@ -224,6 +241,14 @@ export function enableZombieMode(scene: Scene): string | null {
       const lurchHeading = step > 1e-9 && waypointDistance > 1e-9
         ? Math.atan2(stride.x, stride.z) : heading;
       hunter.counts.push({ position: hunter.position.clone(), rotationY: lurchHeading });
+      // The pounce: contact after the lurch ends the chase this very count.
+      // Without this, a fleeing tuba re-opens the gap each count and the
+      // stand-off throttle above turns the pursuit into a stable orbit that
+      // only a boundary could break.
+      if (Vector3.Distance(hunter.position, prey.position) <= ZOMBIE_CATCH_YARDS) {
+        prey.eatenAt = count + 1;
+        hunter.feastUntil = count + 1 + ZOMBIE_FEAST_COUNTS;
+      }
     }
     // Tubas march their authored route until scared, then run for their lives.
     for (const tuba of tubas) {
@@ -243,8 +268,32 @@ export function enableZombieMode(scene: Scene): string | null {
       const away = tuba.position.subtract(hunterNear!.position);
       away.y = 0;
       const length = away.length();
-      if (length > 1e-9) away.scaleInPlace(TUBA_FLEE_STEP_YARDS / length);
-      else away.set(0, 0, TUBA_FLEE_STEP_YARDS);
+      if (length > 1e-9) away.scaleInPlace(1 / length);
+      else away.set(0, 0, 1);
+      // Get away while staying on the field: a flee direction pressing into
+      // a boundary slides along it at full sprint instead of pinning the
+      // tuba against the edge, and a cornered tuba breaks out along
+      // whichever wall gains the most ground on the hunter.
+      if ((tuba.position.x >= FLEE_X_LIMIT && away.x > 0) ||
+        (tuba.position.x <= -FLEE_X_LIMIT && away.x < 0)) away.x = 0;
+      if ((tuba.position.z >= FLEE_Z_LIMIT && away.z > 0) ||
+        (tuba.position.z <= -FLEE_Z_LIMIT && away.z < 0)) away.z = 0;
+      if (away.lengthSquared() < 1e-12) {
+        let bestGain = -1;
+        for (const [x, z] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+          const px = tuba.position.x + x * TUBA_FLEE_STEP_YARDS;
+          const pz = tuba.position.z + z * TUBA_FLEE_STEP_YARDS;
+          if (Math.abs(px) > FLEE_X_LIMIT || Math.abs(pz) > FLEE_Z_LIMIT) continue;
+          const gain = (px - hunterNear!.position.x) ** 2 + (pz - hunterNear!.position.z) ** 2;
+          if (gain > bestGain) {
+            bestGain = gain;
+            away.set(x, 0, z);
+          }
+        }
+      }
+      if (away.lengthSquared() > 1e-12) {
+        away.normalize().scaleInPlace(TUBA_FLEE_STEP_YARDS);
+      }
       const next = tuba.position.add(away);
       clampToField(next);
       const travel = next.subtract(tuba.position);
@@ -346,11 +395,17 @@ export function requestZombieMode() {
 }
 
 function attemptRequestedOutbreak() {
-  if (!outbreakRequested || state || !initOptions) return;
+  if (!outbreakRequested || state || gameHooks?.isActive() || !initOptions) return;
   if (!initOptions.allowed()) {
     outbreakRequested = false;
     if (zombieModeToggle) zombieModeToggle.checked = false;
     initOptions.notify('Finish football mode and release held marchers before unleashing the zombies.');
+    return;
+  }
+  // In immersive VR with a quad player on the field, the outbreak is the
+  // playable chase; everywhere else it is the scripted cinematic.
+  if (gameHooks?.tryStart()) {
+    outbreakRequested = false;
     return;
   }
   const error = enableZombieMode(initOptions.scene);
@@ -367,6 +422,7 @@ function attemptRequestedOutbreak() {
 
 export function disableZombieMode() {
   outbreakRequested = false;
+  if (gameHooks?.isActive()) gameHooks.stop();
   if (!state) return;
   const { scene, saved, eaten, infected, povStarted } = state;
   state = null;

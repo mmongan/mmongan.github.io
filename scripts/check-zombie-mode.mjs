@@ -137,9 +137,9 @@ assert.ok(firstFlee > 8, 'The tuba holds formation until a zombie closes in');
 for (let count = firstFlee; count < fled.counts.length; count++) {
   const step = Vector3.Distance(fled.counts[count].position, fled.counts[count - 1].position);
   assert.ok(step <= 0.65 + 1e-9, 'A sousaphone is heavy: flee steps stay bounded');
-  assert.ok(Math.abs(fled.counts[count].position.x) <= 53.333 / 2 + 1e-9 &&
-    Math.abs(fled.counts[count].position.z) <= 120 / 2 + 1e-9,
-    'The tuba never flees off the field');
+  assert.ok(Math.abs(fled.counts[count].position.x) <= 53.333 / 2 - 1 + 1e-9 &&
+    Math.abs(fled.counts[count].position.z) <= 120 / 2 - 1 + 1e-9,
+    'The tuba never flees past the in-field margin');
 }
 const eatenState = vm.runInContext('state.eaten', context);
 assert.equal(eatenState.length, 1, 'The tuba is caught despite fleeing');
@@ -259,6 +259,38 @@ snapshots = makeSnapshots();
 vm.runInContext('updateZombieMode()', context);
 assert.equal(vm.runInContext('isZombieModeActive()', context), false,
   'Unchecking the toggle cancels a waiting request');
+// A tuba pressed against the boundary gets away by sliding along it at a
+// full sprint — never pinned against the edge, never off the field.
+const wallClarinet = makeRobot();
+const wallTuba = makeRobot();
+restores = [];
+snapshots = [
+  { robot: wallClarinet, gaitIndex: 0, instrument: 'clarinet', instrumentPose: 'playing',
+    color: new Color3(0.1, 0.4, 0.8), stepSizeYards: 0.625, scheduled: true,
+    counts: [{ position: new Vector3(18, 0, 10), rotationY: 0 },
+      { position: new Vector3(18, 0, 10), rotationY: 0 }] },
+  { robot: wallTuba, gaitIndex: 0, instrument: 'sousaphone', instrumentPose: 'playing',
+    color: new Color3(0.2, 0.2, 0.2), stepSizeYards: 0.625, scheduled: true,
+    counts: [{ position: new Vector3(24.6, 0, 10), rotationY: 0 },
+      { position: new Vector3(24.6, 0, 10), rotationY: 0 }] },
+];
+assert.equal(vm.runInContext('enableZombieMode(scene)', context), null);
+const wallFled = restores.find(entry => entry.robot === wallTuba).snapshot;
+const xMargin = 53.333 / 2 - 1;
+let pinnedSteps = 0;
+let farthestSlide = 0;
+for (let count = 9; count < wallFled.counts.length; count++) {
+  const here = wallFled.counts[count].position;
+  assert.ok(Math.abs(here.x) <= xMargin + 1e-9, 'The escape stays inside the field margin');
+  if (Vector3.Distance(here, wallFled.counts[count - 1].position) < 0.3) pinnedSteps++;
+  farthestSlide = Math.max(farthestSlide, Math.abs(here.z - 10));
+}
+assert.equal(pinnedSteps, 0, 'A wall never pins the fleeing tuba in place');
+assert.ok(farthestSlide >= 3, 'Blocked straight ahead, the tuba sprints along the boundary');
+assert.ok(vm.runInContext('state.eaten', context).some(entry => entry.robot === wallTuba),
+  'The horde still wins in the end');
+vm.runInContext('disableZombieMode()', context);
+snapshots = makeSnapshots();
 vm.runInContext('enableZombieMode(scene)', context);
 
 // Replacing the show disposes the saved robots; the outbreak quietly ends.

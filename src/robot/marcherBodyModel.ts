@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.pure';
+import { FresnelParameters } from '@babylonjs/core/Materials/fresnelParameters.pure';
 import { Color3, Color4 } from '@babylonjs/core/Maths/math.color.pure';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure';
 import { Scene } from '@babylonjs/core/scene.pure';
@@ -27,15 +28,71 @@ const LEG_RADIAL_SIDES = 8;
 
 const materials = new WeakMap<Scene, StandardMaterial>();
 const legMaterials = new WeakMap<Scene, StandardMaterial>();
+const PART_SPECULAR = new Color3(0.12, 0.12, 0.13);
+const PART_SPECULAR_POWER = 12;
+
+// "Photorealistic marchers" is a reversible shading preset on the shared
+// body materials, never a second set of meshes or a texture pipeline: a
+// tighter, brighter satin specular and a soft Fresnel rim sheen push the
+// stylized uniforms toward how real cloth catches stadium light. Every
+// shaded marcher material registers here with its own base values, so
+// enabling applies one preset and disabling restores each material exactly.
+const REALISM_SPECULAR = new Color3(0.28, 0.28, 0.3);
+const REALISM_SPECULAR_POWER = 52;
+const REALISM_RIM_EMISSIVE = new Color3(0.09, 0.09, 0.1);
+
+const shadedMaterials = new Map<StandardMaterial, { specular: Color3; specularPower: number }>();
+let realisticShading = false;
+
+function applyShading(material: StandardMaterial) {
+  const base = shadedMaterials.get(material);
+  if (!base) return;
+  if (realisticShading) {
+    material.specularColor = REALISM_SPECULAR.clone();
+    material.specularPower = REALISM_SPECULAR_POWER;
+    material.emissiveColor = REALISM_RIM_EMISSIVE.clone();
+    // Grazing angles catch a white rim, facing surfaces stay untouched.
+    material.emissiveFresnelParameters = new FresnelParameters({
+      leftColor: Color3.White(), rightColor: Color3.Black(), bias: 0.18, power: 2.4,
+    });
+  } else {
+    material.specularColor = base.specular.clone();
+    material.specularPower = base.specularPower;
+    material.emissiveColor = Color3.Black();
+    // The accessor is non-nullable; assigning a disabled instance both
+    // clears the rim and marks the shader dirty.
+    material.emissiveFresnelParameters = new FresnelParameters({ isEnabled: false });
+  }
+}
+
+// Registers a marcher material for the realism preset with the base values
+// it restores to. Materials created while the preset is on get it applied.
+export function registerMarcherShadedMaterial(material: StandardMaterial,
+  baseSpecular: Color3, baseSpecularPower: number) {
+  shadedMaterials.set(material, { specular: baseSpecular.clone(), specularPower: baseSpecularPower });
+  material.onDisposeObservable.addOnce(() => shadedMaterials.delete(material));
+  if (realisticShading) applyShading(material);
+}
+
+export function setMarcherShadingRealism(enabled: boolean) {
+  if (realisticShading === enabled) return;
+  realisticShading = enabled;
+  shadedMaterials.forEach((_, material) => applyShading(material));
+}
+
+export function isMarcherShadingRealistic(): boolean {
+  return realisticShading;
+}
 
 function getMarcherPartMaterial(scene: Scene): StandardMaterial {
   let material = materials.get(scene);
   if (!material || material.getScene() !== scene) {
     material = new StandardMaterial("marcherPartMaterial", scene);
     material.diffuseColor = Color3.White();
-    material.specularColor = new Color3(0.12, 0.12, 0.13);
-    material.specularPower = 12;
+    material.specularColor = PART_SPECULAR.clone();
+    material.specularPower = PART_SPECULAR_POWER;
     materials.set(scene, material);
+    registerMarcherShadedMaterial(material, PART_SPECULAR, PART_SPECULAR_POWER);
   }
   return material;
 }
@@ -52,6 +109,7 @@ function partTemplate(name: string, build: (geometry: InstrumentGeometry) => voi
         legMaterial = material.clone('marcherLegMaterial');
         new JacketLegOcclusion(legMaterial);
         legMaterials.set(scene, legMaterial);
+        registerMarcherShadedMaterial(legMaterial, PART_SPECULAR, PART_SPECULAR_POWER);
       }
       material = legMaterial;
     }

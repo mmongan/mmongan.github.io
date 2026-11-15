@@ -69,6 +69,7 @@ import {
   CHART_PAGE_DRAFT_KEY, parseChartPageDraft, roundVector, serializeChartPageDraft, type ChartPageDraft,
 } from '../robot/chartPageDraft';
 import { initZombieMode } from '../robot/zombieMode';
+import { initZombieOutbreakGame } from '../camera/zombieOutbreakGame';
 import type { ThumbJogState } from './thumbJogGesture';
 import {
   activeControllers as controllerRegistry,
@@ -3911,6 +3912,12 @@ export function initInteraction() {
     stopPOV: () => {
       if (isMarcherPOVActive()) setMarcherPOVEnabled(false);
     },
+  });
+  initZombieOutbreakGame({
+    selectMarcher: robot => selectRobot(robot),
+    startPOV: () => setMarcherPOVEnabled(true),
+    isPOVActive: isMarcherPOVActive,
+    status: showPlacementNotice,
   });
   const cameraFields = createCameraFieldCopies({
     field: pathRoot,

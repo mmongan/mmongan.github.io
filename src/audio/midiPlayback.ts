@@ -85,6 +85,14 @@ export function getMidiPlaybackWaitReason(): MidiPlaybackWaitReason | null {
   return context?.state === 'running' ? null : 'audio';
 }
 
+// Read-only access to the shared AudioContext for small one-shot UI/game
+// sounds (such as the zombie-outbreak referee whistle). Null until music
+// audio has been initialized; callers must cope with a missing or
+// not-yet-running context and never resume it themselves.
+export function getSharedAudioContext(): AudioContext | null {
+  return context;
+}
+
 // Notified whenever the music status changes (loading progress, audio
 // permission, errors), so readiness displays can refresh.
 export const onMidiStatusChangedObservable = new Observable<void>();
