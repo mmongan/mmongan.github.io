@@ -28,6 +28,7 @@ const clarinetRobot = makeRobot();
 const tubaRobot = makeRobot();
 const trumpetRobot = makeRobot();
 const fluteRobot = makeRobot();
+const tromboneRobot = makeRobot();
 
 // A clarinet marching up the field; a halted tuba in the far corner; a
 // trumpet halted directly on the zombie's opening line of pursuit; a flute
@@ -46,6 +47,12 @@ const makeSnapshots = () => [
     color: new Color3(0.9, 0.1, 0.1), stepSizeYards: 0.625, scheduled: true,
     counts: [{ position: new Vector3(1.728, 0, 6.008), rotationY: 0 },
       { position: new Vector3(1.728, 0, 6.008), rotationY: 0 }] },
+  // About two yards off the pursuit line: only reachable because zombies
+  // actively veer into nearby marchers on the way to their prey.
+  { robot: tromboneRobot, gaitIndex: 0, instrument: 'trombone', instrumentPose: 'playing',
+    color: new Color3(0.3, 0.6, 0.3), stepSizeYards: 0.625, scheduled: true,
+    counts: [{ position: new Vector3(4.2, 0, 9.5), rotationY: 0 },
+      { position: new Vector3(4.2, 0, 9.5), rotationY: 0 }] },
   { robot: fluteRobot, gaitIndex: 0, instrument: 'flute', instrumentPose: 'playing',
     color: new Color3(0.9, 0.9, 0.1), stepSizeYards: 0.625, scheduled: true,
     counts: [{ position: new Vector3(-20, 0, -50), rotationY: 0 },
@@ -103,6 +110,7 @@ assert.equal(byRobot(fluteRobot).length, 0, 'Untouched marchers keep their sched
 assert.equal(byRobot(clarinetRobot).length, 1);
 assert.equal(byRobot(tubaRobot).length, 1);
 assert.equal(byRobot(trumpetRobot).length, 1);
+assert.equal(byRobot(tromboneRobot).length, 1, 'Zombies veer into marchers near their path');
 
 const zombie = byRobot(clarinetRobot)[0].snapshot;
 assert.equal(zombie.instrumentPose, 'rest', 'Zombies lower their clarinets');
@@ -144,9 +152,10 @@ assert.ok(Vector3.Distance(fled.counts[Math.min(catchCount, fled.counts.length -
 // The trumpet in the zombie's path is knocked flat where it stood, lies
 // still through its incubation, then rises to join the hunt.
 const infected = vm.runInContext('state.infected', context);
-assert.equal(infected.length, 1);
-assert.equal(infected[0].robot, trumpetRobot);
-const { knockCount, riseCount } = infected[0];
+assert.equal(infected.length, 2, "Both marchers in the way of the horde are knocked down");
+assert.ok(infected.some(entry => entry.robot === tromboneRobot),
+  'A marcher two yards off the straight pursuit line is still sought out and bowled over');
+const { knockCount, riseCount } = infected.find(entry => entry.robot === trumpetRobot);
 assert.ok(knockCount > 8 && knockCount < 14, 'Knocked early on the opening pursuit line');
 assert.ok(riseCount - knockCount >= 8 && riseCount - knockCount < 25,
   'Incubation is a bounded, per-marcher count');
@@ -204,7 +213,7 @@ assert.equal(vm.runInContext('isZombieModeActive()', context), false);
 assert.equal(povStops, 1, 'Disabling leaves the prey POV it started');
 assert.equal(tubaRobot.enabled, true, 'Disabling revives every tuba');
 assert.equal(trumpetRobot.rotation.x, 0, 'Disabling stands the fallen back up');
-assert.equal(restores.length, 3, 'Disabling restores every rewritten schedule');
+assert.equal(restores.length, 4, 'Disabling restores every rewritten schedule');
 const restoredClarinet = restores.find(entry => entry.robot === clarinetRobot).snapshot;
 assert.equal(restoredClarinet.instrumentPose, 'playing', 'Original pose returns');
 assert.equal(restoredClarinet.counts.length, 12, 'Original route returns');
@@ -223,7 +232,7 @@ assert.equal(seeks.length, 2, 'A pending Play is never cancelled by the outbreak
 playbackRequested = false;
 
 // Replacing the show disposes the saved robots; the outbreak quietly ends.
-for (const robot of [clarinetRobot, tubaRobot, trumpetRobot]) robot.disposed = true;
+for (const robot of [clarinetRobot, tubaRobot, trumpetRobot, tromboneRobot]) robot.disposed = true;
 vm.runInContext('updateZombieMode()', context);
 assert.equal(vm.runInContext('isZombieModeActive()', context), false,
   'A replaced show ends the outbreak');

@@ -44,6 +44,9 @@ export const ZOMBIE_SCARE_YARDS = 10;
 export const ZOMBIE_CATCH_YARDS = 0.9;
 // Brushing a shambling zombie knocks an ordinary marcher flat.
 export const ZOMBIE_KNOCKDOWN_YARDS = 0.8;
+// Zombies plow through the band: a marcher this close and roughly on the way
+// to the prey pulls the zombie into a short bowling-over detour.
+export const ZOMBIE_SHOVE_SEEK_YARDS = 3;
 // The fallen lie still this long before rising, hashed per marcher.
 export const ZOMBIE_INCUBATION_MIN_COUNTS = 8;
 export const ZOMBIE_INCUBATION_SPREAD_COUNTS = 17;
@@ -188,9 +191,33 @@ export function enableZombieMode(scene: Scene): string | null {
         hunter.counts.push({ position: hunter.position.clone(), rotationY: heading });
         continue;
       }
-      const step = Math.min(ZOMBIE_STEP_YARDS, distance - ZOMBIE_CATCH_YARDS / 2);
-      hunter.position.addInPlace(gap.scale(step / distance));
-      hunter.counts.push({ position: hunter.position.clone(), rotationY: heading });
+      // Seek the tuba, but run into other marchers on the way: a nearby
+      // marcher still in formation and roughly toward the prey pulls the
+      // lurch onto them first, so the horde bowls through the band instead
+      // of politely threading the gaps. Each marcher is knocked only once,
+      // so every detour is bounded and the chase still always ends.
+      let waypoint = prey.position;
+      let waypointDistance = distance;
+      let nearestShove = ZOMBIE_SHOVE_SEEK_YARDS;
+      for (const bystander of bystanders) {
+        if (bystander.knockedAt >= 0) continue;
+        const offset = scheduledPosition(bystander.snapshot, count).subtract(hunter.position);
+        offset.y = 0;
+        const reach = offset.length();
+        if (reach < nearestShove && offset.x * gap.x + offset.z * gap.z > 0) {
+          nearestShove = reach;
+          waypoint = hunter.position.add(offset);
+          waypointDistance = reach;
+        }
+      }
+      const stride = waypoint.subtract(hunter.position);
+      stride.y = 0;
+      const step = Math.min(ZOMBIE_STEP_YARDS,
+        waypoint === prey.position ? distance - ZOMBIE_CATCH_YARDS / 2 : waypointDistance);
+      if (waypointDistance > 1e-9) hunter.position.addInPlace(stride.scale(step / waypointDistance));
+      const lurchHeading = step > 1e-9 && waypointDistance > 1e-9
+        ? Math.atan2(stride.x, stride.z) : heading;
+      hunter.counts.push({ position: hunter.position.clone(), rotationY: lurchHeading });
     }
     // Tubas march their authored route until scared, then run for their lives.
     for (const tuba of tubas) {
