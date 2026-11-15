@@ -37,7 +37,7 @@ import { getARScale, getARScaleRange } from '../xr/ar';
 import {
   animateHeldMarcherWalk, captureMarcherSchedules, createPresentationMarcher, getDrillTransportState,
   getInstrumentPose, getMarcherInstrument, getRobotColor, isAnyPlaying, pauseAll, playAll,
-  setMarcherInstrumentPose, setRobotColor, setRobotHeld,
+  setMarcherInstrumentPose, setMarcherZombified, setRobotColor, setRobotHeld,
 } from '../robot/robot';
 import { getTenorTemplate } from '../robot/percussionModels';
 import { getSharedAudioContext } from '../audio/midiPlayback';
@@ -465,10 +465,53 @@ function cureZombie(chaser: Runner) {
   victims = victims.filter(victim => victim.robot !== robot);
   savedColors.delete(robot);
   if (color) setRobotColor(robot, color);
+  setMarcherZombified(robot, false);
   setMarcherInstrumentPose(robot, getInstrumentPose());
   robot.rotation.x = 0;
   setRobotHeld(robot, false);
   bystanders.push(robot);
+}
+
+const BONK_HEAD_HEIGHT_YARDS = 1.7;
+export const BONK_RADIUS_YARDS = 0.35;
+
+// A drumstick blow to the head fells a zombie for good: it drops where it
+// stands through the victim fall animation and never rises (an infinite
+// rise time); the game-over restore stands it back up.
+function fellZombie(chaser: Runner, now: number) {
+  const robot = chaser.robot;
+  const original = savedColors.get(robot) ?? victims.find(victim => victim.robot === robot)?.color
+    ?? getRobotColor(robot).clone();
+  chasers = chasers.filter(other => other !== chaser);
+  victims = victims.filter(victim => victim.robot !== robot);
+  const from = player ? fieldPosition(player.robot) : fieldPosition(robot);
+  const shove = fieldPosition(robot).subtract(from);
+  const facing = robot.rotation.y;
+  victims.push({
+    robot, fallStart: now, riseStart: Number.POSITIVE_INFINITY,
+    pitchSign: shove.x * Math.sin(facing) + shove.z * Math.cos(facing) >= 0 ? 1 : -1,
+    color: original, risen: false,
+  });
+}
+
+// Stick-tip melee: a tip inside a zombie's head zone fells it.
+function checkStickBonks(now: number) {
+  if (!player) return;
+  const parent = player.robot.parent;
+  if (!(parent instanceof TransformNode) || sticks.size === 0) return;
+  const inverse = Matrix.Invert(parent.getWorldMatrix());
+  for (const { grip } of sticks.values()) {
+    grip.computeWorldMatrix(true);
+    const tip = Vector3.TransformCoordinates(Vector3.TransformCoordinates(
+      new Vector3(0, 0, STICK_LENGTH), grip.getWorldMatrix()), inverse);
+    for (const chaser of chasers) {
+      if (chaser.robot.isDisposed()) continue;
+      const head = fieldPosition(chaser.robot).add(new Vector3(0, BONK_HEAD_HEIGHT_YARDS, 0));
+      if (Vector3.DistanceSquared(tip, head) > BONK_RADIUS_YARDS * BONK_RADIUS_YARDS) continue;
+      fellZombie(chaser, now);
+      break;
+    }
+  }
 }
 
 function knockVictim(robot: TransformNode, culprit: Runner, now: number) {
@@ -495,6 +538,7 @@ function updateVictims(now: number) {
     if (!victim.risen && now >= victim.riseStart) {
       victim.risen = true;
       setRobotColor(victim.robot, ZOMBIE_SKIN);
+      setMarcherZombified(victim.robot, true);
       setMarcherInstrumentPose(victim.robot, 'rest');
       chasers.push({ robot: victim.robot, heading: victim.robot.rotation.y, stridePhase: 0 });
     }
@@ -705,6 +749,7 @@ function tryStartGame(force = false): boolean {
   chasers = clarinets.map((snapshot) => {
     savedColors.set(snapshot.robot, getRobotColor(snapshot.robot).clone());
     setRobotColor(snapshot.robot, ZOMBIE_SKIN);
+    setMarcherZombified(snapshot.robot, true);
     setMarcherInstrumentPose(snapshot.robot, 'rest');
     setRobotHeld(snapshot.robot, true);
     return { robot: snapshot.robot, heading: snapshot.robot.rotation.y, stridePhase: 0 };
