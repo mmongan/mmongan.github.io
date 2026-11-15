@@ -54,6 +54,9 @@ const makeSnapshots = () => [
 
 let snapshots = makeSnapshots();
 let beat = 0;
+let playbackRequested = false;
+let plays = 0;
+const seeks = [];
 let restores = [];
 let colorSets = [];
 let poseSets = [];
@@ -67,6 +70,9 @@ const context = vm.createContext({
   setRobotColor: (robot, color) => colorSets.push({ robot, color }),
   setMarcherInstrumentPose: (robot, pose) => poseSets.push({ robot, pose }),
   getDrillTransportState: () => ({ beat }),
+  isPlaybackRequested: () => playbackRequested,
+  playAll: () => { plays++; },
+  seekToCount: count => seeks.push(count),
 });
 const source = readFileSync(new URL('../src/robot/zombieMode.ts', import.meta.url), 'utf8');
 vm.runInContext(stripTypeScriptTypes(source, { mode: 'transform' })
@@ -89,6 +95,8 @@ vm.runInContext('povHooks = { start: __povStart, stop: __povStop };', context);
 snapshots = makeSnapshots();
 assert.equal(vm.runInContext('enableZombieMode(scene)', context), null);
 assert.equal(povStarts[0], tubaRobot, 'The outbreak starts in POV as the doomed tuba player');
+assert.deepEqual(seeks, [0], 'The outbreak rewinds to the opening count');
+assert.equal(plays, 1, 'The outbreak starts the transport itself');
 assert.equal(vm.runInContext('isZombieModeActive()', context), true);
 const byRobot = robot => restores.filter(entry => entry.robot === robot);
 assert.equal(byRobot(fluteRobot).length, 0, 'Untouched marchers keep their schedules');
@@ -205,6 +213,14 @@ restores = [];
 snapshots = makeSnapshots();
 assert.equal(vm.runInContext('enableZombieMode(scene)', context), null);
 assert.equal(signature(restores), firstOutbreak, 'Re-enabling replays the identical outbreak');
+assert.equal(seeks.length, 2, 'Each outbreak rewinds once');
+playbackRequested = true;
+vm.runInContext('disableZombieMode()', context);
+restores = [];
+snapshots = makeSnapshots();
+assert.equal(vm.runInContext('enableZombieMode(scene)', context), null);
+assert.equal(seeks.length, 2, 'A pending Play is never cancelled by the outbreak seek');
+playbackRequested = false;
 
 // Replacing the show disposes the saved robots; the outbreak quietly ends.
 for (const robot of [clarinetRobot, tubaRobot, trumpetRobot]) robot.disposed = true;

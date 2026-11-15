@@ -26,8 +26,8 @@ import type { TransformNode } from '@babylonjs/core/Meshes/transformNode';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector';
 import { Color3 } from '@babylonjs/core/Maths/math.color';
 import {
-  captureBakedMarcherSchedules, getDrillTransportState, restoreMarcherSchedule,
-  setMarcherInstrumentPose, setRobotColor,
+  captureBakedMarcherSchedules, getDrillTransportState, isPlaybackRequested,
+  playAll, restoreMarcherSchedule, seekToCount, setMarcherInstrumentPose, setRobotColor,
 } from './robot';
 import type { InstrumentPose, MarcherScheduleSnapshot, RobotCount } from './robot';
 import { FIELD_LENGTH_YARDS, FIELD_WIDTH_YARDS } from '../field/constants';
@@ -292,6 +292,11 @@ export function enableZombieMode(scene: Scene): string | null {
     povHooks.start(doomed.robot);
     state.povStarted = true;
   }
+  // The outbreak is authored from count 8, so rewind to the opening set and
+  // roll the transport: the horde must not wait for the user to find Play.
+  // A seek would cancel a pending start, so skip it while one is requested.
+  if (!isPlaybackRequested()) seekToCount(0);
+  playAll();
   return null;
 }
 
