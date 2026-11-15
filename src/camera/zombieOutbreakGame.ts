@@ -146,6 +146,8 @@ let stepDistanceLeft = 0;
 let stumbleUntil = 0;
 // Corpses the player currently overlaps, so one contact trips only once.
 const corpseContacts = new Set<TransformNode>();
+// Bonked healthy marchers, staggering as bait until they recover or fall.
+let decoys: { robot: TransformNode; until: number }[] = [];
 // The ghost's position along the authored schedule, in counts.
 let gameCount = 0;
 let lastScheduledCount = 0;
@@ -493,6 +495,13 @@ export const BONK_RADIUS_YARDS = 0.35;
 export const CORPSE_TRIP_YARDS = 0.9;
 export const CORPSE_STUMBLE_MS = 1500;
 export const CORPSE_CURE_YARDS = 1.5;
+// Dirty tricks: clubbing a healthy bystander stumbles it for a few seconds,
+// and hunting zombies within the lure range find the easy prey more
+// tempting than the player. The decoy is knocked down when the horde
+// reaches it (a trumpet decoy cures the biter instead), and recovers back
+// into the formation if nothing arrives in time.
+export const DECOY_STUMBLE_MS = 4000;
+export const DECOY_LURE_YARDS = 12;
 
 // A drumstick blow to the head fells a zombie for good: it drops where it
 // stands through the victim fall animation and never rises (an infinite
@@ -513,7 +522,15 @@ function fellZombie(chaser: Runner, now: number) {
   });
 }
 
-// Stick-tip melee: a tip inside a zombie's head zone fells it.
+// Clubbing a healthy bandmate: it staggers in place as live bait.
+function bonkDecoy(robot: TransformNode, now: number) {
+  bystanders = bystanders.filter(standing => standing !== robot);
+  setRobotHeld(robot, true);
+  decoys.push({ robot, until: now + DECOY_STUMBLE_MS });
+}
+
+// Stick-tip melee: a tip inside a zombie's head zone fells it; inside a
+// healthy bystander's head zone, it stumbles them into a decoy.
 function checkStickBonks(now: number) {
   if (!player) return;
   const parent = player.robot.parent;
@@ -523,11 +540,21 @@ function checkStickBonks(now: number) {
     grip.computeWorldMatrix(true);
     const tip = Vector3.TransformCoordinates(Vector3.TransformCoordinates(
       new Vector3(0, 0, STICK_LENGTH), grip.getWorldMatrix()), inverse);
+    let struck = false;
     for (const chaser of chasers) {
       if (chaser.robot.isDisposed()) continue;
       const head = fieldPosition(chaser.robot).add(new Vector3(0, BONK_HEAD_HEIGHT_YARDS, 0));
       if (Vector3.DistanceSquared(tip, head) > BONK_RADIUS_YARDS * BONK_RADIUS_YARDS) continue;
       fellZombie(chaser, now);
+      struck = true;
+      break;
+    }
+    if (struck) continue;
+    for (const standing of bystanders) {
+      if (standing.isDisposed()) continue;
+      const head = fieldPosition(standing).add(new Vector3(0, BONK_HEAD_HEIGHT_YARDS, 0));
+      if (Vector3.DistanceSquared(tip, head) > BONK_RADIUS_YARDS * BONK_RADIUS_YARDS) continue;
+      bonkDecoy(standing, now);
       break;
     }
   }
@@ -599,6 +626,8 @@ function stopGame(message?: string) {
   if (player) release(player.robot, undefined);
   for (const { robot } of chasers) release(robot, savedColors.get(robot));
   for (const victim of victims) release(victim.robot, victim.color);
+  for (const decoy of decoys) release(decoy.robot, undefined);
+  decoys = [];
   for (const referee of referees) referee.robot.dispose();
   referees = [];
   stripeMaterial?.dispose();
@@ -708,6 +737,19 @@ function update() {
       cureMarcher(victim.robot);
     }
   }
+  // Bonked decoys stagger in place until they recover into the formation.
+  decoys = decoys.filter((decoy) => {
+    if (decoy.robot.isDisposed()) return false;
+    if (now >= decoy.until) {
+      decoy.robot.rotation.x = 0;
+      setRobotHeld(decoy.robot, false);
+      bystanders.push(decoy.robot);
+      return false;
+    }
+    // A drunken wobble that reads as easy prey.
+    decoy.robot.rotation.x = 0.2 * Math.sin(now * 0.02);
+    return true;
+  });
   // Aligned with the ghost, the horde holds formation; strayed, it hunts.
   onDrill = !ghostPose || Vector3.Distance(playerPosition, ghostPose.position) <= DRILL_ALIGN_YARDS;
   if (ghostPose && lastScheduledCount >= 1 && gameCount >= lastScheduledCount && onDrill) {
@@ -753,7 +795,19 @@ function update() {
       flee.y = 0;
       if (flee.lengthSquared() > 1e-12) chaser.heading = Math.atan2(flee.x, flee.z);
     } else {
-      chaser.heading = Math.atan2(gap.x, gap.z);
+      // A stumbling decoy within lure range is easier prey than the player.
+      let target = playerPosition;
+      let closest = DECOY_LURE_YARDS;
+      for (const decoy of decoys) {
+        if (decoy.robot.isDisposed()) continue;
+        const distance = Vector3.Distance(fieldPosition(decoy.robot), fieldPosition(chaser.robot));
+        if (distance < closest) {
+          closest = distance;
+          target = fieldPosition(decoy.robot);
+        }
+      }
+      const run = target.subtract(fieldPosition(chaser.robot));
+      chaser.heading = Math.atan2(run.x, run.z);
     }
     moveRunner(chaser, ZOMBIE_RUN_YARDS_PER_SECOND, deltaSeconds);
     for (const standing of bystanders) {
@@ -764,6 +818,19 @@ function update() {
         break;
       }
       knockVictim(standing, chaser, now);
+    }
+    // Reaching a staggering decoy knocks it down like any bystander — but a
+    // trumpet decoy cures whatever bites it and keeps staggering.
+    for (const decoy of [...decoys]) {
+      if (decoy.robot.isDisposed()) continue;
+      if (Vector3.Distance(fieldPosition(decoy.robot), fieldPosition(chaser.robot)) > OUTBREAK_TOUCH_YARDS) continue;
+      if (getMarcherInstrument(decoy.robot) === 'trumpet') {
+        cureMarcher(chaser.robot);
+        break;
+      }
+      decoys = decoys.filter(other => other !== decoy);
+      knockVictim(decoy.robot, chaser, now);
+      break;
     }
   }
   updateVictims(now);
@@ -831,6 +898,7 @@ function tryStartGame(force = false): ZombieGameStart {
   stepDistanceLeft = 0;
   stumbleUntil = 0;
   corpseContacts.clear();
+  decoys = [];
   // The first call is an inner drum, so the opening escape note does not
   // wheel the run hard to one side.
   targetZoneIndex = 1;

@@ -363,6 +363,29 @@ assert.equal(flute.rotation.x, 0, 'The cured corpse stands back up');
 assert.ok(!zombifiedSet.has(flute), 'The cured corpse sheds the zombie look');
 trumpet.position.set(-6, 0, -14);
 
+// Dirty tricks: clubbing a healthy bandmate stumbles it into bait that
+// lures nearby hunting zombies; the horde knocks the decoy down on contact.
+quad.position.set(0, 0, 0);
+clarinet.position.copyFrom(flute.position).addInPlace(new Vector3(3, 0, 0));
+controllers = new Map([['right', { grip }]]);
+grip.position.copyFrom(flute.position).addInPlace(new Vector3(0, 1.7, -0.34));
+fakeNow += 300;
+vm.runInContext('update()', context);
+assert.equal(vm.runInContext('decoys.length', context), 1,
+  'A clubbed healthy bystander stumbles into a decoy');
+assert.ok(heldSet.has(flute), 'The decoy is exempted while staggering');
+controllers = new Map();
+const decoyGap = Vector3.Distance(clarinet.position, flute.position);
+fakeNow += 100;
+vm.runInContext('update()', context);
+assert.ok(Vector3.Distance(clarinet.position, flute.position) < decoyGap - 1e-3,
+  'A stumbling decoy lures the nearby zombie off the player');
+clarinet.position.copyFrom(flute.position).addInPlace(new Vector3(0.2, 0, 0));
+fakeNow += 100;
+vm.runInContext('update()', context);
+assert.equal(vm.runInContext('decoys.length', context), 0, 'The horde knocks the decoy down');
+assert.ok(heldSet.has(flute), 'The knocked decoy falls like any victim');
+
 // Caught: a zombie touching the player ends the game and restores the band.
 clarinet.position.copyFrom(quad.position).addInPlace(new Vector3(0.2, 0, 0));
 fakeNow += 100;

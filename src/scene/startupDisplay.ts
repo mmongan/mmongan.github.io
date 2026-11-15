@@ -74,9 +74,13 @@ export function initStartupDisplay() {
     context.textAlign = 'center';
     context.fillStyle = '#edf4ff';
     context.font = 'bold 86px "Segoe UI", sans-serif';
-    context.fillText('OpenChartxr', TEXTURE_WIDTH / 2, 136);
+    context.fillText('OpenChartxr', TEXTURE_WIDTH / 2, 124);
+    context.fillStyle = '#9ad34f';
+    context.font = 'bold 50px "Segoe UI", sans-serif';
+    context.fillText('🧟 Outbreak!', TEXTURE_WIDTH / 2, 180);
+    context.fillStyle = '#edf4ff';
     context.font = '44px "Segoe UI", sans-serif';
-    context.fillText('Please wait — starting up…', TEXTURE_WIDTH / 2, 220);
+    context.fillText('Please wait — starting up…', TEXTURE_WIDTH / 2, 238);
     const barX = 112;
     const barY = 288;
     const barWidth = TEXTURE_WIDTH - 2 * barX;

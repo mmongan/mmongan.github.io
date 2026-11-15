@@ -68,6 +68,15 @@ body {
   text-shadow: 0 6px 30px var(--shadow);
 }
 
+.startup-subtitle {
+  margin: 0.1rem 0 0;
+  font-size: clamp(1.1rem, 3.2vw, 1.6rem);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: #9ad34f;
+  text-shadow: 0 4px 22px var(--shadow);
+}
+
 .startup-message {
   margin: 0;
   font-size: 1.05rem;
