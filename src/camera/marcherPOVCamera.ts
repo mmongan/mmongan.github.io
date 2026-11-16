@@ -96,6 +96,15 @@ export class MarcherPOVCamera {
     return true;
   }
 
+  // A deliberate external eye shift — the outbreak game walking the robot
+  // under the player's real head — that mirrors motion the camera has
+  // already made itself. Folding it into lastEye makes the next XR update
+  // see no movement from it, so the camera is not teleported again by its
+  // own room-scale drift.
+  absorbEyeShift(delta: Vector3) {
+    if (this.camera) this.lastEye.addInPlace(delta);
+  }
+
   stop() {
     this.restoreMeshes();
     const camera = this.camera;

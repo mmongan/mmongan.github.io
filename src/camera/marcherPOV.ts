@@ -75,6 +75,14 @@ export function getMarcherPOVPanelLabel(): { text: string; active: boolean } {
   return { text: `Marcher POV: ${follower.active ? 'on' : 'off'}`, active: follower.active };
 }
 
+// The outbreak game keeps the player's torso connected to the real body by
+// walking the robot under the headset; that robot movement mirrors motion
+// the XR camera has already made on its own, so the follower must swallow
+// it instead of re-applying it to the camera.
+export function absorbMarcherPOVEyeShift(delta: Vector3) {
+  follower.absorbEyeShift(delta);
+}
+
 export function setMarcherPOVEnabled(enabled: boolean) {
   if (!enabled) {
     stopMarcherDrumGame();

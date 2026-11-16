@@ -36,9 +36,10 @@ import { getActiveControllers, isGripPressed, setSceneManipulationLocked } from 
 import { getARScale, getARScaleRange, setARScale } from '../xr/ar';
 import {
   animateHeldMarcherWalk, captureMarcherSchedules, createPresentationMarcher, getDrillTransportState,
-  getInstrumentPose, getMarcherInstrument, getRobotColor, isAnyPlaying, pauseAll, playAll,
-  setMarcherInstrumentPose, setMarcherZombified, setRobotColor, setRobotHeld,
+  getInstrumentPose, getMarcherEyePose, getMarcherInstrument, getRobotColor, isAnyPlaying, pauseAll,
+  playAll, setMarcherInstrumentPose, setMarcherZombified, setRobotColor, setRobotHeld,
 } from '../robot/robot';
+import { absorbMarcherPOVEyeShift } from './marcherPOV';
 import { getTenorTemplate } from '../robot/percussionModels';
 import { getSharedAudioContext } from '../audio/midiPlayback';
 import type { InstrumentPose } from '../robot/robot';
@@ -990,6 +991,35 @@ function update() {
       Matrix.Invert(fieldParent.getWorldMatrix()));
     look.y = 0;
     if (look.lengthSquared() > 1e-6) player.heading = Math.atan2(look.x, look.z);
+  }
+  // Room-scale truth: the marcher's torso stays connected to the real
+  // body. In XR the headset's physical movement — walking, side-stepping,
+  // leaning — rides on top of the POV follower's teleports, so the camera
+  // drifts away from the marcher's eye and the torso and carried drums end
+  // up standing apart, crowding the view. Each frame the horizontal gap
+  // between the headset and the marcher's eye walks the robot's field spot
+  // under the camera, and the POV follower absorbs that eye shift so it
+  // never re-teleports the camera by the camera's own motion (drum strides
+  // still march the view through the follower as before). XR only: the
+  // desktop POV camera sits exactly on the eye, with no body to follow.
+  if (camera && camera.getClassName() === 'WebXRCamera' && fieldParent instanceof TransformNode) {
+    const eye = getMarcherEyePose(player.robot);
+    if (eye) {
+      const drift = camera.globalPosition.subtract(eye.position);
+      drift.y = 0;
+      if (drift.lengthSquared() > 1e-10) {
+        const fieldDrift = Vector3.TransformNormal(
+          drift, Matrix.Invert(fieldParent.getWorldMatrix()));
+        fieldDrift.y = 0;
+        const position = fieldPosition(player.robot);
+        const target = position.add(fieldDrift);
+        clampToField(target);
+        const applied = target.subtract(position);
+        position.copyFrom(target);
+        absorbMarcherPOVEyeShift(
+          Vector3.TransformNormal(applied, fieldParent.getWorldMatrix()));
+      }
+    }
   }
   // The player advances only while a called step is still underway.
   const travel = Math.min(stepDistanceLeft, PLAYER_STEP_YARDS_PER_SECOND * deltaSeconds);

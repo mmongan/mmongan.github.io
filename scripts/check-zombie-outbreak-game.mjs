@@ -85,6 +85,11 @@ let presentationCount = 0;
 let registered = null;
 let controllers = new Map();
 let arScale = 1;
+// By default the marcher's eye sits exactly on the camera (no physical
+// drift), keeping the room-scale torso follow inert for the rest of the
+// suite; the drift test overrides it.
+let eyePoseOverride = null;
+const absorbedShifts = [];
 
 const context = vm.createContext({
   Matrix, Quaternion, TargetCamera, Vector3, Color3, Mesh, MeshBuilder, StandardMaterial, TransformNode, scene,
@@ -106,6 +111,9 @@ const context = vm.createContext({
   setMarcherZombified: (robot, value) => { if (value) zombifiedSet.add(robot); else zombifiedSet.delete(robot); },
   getSharedAudioContext: () => null,
   getMarcherInstrument: robot => instruments.get(robot) ?? null,
+  getMarcherEyePose: robot => eyePoseOverride ? eyePoseOverride(robot)
+    : { position: povCamera.globalPosition.clone(), yaw: 0 },
+  absorbMarcherPOVEyeShift: delta => absorbedShifts.push(delta.clone()),
   getDrillTransportState: () => ({ beat: 0, playing: false }),
   getTenorTemplate: () => {
     if (!tenorTemplateStub || tenorTemplateStub.isDisposed()) {
@@ -423,6 +431,26 @@ fakeNow += 100;
 vm.runInContext('update()', context);
 assert.ok(quad.position.equals(resting), 'A silent drummer stands still');
 
+// Room-scale truth: when the headset physically drifts from the marcher's
+// eye (the player walks or leans in the room), the robot walks under the
+// camera so the torso stays connected to the real body, and the POV
+// follower absorbs the eye shift instead of re-teleporting the camera.
+const beforeDrift = quad.position.clone();
+eyePoseOverride = () => ({
+  position: povCamera.globalPosition.add(new Vector3(-0.4, 1.5, -0.2)), yaw: 0 });
+fakeNow += 100;
+vm.runInContext('update()', context);
+assert.ok(Math.abs(quad.position.x - (beforeDrift.x + 0.4)) < 1e-6 &&
+  Math.abs(quad.position.z - (beforeDrift.z + 0.2)) < 1e-6 &&
+  quad.position.y === beforeDrift.y,
+  "Physical headset drift walks the marcher's torso under the real body");
+assert.equal(absorbedShifts.length, 1, 'The POV follower absorbs the walked eye shift');
+assert.ok(Math.abs(absorbedShifts[0].x - 0.4) < 1e-6 &&
+  Math.abs(absorbedShifts[0].z - 0.2) < 1e-6 && Math.abs(absorbedShifts[0].y) < 1e-6,
+  'The absorbed shift matches the walked distance in world coordinates');
+eyePoseOverride = null;
+quad.position.copyFrom(beforeDrift);
+
 // Straying from the ghost trail breaks the horde out of formation into the
 // hunt.
 quad.position.set(10, 0, 10);
@@ -627,7 +655,8 @@ scene.dispose();
 engine.dispose();
 console.log('Zombie outbreak game checks passed: VR/quad gating with cinematic fallback, ' +
   'fading ghost-drum trail on the captured schedule, fading future footsteps, the strayed-player guide ghost, the turn arrow, look-steered marching with the drums ' +
-  'swinging to the facing, the world-rigid any-angle drum grab, call-colored sticks, one-hit-one-step marching, ' +
+  'swinging to the facing, the room-scale torso follow with absorbed eye shifts, ' +
+  'the world-rigid any-angle drum grab, call-colored sticks, one-hit-one-step marching, ' +
   'hand-colored call enforcement with double-stop pairs, called-drum steps with per-hand cooldowns, ' +
   'zombify/restore of skin and ' +
   'face, head-bonk felling, corpse trips and trumpet corpse revival, formation-vs-hunt by ' +
