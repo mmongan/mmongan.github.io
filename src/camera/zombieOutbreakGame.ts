@@ -245,9 +245,18 @@ const lastHitByHand = { left: 0, right: 0, any: 0 };
 let strikePrecision = 0.5;
 let targetMarkers: { mesh: Mesh; material: StandardMaterial; dimmed: boolean; baseScale: number }[] = [];
 const sticks = new Map<string, DrumStick>();
-// Plain hickory, worn whenever a stick's hand has no outstanding call.
+// Plain hickory, worn only by a stick whose handedness is unknown.
 const STICK_NEUTRAL_DIFFUSE = Color3.FromHexString('#d8ad67');
 const STICK_NEUTRAL_EMISSIVE = Color3.FromHexString('#392511');
+// The sticks match the player's hands permanently — left is always cyan,
+// right is always gold, the same left/right language as the rings and the
+// footprints. The colors never swap; the call brightens the called hand's
+// glow instead of recoloring a stick.
+function stickColor(handedness: string): Color3 | null {
+  if (handedness === 'left') return Color3.FromHexString(CALL_LEFT_COLOR);
+  if (handedness === 'right') return Color3.FromHexString(CALL_RIGHT_COLOR);
+  return null;
+}
 let drumGrabHand: string | null = null;
 // The horn's world pose expressed in the grabbing grip's frame, captured
 // at grab time; carrying it by the grip's live world matrix keeps the
@@ -301,10 +310,11 @@ function ensureStick(handedness: string, grip: TransformNode) {
   if (existing?.grip === grip) return existing;
   existing?.mesh.dispose();
   existing?.material.dispose();
-  // Each stick owns its material so it can wear its hand's call color.
+  // Each stick owns its material so it can wear its hand's fixed color.
   const material = new StandardMaterial(`zombieOutbreakStickMaterial-${handedness}`, scene);
-  material.diffuseColor.copyFrom(STICK_NEUTRAL_DIFFUSE);
-  material.emissiveColor.copyFrom(STICK_NEUTRAL_EMISSIVE);
+  const color = stickColor(handedness);
+  material.diffuseColor.copyFrom(color ?? STICK_NEUTRAL_DIFFUSE);
+  material.emissiveColor.copyFrom(color?.scale(0.15) ?? STICK_NEUTRAL_EMISSIVE);
   const mesh = MeshBuilder.CreateCylinder(`zombieOutbreakStick-${handedness}`, {
     height: STICK_LENGTH, diameter: 0.012, tessellation: 8,
   }, scene);
@@ -331,23 +341,23 @@ function clearSticks() {
   sticks.clear();
 }
 
-// The sticks wear the call like the rings do: a stick whose hand has an
-// outstanding called drum is tinted that hand's color — gold right, cyan
-// left — and drops back to plain hickory once its half lands, its hand
-// has no call, or it is busy holding the drums.
+// Each stick keeps its hand's fixed color — left cyan, right gold, never
+// swapped — and shows the call by brightness alone: the called hand's
+// stick glows bright while its half is outstanding, dimming once it
+// lands, when its hand has no call, or while it is busy holding the drums.
 function updateStickColors() {
   for (const [handedness, stick] of sticks) {
     const hand = handedness === 'left' || handedness === 'right' ? handedness : null;
-    const called = hand !== null && handedness !== drumGrabHand &&
-      !satisfiedHands.has(hand) && currentCall.some(half => half.hand === hand);
-    if (called) {
-      const color = Color3.FromHexString(hand === 'right' ? CALL_RIGHT_COLOR : CALL_LEFT_COLOR);
-      stick.material.diffuseColor.copyFrom(color);
-      stick.material.emissiveColor.copyFrom(color.scale(0.55));
-    } else {
+    const color = stickColor(handedness);
+    if (!color) {
       stick.material.diffuseColor.copyFrom(STICK_NEUTRAL_DIFFUSE);
       stick.material.emissiveColor.copyFrom(STICK_NEUTRAL_EMISSIVE);
+      continue;
     }
+    const called = hand !== null && handedness !== drumGrabHand &&
+      !satisfiedHands.has(hand) && currentCall.some(half => half.hand === hand);
+    stick.material.diffuseColor.copyFrom(color);
+    stick.material.emissiveColor.copyFrom(color.scale(called ? 0.55 : 0.15));
   }
 }
 

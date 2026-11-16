@@ -361,6 +361,11 @@ assert.ok(vm.runInContext('stepDistanceLeft', context) <= 1.5 + 1e-9,
 const leftStick = scene.meshes.find(mesh => mesh.name === 'zombieOutbreakStick-left');
 assert.ok(leftStick.material.emissiveColor.b > 0.3,
   "The left stick wears the call's cyan while its half is outstanding");
+// The hues are permanent hand markers: left is always cyan and right is
+// always gold, whatever the call — only the glow brightness changes.
+assert.ok(leftStick.material.diffuseColor.b > 0.7 && leftStick.material.diffuseColor.r < 0.5 &&
+  rightStick.material.diffuseColor.r > 0.9 && rightStick.material.diffuseColor.b < 0.4,
+  'Left stays cyan and right stays gold — stick colors never swap');
 controllers = new Map();
 povCamera.rotation.y = 0;
 vm.runInContext('stepDistanceLeft = 0', context);
